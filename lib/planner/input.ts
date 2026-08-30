@@ -1,4 +1,5 @@
 import type { Coordinate, WaypointKind } from "./types";
+import { parseStrictRfc3339 } from "../../supabase/functions/_shared/strict-time";
 
 const KOREA_BOUNDS = {
   minLatitude: 32.8,
@@ -128,14 +129,8 @@ export function parseTripWaypoint(value: unknown): TripWaypointInput {
 }
 
 function isoDate(value: unknown, code: string): Date {
-  if (
-    typeof value !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
-  ) {
-    throw new PlannerInputError(code);
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) throw new PlannerInputError(code);
+  const parsed = parseStrictRfc3339(value);
+  if (!parsed) throw new PlannerInputError(code);
   return parsed;
 }
 

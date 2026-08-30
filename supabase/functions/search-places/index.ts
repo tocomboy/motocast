@@ -1,5 +1,6 @@
 import { consumeBudget, requireMember } from "../_shared/auth.ts";
-import { corsHeaders, jsonResponse, safeErrorMessage } from "../_shared/http.ts";
+import { executeBudgetedProviderCall } from "../_shared/budgeted-call.ts";
+import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
 import {
   normalizeKakaoPlaceDocuments,
   parsePlaceSearchRequest,
@@ -26,17 +27,19 @@ Deno.serve(async (request) => {
     const verificationSecret = Deno.env.get("PLACE_VERIFICATION_SECRET");
     if (!verificationSecret) throw new Error("PLACE_VERIFICATION_NOT_CONFIGURED");
 
-    await consumeBudget(supabase, "kakao", "local_keyword_search", localLimit());
     const url = new URL("https://dapi.kakao.com/v2/local/search/keyword.json");
     url.searchParams.set("query", input.query);
     url.searchParams.set("page", String(input.page));
     url.searchParams.set("size", String(input.size));
     url.searchParams.set("sort", "accuracy");
 
-    const provider = await fetch(url, {
-      headers: { Authorization: `KakaoAK ${apiKey}` },
-      signal: AbortSignal.timeout(8_000),
-    });
+    const { result: provider } = await executeBudgetedProviderCall(
+      () => consumeBudget(supabase, "kakao", "local_keyword_search", localLimit()),
+      () => fetch(url, {
+        headers: { Authorization: `KakaoAK ${apiKey}` },
+        signal: AbortSignal.timeout(8_000),
+      }),
+    );
     if (!provider.ok) throw new Error("KAKAO_PLACE_SEARCH_FAILED");
     const payload = await provider.json() as { documents?: unknown; meta?: { is_end?: boolean } };
     const providerPlaces = normalizeKakaoPlaceDocuments(payload.documents);
@@ -48,6 +51,6 @@ Deno.serve(async (request) => {
     return jsonResponse({ places, isEnd: payload.meta?.is_end === true }, 200, cors);
   } catch (error) {
     console.error("search-places failed", error instanceof Error ? error.message : "unknown error");
-    return jsonResponse({ error: safeErrorMessage(error) }, 400, cors);
+    return jsonResponse({ error: safeErrorMessage(error) }, safeErrorStatus(error), cors);
   }
 });

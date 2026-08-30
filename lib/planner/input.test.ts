@@ -69,6 +69,19 @@ describe("parseTripInput", () => {
     expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("INVALID_SERVICE_DATE"));
   });
 
+  it("rejects an impossible RFC 3339 timestamp instead of allowing Date normalization", () => {
+    const input = validTrip();
+    input.departureAt = "2026-02-31T07:30:00+09:00";
+    input.serviceDate = "2026-03-03";
+    expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("INVALID_DEPARTURE_AT"));
+  });
+
+  it("requires an explicit RFC 3339 timezone", () => {
+    const input = validTrip();
+    input.departureAt = "2026-08-31T07:30:00";
+    expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("INVALID_DEPARTURE_AT"));
+  });
+
   it("requires desired return to be later than departure like the database constraint", () => {
     const input = validTrip();
     input.desiredReturnAt = input.departureAt;

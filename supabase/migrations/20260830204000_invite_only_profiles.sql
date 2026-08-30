@@ -2,6 +2,37 @@
 drop trigger if exists on_auth_user_created on auth.users;
 drop function if exists public.handle_new_user();
 
+-- The removed trigger may already have created profiles for users who never
+-- claimed an invitation. AUTH-003 permits only the minimal auth.users record
+-- for those denied OAuth attempts. Preserve profiles for active or revoked
+-- members, and remove only profiles that have never had a membership.
+do $$
+declare
+  removed_profiles integer;
+begin
+  delete from public.profiles as profile
+  where not exists (
+    select 1
+    from public.memberships as membership
+    where membership.user_id = profile.id
+  );
+  get diagnostics removed_profiles = row_count;
+  raise notice 'AUTH003_ORPHAN_PROFILES_REMOVED=%', removed_profiles;
+
+  if exists (
+    select 1
+    from public.profiles as profile
+    where not exists (
+      select 1
+      from public.memberships as membership
+      where membership.user_id = profile.id
+    )
+  ) then
+    raise exception 'AUTH003_ORPHAN_PROFILE_CLEANUP_FAILED';
+  end if;
+end;
+$$;
+
 create or replace function public.claim_invite(invite_token text)
 returns void
 language plpgsql
@@ -27,7 +58,18 @@ begin
   where token_hash = encode(extensions.digest(invite_token, 'sha256'), 'hex')
   for update;
 
-  if not found or invitation.revoked_at is not null or invitation.expires_at <= now() then
+  if not found then
+    raise exception 'INVALID_INVITE';
+  end if;
+
+  -- A committed claim may be retried after the HTTP response is lost. The
+  -- original user remains successful even if that already-consumed invite is
+  -- later expired or revoked, provided the membership itself is still active.
+  if invitation.consumed_by = current_user_id and public.is_active_member(current_user_id) then
+    return;
+  end if;
+
+  if invitation.revoked_at is not null or invitation.expires_at <= now() then
     raise exception 'INVALID_INVITE';
   end if;
 

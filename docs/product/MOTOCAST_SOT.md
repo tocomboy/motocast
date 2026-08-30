@@ -290,12 +290,12 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 
 ### Verified 2026-08-30
 
-- Git: local `develop` and `origin/develop` are `201e1ec12c967da57fb671fad294cf1d05b9d56c`; `main` and `origin/main` are `d0134ed93d7e0d8aed1123c5d693c665bbe646e8`. Only `.gitignore` has a pre-existing user change. No open PR or remote probe branch exists.
+- Git: local `develop` is `90f7f522bea5bb92c348b656bd80d8797d636653`, three commits ahead of `origin/develop` at `201e1ec12c967da57fb671fad294cf1d05b9d56c`; `main` and `origin/main` are `d0134ed93d7e0d8aed1123c5d693c665bbe646e8`. `.gitignore` remains a pre-existing user change and is excluded from MOTOCAST commits. No open PR or remote probe branch exists.
 - GitHub: public repository; default `develop`; `main` required checks `verify` and `develop-only`; PR required with zero approvals; administrators and conversation resolution enforced; force pushes and deletion disabled.
 - Vercel: project `tocomboys-projects/motocast`, GitHub repository linked, Production Branch `main`, Node.js `24.x`. One Ready Production deployment exists and its alias indicates the import-time `develop` source. The public alias returned HTTP 200 without a Vercel Authentication redirect at audit time. No custom domain exists.
 - Vercel environment names: the three intended `NEXT_PUBLIC_*` names plus seven server-only/provider/budget names exist in both Production and Preview. Values were not read or printed.
-- Supabase: live project readback is blocked because the CLI has no access token in this environment. No `supabase/config.toml` is present, so a local project link is not established.
-- Repository: initial schema and two Edge Functions exist; the UI still uses demo coordinates/results after successful provider invocation. Collection/share persistence UI and public share resolver are absent.
+- Supabase: project `obodvbyzptxeehgpcpkd` (`motocast`, Seoul `ap-northeast-1`, PostgreSQL 17.6.1) is `ACTIVE_HEALTHY` and locally linked. Both local migrations are unapplied; deployed Edge Functions and user-defined secret names are empty. Secret values were not read or printed.
+- Repository: initial schema plus invite-only forward migration and three Edge Functions exist; the UI still uses demo coordinates/results after successful provider invocation. Collection/share persistence UI and public share resolver are absent.
 
 ## Implementation status
 
@@ -309,8 +309,8 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 
 ### Incomplete
 
-- Live Supabase migration/function/Auth/provider/redirect/secrets readback and deployment.
-- Strict invite lifecycle resolution in AUTH-003.
+- Live Supabase migration/function/Auth/provider/redirect/secrets deployment and post-deployment readback.
+- AUTH-003 cleanup and invite lifecycle migration are implemented locally but awaiting independent delta review and live transaction tests.
 - Real Kakao place search and verified-coordinate form state.
 - Three real and distinguishable candidate orchestration, hard-return filtering, and ROUTE-003 resolution.
 - Mapping route/weather responses into the UI; durable cache/stale behavior.

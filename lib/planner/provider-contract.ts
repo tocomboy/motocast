@@ -1,5 +1,6 @@
 import type { RoutePoint } from "./types";
 import { isKoreanCoordinate } from "./input";
+import { parseStrictRfc3339 } from "../../supabase/functions/_shared/strict-time";
 
 export type SafeRouteLeg = {
   from: RoutePoint;
@@ -59,9 +60,8 @@ function nonNegativeNumber(value: unknown, code = "INVALID_ROUTE_RESPONSE"): num
 }
 
 function timestamp(value: unknown): string {
-  if (typeof value !== "string") throw new ProviderContractError("INVALID_ROUTE_TIME");
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) throw new ProviderContractError("INVALID_ROUTE_TIME");
+  const date = parseStrictRfc3339(value);
+  if (!date) throw new ProviderContractError("INVALID_ROUTE_TIME");
   return date.toISOString();
 }
 
@@ -118,12 +118,20 @@ function road(value: unknown) {
 
 function section(value: unknown) {
   const raw = record(value);
-  if (!Array.isArray(raw.roads)) throw new ProviderContractError("INVALID_ROUTE_GEOMETRY");
-  return {
+  if (!Array.isArray(raw.roads) || raw.roads.length === 0) {
+    throw new ProviderContractError("INVALID_ROUTE_GEOMETRY");
+  }
+  const parsed = {
     distance: positiveNumber(raw.distance),
     duration: positiveNumber(raw.duration),
     roads: raw.roads.map(road),
   };
+  const roadDistance = parsed.roads.reduce((total, item) => total + item.distance, 0);
+  const roadDuration = parsed.roads.reduce((total, item) => total + item.duration, 0);
+  if (roadDistance !== parsed.distance || roadDuration !== parsed.duration) {
+    throw new ProviderContractError("INVALID_ROUTE_TOTALS");
+  }
+  return parsed;
 }
 
 function leg(value: unknown): SafeRouteLeg {
@@ -131,12 +139,13 @@ function leg(value: unknown): SafeRouteLeg {
   if (!Array.isArray(raw.via) || !Array.isArray(raw.sections) || typeof raw.forecastTraffic !== "boolean") {
     throw new ProviderContractError("INVALID_ROUTE_LEG");
   }
+  if (raw.sections.length === 0) throw new ProviderContractError("INVALID_ROUTE_GEOMETRY");
   const departureAt = timestamp(raw.departureAt);
   const arrivalAt = timestamp(raw.arrivalAt);
   if (new Date(arrivalAt) <= new Date(departureAt)) {
     throw new ProviderContractError("INVALID_ROUTE_TIME");
   }
-  return {
+  const parsed = {
     from: routePoint(raw.from),
     to: routePoint(raw.to),
     via: raw.via.map(routePoint),
@@ -150,6 +159,17 @@ function leg(value: unknown): SafeRouteLeg {
     sections: raw.sections.map(section),
     forecastTraffic: raw.forecastTraffic,
   };
+  const elapsedSeconds = (new Date(arrivalAt).getTime() - new Date(departureAt).getTime()) / 1000;
+  const sectionDistance = parsed.sections.reduce((total, item) => total + item.distance, 0);
+  const sectionDuration = parsed.sections.reduce((total, item) => total + item.duration, 0);
+  if (
+    elapsedSeconds !== parsed.durationSeconds ||
+    sectionDistance !== parsed.distanceMeters ||
+    sectionDuration !== parsed.durationSeconds
+  ) {
+    throw new ProviderContractError("INVALID_ROUTE_TOTALS");
+  }
+  return parsed;
 }
 
 export function parseSafeRouteResponse(value: unknown): SafeRouteResponse {

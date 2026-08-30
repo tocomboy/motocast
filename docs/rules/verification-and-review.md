@@ -43,6 +43,7 @@ After each logical implementation unit:
 npm ci
 npm run lint
 npm run typecheck
+npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts
 npm test
 npm run build
 git diff --check

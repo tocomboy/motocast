@@ -97,6 +97,11 @@ describe("parseSafeRouteResponse", () => {
       dwellMinutes: 0,
       durationSeconds: 600,
       distanceMeters: 4000,
+      sections: [{
+        distance: 4000,
+        duration: 600,
+        roads: [{ name: "지방도", distance: 4000, duration: 600, vertexes: [127.1, 37.5, 127.2, 37.6] }],
+      }],
     });
     value.totalDistanceMeters = 16000;
     value.totalDurationSeconds = 3000;
@@ -107,6 +112,31 @@ describe("parseSafeRouteResponse", () => {
 
   it("rejects totals that do not match the accepted legs", () => {
     expect(() => parseSafeRouteResponse({ ...response(), totalDurationSeconds: 60 })).toThrowError(
+      new ProviderContractError("INVALID_ROUTE_TOTALS"),
+    );
+  });
+
+  it("rejects a leg whose timestamps hide a longer provider duration", () => {
+    const value = response();
+    value.legs[0].arrivalAt = "2026-08-31T00:01:00.000Z";
+    value.returnAt = value.legs[0].arrivalAt;
+    expect(() => parseSafeRouteResponse(value)).toThrowError(
+      new ProviderContractError("INVALID_ROUTE_TOTALS"),
+    );
+  });
+
+  it("rejects an empty successful geometry", () => {
+    const value = response();
+    value.legs[0].sections = [];
+    expect(() => parseSafeRouteResponse(value)).toThrowError(
+      new ProviderContractError("INVALID_ROUTE_GEOMETRY"),
+    );
+  });
+
+  it("rejects section and road totals that disagree with the leg", () => {
+    const value = response();
+    value.legs[0].sections[0].roads[0].distance = 11000;
+    expect(() => parseSafeRouteResponse(value)).toThrowError(
       new ProviderContractError("INVALID_ROUTE_TOTALS"),
     );
   });

@@ -1,5 +1,5 @@
 import { consumeBudget, requireMember } from "../_shared/auth.ts";
-import { corsHeaders, jsonResponse, safeErrorMessage } from "../_shared/http.ts";
+import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
 
 type WeatherPoint = {
   id: string;
@@ -243,6 +243,6 @@ Deno.serve(async (request) => {
     return jsonResponse({ generatedAt: new Date().toISOString(), forecasts }, 200, cors);
   } catch (error) {
     console.error("weather-timeline failed", error instanceof Error ? error.message : "unknown error");
-    return jsonResponse({ error: safeErrorMessage(error) }, 400, cors);
+    return jsonResponse({ error: safeErrorMessage(error) }, safeErrorStatus(error), cors);
   }
 });

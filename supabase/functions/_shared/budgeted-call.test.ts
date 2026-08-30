@@ -1,0 +1,33 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { executeBudgetedProviderCall } from "./budgeted-call";
+
+describe("executeBudgetedProviderCall", () => {
+  it("consumes budget before the provider request", async () => {
+    const order: string[] = [];
+    const result = await executeBudgetedProviderCall(
+      async () => { order.push("budget"); return 7; },
+      async () => { order.push("provider"); return "ok"; },
+    );
+    expect(order).toEqual(["budget", "provider"]);
+    expect(result).toEqual({ requestNumber: 7, result: "ok" });
+  });
+
+  it("does not run the provider when budget consumption fails", async () => {
+    const provider = vi.fn(async () => "ok");
+    await expect(executeBudgetedProviderCall(
+      async () => { throw new Error("API_DAILY_BUDGET_EXHAUSTED"); },
+      provider,
+    )).rejects.toThrow("API_DAILY_BUDGET_EXHAUSTED");
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("does not refund a consumed call when the provider fails", async () => {
+    let consumed = 0;
+    await expect(executeBudgetedProviderCall(
+      async () => ++consumed,
+      async () => { throw new Error("PROVIDER_TIMEOUT"); },
+    )).rejects.toThrow("PROVIDER_TIMEOUT");
+    expect(consumed).toBe(1);
+  });
+});
