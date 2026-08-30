@@ -25,7 +25,7 @@ Project: `tocomboys-projects/motocast`.
 
 Read back project settings without printing environment values. When environment entries are audited, print names, targets, and IDs only.
 
-Verified Preview configuration on 2026-08-31: the three public names above exist only as `Preview (develop)` Config entries, and no server-only/provider/budget name remains in that Vercel scope. Production settings are intentionally frozen until the post-Preview `OPS-008` interview.
+Verified Preview configuration on 2026-08-31: the three public names above exist as `Preview (develop)` Config entries. A deployment-level pull exposed seven older server-only names that had been mistakenly targeted to both Preview and Production; after user confirmation they were Preview credentials rather than created Production credentials, all seven were removed from Vercel. No server-only/provider/budget name now remains in either Vercel environment. Production credentials are not yet created and remain deferred until the post-Preview `OPS-008` interview.
 
 ## Supabase promotion order
 
