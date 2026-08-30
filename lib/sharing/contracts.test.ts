@@ -77,6 +77,7 @@ describe("parseSharedRideSnapshot", () => {
         stale: true,
         staleObservedAt: "2026-08-30T23:40:00.000Z",
         staleReason: "기상청 요청에 실패했습니다.",
+        failureKind: "provider",
         candidateProfile: "balanced",
         segments: [{
           id: "balanced-0",
@@ -99,6 +100,6 @@ describe("parseSharedRideSnapshot", () => {
       model: "ultra",
       condition: "clear",
     });
-    expect(parseSharedRideSnapshot(withWeather).weather).toMatchObject({ stale: true, staleReason: "기상청 요청에 실패했습니다." });
+    expect(parseSharedRideSnapshot(withWeather).weather).toMatchObject({ stale: true, staleReason: "기상청 요청에 실패했습니다.", failureKind: "provider" });
   });
 });

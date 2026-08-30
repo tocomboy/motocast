@@ -10,6 +10,7 @@ const staleResponse: WeatherTimelineResponse = {
   source: "snapshot",
   stale: true,
   staleReason: "KMA_REQUEST_FAILED",
+  failureKind: "provider",
   staleObservedAt: "2026-08-31T03:30:00.000Z",
   forecasts: [],
 };
@@ -20,9 +21,34 @@ describe("formatPlannerWeatherStatus", () => {
     expect(status.expired).toBe(true);
     expect(status.header).toMatch(/2026.*08.*29/);
     expect(status.header).toContain("2일 3시간 전");
-    expect(status.header).toContain("공급자 실패 후 저장본");
+    expect(status.header).toContain("기상청 공급자 오류 후 저장본");
     expect(status.header).toContain("만료");
     expect(status.notice).toContain("2일 3시간 전");
     expect(status.notice).toContain("만료");
+  });
+
+  it("uses the current clock for age and expiry instead of the stale observation time", () => {
+    const beforeExpiry = formatPlannerWeatherStatus({
+      ...staleResponse,
+      generatedAt: "2026-08-31T02:00:00.000Z",
+      validUntil: "2026-08-31T04:00:00.000Z",
+      staleObservedAt: "2026-08-31T03:30:00.000Z",
+    }, "2026-08-31T03:30:00.000Z");
+    const afterExpiry = formatPlannerWeatherStatus({
+      ...staleResponse,
+      generatedAt: "2026-08-31T02:00:00.000Z",
+      validUntil: "2026-08-31T04:00:00.000Z",
+      staleObservedAt: "2026-08-31T03:30:00.000Z",
+    }, "2026-08-31T04:30:00.000Z");
+    expect(beforeExpiry.expired).toBe(false);
+    expect(afterExpiry.expired).toBe(true);
+    expect(afterExpiry.header).toContain("2시간 30분 전");
+    expect(afterExpiry.header).toContain("12:30 실패 확인");
+  });
+
+  it("distinguishes budget, configuration, and persistence fallbacks", () => {
+    expect(formatPlannerWeatherStatus({ ...staleResponse, failureKind: "budget" }, staleResponse.staleObservedAt!).notice).toContain("무료 API 한도 소진");
+    expect(formatPlannerWeatherStatus({ ...staleResponse, failureKind: "configuration" }, staleResponse.staleObservedAt!).notice).toContain("날씨 설정 오류");
+    expect(formatPlannerWeatherStatus({ ...staleResponse, failureKind: "persistence" }, staleResponse.staleObservedAt!).notice).toContain("날씨 저장 처리 오류");
   });
 });

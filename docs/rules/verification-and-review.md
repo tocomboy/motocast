@@ -76,12 +76,12 @@ The two-connection collection and invitation/budget suites require the disposabl
 
 Additional required suites by boundary:
 
-- Auth/RLS: administrator, Rider A, Rider B, revoked member, authenticated non-member, anonymous; complete service-role DML/RPC allow/deny matrix and migration-role future-table default-ACL probe.
+- Auth/RLS: administrator, Rider A, Rider B, revoked member, authenticated non-member, anonymous; service-role direct DML denial on every application table, exact five-function service-role allowlist, and migration-role future-table/function default-ACL probes.
 - Invitations: create, invalid, expiry, revoke, same-origin JSON acceptance, cross-site/non-JSON denial without cookie, same-user idempotency, distinct-user concurrency.
 - Sharing: preview, publish, immutable source edit, revoke, reissue, unknown/revoked token, cross-user management denial.
 - Budget: missing, zero, below limit, exact limit, exhausted, concurrent calls, Seoul date rollover, provider failure decision.
-- Routes: provider request interception on current/future/split calls, documented no-route result classification versus malformed/unknown provider responses, waypoint boundaries, hard-return filtering, distinct candidate identity, no passenger-car fallback.
-- Weather: six-hour and five-day exact boundaries, grid conversion, cache deduplication, snapshot success/failure/stale/no-snapshot, full multi-day age and simultaneous provider-failure/expiry display.
+- Routes: provider request interception on current/future/split calls, documented no-route result classification versus malformed/unknown provider responses, winding-only zero-dwell pass-through validation, required-stop preservation, waypoint boundaries, hard-return filtering, distinct candidate identity, no passenger-car fallback.
+- Weather: six-hour and five-day exact boundaries, grid conversion, cache deduplication, structured provider/budget/configuration/persistence/request failure kinds, snapshot success/failure/stale/no-snapshot, independently advancing multi-day age and simultaneous failure/expiry display.
 - Browser/PWA: mobile and desktop, keyboard/focus/labels, loading/error/stale/live, manifest/service worker update.
 
 ## 4. Commit and fixed-SHA review boundary

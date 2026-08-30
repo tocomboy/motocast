@@ -72,6 +72,20 @@ describe("parseRouteRequest", () => {
     expect(parsed.waypoints[1].dwellMinutes).toBe(0);
   });
 
+  it("accepts only zero-dwell pass-through points as winding-only waypoints", async () => {
+    const winding = await point({ kakaoPlaceId: "winding", winding: true });
+    await expect(parseRouteRequest(await request([winding]), secret)).resolves.toMatchObject({
+      waypoints: [expect.objectContaining({ stopRole: "lunch" }), expect.objectContaining({ kakaoPlaceId: "winding", winding: true })],
+    });
+
+    const windingLunch = await request();
+    windingLunch.waypoints[0].winding = true;
+    await expect(parseRouteRequest(windingLunch, secret)).rejects.toThrow("INVALID_WAYPOINTS");
+
+    const windingRest = await point({ kind: "optional", dwellMinutes: 30, stopRole: "rest", winding: true });
+    await expect(parseRouteRequest(await request([windingRest]), secret)).rejects.toThrow("INVALID_WAYPOINTS");
+  });
+
   it("rejects normalized or timezone-less departure timestamps", async () => {
     const impossible = { ...await request(), departureAt: "2026-02-31T07:30:00+09:00" };
     await expect(parseRouteRequest(impossible, secret)).rejects.toThrow("INVALID_ROUTE_TIME");

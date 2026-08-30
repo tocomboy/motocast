@@ -1,6 +1,6 @@
 import { parseSafeRouteCandidateSet, type SafeRouteResponse } from "../planner/provider-contract";
 import { parseStrictRfc3339 } from "../../supabase/functions/_shared/strict-time";
-import { parseWeatherForecast, type WeatherForecast } from "../weather/provider-contract";
+import { parseWeatherForecast, type WeatherFailureKind, type WeatherForecast } from "../weather/provider-contract";
 
 export type SharedPlace = {
   id: string;
@@ -41,6 +41,7 @@ export type SharedRideSnapshot = {
     stale: boolean;
     staleObservedAt: string | null;
     staleReason: string | null;
+    failureKind: WeatherFailureKind | null;
     candidateProfile: "balanced" | "winding" | "short";
     segments: WeatherForecast[];
   };
@@ -113,6 +114,9 @@ export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
       typeof parsed.stale !== "boolean" ||
       !(parsed.staleObservedAt === null || typeof parsed.staleObservedAt === "string") ||
       !(parsed.staleReason === null || (typeof parsed.staleReason === "string" && parsed.staleReason.length <= 200)) ||
+      !(parsed.failureKind === null || ["provider", "budget", "configuration", "persistence", "request"].includes(String(parsed.failureKind))) ||
+      (parsed.stale && parsed.failureKind === null) ||
+      (!parsed.stale && parsed.failureKind !== null) ||
       !Array.isArray(parsed.segments) || parsed.segments.length < 1 || parsed.segments.length > 40
     ) throw new Error("INVALID_SHARE_SNAPSHOT");
     return {
@@ -123,6 +127,7 @@ export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
       stale: parsed.stale,
       staleObservedAt: parsed.staleObservedAt === null ? null : timestamp(parsed.staleObservedAt),
       staleReason: parsed.staleReason,
+      failureKind: parsed.failureKind as WeatherFailureKind | null,
       candidateProfile: parsed.candidateProfile as "balanced" | "winding" | "short",
       segments: parsed.segments.map(parseWeatherForecast),
     };

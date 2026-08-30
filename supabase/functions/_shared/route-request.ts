@@ -26,6 +26,14 @@ export type RouteRequest = {
   candidate: "balanced" | "winding" | "short";
 };
 
+export function isWindingOnlyWaypoint(point: Pick<RoutePointRequest, "kind" | "dwellMinutes" | "winding" | "stopRole">) {
+  return point.winding === true && point.kind === "pass-through" && point.dwellMinutes === 0 && point.stopRole === undefined;
+}
+
+function hasValidWindingSemantics(point: Pick<RoutePointRequest, "kind" | "dwellMinutes" | "winding" | "stopRole">) {
+  return point.winding !== true || isWindingOnlyWaypoint(point);
+}
+
 function validPoint(value: unknown): value is RoutePointRequest {
   if (!value || typeof value !== "object") return false;
   const point = value as Partial<RoutePointRequest>;
@@ -44,7 +52,8 @@ function validPoint(value: unknown): value is RoutePointRequest {
     (point.winding === undefined || typeof point.winding === "boolean") &&
     (point.stopRole === undefined || ["lunch", "dinner", "rest"].includes(point.stopRole)) &&
     typeof point.dwellMinutes === "number" && Number.isInteger(point.dwellMinutes) &&
-    point.dwellMinutes >= 0 && point.dwellMinutes <= 1440
+    point.dwellMinutes >= 0 && point.dwellMinutes <= 1440 &&
+    hasValidWindingSemantics(point as Pick<RoutePointRequest, "kind" | "dwellMinutes" | "winding" | "stopRole">)
   );
 }
 

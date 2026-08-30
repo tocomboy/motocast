@@ -23,6 +23,7 @@ import {
   demoMapPoints,
 } from "@/lib/planner/demo";
 import { PlannerActionGate } from "@/lib/planner/action-gate";
+import { withClientTimeout } from "@/lib/planner/client-timeout";
 import { parseSafeRouteCandidateSet, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
 import { buildTimeline, formatKoreanTime, weatherRiskLabel } from "@/lib/planner/schedule";
 import type { RouteCandidate } from "@/lib/planner/types";
@@ -169,6 +170,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const [liveTripId, setLiveTripId] = useState<string | null>(null);
   const [weatherByCandidate, setWeatherByCandidate] = useState<Partial<Record<RouteCandidate["id"], WeatherTimelineResponse>>>({});
   const [weatherLoading, setWeatherLoading] = useState<RouteCandidate["id"] | null>(null);
+  const [weatherClock, setWeatherClock] = useState<string | null>(null);
   const [liveResultStale, setLiveResultStale] = useState(false);
   const [waypointStatus, setWaypointStatus] = useState("");
   const [isCompact, setIsCompact] = useState(false);
@@ -250,8 +252,19 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const selected = displayedCandidates.find((candidate) => candidate.id === selectedId) ?? displayedCandidates[0];
   const selectedWeather = weatherByCandidate[selectedId];
   const selectedWeatherStatus = selectedWeather
-    ? formatPlannerWeatherStatus(selectedWeather, selectedWeather.staleObservedAt ?? new Date().toISOString())
+    ? formatPlannerWeatherStatus(selectedWeather, weatherClock ?? selectedWeather.staleObservedAt ?? selectedWeather.generatedAt)
     : null;
+
+  useEffect(() => {
+    if (!selectedWeather) return;
+    const refresh = () => setWeatherClock(new Date().toISOString());
+    const initial = window.setTimeout(refresh, 0);
+    const timer = window.setInterval(refresh, 30_000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
+  }, [selectedWeather]);
   const liveTimes = {
     departureAt: `${draft.rideDate}T${draft.departureTime}:00+09:00`,
     desiredReturnAt: `${draft.rideDate}T${draft.desiredReturnTime}:00+09:00`,
@@ -454,9 +467,14 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       eta: segment.arrivalAt!,
     }));
     try {
-      const { data, error } = await supabase.functions.invoke("weather-timeline", {
-        body: { tripId, candidateProfile: candidate.id, points },
-      });
+      const weatherOperation: PromiseLike<{ data: unknown; error: unknown }> = supabase.functions.invoke(
+        "weather-timeline",
+        { body: { tripId, candidateProfile: candidate.id, points } },
+      );
+      const { data, error } = await withClientTimeout(
+        weatherOperation,
+        12_000,
+      );
       if (
         weatherRequest !== weatherRequestRef.current ||
         generation !== routeGenerationRef.current ||
@@ -506,10 +524,6 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
           };
         }),
       })) ?? null);
-      setNotice(formatPlannerWeatherStatus(
-        response,
-        response.staleObservedAt ?? new Date().toISOString(),
-      ).notice);
     } catch {
       setNotice("날씨 공급자 응답을 안전하게 확인하지 못해 날씨를 표시하지 않았습니다.");
     } finally {
@@ -537,6 +551,13 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     const tripId = liveTripId;
     const generation = routeGenerationRef.current;
     const intent = ++selectionIntentRef.current;
+    let selectionReleased = false;
+    const releaseSelection = () => {
+      if (selectionReleased) return;
+      selectionReleased = true;
+      selectionLease.release();
+      if (intent === selectionIntentRef.current) setSelectionPending(false);
+    };
     setSelectionPending(true);
     selectionQueueRef.current = selectionQueueRef.current.then(async () => {
       if (generation !== routeGenerationRef.current || liveTripIdRef.current !== tripId) return;
@@ -546,29 +567,29 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         target_trip_id: tripId,
         target_profile: candidate.id,
       });
-      if (generation !== routeGenerationRef.current || liveTripIdRef.current !== tripId) return;
       if (error) {
-        if (intent === selectionIntentRef.current) {
+        if (
+          intent === selectionIntentRef.current &&
+          generation === routeGenerationRef.current &&
+          liveTripIdRef.current === tripId
+        ) {
           setSelectedId(persistedSelectedRef.current);
           setNotice("선택 경로를 저장하지 못해 마지막 저장 경로로 되돌렸습니다.");
         }
         return;
       }
       persistedSelectedRef.current = candidate.id;
+      if (generation !== routeGenerationRef.current || liveTripIdRef.current !== tripId) return;
       if (intent === selectionIntentRef.current && !weatherByCandidate[candidate.id]) {
-        await loadWeather(candidate, tripId, generation);
+        releaseSelection();
+        void loadWeather(candidate, tripId, generation);
       }
     }).catch(() => {
       if (intent === selectionIntentRef.current && liveTripIdRef.current === tripId) {
         setSelectedId(persistedSelectedRef.current);
         setNotice("선택 경로 저장 중 오류가 발생해 마지막 저장 경로로 되돌렸습니다.");
       }
-    }).finally(() => {
-      selectionLease.release();
-      if (intent === selectionIntentRef.current) {
-        setSelectionPending(false);
-      }
-    });
+    }).finally(releaseSelection);
   }
 
   async function recalculate(event: FormEvent) {
@@ -744,7 +765,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
           </div>
 
           <form onSubmit={recalculate} className="planner-form">
-            <fieldset className="planner-fields" disabled={calculating} aria-busy={calculating}>
+            <fieldset className="planner-fields" disabled={calculating || selectionPending} aria-busy={calculating || selectionPending}>
             <section className="form-section">
               <div className="section-label"><span>01</span>경로</div>
               {connected ? (
@@ -935,6 +956,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                 );
               })}
             </div>
+            {selectedWeatherStatus ? (
+              <div className="stale-notice" role="status"><span>i</span>{selectedWeatherStatus.notice}</div>
+            ) : null}
             <div className="stale-notice" role="status"><span>i</span>{notice}</div>
           </div>
 

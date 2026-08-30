@@ -283,7 +283,8 @@ grant select on weather_result to authenticated, service_role;
 select public.mark_weather_snapshot_stale_internal(
   '71000000-0000-0000-0000-000000000001',
   (select id from weather_result),
-  'KMA_REQUEST_FAILED'
+  'KMA_REQUEST_FAILED',
+  'provider'
 );
 
 do $$
@@ -348,6 +349,7 @@ insert into tap_results values
   ((select preview_snapshot -> 'weather' ? 'validUntil' from preview_result), 'share exposes weather validity for freshness display'),
   ((select preview_snapshot -> 'weather' ->> 'stale' = 'true' from preview_result), 'share persists a provider-failure stale observation'),
   ((select preview_snapshot -> 'weather' ->> 'staleReason' = 'KMA_REQUEST_FAILED' from preview_result), 'share exposes only the safe stale reason'),
+  ((select preview_snapshot -> 'weather' ->> 'failureKind' = 'provider' from preview_result), 'share exposes the safe structured stale failure kind'),
   ((select char_length(share_token) = 43 from published_result), 'share token contains 32 random base64url bytes'),
   ((select token_hash <> share_token and char_length(token_hash) = 64 from public.share_links cross join published_result), 'database stores only the share token hash'),
   ((select published_snapshot::text not like '%verificationToken%' from published_result), 'public snapshot recursively excludes internal place verification proofs');

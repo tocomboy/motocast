@@ -1,6 +1,7 @@
 import { KakaoMapCanvas } from "@/components/kakao-map-canvas";
 import { formatElapsedAge, formatKoreanDateTime, formatKoreanTime } from "@/lib/planner/schedule";
 import type { SharedRideSnapshot } from "@/lib/sharing/contracts";
+import { weatherFailureLabel } from "@/lib/weather/status";
 
 function minutes(value: number) {
   return `${Math.ceil(value / 60)}분`;
@@ -112,7 +113,7 @@ export function SharedRideSnapshotView({
           <>
             <p className={`shared-weather-state ${weatherStale ? "stale" : "fresh"}`}>
               {formatKoreanDateTime(snapshot.weather.issuedAt)} 발행 · {formatKoreanDateTime(snapshot.weather.retrievedAt)} 저장 ({formatElapsedAge(snapshot.weather.retrievedAt, referenceTime)})
-              {snapshot.weather.stale ? ` · 공급자 실패 후 저장본${snapshot.weather.staleObservedAt ? ` · ${formatKoreanDateTime(snapshot.weather.staleObservedAt)} 실패 확인` : ""}` : ""}
+              {snapshot.weather.stale ? ` · ${weatherFailureLabel(snapshot.weather.failureKind ?? undefined)} 후 저장본${snapshot.weather.staleObservedAt ? ` · ${formatKoreanDateTime(snapshot.weather.staleObservedAt)} 실패 확인` : ""}` : ""}
               {weatherExpired ? " · 현재 기준 예보 유효기간 지남" : " · 현재 기준 예보 유효기간 안쪽"}
             </p>
             {snapshot.weather.stale && snapshot.weather.staleReason ? <p className="shared-weather-reason">{snapshot.weather.staleReason}</p> : null}

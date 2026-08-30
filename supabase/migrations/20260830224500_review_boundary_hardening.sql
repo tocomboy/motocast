@@ -68,7 +68,9 @@ create index if not exists share_preview_grants_expiry_idx
 alter table public.weather_snapshots
   add column if not exists stale_observed_at timestamptz,
   add column if not exists stale_reason text
-    check (stale_reason is null or char_length(stale_reason) between 1 and 200);
+    check (stale_reason is null or char_length(stale_reason) between 1 and 200),
+  add column if not exists stale_failure_kind text
+    check (stale_failure_kind is null or stale_failure_kind in ('provider', 'budget', 'configuration', 'persistence', 'request'));
 
 alter table public.route_plan_drafts enable row level security;
 alter table public.share_preview_grants enable row level security;
@@ -470,19 +472,21 @@ begin
 
   insert into public.weather_snapshots(
     trip_id, source, issued_at, valid_until, segments, request_hash,
-    candidate_profile, created_at, stale_observed_at, stale_reason
+    candidate_profile, created_at, stale_observed_at, stale_reason, stale_failure_kind
   ) values (
     target_trip_id, 'kma', target_issued_at, target_valid_until, target_segments,
-    target_request_hash, target_candidate_profile, target_created_at, null, null
+    target_request_hash, target_candidate_profile, target_created_at, null, null, null
   ) returning id into created_snapshot_id;
   return created_snapshot_id;
 end;
 $$;
 
+drop function if exists public.mark_weather_snapshot_stale_internal(uuid, uuid, text);
 create or replace function public.mark_weather_snapshot_stale_internal(
   member_id uuid,
   target_snapshot_id uuid,
-  safe_reason text
+  safe_reason text,
+  safe_failure_kind text
 )
 returns void
 language plpgsql
@@ -494,11 +498,12 @@ begin
   if member_id is null or not exists (
     select 1 from public.memberships where user_id = member_id and revoked_at is null
   ) then raise exception 'MEMBERSHIP_REQUIRED'; end if;
-  if safe_reason is null or char_length(btrim(safe_reason)) not between 1 and 200 then
+  if safe_reason is null or char_length(btrim(safe_reason)) not between 1 and 200
+     or safe_failure_kind not in ('provider', 'budget', 'configuration', 'persistence', 'request') then
     raise exception 'INVALID_WEATHER_SNAPSHOT';
   end if;
   update public.weather_snapshots w
-  set stale_observed_at = now(), stale_reason = btrim(safe_reason)
+  set stale_observed_at = now(), stale_reason = btrim(safe_reason), stale_failure_kind = safe_failure_kind
   from public.trips t
   where w.id = target_snapshot_id and t.id = w.trip_id and t.user_id = member_id;
   get diagnostics changed = row_count;
@@ -677,6 +682,7 @@ begin
         'stale', w.stale_observed_at is not null,
         'staleObservedAt', w.stale_observed_at,
         'staleReason', w.stale_reason,
+        'failureKind', w.stale_failure_kind,
         'candidateProfile', w.candidate_profile,
         'segments', public.share_weather_segments(w.segments)
       )
@@ -818,9 +824,10 @@ create policy "weather_trip_owner_read" on public.weather_snapshots for select
 create policy "share_links_owner_read" on public.share_links for select
   using (owner_id = auth.uid() and public.is_active_member());
 
-revoke insert, update, delete on public.riding_collections, public.collection_versions,
-  public.trips, public.trip_waypoints, public.route_cache, public.weather_snapshots,
-  public.share_links, public.route_plan_drafts, public.share_preview_grants
+revoke insert, update, delete on public.profiles, public.memberships, public.invitations,
+  public.riding_collections, public.collection_versions, public.trips, public.trip_waypoints,
+  public.route_cache, public.weather_snapshots, public.share_links, public.api_usage_daily,
+  public.route_plan_drafts, public.share_preview_grants
   from public, anon, authenticated, service_role;
 revoke select on public.route_plan_drafts, public.share_preview_grants from public, anon, authenticated, service_role;
 revoke truncate, references, trigger on public.profiles, public.memberships, public.invitations,
@@ -832,6 +839,25 @@ alter default privileges in schema public
   revoke truncate, references, trigger on tables from public, anon, authenticated, service_role;
 alter default privileges in schema public
   revoke insert, update, delete on tables from service_role;
+alter default privileges in schema public
+  revoke execute on functions from public, service_role;
+
+-- Supabase grants EXECUTE to PUBLIC for newly created functions. Make the service
+-- boundary an allowlist even for functions introduced by older migrations.
+do $revoke_service_functions$
+declare
+  function_signature text;
+begin
+  for function_signature in
+    select function.oid::regprocedure::text
+    from pg_proc function
+    join pg_namespace namespace on namespace.oid = function.pronamespace
+    where namespace.nspname = 'public'
+  loop
+    execute format('revoke execute on function %s from public, service_role', function_signature);
+  end loop;
+end;
+$revoke_service_functions$;
 
 revoke all on function public.consume_daily_api_budget(text, text, integer) from public, anon, authenticated, service_role;
 revoke all on function public.route_geometry_fingerprint(jsonb) from public, anon, authenticated, service_role;
@@ -841,7 +867,7 @@ revoke all on function public.save_collection_version(uuid, text, text, jsonb) f
 revoke all on function public.save_collection_version_internal(uuid, uuid, text, text, jsonb) from public, anon, authenticated;
 revoke all on function public.stage_route_candidate_internal(uuid, uuid, jsonb, jsonb) from public, anon, authenticated;
 revoke all on function public.insert_weather_snapshot_internal(uuid, uuid, text, timestamptz, timestamptz, jsonb, text, timestamptz) from public, anon, authenticated;
-revoke all on function public.mark_weather_snapshot_stale_internal(uuid, uuid, text) from public, anon, authenticated;
+revoke all on function public.mark_weather_snapshot_stale_internal(uuid, uuid, text, text) from public, anon, authenticated;
 revoke all on function public.save_trip_plan(jsonb, jsonb) from public, anon, authenticated, service_role;
 revoke all on function public.finalize_trip_plan(uuid, uuid) from public, anon, service_role;
 revoke all on function public.select_trip_candidate(uuid, text) from public, anon, service_role;
@@ -857,9 +883,15 @@ grant execute on function public.consume_daily_api_budget_internal(text, text, i
 grant execute on function public.save_collection_version_internal(uuid, uuid, text, text, jsonb) to service_role;
 grant execute on function public.stage_route_candidate_internal(uuid, uuid, jsonb, jsonb) to service_role;
 grant execute on function public.insert_weather_snapshot_internal(uuid, uuid, text, timestamptz, timestamptz, jsonb, text, timestamptz) to service_role;
-grant execute on function public.mark_weather_snapshot_stale_internal(uuid, uuid, text) to service_role;
+grant execute on function public.mark_weather_snapshot_stale_internal(uuid, uuid, text, text) to service_role;
+grant execute on function public.claim_invite(text) to authenticated;
+grant execute on function public.create_invite(interval) to authenticated;
 grant execute on function public.finalize_trip_plan(uuid, uuid) to authenticated;
 grant execute on function public.select_trip_candidate(uuid, text) to authenticated;
 grant execute on function public.delete_riding_collection(uuid) to authenticated;
 grant execute on function public.preview_trip_share(uuid) to authenticated;
 grant execute on function public.publish_trip_share(uuid, text) to authenticated;
+grant execute on function public.revoke_share(uuid) to authenticated;
+grant execute on function public.resolve_share(text) to anon, authenticated;
+grant execute on function public.is_active_member(uuid) to anon, authenticated;
+grant execute on function public.is_admin(uuid) to anon, authenticated;

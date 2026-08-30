@@ -47,4 +47,20 @@ describe("parseCollectionSaveRequest", () => {
       points: [point],
     }, secret)).rejects.toThrow("UNVERIFIED_PLACE");
   });
+
+  it("rejects a collection point that combines a winding flag with stop semantics", async () => {
+    const point = {
+      ...await requestPoint(),
+      selected: true,
+      kind: "stop",
+      dwellMinutes: 60,
+      stopRole: "lunch",
+    };
+    await expect(parseCollectionSaveRequest({
+      collectionId: null,
+      title: "잘못된 중첩",
+      description: "",
+      points: [point],
+    }, secret)).rejects.toThrow("INVALID_COLLECTION");
+  });
 });

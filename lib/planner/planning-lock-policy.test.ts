@@ -44,8 +44,20 @@ describe("planner persistence lock policy", () => {
     expect(source).toContain("actionGateRef.current.beginSelection()");
     expect(source).toContain("actionGateRef.current.canApplyCollection()");
     expect(source).toContain("disabled={calculating || selectionPending}");
-    expect(source).toContain('className="planner-fields" disabled={calculating}');
+    expect(source).toContain('className="planner-fields" disabled={calculating || selectionPending}');
     expect(source).toContain("<ShareManager tripId={liveTripId} disabled={calculating || selectionPending} />");
+  });
+
+  it("releases the selection lease before starting the non-blocking weather refresh", () => {
+    const selectionRpc = source.indexOf('supabase.rpc("select_trip_candidate"');
+    const weatherRefresh = source.indexOf("void loadWeather(candidate, tripId, generation)", selectionRpc);
+    const release = source.lastIndexOf("releaseSelection()", weatherRefresh);
+    expect(selectionRpc).toBeGreaterThan(-1);
+    expect(weatherRefresh).toBeGreaterThan(selectionRpc);
+    expect(source.slice(selectionRpc, weatherRefresh)).not.toContain("await loadWeather");
+    expect(release).toBeGreaterThan(selectionRpc);
+    expect(release).toBeLessThan(weatherRefresh);
+    expect(source).toContain("withClientTimeout(");
   });
 
   it("drops late weather responses before they can update global UI state", () => {

@@ -1,4 +1,4 @@
-import type { RoutePointRequest, RouteRequest } from "./route-request.ts";
+import { isWindingOnlyWaypoint, type RoutePointRequest, type RouteRequest } from "./route-request.ts";
 
 export type CandidatePolicy = {
   points: RoutePointRequest[];
@@ -12,10 +12,10 @@ export type CandidatePolicy = {
 };
 
 export function candidatePolicy(input: RouteRequest): CandidatePolicy {
-  const hasCustomWinding = input.waypoints.some((point) => point.winding === true);
+  const hasCustomWinding = input.waypoints.some(isWindingOnlyWaypoint);
   const waypoints = input.candidate === "winding"
     ? input.waypoints
-    : input.waypoints.filter((point) => point.winding !== true);
+    : input.waypoints.filter((point) => !isWindingOnlyWaypoint(point));
 
   if (input.candidate === "short") {
     return {

@@ -42,4 +42,19 @@ describe("parseCollectionRows", () => {
       collection_versions: [{ id: "v1", version_number: 1, created_at: "2026-08-31T00:00:00.000Z", points: [{ ...point, verificationToken: "short" }] }],
     }])).toThrow();
   });
+
+  it("rejects persisted winding points that also carry stop semantics", () => {
+    expect(() => parseCollectionRows([{
+      id: "collection-1",
+      title: "북한강",
+      description: "",
+      updated_at: "2026-08-31T00:00:00.000Z",
+      collection_versions: [{
+        id: "v1",
+        version_number: 1,
+        created_at: "2026-08-31T00:00:00.000Z",
+        points: [{ ...point, kind: "stop", dwellMinutes: 60, stopRole: "lunch" }],
+      }],
+    }])).toThrow("INVALID_COLLECTION_POINT");
+  });
 });

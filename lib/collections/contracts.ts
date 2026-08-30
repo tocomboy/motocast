@@ -45,6 +45,10 @@ export function parseCollectionPoint(value: unknown): CollectionPoint {
     typeof raw.selected !== "boolean" || typeof raw.winding !== "boolean" ||
     (raw.stopRole !== undefined && !["lunch", "dinner", "rest"].includes(String(raw.stopRole)))
   ) throw new Error("INVALID_COLLECTION_POINT");
+  if (
+    raw.winding === true &&
+    (raw.kind !== "pass-through" || Number(raw.dwellMinutes) !== 0 || raw.stopRole !== undefined)
+  ) throw new Error("INVALID_COLLECTION_POINT");
   return {
     ...place,
     id: raw.id,

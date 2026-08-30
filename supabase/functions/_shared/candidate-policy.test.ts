@@ -46,6 +46,17 @@ describe("candidatePolicy", () => {
     expect(candidatePolicy(request("balanced", [winding])).points).not.toContain(winding);
   });
 
+  it("never drops a required stop even if an untrusted caller overlaps the winding flag", () => {
+    const lunch = {
+      ...point("lunch", true),
+      kind: "stop" as const,
+      dwellMinutes: 60,
+      stopRole: "lunch" as const,
+    };
+    expect(candidatePolicy(request("balanced", [lunch])).points).toContain(lunch);
+    expect(candidatePolicy(request("short", [lunch])).points).toContain(lunch);
+  });
+
   it("requests alternatives and uses the honest label without custom winding points", () => {
     const policy = candidatePolicy(request("winding"));
     expect(policy.requestAlternatives).toBe(true);

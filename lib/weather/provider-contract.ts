@@ -16,6 +16,8 @@ export type WeatherForecast = {
   reason?: "FORECAST_WINDOW_EXCEEDED";
 };
 
+export type WeatherFailureKind = "provider" | "budget" | "configuration" | "persistence" | "request";
+
 export type WeatherTimelineResponse = {
   generatedAt: string;
   issuedAt: string;
@@ -23,6 +25,7 @@ export type WeatherTimelineResponse = {
   source: "live" | "cache" | "snapshot";
   stale: boolean;
   staleReason?: string;
+  failureKind?: WeatherFailureKind;
   staleObservedAt?: string | null;
   forecasts: WeatherForecast[];
 };
@@ -103,7 +106,9 @@ export function parseWeatherTimelineResponse(value: unknown): WeatherTimelineRes
     !Array.isArray(raw.forecasts) || raw.forecasts.length === 0 || raw.forecasts.length > 40 ||
     (raw.source === "snapshot") !== raw.stale ||
     (raw.stale && (typeof raw.staleReason !== "string" || raw.staleReason.length < 1 || raw.staleReason.length > 300)) ||
+    (raw.stale && !["provider", "budget", "configuration", "persistence", "request"].includes(String(raw.failureKind))) ||
     (raw.stale && typeof raw.staleObservedAt !== "string") ||
+    (!raw.stale && raw.failureKind !== undefined) ||
     (!raw.stale && raw.staleObservedAt !== undefined && raw.staleObservedAt !== null)
   ) throw new WeatherContractError("INVALID_WEATHER_RESPONSE");
 
@@ -118,6 +123,7 @@ export function parseWeatherTimelineResponse(value: unknown): WeatherTimelineRes
     source: raw.source as WeatherTimelineResponse["source"],
     stale: raw.stale,
     staleReason: raw.stale ? String(raw.staleReason) : undefined,
+    failureKind: raw.stale ? raw.failureKind as WeatherTimelineResponse["failureKind"] : undefined,
     staleObservedAt: raw.stale ? timestamp(raw.staleObservedAt) : null,
     forecasts: parsed,
   };

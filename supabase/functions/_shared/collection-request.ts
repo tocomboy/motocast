@@ -1,4 +1,5 @@
 import { verifyPlace, type VerifiablePlace } from "./place-verification.ts";
+import { isWindingOnlyWaypoint } from "./route-request.ts";
 
 export type CollectionSavePoint = VerifiablePlace & {
   id: string;
@@ -36,6 +37,12 @@ function parsePoint(value: unknown): CollectionSavePoint {
     typeof point.selected !== "boolean" || typeof point.winding !== "boolean" ||
     (point.stopRole !== undefined && !["lunch", "dinner", "rest"].includes(point.stopRole))
   ) throw new Error("INVALID_COLLECTION");
+  if (point.winding && !isWindingOnlyWaypoint({
+    kind: point.kind as CollectionSavePoint["kind"],
+    dwellMinutes: Number(point.dwellMinutes),
+    winding: point.winding,
+    stopRole: point.stopRole,
+  })) throw new Error("INVALID_COLLECTION");
   return {
     id: point.kakaoPlaceId,
     label: point.name.trim(),

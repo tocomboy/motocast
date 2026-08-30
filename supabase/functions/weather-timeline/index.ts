@@ -13,6 +13,7 @@ import {
 import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
 import { parseWeatherRequest, type WeatherPoint, type WeatherRequest } from "../_shared/weather-request.ts";
 import { assertWeatherPointsMatch, weatherPointsFromStoredRoute } from "../_shared/weather-route.ts";
+import { weatherFailureKind } from "../_shared/weather-failure.ts";
 
 type MemberClient = Awaited<ReturnType<typeof requireMember>>["supabase"];
 
@@ -72,7 +73,7 @@ async function readSnapshot(
 ) {
   let query = supabase
     .from("weather_snapshots")
-    .select("id,issued_at,valid_until,created_at,segments,stale_observed_at,stale_reason")
+    .select("id,issued_at,valid_until,created_at,segments,stale_observed_at,stale_reason,stale_failure_kind")
     .eq("trip_id", request.tripId)
     .eq("candidate_profile", request.candidateProfile)
     .eq("request_hash", requestHash)
@@ -94,6 +95,7 @@ async function readSnapshot(
     forecasts: data.segments,
     staleObservedAt: data.stale_observed_at === null ? null : String(data.stale_observed_at),
     staleReason: data.stale_reason === null ? null : String(data.stale_reason),
+    failureKind: data.stale_failure_kind === null ? null : String(data.stale_failure_kind),
   };
 }
 
@@ -203,11 +205,12 @@ async function persistSnapshot(
   return validUntil;
 }
 
-async function markSnapshotStale(memberId: string, snapshotId: string, reason: string) {
+async function markSnapshotStale(memberId: string, snapshotId: string, reason: string, failureKind: ReturnType<typeof weatherFailureKind>) {
   const { error } = await serviceClient().rpc("mark_weather_snapshot_stale_internal", {
     member_id: memberId,
     target_snapshot_id: snapshotId,
     safe_reason: reason,
+    safe_failure_kind: failureKind,
   });
   if (error) throw new Error("WEATHER_PERSIST_FAILED");
 }
@@ -253,13 +256,15 @@ Deno.serve(async (request) => {
         const stale = await readSnapshot(supabase, weatherRequest, requestHash, false);
         if (stale) {
           const staleReason = safeErrorMessage(error);
-          await markSnapshotStale(memberId, stale.snapshotId, staleReason);
+          const failureKind = weatherFailureKind(error);
+          await markSnapshotStale(memberId, stale.snapshotId, staleReason, failureKind);
           console.warn("weather-timeline stale fallback", error instanceof Error ? error.message : "unknown error");
           return jsonResponse({
             ...publicSnapshot(stale),
             source: "snapshot",
             stale: true,
             staleReason,
+            failureKind,
             staleObservedAt: new Date().toISOString(),
           }, 200, cors);
         }

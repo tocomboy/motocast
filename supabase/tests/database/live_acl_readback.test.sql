@@ -25,6 +25,9 @@ insert into acl_results(ok, description) values
 
 with protected_tables(table_name) as (
   values
+    ('profiles'),
+    ('memberships'),
+    ('invitations'),
     ('riding_collections'),
     ('collection_versions'),
     ('trips'),
@@ -32,6 +35,7 @@ with protected_tables(table_name) as (
     ('route_cache'),
     ('weather_snapshots'),
     ('share_links'),
+    ('api_usage_daily'),
     ('route_plan_drafts'),
     ('share_preview_grants')
 ), dml(privilege_name) as (
@@ -57,7 +61,7 @@ with allowed(function_signature) as (
     ('public.save_collection_version_internal(uuid,uuid,text,text,jsonb)'),
     ('public.stage_route_candidate_internal(uuid,uuid,jsonb,jsonb)'),
     ('public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)'),
-    ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text)')
+    ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)')
 )
 insert into acl_results(ok, description)
 select
@@ -67,6 +71,8 @@ from allowed;
 
 with denied(function_signature) as (
   values
+    ('public.claim_invite(text)'),
+    ('public.create_invite(interval)'),
     ('public.consume_daily_api_budget(text,text,integer)'),
     ('public.save_collection_version(uuid,text,text,jsonb)'),
     ('public.save_trip_plan(jsonb,jsonb)'),
@@ -75,6 +81,9 @@ with denied(function_signature) as (
     ('public.delete_riding_collection(uuid)'),
     ('public.preview_trip_share(uuid)'),
     ('public.publish_trip_share(uuid,text)'),
+    ('public.revoke_share(uuid)'),
+    ('public.resolve_share(text)'),
+    ('public.build_trip_share_snapshot(uuid,uuid)'),
     ('public.share_place(jsonb)'),
     ('public.share_route_point(jsonb)'),
     ('public.share_route(jsonb)'),
@@ -86,6 +95,26 @@ select
   format('service role cannot bypass ownership through RPC %s', function_signature)
 from denied;
 
+with allowed(function_oid) as (
+  values
+    ('public.consume_daily_api_budget_internal(text,text,integer,uuid)'::regprocedure::oid),
+    ('public.save_collection_version_internal(uuid,uuid,text,text,jsonb)'::regprocedure::oid),
+    ('public.stage_route_candidate_internal(uuid,uuid,jsonb,jsonb)'::regprocedure::oid),
+    ('public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)'::regprocedure::oid),
+    ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)'::regprocedure::oid)
+)
+insert into acl_results(ok, description)
+select
+  not has_function_privilege('service_role', function.oid, 'EXECUTE'),
+  format('service role cannot execute non-allowlisted public function %s', function.oid::regprocedure)
+from pg_proc function
+join pg_namespace namespace on namespace.oid = function.pronamespace
+where namespace.nspname = 'public'
+  and not exists (
+    select 1 from allowed
+    where allowed.function_oid = function.oid
+  );
+
 insert into acl_results(ok, description)
 select
   not exists (
@@ -93,7 +122,7 @@ select
     from pg_default_acl defaults
     join pg_namespace namespace on namespace.oid = defaults.defaclnamespace
     cross join lateral aclexplode(defaults.defaclacl) privilege
-    join pg_roles grantee on grantee.oid = privilege.grantee
+    left join pg_roles grantee on grantee.oid = privilege.grantee
     where namespace.nspname = 'public'
       and defaults.defaclobjtype = 'r'
       and defaults.defaclrole = 'postgres'::regrole
@@ -101,6 +130,22 @@ select
       and privilege.privilege_type in ('INSERT', 'UPDATE', 'DELETE')
   ),
   'public table defaults do not grant service-role direct DML';
+
+insert into acl_results(ok, description)
+select
+  not exists (
+    select 1
+    from pg_default_acl defaults
+    join pg_namespace namespace on namespace.oid = defaults.defaclnamespace
+    cross join lateral aclexplode(defaults.defaclacl) privilege
+    left join pg_roles grantee on grantee.oid = privilege.grantee
+    where namespace.nspname = 'public'
+      and defaults.defaclobjtype = 'f'
+      and defaults.defaclrole = 'postgres'::regrole
+      and (privilege.grantee = 0 or grantee.rolname = 'service_role')
+      and privilege.privilege_type = 'EXECUTE'
+  ),
+  'public function defaults do not grant service-role inherited execute';
 
 set local role postgres;
 create table public.motocast_acl_future_probe(id bigint primary key);
