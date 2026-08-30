@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# tests and tooling
+coverage/
+*.tsbuildinfo
+
+# local environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Supabase local state
+.supabase/
+supabase/.temp/
+
+# deployment
+.vercel/
+
+# editor and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# logs
+*.log
+npm-debug.log*
