@@ -1,24 +1,23 @@
 import { serviceClient } from "../_shared/auth.ts";
 import { corsHeaders, jsonResponse } from "../_shared/http.ts";
 import {
+  handleKakaoOidcCallback,
+  type KakaoOidcCallbackRuntime,
+  type KakaoOidcProviderCredentials,
+  type KakaoOidcVerificationEnvironment,
+} from "../_shared/kakao-oidc-callback.ts";
+import {
   allowedOriginsFromEnvironment,
-  authenticatedOidcReturnTo,
-  clearOidcCookie,
-  createHandoffToken,
   createOidcAttempt,
   decryptKakaoTokenPayload,
-  encryptKakaoTokenPayload,
   isHandoffToken,
   isOidcBindingHash,
   kakaoAuthorizeUrl,
   KAKAO_OIDC_CALLBACK_PATH,
-  KAKAO_OIDC_HANDOFF_TTL_MS,
-  oidcCookieFromHeader,
   parseKakaoTokenResponse,
   setOidcCookie,
   sha256Hex,
   validatedReturnTo,
-  verifyOidcAttempt,
 } from "../_shared/kakao-oidc.ts";
 
 const noStoreHeaders = {
@@ -39,29 +38,29 @@ function genericFailure(status = 400, cookie?: string) {
   return new Response("카카오 로그인 요청을 확인할 수 없습니다.", { status, headers });
 }
 
-function configuredEnvironment() {
-  const clientId = Deno.env.get("KAKAO_REST_API_KEY");
-  const clientSecret = Deno.env.get("KAKAO_LOGIN_CLIENT_SECRET");
+function verificationEnvironment(): KakaoOidcVerificationEnvironment {
   const stateSecret = Deno.env.get("KAKAO_OIDC_STATE_SECRET");
-  if (!clientId || !clientSecret || !stateSecret) throw new Error("OIDC_PROVIDER_NOT_CONFIGURED");
+  if (!stateSecret) throw new Error("OIDC_STATE_NOT_CONFIGURED");
   return {
-    clientId,
-    clientSecret,
     stateSecret,
     allowedOrigins: allowedOriginsFromEnvironment(Deno.env.get("ALLOWED_ORIGINS")),
   };
+}
+
+function providerCredentials(): KakaoOidcProviderCredentials {
+  const clientId = Deno.env.get("KAKAO_REST_API_KEY");
+  const clientSecret = Deno.env.get("KAKAO_LOGIN_CLIENT_SECRET");
+  if (!clientId || !clientSecret) throw new Error("OIDC_PROVIDER_NOT_CONFIGURED");
+  return { clientId, clientSecret };
 }
 
 function callbackUri(request: Request): string {
   return new URL(KAKAO_OIDC_CALLBACK_PATH, new URL(request.url).origin).toString();
 }
 
-function applicationFailureUrl(returnTo: string | URL): string {
-  return new URL("/auth/kakao/callback?error=callback", new URL(returnTo).origin).toString();
-}
-
 async function start(request: Request): Promise<Response> {
-  const environment = configuredEnvironment();
+  const environment = verificationEnvironment();
+  const credentials = providerCredentials();
   const url = new URL(request.url);
   const returnTo = validatedReturnTo(url.searchParams.get("return_to"), environment.allowedOrigins);
   const bindingHash = url.searchParams.get("binding_hash");
@@ -71,21 +70,20 @@ async function start(request: Request): Promise<Response> {
     bindingHash,
     environment.stateSecret,
   );
-  const authorize = kakaoAuthorizeUrl(environment.clientId, callbackUri(request), attempt, authorizeNonce);
+  const authorize = kakaoAuthorizeUrl(credentials.clientId, callbackUri(request), attempt, authorizeNonce);
   return redirect(authorize.toString(), setOidcCookie(cookieValue));
 }
 
 async function exchangeKakaoCode(
   code: string,
   request: Request,
-  clientId: string,
-  clientSecret: string,
+  credentials: KakaoOidcProviderCredentials,
 ): Promise<{ idToken: string; accessToken: string }> {
   if (!/^[A-Za-z0-9_-]{1,512}$/u.test(code)) throw new Error("OIDC_CODE_INVALID");
   const body = new URLSearchParams({
     grant_type: "authorization_code",
-    client_id: clientId,
-    client_secret: clientSecret,
+    client_id: credentials.clientId,
+    client_secret: credentials.clientSecret,
     redirect_uri: callbackUri(request),
     code,
   });
@@ -99,48 +97,24 @@ async function exchangeKakaoCode(
   return parseKakaoTokenResponse(await response.json());
 }
 
-async function callback(request: Request): Promise<Response> {
-  const environment = configuredEnvironment();
-  const url = new URL(request.url);
-  const attempt = await verifyOidcAttempt(
-    oidcCookieFromHeader(request.headers.get("cookie")),
-    url.searchParams.get("state"),
-    environment.allowedOrigins,
-    environment.stateSecret,
-  );
-  const clearCookie = clearOidcCookie();
-  const errorUrl = applicationFailureUrl(attempt.returnTo);
-  if (url.searchParams.has("error")) return redirect(errorUrl, clearCookie);
-
-  try {
-    const code = url.searchParams.get("code");
-    if (!code) throw new Error("OIDC_CODE_INVALID");
-    const provider = await exchangeKakaoCode(code, request, environment.clientId, environment.clientSecret);
-    const now = Date.now();
-    const encryptedPayload = await encryptKakaoTokenPayload({
-      ...provider,
-      nonce: attempt.nonce,
-      bindingHash: attempt.bindingHash,
-      expiresAt: now + KAKAO_OIDC_HANDOFF_TTL_MS,
-    }, environment.stateSecret);
-    const handoff = createHandoffToken();
-    const handoffHash = await sha256Hex(handoff);
+const callbackRuntime: KakaoOidcCallbackRuntime = {
+  verificationEnvironment,
+  providerCredentials,
+  exchangeCode: exchangeKakaoCode,
+  persistHandoff: async (input) => {
     const { error } = await serviceClient().rpc("create_kakao_oidc_handoff_internal", {
-      handoff_hash: handoffHash,
-      handoff_binding_hash: attempt.bindingHash,
-      handoff_payload: encryptedPayload,
-      handoff_expires_at: new Date(now + KAKAO_OIDC_HANDOFF_TTL_MS).toISOString(),
+      handoff_hash: input.handoffHash,
+      handoff_binding_hash: input.bindingHash,
+      handoff_payload: input.encryptedPayload,
+      handoff_expires_at: input.expiresAt,
     });
     if (error) throw new Error("OIDC_HANDOFF_PERSISTENCE_FAILED");
-    return redirect(`${attempt.returnTo}#${handoff}`, clearCookie);
-  } catch (error) {
-    console.error("kakao-oidc callback failed", error instanceof Error ? error.message : "unknown error");
-    return redirect(errorUrl, clearCookie);
-  }
-}
+  },
+  now: Date.now,
+};
 
 async function consume(request: Request): Promise<Response> {
-  const environment = configuredEnvironment();
+  const environment = verificationEnvironment();
   const origin = request.headers.get("origin");
   const cors = corsHeaders(request);
   if (!origin || !environment.allowedOrigins.includes(origin) || !cors) {
@@ -181,27 +155,13 @@ Deno.serve(async (request) => {
   const pathname = new URL(request.url).pathname;
   try {
     if (pathname.endsWith("/start") && request.method === "GET") return await start(request);
-    if (pathname.endsWith("/callback") && request.method === "GET") return await callback(request);
+    if (pathname.endsWith("/callback") && request.method === "GET") {
+      return await handleKakaoOidcCallback(request, callbackRuntime);
+    }
     if (pathname.endsWith("/consume")) return await consume(request);
     return genericFailure(404);
   } catch (error) {
     console.error("kakao-oidc request failed", error instanceof Error ? error.message : "unknown error");
-    if (pathname.endsWith("/callback")) {
-      try {
-        const environment = configuredEnvironment();
-        const returnTo = await authenticatedOidcReturnTo(
-          oidcCookieFromHeader(request.headers.get("cookie")),
-          environment.allowedOrigins,
-          environment.stateSecret,
-        );
-        return redirect(applicationFailureUrl(returnTo), clearOidcCookie());
-      } catch {
-        return genericFailure(
-          error instanceof Error && error.message.includes("NOT_CONFIGURED") ? 503 : 400,
-          clearOidcCookie(),
-        );
-      }
-    }
     return genericFailure(
       error instanceof Error && error.message.includes("NOT_CONFIGURED") ? 503 : 400,
       undefined,
