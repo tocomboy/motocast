@@ -29,11 +29,11 @@ export function KakaoLoginButton({ inviteReady }: { inviteReady: boolean }) {
 
   return (
     <div className="login-action">
-      <button className="kakao-button" type="button" onClick={login} disabled={loading || !inviteReady}>
+      <button className="kakao-button" type="button" onClick={login} disabled={loading}>
         <span aria-hidden="true">K</span>
         {loading ? "카카오로 이동 중…" : "카카오로 계속하기"}
       </button>
-      {!inviteReady ? <p>관리자가 보낸 1회용 초대 링크로 접속해야 합니다.</p> : null}
+      {!inviteReady ? <p>기존 멤버는 로그인할 수 있습니다. 처음 가입하는 라이더는 관리자 초대 링크가 필요합니다.</p> : null}
       {error ? <p className="field-error" role="alert">{error}</p> : null}
     </div>
   );

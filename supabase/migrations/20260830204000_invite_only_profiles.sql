@@ -78,7 +78,9 @@ begin
     return;
   end if;
 
-  if invitation.consumed_by is not null then
+  -- consumed_at is the durable one-time tombstone. If a consumed Auth user is
+  -- later deleted, ON DELETE SET NULL must not make the invitation reusable.
+  if invitation.consumed_by is not null or invitation.consumed_at is not null then
     raise exception 'INVITE_ALREADY_USED';
   end if;
 
@@ -86,7 +88,8 @@ begin
   set consumed_by = current_user_id,
       consumed_at = now()
   where id = invitation.id
-    and consumed_by is null;
+    and consumed_by is null
+    and consumed_at is null;
   get diagnostics affected_rows = row_count;
   if affected_rows <> 1 then
     raise exception 'INVITE_ALREADY_USED';

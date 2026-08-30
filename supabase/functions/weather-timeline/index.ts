@@ -1,13 +1,6 @@
 import { consumeBudget, requireMember } from "../_shared/auth.ts";
 import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
-
-type WeatherPoint = {
-  id: string;
-  label: string;
-  longitude: number;
-  latitude: number;
-  eta: string;
-};
+import { parseWeatherPoints, type WeatherPoint } from "../_shared/weather-request.ts";
 
 type KmaItem = {
   baseDate: string;
@@ -28,31 +21,6 @@ function parseLimit() {
   const value = Number(Deno.env.get("KMA_DAILY_LIMIT"));
   if (!Number.isInteger(value) || value <= 0) throw new Error("API_BUDGET_NOT_CONFIGURED");
   return value;
-}
-
-function parsePoints(value: unknown): WeatherPoint[] {
-  if (!value || typeof value !== "object" || !Array.isArray((value as { points?: unknown }).points)) {
-    throw new Error("INVALID_REQUEST");
-  }
-  const points = (value as { points: unknown[] }).points;
-  if (points.length === 0 || points.length > 40) throw new Error("INVALID_POINTS");
-  return points.map((raw, index) => {
-    if (!raw || typeof raw !== "object") throw new Error("INVALID_POINT");
-    const point = raw as Partial<WeatherPoint>;
-    const eta = new Date(point.eta ?? "");
-    if (
-      typeof point.longitude !== "number" || point.longitude < 124 || point.longitude > 132 ||
-      typeof point.latitude !== "number" || point.latitude < 32 || point.latitude > 39.5 ||
-      Number.isNaN(eta.getTime()) || eta.getTime() < Date.now() - 60 * 60_000
-    ) throw new Error("INVALID_POINT");
-    return {
-      id: typeof point.id === "string" ? point.id.slice(0, 100) : `point-${index}`,
-      label: typeof point.label === "string" ? point.label.slice(0, 160) : `지점 ${index + 1}`,
-      longitude: point.longitude,
-      latitude: point.latitude,
-      eta: eta.toISOString(),
-    };
-  });
 }
 
 function kstParts(date: Date) {
@@ -201,7 +169,7 @@ Deno.serve(async (request) => {
 
   try {
     const { supabase } = await requireMember(request);
-    const points = parsePoints(await request.json());
+    const points = parseWeatherPoints(await request.json());
     const apiKey = Deno.env.get("KMA_APIHUB_KEY");
     if (!apiKey) throw new Error("PROVIDER_NOT_CONFIGURED");
     const fiveDays = 5 * 24 * 60 * 60_000;

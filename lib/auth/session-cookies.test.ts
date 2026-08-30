@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { supabaseAuthCookieNames } from "./session-cookies";
+import { isSupabaseAuthCookieName, supabaseAuthCookieNames } from "./session-cookies";
 
 describe("supabaseAuthCookieNames", () => {
   it("finds base and chunked Supabase auth cookies only", () => {
@@ -14,5 +14,10 @@ describe("supabaseAuthCookieNames", () => {
 
   it("does not select unrelated cookies", () => {
     expect(supabaseAuthCookieNames("motocast_invite=x; session=y")).toEqual([]);
+  });
+
+  it("recognizes a newly issued auth cookie name even when it was absent from the request", () => {
+    expect(isSupabaseAuthCookieName("sb-obodvbyzptxeehgpcpkd-auth-token")).toBe(true);
+    expect(isSupabaseAuthCookieName("motocast_invite")).toBe(false);
   });
 });

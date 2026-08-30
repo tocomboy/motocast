@@ -45,7 +45,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### AUTH-001 — Invite-only Kakao authentication
 
 - Status: `CONFIRMED`
-- Decision: Use Supabase Auth with Kakao OAuth. Keep the Kakao subject separate from the internal Supabase user ID. Only administrators create cryptographically random, one-time invitation links. Invitations expire and can be revoked; memberships can be revoked. A valid active membership is required to use rider data and provider functions.
+- Decision: Use Supabase Auth with Kakao OAuth. Keep the Kakao subject separate from the internal Supabase user ID. Only administrators create cryptographically random, one-time invitation links. A valid invitation is required for first membership creation; an existing active member can sign in again without a fresh invite. Invitations expire and can be revoked; memberships can be revoked. A valid active membership is required to use rider data and provider functions.
 - Rationale: Access is limited to known acquaintances without maintaining a custom password system.
 - User impact: A rider enters through an invitation, signs in with Kakao, and loses access immediately after membership revocation.
 - Affected: Supabase Auth, callback route, invitations, memberships, RLS, Edge Functions, admin UI.
@@ -66,7 +66,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 
 - Status: `CONFIRMED`
 - Decision: A Kakao OAuth completion without a valid invitation is signed out and denied all application access. It may leave only the minimum dormant `auth.users` record; it must not create a public profile or membership. Administrators receive a safe cleanup procedure for dormant records.
-- Rationale: Supabase OAuth normally creates the Auth user before the application callback can claim an invitation; the current callback denies membership but can leave an Auth/profile record.
+- Rationale: Supabase OAuth creates the Auth user before the application callback can claim an invitation. The callback and database therefore prevent profile creation until a claim succeeds and retain only the unavoidable Auth record when an uninvited login is denied.
 - User impact: Both options deny app access, but the retained-record option stores minimal Kakao profile data for an uninvited person while strict cleanup needs a trusted server boundary and careful retry handling.
 - Affected: Auth hooks/callback, profile creation flow, administrator cleanup procedure, privacy notice, tests.
 - Verification: direct callback and expired/revoked invitation scenarios plus Auth/profile/membership readback.
