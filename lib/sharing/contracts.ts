@@ -108,15 +108,15 @@ export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
 
   const weather = raw.weather === null ? null : (() => {
     const parsed = record(raw.weather);
+    const failureKindPresent = parsed.failureKind !== undefined && parsed.failureKind !== null;
     if (
       parsed.source !== "kma" ||
       !["balanced", "winding", "short"].includes(String(parsed.candidateProfile)) ||
       typeof parsed.stale !== "boolean" ||
       !(parsed.staleObservedAt === null || typeof parsed.staleObservedAt === "string") ||
       !(parsed.staleReason === null || (typeof parsed.staleReason === "string" && parsed.staleReason.length <= 200)) ||
-      !(parsed.failureKind === null || ["provider", "budget", "configuration", "persistence", "request"].includes(String(parsed.failureKind))) ||
-      (parsed.stale && parsed.failureKind === null) ||
-      (!parsed.stale && parsed.failureKind !== null) ||
+      (failureKindPresent && !["provider", "budget", "configuration", "persistence", "request"].includes(String(parsed.failureKind))) ||
+      (!parsed.stale && failureKindPresent) ||
       !Array.isArray(parsed.segments) || parsed.segments.length < 1 || parsed.segments.length > 40
     ) throw new Error("INVALID_SHARE_SNAPSHOT");
     return {
@@ -127,7 +127,7 @@ export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
       stale: parsed.stale,
       staleObservedAt: parsed.staleObservedAt === null ? null : timestamp(parsed.staleObservedAt),
       staleReason: parsed.staleReason,
-      failureKind: parsed.failureKind as WeatherFailureKind | null,
+      failureKind: failureKindPresent ? parsed.failureKind as WeatherFailureKind : null,
       candidateProfile: parsed.candidateProfile as "balanced" | "winding" | "short",
       segments: parsed.segments.map(parseWeatherForecast),
     };

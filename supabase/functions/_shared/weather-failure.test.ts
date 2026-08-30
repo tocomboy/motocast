@@ -5,6 +5,7 @@ import { weatherFailureKind } from "./weather-failure";
 describe("weatherFailureKind", () => {
   it.each([
     ["KMA_REQUEST_FAILED", "provider"],
+    ["KMA_INVALID_RESPONSE", "provider"],
     ["KMA_FORECAST_NOT_FOUND", "provider"],
     ["API_DAILY_BUDGET_EXHAUSTED", "budget"],
     ["API_BUDGET_NOT_CONFIGURED", "configuration"],

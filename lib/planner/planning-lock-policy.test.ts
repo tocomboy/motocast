@@ -70,5 +70,8 @@ describe("planner persistence lock policy", () => {
   it("renders the validated full stale age and expiry status", () => {
     expect(source).toContain("formatPlannerWeatherStatus(");
     expect(source).toContain("selectedWeatherStatus.header");
+    expect(source).toContain("selectedWeatherAnnouncement");
+    expect(source).toContain('<div className="stale-notice"><span>i</span>{selectedWeatherStatus.notice}</div>');
+    expect(source).not.toContain("선택한 균형 경로의 날씨를 조회 중입니다.");
   });
 });

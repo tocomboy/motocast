@@ -72,6 +72,22 @@ alter table public.weather_snapshots
   add column if not exists stale_failure_kind text
     check (stale_failure_kind is null or stale_failure_kind in ('provider', 'budget', 'configuration', 'persistence', 'request'));
 
+do $weather_stale_metadata_constraint$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.weather_snapshots'::regclass
+      and conname = 'weather_snapshots_stale_metadata_complete'
+  ) then
+    alter table public.weather_snapshots
+      add constraint weather_snapshots_stale_metadata_complete check (
+        (stale_observed_at is null and stale_reason is null and stale_failure_kind is null) or
+        (stale_observed_at is not null and stale_reason is not null and stale_failure_kind is not null)
+      );
+  end if;
+end;
+$weather_stale_metadata_constraint$;
+
 alter table public.route_plan_drafts enable row level security;
 alter table public.share_preview_grants enable row level security;
 
@@ -499,6 +515,7 @@ begin
     select 1 from public.memberships where user_id = member_id and revoked_at is null
   ) then raise exception 'MEMBERSHIP_REQUIRED'; end if;
   if safe_reason is null or char_length(btrim(safe_reason)) not between 1 and 200
+     or safe_failure_kind is null
      or safe_failure_kind not in ('provider', 'budget', 'configuration', 'persistence', 'request') then
     raise exception 'INVALID_WEATHER_SNAPSHOT';
   end if;

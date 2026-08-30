@@ -27,6 +27,7 @@ const response = {
 describe("parseWeatherTimelineResponse", () => {
   it("accepts a live forecast", () => {
     expect(parseWeatherTimelineResponse(response)).toMatchObject({ source: "live", stale: false });
+    expect(parseWeatherTimelineResponse({ ...response, source: "cache" })).toMatchObject({ source: "cache", stale: false });
   });
 
   it("accepts an explicitly stale immutable snapshot", () => {

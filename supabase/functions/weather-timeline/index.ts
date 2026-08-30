@@ -8,12 +8,13 @@ import {
   issuedAtIso,
   latestForecastBase,
   type ForecastModel,
-  type KmaItem,
 } from "../_shared/weather-forecast.ts";
 import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
 import { parseWeatherRequest, type WeatherPoint, type WeatherRequest } from "../_shared/weather-request.ts";
 import { assertWeatherPointsMatch, weatherPointsFromStoredRoute } from "../_shared/weather-route.ts";
 import { weatherFailureKind } from "../_shared/weather-failure.ts";
+import { publicWeatherSnapshot } from "../_shared/weather-snapshot.ts";
+import { parseKmaItems } from "../_shared/kma-response.ts";
 
 type MemberClient = Awaited<ReturnType<typeof requireMember>>["supabase"];
 
@@ -99,11 +100,6 @@ async function readSnapshot(
   };
 }
 
-function publicSnapshot(snapshot: NonNullable<Awaited<ReturnType<typeof readSnapshot>>>) {
-  const { snapshotId: _snapshotId, ...safe } = snapshot;
-  return safe;
-}
-
 async function fetchForecast(input: {
   model: ForecastModel;
   nx: number;
@@ -130,13 +126,7 @@ async function fetchForecast(input: {
   } catch {
     throw new Error("KMA_REQUEST_FAILED");
   }
-  if (!response.ok) throw new Error("KMA_REQUEST_FAILED");
-  const data = await response.json() as {
-    response?: { header?: { resultCode?: string }; body?: { items?: { item?: KmaItem[] } } };
-  };
-  if (data.response?.header?.resultCode !== "00") throw new Error("KMA_REQUEST_FAILED");
-  const items = data.response.body?.items?.item;
-  if (!Array.isArray(items) || items.length === 0) throw new Error("KMA_FORECAST_NOT_FOUND");
+  const items = await parseKmaItems(response);
   return { values: closestForecast(items, input.target), base };
 }
 
@@ -234,7 +224,7 @@ Deno.serve(async (request) => {
 
     const cached = await readSnapshot(supabase, weatherRequest, requestHash, true);
     if (cached) {
-      return jsonResponse({ ...publicSnapshot(cached), source: "cache", stale: false }, 200, cors);
+      return jsonResponse({ ...publicWeatherSnapshot(cached), source: "cache", stale: false }, 200, cors);
     }
 
     const generatedAt = new Date().toISOString();
@@ -260,7 +250,7 @@ Deno.serve(async (request) => {
           await markSnapshotStale(memberId, stale.snapshotId, staleReason, failureKind);
           console.warn("weather-timeline stale fallback", error instanceof Error ? error.message : "unknown error");
           return jsonResponse({
-            ...publicSnapshot(stale),
+            ...publicWeatherSnapshot(stale),
             source: "snapshot",
             stale: true,
             staleReason,

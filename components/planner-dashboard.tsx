@@ -29,7 +29,7 @@ import { buildTimeline, formatKoreanTime, weatherRiskLabel } from "@/lib/planner
 import type { RouteCandidate } from "@/lib/planner/types";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { parseWeatherTimelineResponse, type WeatherTimelineResponse } from "@/lib/weather/provider-contract";
-import { formatPlannerWeatherStatus } from "@/lib/weather/status";
+import { formatPlannerWeatherStatus, weatherFailureLabel } from "@/lib/weather/status";
 
 type PlannerDraft = {
   origin: string;
@@ -254,6 +254,13 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const selectedWeatherStatus = selectedWeather
     ? formatPlannerWeatherStatus(selectedWeather, weatherClock ?? selectedWeather.staleObservedAt ?? selectedWeather.generatedAt)
     : null;
+  const selectedWeatherAnnouncement = weatherLoading === selectedId
+    ? `${selected.label} 경로 날씨 조회 중`
+    : selectedWeather && selectedWeatherStatus
+      ? selectedWeather.stale
+        ? `${selected.label} 경로 날씨: ${weatherFailureLabel(selectedWeather.failureKind)}로 저장본 표시${selectedWeatherStatus.expired ? ", 유효기간 만료" : ""}`
+        : `${selected.label} 경로 날씨: ${selectedWeather.source === "cache" ? "최근 저장 예보" : "실시간 조회 예보"}${selectedWeatherStatus.expired ? ", 유효기간 만료" : ""}`
+      : `${selected.label} 경로 날씨 미조회`;
 
   useEffect(() => {
     if (!selectedWeather) return;
@@ -704,7 +711,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       selectionIntentRef.current += 1;
       setSelectionPending(false);
       selectionQueueRef.current = Promise.resolve();
-      setNotice("실제 경로 3개와 계획을 저장했습니다. 선택한 균형 경로의 날씨를 조회 중입니다.");
+      setNotice("실제 경로 3개와 계획을 저장했습니다.");
       void loadWeather(candidates[0], savedTripId, calculationGeneration);
     } catch (error) {
       if (liveCandidates) setLiveResultStale(true);
@@ -957,8 +964,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
               })}
             </div>
             {selectedWeatherStatus ? (
-              <div className="stale-notice" role="status"><span>i</span>{selectedWeatherStatus.notice}</div>
+              <div className="stale-notice"><span>i</span>{selectedWeatherStatus.notice}</div>
             ) : null}
+            <p className="sr-only" role="status" aria-live="polite">{selectedWeatherAnnouncement}</p>
             <div className="stale-notice" role="status"><span>i</span>{notice}</div>
           </div>
 

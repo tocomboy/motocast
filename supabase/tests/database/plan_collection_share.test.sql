@@ -288,6 +288,25 @@ select public.mark_weather_snapshot_stale_internal(
 );
 
 do $$
+declare null_kind_rejected boolean := false;
+begin
+  begin
+    perform public.mark_weather_snapshot_stale_internal(
+      '71000000-0000-0000-0000-000000000001',
+      (select id from weather_result),
+      'KMA_REQUEST_FAILED',
+      null
+    );
+  exception when sqlstate 'P0001' then
+    null_kind_rejected := sqlerrm = 'INVALID_WEATHER_SNAPSHOT';
+  end;
+  insert into tap_results values
+    (null_kind_rejected, 'stale weather persistence rejects a null structured failure kind'),
+    ((select stale_failure_kind = 'provider' from public.weather_snapshots where id = (select id from weather_result)), 'rejected stale metadata update preserves the complete prior state');
+end;
+$$;
+
+do $$
 declare rejected boolean := false; null_hash_rejected boolean := false;
 begin
   begin

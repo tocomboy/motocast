@@ -101,5 +101,8 @@ describe("parseSharedRideSnapshot", () => {
       condition: "clear",
     });
     expect(parseSharedRideSnapshot(withWeather).weather).toMatchObject({ stale: true, staleReason: "기상청 요청에 실패했습니다.", failureKind: "provider" });
+    const legacy = structuredClone(withWeather);
+    delete (legacy.weather as Record<string, unknown>).failureKind;
+    expect(parseSharedRideSnapshot(legacy).weather).toMatchObject({ stale: true, failureKind: null });
   });
 });
