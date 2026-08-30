@@ -12,6 +12,7 @@ import {
 } from "../_shared/weather-forecast.ts";
 import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
 import { parseWeatherRequest, type WeatherPoint, type WeatherRequest } from "../_shared/weather-request.ts";
+import { assertWeatherPointsMatch, weatherPointsFromStoredRoute } from "../_shared/weather-route.ts";
 
 type MemberClient = Awaited<ReturnType<typeof requireMember>>["supabase"];
 
@@ -49,10 +50,18 @@ async function weatherRequestHash(request: WeatherRequest) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function assertOwnedTrip(supabase: MemberClient, tripId: string) {
-  const { data, error } = await supabase.from("trips").select("id").eq("id", tripId).maybeSingle();
+async function canonicalRouteRequest(supabase: MemberClient, request: WeatherRequest): Promise<WeatherRequest> {
+  const { data, error } = await supabase
+    .from("route_cache")
+    .select("summary")
+    .eq("trip_id", request.tripId)
+    .eq("profile", request.candidateProfile)
+    .maybeSingle();
   if (error) throw new Error("WEATHER_PERSIST_FAILED");
-  if (!data) throw new Error("TRIP_NOT_FOUND");
+  if (!data) throw new Error("INVALID_WEATHER_ROUTE");
+  const points = weatherPointsFromStoredRoute(data.summary, request.candidateProfile);
+  assertWeatherPointsMatch(request.points, points);
+  return { ...request, points };
 }
 
 async function readSnapshot(
@@ -61,24 +70,36 @@ async function readSnapshot(
   requestHash: string,
   freshOnly: boolean,
 ) {
-  if (!request.tripId) return null;
   let query = supabase
     .from("weather_snapshots")
-    .select("issued_at, created_at, segments")
+    .select("id,issued_at,valid_until,created_at,segments,stale_observed_at,stale_reason")
     .eq("trip_id", request.tripId)
     .eq("candidate_profile", request.candidateProfile)
     .eq("request_hash", requestHash)
     .order("created_at", { ascending: false })
     .limit(1);
-  if (freshOnly) query = query.gte("created_at", new Date(Date.now() - 20 * 60_000).toISOString());
+  if (freshOnly) {
+    query = query
+      .gte("created_at", new Date(Date.now() - 20 * 60_000).toISOString())
+      .is("stale_observed_at", null);
+  }
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error("WEATHER_PERSIST_FAILED");
   if (!data || !Array.isArray(data.segments)) return null;
   return {
+    snapshotId: String(data.id),
     issuedAt: String(data.issued_at),
+    validUntil: String(data.valid_until),
     generatedAt: String(data.created_at),
     forecasts: data.segments,
+    staleObservedAt: data.stale_observed_at === null ? null : String(data.stale_observed_at),
+    staleReason: data.stale_reason === null ? null : String(data.stale_reason),
   };
+}
+
+function publicSnapshot(snapshot: NonNullable<Awaited<ReturnType<typeof readSnapshot>>>) {
+  const { snapshotId: _snapshotId, ...safe } = snapshot;
+  return safe;
 }
 
 async function fetchForecast(input: {
@@ -158,25 +179,34 @@ async function fetchTimeline(memberId: string, points: WeatherPoint[], apiKey: s
 }
 
 async function persistSnapshot(
+  memberId: string,
   request: WeatherRequest,
   requestHash: string,
   forecasts: TimelineForecast[],
   generatedAt: string,
 ) {
-  if (!request.tripId) return;
   const issueTimes = forecasts.flatMap((forecast) => forecast.status === "forecast" ? [Date.parse(forecast.issuedAt)] : []);
   const oldestIssue = issueTimes.length ? Math.min(...issueTimes) : Date.parse(generatedAt);
   const lastEta = Math.max(...request.points.map((point) => Date.parse(point.eta)));
   const validUntil = new Date(Math.max(lastEta + 60 * 60_000, oldestIssue + 60 * 60_000)).toISOString();
-  const { error } = await serviceClient().from("weather_snapshots").insert({
-    trip_id: request.tripId,
-    source: "kma",
-    issued_at: new Date(oldestIssue).toISOString(),
-    valid_until: validUntil,
-    segments: forecasts,
-    request_hash: requestHash,
-    candidate_profile: request.candidateProfile,
-    created_at: generatedAt,
+  const { error } = await serviceClient().rpc("insert_weather_snapshot_internal", {
+    member_id: memberId,
+    target_trip_id: request.tripId,
+    target_candidate_profile: request.candidateProfile,
+    target_issued_at: new Date(oldestIssue).toISOString(),
+    target_valid_until: validUntil,
+    target_segments: forecasts,
+    target_request_hash: requestHash,
+    target_created_at: generatedAt,
+  });
+  if (error) throw new Error("WEATHER_PERSIST_FAILED");
+}
+
+async function markSnapshotStale(memberId: string, snapshotId: string, reason: string) {
+  const { error } = await serviceClient().rpc("mark_weather_snapshot_stale_internal", {
+    member_id: memberId,
+    target_snapshot_id: snapshotId,
+    safe_reason: reason,
   });
   if (error) throw new Error("WEATHER_PERSIST_FAILED");
 }
@@ -195,18 +225,17 @@ Deno.serve(async (request) => {
     const member = await requireMember(request);
     supabase = member.supabase;
     memberId = member.user.id;
-    weatherRequest = parseWeatherRequest(await request.json());
-    if (weatherRequest.tripId) await assertOwnedTrip(supabase, weatherRequest.tripId);
+    weatherRequest = await canonicalRouteRequest(supabase, parseWeatherRequest(await request.json()));
     requestHash = await weatherRequestHash(weatherRequest);
 
     const cached = await readSnapshot(supabase, weatherRequest, requestHash, true);
     if (cached) {
-      return jsonResponse({ ...cached, source: "cache", stale: false }, 200, cors);
+      return jsonResponse({ ...publicSnapshot(cached), source: "cache", stale: false }, 200, cors);
     }
 
     const generatedAt = new Date().toISOString();
     const forecasts = await fetchTimeline(memberId, weatherRequest.points, Deno.env.get("KMA_APIHUB_KEY") ?? null);
-    await persistSnapshot(weatherRequest, requestHash, forecasts, generatedAt);
+    await persistSnapshot(memberId, weatherRequest, requestHash, forecasts, generatedAt);
     const issueTimes = forecasts.flatMap((forecast) => forecast.status === "forecast" ? [forecast.issuedAt] : []);
     return jsonResponse({
       generatedAt,
@@ -216,16 +245,19 @@ Deno.serve(async (request) => {
       forecasts,
     }, 200, cors);
   } catch (error) {
-    if (supabase && weatherRequest?.tripId && requestHash) {
+    if (supabase && memberId && weatherRequest && requestHash) {
       try {
         const stale = await readSnapshot(supabase, weatherRequest, requestHash, false);
         if (stale) {
+          const staleReason = safeErrorMessage(error);
+          await markSnapshotStale(memberId, stale.snapshotId, staleReason);
           console.warn("weather-timeline stale fallback", error instanceof Error ? error.message : "unknown error");
           return jsonResponse({
-            ...stale,
+            ...publicSnapshot(stale),
             source: "snapshot",
             stale: true,
-            staleReason: safeErrorMessage(error),
+            staleReason,
+            staleObservedAt: new Date().toISOString(),
           }, 200, cors);
         }
       } catch {

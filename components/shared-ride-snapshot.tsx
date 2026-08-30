@@ -35,6 +35,7 @@ export function SharedRideSnapshotView({
   const weatherExpired = snapshot.weather
     ? new Date(snapshot.weather.validUntil).getTime() < new Date(referenceTime).getTime()
     : false;
+  const weatherStale = snapshot.weather ? snapshot.weather.stale || weatherExpired : false;
 
   return (
     <div className={`shared-snapshot ${preview ? "is-preview" : ""}`}>
@@ -109,9 +110,10 @@ export function SharedRideSnapshotView({
         <h2 id={`shared-weather-${preview ? "preview" : "public"}`}>구간 통과 시각별 날씨</h2>
         {snapshot.weather ? (
           <>
-            <p className={`shared-weather-state ${weatherExpired ? "stale" : "fresh"}`}>
-              {formatKoreanTime(snapshot.weather.issuedAt)} 발행 · {formatKoreanTime(snapshot.weather.retrievedAt)} 저장 · {weatherExpired ? "현재 기준 유효기간 지난 저장본" : "현재 기준 유효기간 안쪽"}
+            <p className={`shared-weather-state ${weatherStale ? "stale" : "fresh"}`}>
+              {formatKoreanTime(snapshot.weather.issuedAt)} 발행 · {formatKoreanTime(snapshot.weather.retrievedAt)} 저장 · {snapshot.weather.stale ? `공급자 실패 후 저장본${snapshot.weather.staleObservedAt ? ` · ${formatKoreanTime(snapshot.weather.staleObservedAt)} 확인` : ""}` : weatherExpired ? "현재 기준 유효기간 지난 저장본" : "현재 기준 유효기간 안쪽"}
             </p>
+            {snapshot.weather.stale && snapshot.weather.staleReason ? <p className="shared-weather-reason">{snapshot.weather.staleReason}</p> : null}
             <ol className="shared-weather-list">
               {snapshot.weather.segments.map((forecast) => (
                 <li key={forecast.id}>

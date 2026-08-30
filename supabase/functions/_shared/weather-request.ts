@@ -10,7 +10,7 @@ export type WeatherPoint = {
 
 export type WeatherRequest = {
   points: WeatherPoint[];
-  tripId: string | null;
+  tripId: string;
   candidateProfile: "balanced" | "winding" | "short";
 };
 
@@ -43,15 +43,15 @@ export function parseWeatherRequest(value: unknown, nowMs = Date.now()): Weather
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_REQUEST");
   const raw = value as { tripId?: unknown; candidateProfile?: unknown };
   if (
-    raw.tripId !== undefined && raw.tripId !== null &&
-    (typeof raw.tripId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw.tripId))
+    typeof raw.tripId !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw.tripId)
   ) throw new Error("INVALID_TRIP");
   if (!['balanced', 'winding', 'short'].includes(String(raw.candidateProfile))) {
     throw new Error("INVALID_CANDIDATE");
   }
   return {
     points: parseWeatherPoints(value, nowMs),
-    tripId: typeof raw.tripId === "string" ? raw.tripId : null,
+    tripId: raw.tripId,
     candidateProfile: raw.candidateProfile as WeatherRequest["candidateProfile"],
   };
 }

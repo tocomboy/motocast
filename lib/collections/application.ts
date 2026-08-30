@@ -19,8 +19,8 @@ export function collectionPointToPlace(point: CollectionPoint): PlaceSearchResul
 }
 
 export function prepareCollectionApplication(points: CollectionPoint[]) {
-  const lunch = points.find((point) => point.stopRole === "lunch") ?? null;
-  const dinner = points.find((point) => point.stopRole === "dinner") ?? null;
+  const lunch = points.find((point) => point.stopRole === "lunch" && point.selected) ?? null;
+  const dinner = points.find((point) => point.stopRole === "dinner" && point.selected) ?? null;
   const rest = points.find((point) => point.stopRole === "rest") ?? null;
   return {
     orderedPoints: [...points],

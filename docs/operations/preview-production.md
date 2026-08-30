@@ -36,9 +36,12 @@ Read back project settings without printing environment values. When environment
    ```
 
 4. Apply to Preview only, then read back migration versions, RLS, function ACLs, and Edge Function versions.
-5. Register Preview-only Auth provider redirects and server secrets through the Supabase Dashboard or masked CLI input. Never put values in command arguments or shell history.
-6. Use disposable Preview identities to execute the complete Preview gate.
-7. Resolve `OPS-008`, back up the chosen empty/pre-cutover Production database, and repeat the reviewed migration/function sequence for Production.
+5. Deploy `search-places`, `plan-route`, `weather-timeline`, and `save-collection` from the reviewed fixed SHA.
+6. Register Preview-only Auth provider redirects and server secrets through the Supabase Dashboard or masked CLI input. Never put values in command arguments or shell history.
+7. Use disposable Preview identities to execute the complete Preview gate.
+8. Resolve `OPS-008`, back up the chosen empty/pre-cutover Production database, and repeat the reviewed migration/function sequence for Production.
+
+Public share links use `/share#<token>`. The fragment is not sent in the initial HTTP request; the client validates it and sends it in the JSON body of `POST /api/shares/resolve`. Do not reintroduce a dynamic `/share/<token>` page or `/api/shares/<token>` resolver because hosting request-path logs can then contain the bearer token.
 
 ## Edge Function secret names
 

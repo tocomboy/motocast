@@ -114,14 +114,29 @@ insert into tap_results values
   (public.consume_daily_api_budget_internal('kma', 'ultra_forecast', 2, '20000000-0000-0000-0000-000000000002') = 2, 'second trusted budget call reaches the hard limit');
 do $$
 declare
-  rejected boolean := false;
+  exhausted_rejected boolean := false;
+  zero_rejected boolean := false;
+  missing_rejected boolean := false;
 begin
   begin
     perform public.consume_daily_api_budget_internal('kma', 'ultra_forecast', 2, '20000000-0000-0000-0000-000000000002');
   exception when sqlstate 'P0001' then
-    rejected := sqlerrm = 'API_DAILY_BUDGET_EXHAUSTED';
+    exhausted_rejected := sqlerrm = 'API_DAILY_BUDGET_EXHAUSTED';
   end;
-  insert into tap_results values (rejected, 'third budget call fails closed');
+  begin
+    perform public.consume_daily_api_budget_internal('kma', 'short_forecast', 0, '20000000-0000-0000-0000-000000000002');
+  exception when sqlstate 'P0001' then
+    zero_rejected := sqlerrm = 'API_BUDGET_NOT_CONFIGURED';
+  end;
+  begin
+    perform public.consume_daily_api_budget_internal('kma', 'short_forecast', null, '20000000-0000-0000-0000-000000000002');
+  exception when sqlstate 'P0001' then
+    missing_rejected := sqlerrm = 'API_BUDGET_NOT_CONFIGURED';
+  end;
+  insert into tap_results values
+    (exhausted_rejected, 'third budget call fails closed'),
+    (zero_rejected, 'zero budget configuration fails closed'),
+    (missing_rejected, 'missing budget configuration fails closed');
 end;
 $$;
 reset role;

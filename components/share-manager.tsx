@@ -98,7 +98,12 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
     });
     if (error || !Array.isArray(data) || data.length !== 1) {
       setBusy(false);
-      setStatus("공유 링크를 발행하지 못했습니다.");
+      if (error?.message.includes("SHARE_PREVIEW")) {
+        setPreviewToken(null);
+        setStatus("미리보기가 만료됐거나 원본이 바뀌었습니다. 전체 공유 미리보기를 다시 만들어 주세요.");
+      } else {
+        setStatus("공유 링크를 발행하지 못했습니다.");
+      }
       return;
     }
     const result = data[0] as { share_id?: unknown; share_token?: unknown };
@@ -111,7 +116,7 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
     }
     setBusy(false);
     setPreviewToken(null);
-    setIssued({ tripId, shareId, url: `${window.location.origin}/share/${token}` });
+    setIssued({ tripId, shareId, url: `${window.location.origin}/share#${token}` });
     setStatus("불변 공유 링크를 발행했습니다. 원본을 수정해도 이 링크의 내용은 바뀌지 않습니다.");
     await loadLinks();
   }

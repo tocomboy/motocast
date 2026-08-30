@@ -43,7 +43,7 @@ After each logical implementation unit:
 npm ci
 npm run lint
 npm run typecheck
-npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts
+npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts supabase/functions/save-collection/index.ts
 npm test
 npm run build
 git diff --check
@@ -63,11 +63,12 @@ The full local database boundary uses the repository `supabase/config.toml` and 
 npx --yes supabase@2.116.0 start --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
 npx --yes supabase@2.116.0 test db --local supabase/tests/database/auth_rls_budget.test.sql supabase/tests/database/live_acl_readback.test.sql supabase/tests/database/plan_collection_share.test.sql
 PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/collection_version_concurrency.test.sql
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/invite_budget_concurrency.test.sql
 ```
 
 Before a fresh migration proof, confirm that the target is exactly the disposable local database at `127.0.0.1:54322` and obtain explicit approval for its reset. A reset of either hosted project is prohibited by this workflow.
 
-The two-connection collection suite requires the disposable local `supabase_admin` role because PostgreSQL restricts `dblink` credential forwarding for non-superusers. It must never target a hosted project. Record it separately from the rollback-only RLS/RPC suite.
+The two-connection collection and invitation/budget suites require the disposable local `supabase_admin` role because PostgreSQL restricts `dblink` credential forwarding for non-superusers. They must never target a hosted project. Record them separately from the rollback-only RLS/RPC suite.
 
 6. Scan staged and tracked changes for secrets, invitation/share tokens, real rider locations, and schedules without printing secret values.
 7. Record `NOT_RUN` checks and the exact blocker.

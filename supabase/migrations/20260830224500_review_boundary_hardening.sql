@@ -15,6 +15,41 @@ create table if not exists public.route_plan_drafts (
 create index if not exists route_plan_drafts_created_idx
   on public.route_plan_drafts(created_at);
 
+create or replace function public.route_geometry_fingerprint(route jsonb)
+returns text
+language sql
+immutable
+set search_path = public, extensions, pg_temp
+as $$
+  with vertices as (
+    select leg_position, section_position, road_position, vertex_position,
+      (road -> 'vertexes' ->> vertex_position)::numeric as longitude,
+      (road -> 'vertexes' ->> (vertex_position + 1))::numeric as latitude
+    from jsonb_array_elements(route -> 'legs') with ordinality as legs(leg, leg_position)
+    cross join lateral jsonb_array_elements(leg -> 'sections') with ordinality as sections(section, section_position)
+    cross join lateral jsonb_array_elements(section -> 'roads') with ordinality as roads(road, road_position)
+    cross join lateral generate_series(0, jsonb_array_length(road -> 'vertexes') - 2, 2) as vertex_position
+  ), ordered as (
+    select *,
+      lag(longitude) over (order by leg_position, section_position, road_position, vertex_position) as previous_longitude,
+      lag(latitude) over (order by leg_position, section_position, road_position, vertex_position) as previous_latitude
+    from vertices
+  )
+  select encode(extensions.digest(coalesce(string_agg(
+    round(longitude, 4)::text || ',' || round(latitude, 4)::text,
+    '|' order by leg_position, section_position, road_position, vertex_position
+  ) filter (where previous_longitude is distinct from longitude or previous_latitude is distinct from latitude), 'empty'), 'sha256'), 'hex')
+  from ordered;
+$$;
+
+alter table public.route_plan_drafts
+  add column if not exists geometry_fingerprint text;
+update public.route_plan_drafts
+set geometry_fingerprint = public.route_geometry_fingerprint(route)
+where geometry_fingerprint is null;
+alter table public.route_plan_drafts
+  alter column geometry_fingerprint set not null;
+
 create table if not exists public.share_preview_grants (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users(id) on delete cascade,
@@ -29,6 +64,11 @@ create table if not exists public.share_preview_grants (
 
 create index if not exists share_preview_grants_expiry_idx
   on public.share_preview_grants(expires_at);
+
+alter table public.weather_snapshots
+  add column if not exists stale_observed_at timestamptz,
+  add column if not exists stale_reason text
+    check (stale_reason is null or char_length(stale_reason) between 1 and 200);
 
 alter table public.route_plan_drafts enable row level security;
 alter table public.share_preview_grants enable row level security;
@@ -80,6 +120,92 @@ as $$
     ),
     false
   );
+$$;
+
+create or replace function public.is_valid_verified_collection_points(points jsonb)
+returns boolean
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select coalesce(
+    public.is_valid_collection_points(points)
+    and not exists (
+      select 1 from jsonb_array_elements(points) as item
+      where coalesce(item ->> 'kakaoPlaceId', '') = ''
+        or char_length(item ->> 'kakaoPlaceId') not between 1 and 80
+        or coalesce(item ->> 'name', '') = ''
+        or char_length(item ->> 'name') not between 1 and 160
+        or coalesce(item ->> 'address', '') = ''
+        or char_length(item ->> 'address') not between 1 and 300
+        or not (item ? 'roadAddress')
+        or (item -> 'roadAddress' <> 'null'::jsonb and jsonb_typeof(item -> 'roadAddress') is distinct from 'string')
+        or (item -> 'roadAddress' <> 'null'::jsonb and char_length(item ->> 'roadAddress') > 300)
+        or coalesce(item ->> 'verificationToken', '') !~ '^[A-Za-z0-9_-]{43}$'
+    ),
+    false
+  );
+$$;
+
+create or replace function public.save_collection_version_internal(
+  member_id uuid,
+  target_collection_id uuid,
+  collection_title text,
+  collection_description text,
+  collection_points jsonb
+)
+returns table(collection_id uuid, version_id uuid, version_number integer)
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  owned_collection public.riding_collections%rowtype;
+  next_version integer;
+  created_version_id uuid;
+begin
+  if member_id is null or not exists (
+    select 1 from public.memberships where user_id = member_id and revoked_at is null
+  ) then
+    raise exception 'MEMBERSHIP_REQUIRED';
+  end if;
+  if collection_title is null or char_length(btrim(collection_title)) not between 1 and 120
+     or collection_description is null or char_length(collection_description) > 2000
+     or not public.is_valid_verified_collection_points(collection_points) then
+    raise exception 'INVALID_COLLECTION';
+  end if;
+
+  if target_collection_id is null then
+    insert into public.riding_collections(owner_id, title, description)
+    values (member_id, btrim(collection_title), collection_description)
+    returning * into owned_collection;
+  else
+    select * into owned_collection
+    from public.riding_collections
+    where id = target_collection_id and owner_id = member_id
+    for update;
+    if not found then raise exception 'COLLECTION_NOT_FOUND'; end if;
+    update public.riding_collections
+    set title = btrim(collection_title), description = collection_description, updated_at = now()
+    where id = owned_collection.id;
+  end if;
+
+  select coalesce(max(cv.version_number), 0) + 1 into next_version
+  from public.collection_versions cv
+  where cv.collection_id = owned_collection.id;
+
+  insert into public.collection_versions(
+    collection_id, version_number, title, description, points, created_by
+  ) values (
+    owned_collection.id, next_version, btrim(collection_title), collection_description,
+    collection_points, member_id
+  ) returning id into created_version_id;
+
+  return query select owned_collection.id, created_version_id, next_version;
+exception
+  when raise_exception then raise;
+  when others then raise exception 'INVALID_COLLECTION';
+end;
 $$;
 
 create or replace function public.consume_daily_api_budget_internal(
@@ -140,6 +266,7 @@ set search_path = public, pg_temp
 as $$
 declare
   profile text := staged_route -> 'candidate' ->> 'id';
+  fingerprint text;
 begin
   if member_id is null or not exists (
     select 1 from public.memberships where user_id = member_id and revoked_at is null
@@ -160,12 +287,17 @@ begin
      or jsonb_array_length(staged_route -> 'legs') < 1 then
     raise exception 'INVALID_STAGED_ROUTE';
   end if;
+  fingerprint := public.route_geometry_fingerprint(staged_route);
+  if fingerprint is null or char_length(fingerprint) <> 64 then
+    raise exception 'INVALID_STAGED_ROUTE';
+  end if;
 
   delete from public.route_plan_drafts where created_at < now() - interval '1 hour';
-  insert into public.route_plan_drafts(owner_id, planning_id, candidate_profile, plan, route)
-  values (member_id, target_planning_id, profile, staged_plan, staged_route)
+  insert into public.route_plan_drafts(owner_id, planning_id, candidate_profile, plan, route, geometry_fingerprint)
+  values (member_id, target_planning_id, profile, staged_plan, staged_route, fingerprint)
   on conflict (owner_id, planning_id, candidate_profile) do update
-  set plan = excluded.plan, route = excluded.route, created_at = now();
+  set plan = excluded.plan, route = excluded.route,
+      geometry_fingerprint = excluded.geometry_fingerprint, created_at = now();
 end;
 $$;
 
@@ -184,6 +316,7 @@ declare
   staged_routes jsonb;
   draft_count integer;
   plan_count integer;
+  fingerprint_count integer;
   saved_trip_id uuid;
 begin
   if current_user_id is null or not public.is_active_member(current_user_id) then
@@ -194,14 +327,14 @@ begin
   where owner_id = current_user_id and planning_id = target_planning_id
   for update;
 
-  select count(*), count(distinct plan::text), min(plan::text)::jsonb
-  into draft_count, plan_count, staged_plan
+  select count(*), count(distinct plan::text), count(distinct geometry_fingerprint), min(plan::text)::jsonb
+  into draft_count, plan_count, fingerprint_count, staged_plan
   from public.route_plan_drafts
   where owner_id = current_user_id
     and planning_id = target_planning_id
     and created_at >= now() - interval '10 minutes';
 
-  if draft_count <> 3 or plan_count <> 1 then
+  if draft_count <> 3 or plan_count <> 1 or fingerprint_count <> 3 then
     raise exception 'ROUTE_PLAN_NOT_READY';
   end if;
 
@@ -268,6 +401,107 @@ begin
   where id = target_collection_id and owner_id = current_user_id;
   get diagnostics changed = row_count;
   if changed <> 1 then raise exception 'COLLECTION_NOT_FOUND'; end if;
+end;
+$$;
+
+create or replace function public.insert_weather_snapshot_internal(
+  member_id uuid,
+  target_trip_id uuid,
+  target_candidate_profile text,
+  target_issued_at timestamptz,
+  target_valid_until timestamptz,
+  target_segments jsonb,
+  target_request_hash text,
+  target_created_at timestamptz
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  route_summary jsonb;
+  expected_points jsonb;
+  received_points jsonb;
+  created_snapshot_id uuid;
+begin
+  if member_id is null or not exists (
+    select 1 from public.memberships where user_id = member_id and revoked_at is null
+  ) then raise exception 'MEMBERSHIP_REQUIRED'; end if;
+  if target_candidate_profile not in ('balanced', 'winding', 'short')
+     or target_request_hash !~ '^[0-9a-f]{64}$'
+     or jsonb_typeof(target_segments) <> 'array'
+     or jsonb_array_length(target_segments) not between 1 and 40
+     or target_issued_at is null or target_valid_until <= target_issued_at
+     or target_created_at is null then
+    raise exception 'INVALID_WEATHER_SNAPSHOT';
+  end if;
+
+  select r.summary into route_summary
+  from public.route_cache r
+  join public.trips t on t.id = r.trip_id
+  where r.trip_id = target_trip_id and r.profile = target_candidate_profile
+    and t.user_id = member_id
+  for update of r;
+  if not found then raise exception 'TRIP_NOT_FOUND'; end if;
+
+  select jsonb_agg(jsonb_build_object(
+    'id', target_candidate_profile || '-' || (position - 1)::text,
+    'longitude', leg -> 'to' -> 'longitude',
+    'latitude', leg -> 'to' -> 'latitude',
+    'eta', leg ->> 'arrivalAt'
+  ) order by position)
+  into expected_points
+  from jsonb_array_elements(route_summary -> 'legs') with ordinality as route_leg(leg, position);
+
+  select jsonb_agg(jsonb_build_object(
+    'id', segment ->> 'id',
+    'longitude', segment -> 'longitude',
+    'latitude', segment -> 'latitude',
+    'eta', segment ->> 'eta'
+  ) order by position)
+  into received_points
+  from jsonb_array_elements(target_segments) with ordinality as weather_segment(segment, position);
+
+  if expected_points is null or received_points is distinct from expected_points then
+    raise exception 'INVALID_WEATHER_ROUTE';
+  end if;
+
+  insert into public.weather_snapshots(
+    trip_id, source, issued_at, valid_until, segments, request_hash,
+    candidate_profile, created_at, stale_observed_at, stale_reason
+  ) values (
+    target_trip_id, 'kma', target_issued_at, target_valid_until, target_segments,
+    target_request_hash, target_candidate_profile, target_created_at, null, null
+  ) returning id into created_snapshot_id;
+  return created_snapshot_id;
+end;
+$$;
+
+create or replace function public.mark_weather_snapshot_stale_internal(
+  member_id uuid,
+  target_snapshot_id uuid,
+  safe_reason text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare changed integer;
+begin
+  if member_id is null or not exists (
+    select 1 from public.memberships where user_id = member_id and revoked_at is null
+  ) then raise exception 'MEMBERSHIP_REQUIRED'; end if;
+  if safe_reason is null or char_length(btrim(safe_reason)) not between 1 and 200 then
+    raise exception 'INVALID_WEATHER_SNAPSHOT';
+  end if;
+  update public.weather_snapshots w
+  set stale_observed_at = now(), stale_reason = btrim(safe_reason)
+  from public.trips t
+  where w.id = target_snapshot_id and t.id = w.trip_id and t.user_id = member_id;
+  get diagnostics changed = row_count;
+  if changed <> 1 then raise exception 'WEATHER_SNAPSHOT_NOT_FOUND'; end if;
 end;
 $$;
 
@@ -414,7 +648,7 @@ begin
     ),
     'waypoints', coalesce((
       select jsonb_agg(jsonb_build_object(
-        'id', w.id,
+        'id', 'waypoint-' || w.position::text,
         'position', w.position,
         'kind', replace(w.kind::text, '_', '-'),
         'label', w.label,
@@ -439,6 +673,9 @@ begin
         'issuedAt', w.issued_at,
         'retrievedAt', w.created_at,
         'validUntil', w.valid_until,
+        'stale', w.stale_observed_at is not null,
+        'staleObservedAt', w.stale_observed_at,
+        'staleReason', w.stale_reason,
         'candidateProfile', w.candidate_profile,
         'segments', public.share_weather_segments(w.segments)
       )
@@ -585,10 +822,23 @@ revoke insert, update, delete on public.riding_collections, public.collection_ve
   public.share_links, public.route_plan_drafts, public.share_preview_grants
   from public, anon, authenticated;
 revoke select on public.route_plan_drafts, public.share_preview_grants from public, anon, authenticated;
+revoke truncate, references, trigger on public.profiles, public.memberships, public.invitations,
+  public.riding_collections, public.collection_versions, public.trips, public.trip_waypoints,
+  public.route_cache, public.weather_snapshots, public.share_links, public.api_usage_daily,
+  public.route_plan_drafts, public.share_preview_grants
+  from public, anon, authenticated;
+alter default privileges in schema public
+  revoke truncate, references, trigger on tables from public, anon, authenticated;
 
 revoke all on function public.consume_daily_api_budget(text, text, integer) from public, anon, authenticated;
+revoke all on function public.route_geometry_fingerprint(jsonb) from public, anon, authenticated;
+revoke all on function public.is_valid_verified_collection_points(jsonb) from public, anon, authenticated;
 revoke all on function public.consume_daily_api_budget_internal(text, text, integer, uuid) from public, anon, authenticated;
+revoke all on function public.save_collection_version(uuid, text, text, jsonb) from public, anon, authenticated;
+revoke all on function public.save_collection_version_internal(uuid, uuid, text, text, jsonb) from public, anon, authenticated;
 revoke all on function public.stage_route_candidate_internal(uuid, uuid, jsonb, jsonb) from public, anon, authenticated;
+revoke all on function public.insert_weather_snapshot_internal(uuid, uuid, text, timestamptz, timestamptz, jsonb, text, timestamptz) from public, anon, authenticated;
+revoke all on function public.mark_weather_snapshot_stale_internal(uuid, uuid, text) from public, anon, authenticated;
 revoke all on function public.save_trip_plan(jsonb, jsonb) from public, anon, authenticated;
 revoke all on function public.finalize_trip_plan(uuid, uuid) from public, anon;
 revoke all on function public.select_trip_candidate(uuid, text) from public, anon;
@@ -601,7 +851,10 @@ revoke all on function public.preview_trip_share(uuid) from public, anon;
 revoke all on function public.publish_trip_share(uuid, text) from public, anon;
 
 grant execute on function public.consume_daily_api_budget_internal(text, text, integer, uuid) to service_role;
+grant execute on function public.save_collection_version_internal(uuid, uuid, text, text, jsonb) to service_role;
 grant execute on function public.stage_route_candidate_internal(uuid, uuid, jsonb, jsonb) to service_role;
+grant execute on function public.insert_weather_snapshot_internal(uuid, uuid, text, timestamptz, timestamptz, jsonb, text, timestamptz) to service_role;
+grant execute on function public.mark_weather_snapshot_stale_internal(uuid, uuid, text) to service_role;
 grant execute on function public.finalize_trip_plan(uuid, uuid) to authenticated;
 grant execute on function public.select_trip_candidate(uuid, text) to authenticated;
 grant execute on function public.delete_riding_collection(uuid) to authenticated;

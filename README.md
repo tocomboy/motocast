@@ -2,7 +2,7 @@
 
 지인 라이더를 위한 국내 당일 오토바이 경로·시간대별 날씨 계획 PWA입니다. 출발/복귀 시각과 식사 정차, 선택 휴식을 반영해 세 가지 경로 후보를 비교하고, 각 구간의 예상 통과 시각에 맞춘 기상청 예보를 보여주는 것을 목표로 합니다.
 
-> 현재 상태: 프로덕션 구현 및 배포 검증 중입니다. 실제 장소·안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 신뢰된 경로 결과만 저장하는 계획 확정, 사용자별 컬렉션 버전, 전체 공유 미리보기/불변 발행/회수/재발행 UI와 토큰 전용 공개 resolver가 구현되어 있습니다. 로컬 DB의 Auth/RLS/budget/컬렉션/공유 검증은 통과했지만 새 migration과 함수는 아직 hosted Preview/Production에 배포되지 않았고 실제 Kakao/KMA·OAuth 브라우저 검증도 남아 있습니다.
+> 현재 상태: 프로덕션 구현 및 배포 검증 중입니다. 실제 장소·서로 다른 안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 신뢰된 경로 결과만 저장하는 계획 확정, 검증된 장소만 저장하는 사용자별 컬렉션 버전, 전체 공유 미리보기/불변 발행/회수/재발행 UI가 구현되어 있습니다. 공유 bearer token은 서버 요청 경로 대신 URL fragment에 두고 고정 API 경로의 POST 본문으로 전달합니다. 로컬 DB의 Auth/RLS/budget/컬렉션/공유 검증은 통과했지만 새 migration과 함수는 아직 hosted Preview/Production에 배포되지 않았고 실제 Kakao/KMA·OAuth 브라우저 검증도 남아 있습니다.
 
 ## 고정된 제품 원칙
 
@@ -38,7 +38,7 @@ npm run dev
 ```bash
 npm run lint
 npm run typecheck
-npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts
+npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts supabase/functions/save-collection/index.ts
 npm test
 npm run build
 ```
@@ -50,13 +50,14 @@ DB migration과 RLS/RPC는 실제 프로젝트와 분리된 로컬 Supabase Post
 npx --yes supabase@2.116.0 start --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
 npx --yes supabase@2.116.0 test db --local supabase/tests/database/auth_rls_budget.test.sql supabase/tests/database/live_acl_readback.test.sql supabase/tests/database/plan_collection_share.test.sql
 PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/collection_version_concurrency.test.sql
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/invite_budget_concurrency.test.sql
 ```
 
 ## Supabase 설정
 
 1. Production과 Preview에 서로 다른 Supabase Free 프로젝트를 사용하고 CLI로 `supabase/migrations/`의 migration을 순서대로 적용합니다.
 2. Kakao를 Auth provider로 설정하고 콜백 주소를 Supabase가 안내하는 주소와 일치시킵니다.
-3. `search-places`, `plan-route`, `weather-timeline` Edge Function을 배포하고 서버 전용 비밀값을 Supabase Dashboard secret store에 등록합니다.
+3. `search-places`, `plan-route`, `weather-timeline`, `save-collection` Edge Function을 배포하고 서버 전용 비밀값을 Supabase Dashboard secret store에 등록합니다.
 4. 최초 관리자 등록과 거부된 OAuth 사용자 정리는 [Supabase Auth 운영 절차](docs/operations/supabase-auth.md)를 따릅니다.
 
 프로젝트별 데이터·비밀값·배포 경계와 현재 상태는 [Preview/Production 운영 절차](docs/operations/preview-production.md)를 따릅니다.
@@ -69,6 +70,7 @@ Edge Function 배포 예시는 다음과 같습니다. 실제 프로젝트 연�
 supabase functions deploy search-places
 supabase functions deploy plan-route
 supabase functions deploy weather-timeline
+supabase functions deploy save-collection
 ```
 
 `KAKAO_LOCAL_DAILY_LIMIT`, `KAKAO_CURRENT_DAILY_LIMIT`, `KAKAO_FUTURE_DAILY_LIMIT`, `KMA_DAILY_LIMIT`도 반드시 양의 정수로 설정합니다. 비밀값이나 key는 명령 인자에 넣지 않습니다. 이 값은 비용을 보장하는 공급자 설정의 대체물이 아니므로 Kakao·기상청 콘솔에서도 유료 사용을 비활성화하고 더 낮은 쿼터를 사용해야 합니다.

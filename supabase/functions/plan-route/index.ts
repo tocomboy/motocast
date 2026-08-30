@@ -2,37 +2,18 @@ import { consumeBudget, requireMember, serviceClient } from "../_shared/auth.ts"
 import { executeBudgetedProviderCall } from "../_shared/budgeted-call.ts";
 import { candidatePolicy } from "../_shared/candidate-policy.ts";
 import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
-import { assertKakaoRouteMatchesPoints, assertKakaoSectionsContinuous, normalizeKakaoRoutesPayload, type NormalizedKakaoRoute } from "../_shared/kakao-route.ts";
-import { applyMotorcycleRoutePolicy } from "../_shared/kakao-safety.ts";
+import { requestKakaoRoute } from "../_shared/kakao-provider.ts";
+import { assertKakaoSectionsContinuous, type NormalizedKakaoRoute } from "../_shared/kakao-route.ts";
 import { assertWithinHardReturn } from "../_shared/route-deadline.ts";
 import { parseRouteRequest, type RoutePointRequest } from "../_shared/route-request.ts";
 import { buildSafeRouteResponse } from "../_shared/route-response.ts";
-import { routeFingerprint, selectEstimatedWindingRoute } from "../_shared/winding.ts";
+import { routeFingerprint } from "../_shared/winding.ts";
 
 function limitFromEnv(name: string): number {
   const raw = Deno.env.get(name);
   const value = raw ? Number(raw) : Number.NaN;
   if (!Number.isInteger(value) || value <= 0) throw new Error("API_BUDGET_NOT_CONFIGURED");
   return value;
-}
-
-function pointParam(point: RoutePointRequest) {
-  const safeName = point.name.replace(/[|,]/g, " ").slice(0, 80).trim();
-  return `${point.longitude},${point.latitude}${safeName ? `,name=${safeName}` : ""}`;
-}
-
-function futureTime(date: Date) {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  });
-  const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
-  return `${parts.year}${parts.month}${parts.day}${parts.hour}${parts.minute}`;
 }
 
 function nextChunk(points: RoutePointRequest[], startIndex: number) {
@@ -76,45 +57,6 @@ function storagePoint(point: RoutePointRequest) {
     winding: point.winding === true,
     ...(point.stopRole ? { stopRole: point.stopRole } : {}),
   };
-}
-
-async function requestKakaoRoute(input: {
-  origin: RoutePointRequest;
-  destination: RoutePointRequest;
-  waypoints: RoutePointRequest[];
-  departureAt: Date;
-  isFuture: boolean;
-  priority: "RECOMMEND" | "DISTANCE";
-  requestAlternatives: boolean;
-  excludedFingerprints?: Set<string>;
-  apiKey: string;
-}) {
-  const endpoint = input.isFuture ? "future/directions" : "directions";
-  const url = new URL(`https://apis-navi.kakaomobility.com/v1/${endpoint}`);
-  url.searchParams.set("origin", pointParam(input.origin));
-  url.searchParams.set("destination", pointParam(input.destination));
-  if (input.waypoints.length) url.searchParams.set("waypoints", input.waypoints.map(pointParam).join("|"));
-  if (input.isFuture) url.searchParams.set("departure_time", futureTime(input.departureAt));
-  applyMotorcycleRoutePolicy(url, input.priority, input.requestAlternatives);
-
-  const response = await fetch(url, {
-    headers: { Authorization: `KakaoAK ${input.apiKey}` },
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) throw new Error("PROVIDER_AUTH_FAILED");
-    if (response.status === 429) throw new Error("PROVIDER_RATE_LIMITED");
-    if (response.status >= 500) throw new Error("PROVIDER_UNAVAILABLE");
-    throw new Error("SAFE_ROUTE_NOT_FOUND");
-  }
-  const routes = normalizeKakaoRoutesPayload(await response.json());
-  const requestedPoints = [input.origin, ...input.waypoints, input.destination];
-  routes.forEach((route) => assertKakaoRouteMatchesPoints(route, requestedPoints));
-  const route = input.requestAlternatives
-    ? selectEstimatedWindingRoute(routes, input.excludedFingerprints ?? new Set())
-    : routes[0];
-  if (!route) throw new Error("SAFE_ROUTE_NOT_FOUND");
-  return route;
 }
 
 Deno.serve(async (request) => {

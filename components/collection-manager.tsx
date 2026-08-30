@@ -53,20 +53,22 @@ export function CollectionManager({ currentPoints, onApply }: CollectionManagerP
     if (!supabase) return;
     const targetId = collection?.id ?? "new";
     setBusyId(targetId);
-    const { data, error } = await supabase.rpc("save_collection_version", {
-      target_collection_id: collection?.id ?? null,
-      collection_title: collectionTitle,
-      collection_description: collectionDescription,
-      collection_points: currentPoints,
+    const { data, error } = await supabase.functions.invoke("save-collection", {
+      body: {
+        collectionId: collection?.id ?? null,
+        title: collectionTitle,
+        description: collectionDescription,
+        points: currentPoints,
+      },
     });
     setBusyId(null);
-    if (error || !Array.isArray(data) || data.length !== 1 || !Number.isInteger(data[0]?.version_number)) {
+    if (error || !data || typeof data !== "object" || !Number.isInteger((data as { versionNumber?: unknown }).versionNumber)) {
       setStatus("컬렉션을 저장하지 못했습니다. 입력과 이용 권한을 확인해 주세요.");
       return;
     }
     setTitle("");
     setDescription("");
-    setStatus(`${collectionTitle} 컬렉션의 ${data[0].version_number}번째 불변 버전을 저장했습니다.`);
+    setStatus(`${collectionTitle} 컬렉션의 ${(data as { versionNumber: number }).versionNumber}번째 불변 버전을 저장했습니다.`);
     await loadCollections();
   }
 

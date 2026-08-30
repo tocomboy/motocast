@@ -44,5 +44,6 @@ export async function consumeBudget(
     member_id: memberId,
   });
   if (error) throw new Error(error.message);
-  return data as number;
+  if (!Number.isInteger(data) || Number(data) <= 0) throw new Error("API_BUDGET_ACCOUNTING_FAILED");
+  return Number(data);
 }

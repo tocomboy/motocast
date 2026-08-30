@@ -22,14 +22,14 @@ create or replace function pg_temp.test_point(
   point_id text, point_label text, point_lon numeric, point_lat numeric,
   point_kind text, dwell integer, winding boolean, stop_role text default null
 ) returns jsonb language sql immutable as $$
-  select jsonb_strip_nulls(jsonb_build_object(
+  select jsonb_build_object(
     'id', point_id, 'label', point_label, 'kakaoPlaceId', point_id,
     'verificationToken', repeat('a', 43), 'name', point_label,
     'address', '테스트 주소', 'roadAddress', null,
     'longitude', point_lon, 'latitude', point_lat,
     'kind', point_kind, 'dwellMinutes', dwell, 'selected', true,
     'winding', winding, 'stopRole', stop_role
-  ));
+  );
 $$;
 
 create or replace function pg_temp.test_route(profile text, middle_lon numeric)
@@ -82,27 +82,33 @@ grant select on fixture to authenticated, service_role;
 
 insert into tap_results values
   (not has_function_privilege('anon', 'public.save_collection_version(uuid,text,text,jsonb)', 'EXECUTE'), 'anon cannot save collection versions'),
+  (not has_function_privilege('authenticated', 'public.save_collection_version(uuid,text,text,jsonb)', 'EXECUTE'), 'browser cannot save unverified collection JSON directly'),
+  (has_function_privilege('service_role', 'public.save_collection_version_internal(uuid,uuid,text,text,jsonb)', 'EXECUTE'), 'trusted Edge role can save verified collection versions'),
   (not has_function_privilege('authenticated', 'public.save_trip_plan(jsonb,jsonb)', 'EXECUTE'), 'browser cannot persist untrusted route JSON directly'),
   (not has_function_privilege('anon', 'public.publish_trip_share(uuid,text)', 'EXECUTE'), 'anon cannot publish shares'),
   (has_function_privilege('service_role', 'public.stage_route_candidate_internal(uuid,uuid,jsonb,jsonb)', 'EXECUTE'), 'trusted Edge role can stage provider candidates'),
   (has_function_privilege('anon', 'public.resolve_share(text)', 'EXECUTE'), 'anon can resolve only a tokenized public snapshot'),
   (not has_function_privilege('authenticated', 'public.build_trip_share_snapshot(uuid,uuid)', 'EXECUTE'), 'authenticated cannot call the private snapshot builder');
 
-set local role authenticated;
-select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+set local role service_role;
 
 create temp table collection_result on commit drop as
-select * from public.save_collection_version(null, '북한강', '테스트 코스', (select points from fixture));
-grant select on collection_result to authenticated;
+select * from public.save_collection_version_internal(
+  '71000000-0000-0000-0000-000000000001', null, '북한강', '테스트 코스', (select points from fixture)
+);
+grant select on collection_result to authenticated, service_role;
 insert into tap_results values
   ((select version_number = 1 from collection_result), 'new collection starts at immutable version 1'),
   ((select count(*) = 1 from public.riding_collections), 'rider sees the owned collection only');
 
 create temp table collection_result_2 on commit drop as
-select * from public.save_collection_version(
+select * from public.save_collection_version_internal(
+  '71000000-0000-0000-0000-000000000001',
   (select collection_id from collection_result), '북한강', '수정 설명', (select points from fixture)
 );
 grant select on collection_result_2 to authenticated;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
 insert into tap_results values
   ((select version_number = 2 from collection_result_2), 'saving an existing collection appends version 2'),
   ((select count(*) = 2 from public.collection_versions), 'old collection version remains immutable');
@@ -136,7 +142,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
 insert into trip_result
 select public.finalize_trip_plan('73000000-0000-4000-8000-000000000001', null);
-grant select on trip_result to authenticated;
+grant select on trip_result to authenticated, service_role;
 insert into tap_results values
   ((select count(*) = 1 from public.trips where id = (select id from trip_result)), 'trusted staged candidates finalize one owned trip'),
   ((select count(*) = 2 from public.trip_waypoints where trip_id = (select id from trip_result)), 'plan save preserves ordered waypoints'),
@@ -144,15 +150,104 @@ insert into tap_results values
 set local role service_role;
 insert into tap_results values
   ((select count(*) = 0 from public.route_plan_drafts), 'finalize consumes trusted route drafts');
+
+select public.stage_route_candidate_internal(
+  '71000000-0000-0000-0000-000000000001',
+  '73000000-0000-4000-8000-000000000003',
+  (select plan from plan_fixture), route
+)
+from jsonb_array_elements((select routes from fixture)) as staged(route)
+where route -> 'candidate' ->> 'id' <> 'short';
+
+select public.stage_route_candidate_internal(
+  '71000000-0000-0000-0000-000000000001',
+  '73000000-0000-4000-8000-000000000004',
+  case when route -> 'candidate' ->> 'id' = 'short'
+    then jsonb_set((select plan from plan_fixture), '{title}', '"다른 계획"'::jsonb, false)
+    else (select plan from plan_fixture)
+  end,
+  route
+)
+from jsonb_array_elements((select routes from fixture)) as staged(route);
+
+select public.stage_route_candidate_internal(
+  '71000000-0000-0000-0000-000000000001',
+  '73000000-0000-4000-8000-000000000005',
+  (select plan from plan_fixture), route
+)
+from jsonb_array_elements((select routes from fixture)) as staged(route);
+update public.route_plan_drafts
+set created_at = now() - interval '11 minutes'
+where owner_id = '71000000-0000-0000-0000-000000000001'
+  and planning_id = '73000000-0000-4000-8000-000000000005';
+
+select public.stage_route_candidate_internal(
+  '71000000-0000-0000-0000-000000000001',
+  '73000000-0000-4000-8000-000000000006',
+  (select plan from plan_fixture), route
+)
+from jsonb_array_elements((select routes from fixture)) as staged(route);
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+do $$
+declare
+  replay_rejected boolean := false;
+  partial_rejected boolean := false;
+  mismatched_rejected boolean := false;
+  expired_rejected boolean := false;
+begin
+  begin
+    perform public.finalize_trip_plan('73000000-0000-4000-8000-000000000001', null);
+  exception when sqlstate 'P0001' then replay_rejected := sqlerrm = 'ROUTE_PLAN_NOT_READY'; end;
+  begin
+    perform public.finalize_trip_plan('73000000-0000-4000-8000-000000000003', null);
+  exception when sqlstate 'P0001' then partial_rejected := sqlerrm = 'ROUTE_PLAN_NOT_READY'; end;
+  begin
+    perform public.finalize_trip_plan('73000000-0000-4000-8000-000000000004', null);
+  exception when sqlstate 'P0001' then mismatched_rejected := sqlerrm = 'ROUTE_PLAN_NOT_READY'; end;
+  begin
+    perform public.finalize_trip_plan('73000000-0000-4000-8000-000000000005', null);
+  exception when sqlstate 'P0001' then expired_rejected := sqlerrm = 'ROUTE_PLAN_NOT_READY'; end;
+  insert into tap_results values
+    (replay_rejected, 'consumed route drafts cannot be replayed'),
+    (partial_rejected, 'partial route candidate sets cannot finalize'),
+    (mismatched_rejected, 'candidate drafts for different plans cannot finalize together'),
+    (expired_rejected, 'expired route drafts cannot finalize');
+end;
+$$;
+
+set local role service_role;
+select public.stage_route_candidate_internal(
+  '71000000-0000-0000-0000-000000000001',
+  '73000000-0000-4000-8000-000000000002',
+  (select plan from plan_fixture),
+  jsonb_set(pg_temp.test_route('balanced', 127.05), '{candidate,id}', to_jsonb(profile), false)
+)
+from (values ('balanced'), ('winding'), ('short')) as duplicate_profiles(profile);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.finalize_trip_plan('73000000-0000-4000-8000-000000000002', null);
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'ROUTE_PLAN_NOT_READY'; end;
+  insert into tap_results values (rejected, 'three labels with duplicate geometry cannot finalize a route plan');
+end;
+$$;
+
+set local role service_role;
+delete from public.route_plan_drafts
+where owner_id = '71000000-0000-0000-0000-000000000001'
+  and planning_id = '73000000-0000-4000-8000-000000000002';
 
 do $$
 declare rejected boolean := false;
 begin
   begin
-    perform public.save_collection_version(
-      null,
+    perform public.save_collection_version_internal(
+      '71000000-0000-0000-0000-000000000001', null,
       '누락 플래그',
       '',
       (select points #- '{0,selected}' from fixture)
@@ -162,11 +257,14 @@ begin
 end;
 $$;
 
-reset role;
-insert into public.weather_snapshots(
-  trip_id, source, issued_at, valid_until, segments, request_hash, candidate_profile
-) values (
-  (select id from trip_result), 'kma', '2026-08-30T23:30:00.000Z', '2026-08-31T02:00:00.000Z',
+create temp table weather_result(id uuid) on commit drop;
+insert into weather_result
+select public.insert_weather_snapshot_internal(
+  '71000000-0000-0000-0000-000000000001',
+  (select id from trip_result),
+  'balanced',
+  '2026-08-30T23:30:00.000Z',
+  '2026-08-31T02:00:00.000Z',
   jsonb_build_array(jsonb_build_object(
     'id', 'balanced-0', 'label', '복귀', 'longitude', 127.2, 'latitude', 37.2,
     'eta', '2026-08-31T00:10:00.000Z', 'status', 'forecast', 'model', 'ultra',
@@ -174,8 +272,40 @@ insert into public.weather_snapshots(
     'temperatureC', 22, 'precipitationProbability', 0, 'windSpeedMps', 1.2,
     'verificationToken', 'must-never-be-public'
   )),
-  repeat('b', 64), 'balanced'
+  repeat('b', 64),
+  '2026-08-30T23:35:00.000Z'
 );
+grant select on weather_result to authenticated, service_role;
+select public.mark_weather_snapshot_stale_internal(
+  '71000000-0000-0000-0000-000000000001',
+  (select id from weather_result),
+  'KMA_REQUEST_FAILED'
+);
+
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.insert_weather_snapshot_internal(
+      '71000000-0000-0000-0000-000000000001',
+      (select id from trip_result),
+      'balanced',
+      '2026-08-30T23:30:00.000Z',
+      '2026-08-31T02:00:00.000Z',
+      jsonb_build_array(jsonb_build_object(
+        'id', 'balanced-0', 'label', '변조', 'longitude', 128.2, 'latitude', 37.2,
+        'eta', '2026-08-31T00:10:00.000Z', 'status', 'forecast', 'model', 'ultra',
+        'issuedAt', '2026-08-30T23:30:00.000Z', 'condition', 'clear',
+        'temperatureC', 22, 'precipitationProbability', 0, 'windSpeedMps', 1.2
+      )),
+      repeat('c', 64),
+      '2026-08-30T23:36:00.000Z'
+    );
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'INVALID_WEATHER_ROUTE'; end;
+  insert into tap_results values (rejected, 'trusted weather persistence rejects coordinates not derived from the stored route');
+end;
+$$;
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
 
@@ -191,8 +321,10 @@ grant select on published_result to authenticated;
 insert into tap_results values
   ((select published_snapshot = preview_snapshot from published_result cross join preview_result), 'published snapshot exactly matches the approved preview capability'),
   ((select preview_snapshot -> 'weather' is not null from preview_result), 'share includes weather only when it matches the selected stored route'),
-  ((select preview_snapshot -> 'waypoints' -> 0 ->> 'id' is not null from preview_result), 'share waypoint producer includes a stable id required by the parser'),
+  ((select preview_snapshot -> 'waypoints' -> 0 ->> 'id' = 'waypoint-0' from preview_result), 'share uses snapshot-local waypoint ids instead of owner table ids'),
   ((select preview_snapshot -> 'weather' ? 'validUntil' from preview_result), 'share exposes weather validity for freshness display'),
+  ((select preview_snapshot -> 'weather' ->> 'stale' = 'true' from preview_result), 'share persists a provider-failure stale observation'),
+  ((select preview_snapshot -> 'weather' ->> 'staleReason' = 'KMA_REQUEST_FAILED' from preview_result), 'share exposes only the safe stale reason'),
   ((select char_length(share_token) = 43 from published_result), 'share token contains 32 random base64url bytes'),
   ((select token_hash <> share_token and char_length(token_hash) = 64 from public.share_links cross join published_result), 'database stores only the share token hash'),
   ((select published_snapshot::text not like '%verificationToken%' from published_result), 'public snapshot recursively excludes internal place verification proofs');
@@ -243,6 +375,28 @@ begin
 end;
 $$;
 
+create temp table expired_preview on commit drop as
+select * from public.preview_trip_share((select id from trip_result));
+grant select on expired_preview to authenticated, service_role;
+set local role service_role;
+update public.share_preview_grants
+set created_at = now() - interval '2 hours', expires_at = now() - interval '1 hour'
+where token_hash = encode(extensions.digest((select preview_token from expired_preview), 'sha256'), 'hex');
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.publish_trip_share(
+      (select id from trip_result),
+      (select preview_token from expired_preview)
+    );
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'SHARE_PREVIEW_REQUIRED'; end;
+  insert into tap_results values (rejected, 'expired preview capabilities cannot publish a share');
+end;
+$$;
+
 select public.revoke_share((select share_id from published_result));
 do $$
 declare rejected boolean := false;
@@ -275,11 +429,11 @@ insert into tap_results values
   ((select count(*) = 0 from public.share_links), 'rider B cannot manage rider A share links');
 
 do $$
-declare collection_rejected boolean := false; preview_rejected boolean := false; revoke_rejected boolean := false;
+declare preview_rejected boolean := false; revoke_rejected boolean := false; route_rejected boolean := false;
 begin
   begin
-    perform public.save_collection_version((select collection_id from collection_result), '탈취', '', (select points from fixture));
-  exception when sqlstate 'P0001' then collection_rejected := sqlerrm = 'COLLECTION_NOT_FOUND'; end;
+    perform public.finalize_trip_plan('73000000-0000-4000-8000-000000000006', null);
+  exception when sqlstate 'P0001' then route_rejected := sqlerrm = 'ROUTE_PLAN_NOT_READY'; end;
   begin
     perform public.preview_trip_share((select id from trip_result));
   exception when sqlstate 'P0001' then preview_rejected := sqlerrm = 'TRIP_NOT_FOUND'; end;
@@ -287,9 +441,24 @@ begin
     perform public.revoke_share((select share_id from reissued_result));
   exception when sqlstate 'P0001' then revoke_rejected := sqlerrm = 'SHARE_NOT_FOUND'; end;
   insert into tap_results values
-    (collection_rejected, 'rider B cannot append a version to rider A collection'),
+    (route_rejected, 'rider B cannot finalize rider A staged routes'),
     (preview_rejected, 'rider B cannot preview rider A trip'),
     (revoke_rejected, 'rider B cannot revoke rider A share');
+end;
+$$;
+
+set local role service_role;
+do $$
+declare collection_rejected boolean := false;
+begin
+  begin
+    perform public.save_collection_version_internal(
+      '72000000-0000-0000-0000-000000000002',
+      (select collection_id from collection_result),
+      '탈취', '', (select points from fixture)
+    );
+  exception when sqlstate 'P0001' then collection_rejected := sqlerrm = 'COLLECTION_NOT_FOUND'; end;
+  insert into tap_results values (collection_rejected, 'trusted save still enforces rider B ownership of rider A collection');
 end;
 $$;
 

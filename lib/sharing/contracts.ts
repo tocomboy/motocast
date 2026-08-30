@@ -38,6 +38,9 @@ export type SharedRideSnapshot = {
     issuedAt: string;
     retrievedAt: string;
     validUntil: string;
+    stale: boolean;
+    staleObservedAt: string | null;
+    staleReason: string | null;
     candidateProfile: "balanced" | "winding" | "short";
     segments: WeatherForecast[];
   };
@@ -107,6 +110,9 @@ export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
     if (
       parsed.source !== "kma" ||
       !["balanced", "winding", "short"].includes(String(parsed.candidateProfile)) ||
+      typeof parsed.stale !== "boolean" ||
+      !(parsed.staleObservedAt === null || typeof parsed.staleObservedAt === "string") ||
+      !(parsed.staleReason === null || (typeof parsed.staleReason === "string" && parsed.staleReason.length <= 200)) ||
       !Array.isArray(parsed.segments) || parsed.segments.length < 1 || parsed.segments.length > 40
     ) throw new Error("INVALID_SHARE_SNAPSHOT");
     return {
@@ -114,6 +120,9 @@ export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
       issuedAt: timestamp(parsed.issuedAt),
       retrievedAt: timestamp(parsed.retrievedAt),
       validUntil: timestamp(parsed.validUntil),
+      stale: parsed.stale,
+      staleObservedAt: parsed.staleObservedAt === null ? null : timestamp(parsed.staleObservedAt),
+      staleReason: parsed.staleReason,
       candidateProfile: parsed.candidateProfile as "balanced" | "winding" | "short",
       segments: parsed.segments.map(parseWeatherForecast),
     };

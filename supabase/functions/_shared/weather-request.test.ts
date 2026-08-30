@@ -36,6 +36,7 @@ describe("parseWeatherPoints", () => {
 
   it.each([
     { tripId: "not-a-uuid", candidateProfile: "balanced" },
+    { tripId: null, candidateProfile: "balanced" },
     { tripId: null, candidateProfile: "fastest" },
   ])("rejects invalid request metadata %#", (metadata) => {
     expect(() => parseWeatherRequest({ ...metadata, points: [point] }, now)).toThrow(/^INVALID_/);

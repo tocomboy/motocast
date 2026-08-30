@@ -1,5 +1,5 @@
-const CACHE_NAME = "motocast-shell-v2";
-const SHELL = ["/", "/manifest.webmanifest", "/icon.svg"];
+const CACHE_NAME = "motocast-shell-v3";
+const SHELL = ["/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)));
@@ -17,7 +17,7 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  const sensitivePath = ["/share/", "/api/", "/auth/", "/invite/", "/admin/", "/login"]
+  const sensitivePath = ["/share", "/api/", "/auth/", "/invite/", "/admin/", "/login"]
     .some((prefix) => url.pathname.startsWith(prefix));
   if (event.request.method !== "GET" || url.origin !== self.location.origin || sensitivePath) return;
 
@@ -31,6 +31,9 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(event.request).then((cached) => cached ?? caches.match("/"))),
+      .catch(() => caches.match(event.request).then((cached) => cached ?? new Response(
+        "오프라인 상태입니다. 네트워크 연결 후 다시 시도해 주세요.",
+        { status: 503, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } },
+      ))),
   );
 });

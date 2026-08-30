@@ -97,6 +97,10 @@ function weatherModelLabel(status: string | undefined, model: string | undefined
   return "날씨 미조회";
 }
 
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 function liveRouteCandidate(response: SafeRouteResponse, desiredReturnAt: string, hardReturnAt: string): RouteCandidate {
   const stopMinutes = response.legs.reduce((total, leg) => total + leg.dwellMinutes, 0);
   const rideMinutes = Math.ceil(response.legs.reduce((total, leg) => total + leg.durationSeconds, 0) / 60);
@@ -173,6 +177,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       : "환경변수가 없어 데모 모드로 실행 중입니다. 실제 외부 API는 호출하지 않습니다.",
   );
   const [calculating, setCalculating] = useState(false);
+  const [selectionPending, setSelectionPending] = useState(false);
   const plannerPanelRef = useRef<HTMLElement>(null);
   const mobilePlanButtonRef = useRef<HTMLButtonElement>(null);
   const addWindingButtonRef = useRef<HTMLButtonElement>(null);
@@ -181,6 +186,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const selectionIntentRef = useRef(0);
   const persistedSelectedRef = useRef<RouteCandidate["id"]>("balanced");
   const selectionQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const selectionPendingRef = useRef(false);
+  const weatherRequestRef = useRef(0);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("motocast-planner-draft-v1");
@@ -397,7 +404,10 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   function applyCollection(points: CollectionPoint[], title: string) {
     const application = prepareCollectionApplication(points);
     routeGenerationRef.current += 1;
-    setAppliedCollectionPoints(application.orderedPoints);
+    const orderedPoints = application.lunch || !places.lunch
+      ? application.orderedPoints
+      : [...application.orderedPoints, routePoint(places.lunch, "stop", 60, false, "lunch")];
+    setAppliedCollectionPoints(orderedPoints);
     setWindingPoints(application.selectedWindingPoints);
     setPlaces((current) => ({
       ...current,
@@ -418,6 +428,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       setNotice("경로 통과 시각이 없어 날씨를 조회하지 않았습니다.");
       return;
     }
+    const weatherRequest = ++weatherRequestRef.current;
     setWeatherLoading(candidate.id);
     const points = candidate.segments.map((segment) => ({
       id: segment.id,
@@ -426,16 +437,15 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       latitude: segment.to.latitude,
       eta: segment.arrivalAt!,
     }));
-    const { data, error } = await supabase.functions.invoke("weather-timeline", {
-      body: { tripId, candidateProfile: candidate.id, points },
-    });
-    if (generation !== routeGenerationRef.current || liveTripIdRef.current !== tripId) return;
-    setWeatherLoading((current) => current === candidate.id ? null : current);
-    if (error) {
-      setNotice("날씨를 조회하지 못했습니다. 저장된 동일 경로 예보가 있으면 서버가 stale 표시와 함께 반환합니다.");
-      return;
-    }
     try {
+      const { data, error } = await supabase.functions.invoke("weather-timeline", {
+        body: { tripId, candidateProfile: candidate.id, points },
+      });
+      if (generation !== routeGenerationRef.current || liveTripIdRef.current !== tripId) return;
+      if (error) {
+        setNotice("날씨를 조회하지 못했습니다. 저장된 동일 경로 예보가 있으면 서버가 stale 표시와 함께 반환합니다.");
+        return;
+      }
       const response = parseWeatherTimelineResponse(data);
       if (
         response.forecasts.length !== points.length ||
@@ -483,22 +493,29 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
           : "구간 통과 예상 시각에 맞춘 기상청 예보를 저장했습니다. 날씨는 경로 순위에 반영하지 않습니다.");
     } catch {
       setNotice("날씨 공급자 응답을 안전하게 확인하지 못해 날씨를 표시하지 않았습니다.");
+    } finally {
+      if (weatherRequest === weatherRequestRef.current) setWeatherLoading(null);
     }
   }
 
   function chooseCandidate(candidate: RouteCandidate) {
+    if (calculating) return;
     setSelectedId(candidate.id);
     if (!liveTripId) return;
     const tripId = liveTripId;
+    const generation = routeGenerationRef.current;
     const intent = ++selectionIntentRef.current;
+    selectionPendingRef.current = true;
+    setSelectionPending(true);
     selectionQueueRef.current = selectionQueueRef.current.then(async () => {
+      if (generation !== routeGenerationRef.current || liveTripIdRef.current !== tripId) return;
       const supabase = getBrowserSupabase();
       if (!supabase) return;
       const { error } = await supabase.rpc("select_trip_candidate", {
         target_trip_id: tripId,
         target_profile: candidate.id,
       });
-      if (liveTripIdRef.current !== tripId) return;
+      if (generation !== routeGenerationRef.current || liveTripIdRef.current !== tripId) return;
       if (error) {
         if (intent === selectionIntentRef.current) {
           setSelectedId(persistedSelectedRef.current);
@@ -508,18 +525,27 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       }
       persistedSelectedRef.current = candidate.id;
       if (intent === selectionIntentRef.current && !weatherByCandidate[candidate.id]) {
-        await loadWeather(candidate, tripId);
+        await loadWeather(candidate, tripId, generation);
       }
     }).catch(() => {
       if (intent === selectionIntentRef.current && liveTripIdRef.current === tripId) {
         setSelectedId(persistedSelectedRef.current);
         setNotice("선택 경로 저장 중 오류가 발생해 마지막 저장 경로로 되돌렸습니다.");
       }
+    }).finally(() => {
+      if (intent === selectionIntentRef.current) {
+        selectionPendingRef.current = false;
+        setSelectionPending(false);
+      }
     });
   }
 
   async function recalculate(event: FormEvent) {
     event.preventDefault();
+    if (selectionPendingRef.current) {
+      setNotice("선택 경로 저장이 끝난 뒤 다시 계산해 주세요.");
+      return;
+    }
     if (!connected && (!draft.origin.trim() || !draft.destination.trim() || !draft.lunch.trim())) {
       setNotice("출발지, 복귀지, 점심 정차는 반드시 입력해야 합니다.");
       return;
@@ -558,7 +584,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       planningId,
       origin: routePoint(places.origin, "pass-through", 0),
       destination: routePoint(places.destination, "pass-through", 0),
-      waypoints: appliedCollectionPoints ?? generatedWaypoints,
+      waypoints: appliedCollectionPoints?.filter((point) => point.selected) ?? generatedWaypoints,
       serviceDate: draft.rideDate,
       ...liveTimes,
     };
@@ -594,8 +620,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         target_planning_id: planningId,
         target_trip_id: liveTripId,
       });
-      if (saveError || typeof savedTripId !== "string" || !/^[0-9a-f-]{36}$/i.test(savedTripId)) {
+      if (saveError || !isUuid(savedTripId)) {
         setLiveTripId(null);
+        liveTripIdRef.current = null;
         setNotice("실제 안전 경로는 표시하지만 계획 저장에 실패했습니다. 날씨와 공유는 저장 성공 전까지 사용할 수 없습니다.");
         closePlannerPanel();
         return;
@@ -765,8 +792,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
               <span className="shield-mark">✓</span>
               <p><strong>오토바이 안전 조건 고정</strong><br />자동차전용도로 제외 조건을 완화하지 않습니다.</p>
             </div>
-            <button className="primary-button calculate" type="submit" disabled={calculating}>
-              {calculating ? "안전 경로 계산 중…" : "선택 경로 다시 계산"}
+            <button className="primary-button calculate" type="submit" disabled={calculating || selectionPending}>
+              {calculating ? "안전 경로 계산 중…" : selectionPending ? "선택 경로 저장 중…" : "선택 경로 다시 계산"}
             </button>
           </form>
         </aside>
@@ -806,6 +833,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                   type="button"
                   className={`candidate-card ${selectedId === candidate.id ? "is-selected" : ""}`}
                   key={candidate.id}
+                  disabled={calculating}
                   onClick={() => void chooseCandidate(candidate)}
                   aria-pressed={selectedId === candidate.id}
                 >

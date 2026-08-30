@@ -81,4 +81,14 @@ describe("prepareCollectionApplication", () => {
       "plain", "rest", "new-winding", "lunch",
     ]);
   });
+
+  it("does not activate an unselected meal from an immutable template", () => {
+    const result = prepareCollectionApplication([
+      point("lunch-off", { kind: "stop", dwellMinutes: 60, stopRole: "lunch", selected: false }),
+      point("dinner-off", { kind: "stop", dwellMinutes: 60, stopRole: "dinner", selected: false }),
+    ]);
+    expect(result.lunch).toBeNull();
+    expect(result.dinner).toBeNull();
+    expect(result.orderedPoints).toHaveLength(2);
+  });
 });

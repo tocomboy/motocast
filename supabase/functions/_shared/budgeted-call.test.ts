@@ -22,6 +22,15 @@ describe("executeBudgetedProviderCall", () => {
     expect(provider).not.toHaveBeenCalled();
   });
 
+  it.each([null, 0, -1, 1.5, Number.NaN])("fails closed on an invalid budget receipt: %s", async (receipt) => {
+    const provider = vi.fn(async () => "ok");
+    await expect(executeBudgetedProviderCall(
+      async () => receipt as number,
+      provider,
+    )).rejects.toThrow("API_BUDGET_ACCOUNTING_FAILED");
+    expect(provider).not.toHaveBeenCalled();
+  });
+
   it("does not refund a consumed call when the provider fails", async () => {
     let consumed = 0;
     await expect(executeBudgetedProviderCall(

@@ -87,10 +87,9 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
     throw new Error("INVALID_PLANNING_ID");
   }
 
-  const selectedWaypoints = body.waypoints.filter((point) => point.kind !== "optional" || point.selected);
+  const selectedWaypoints = body.waypoints.filter((point) => point.selected);
   if (selectedWaypoints.some((point) => (
-    (point.kind !== "optional" && !point.selected) ||
-    ((point.kind === "stop" || point.kind === "optional") && point.dwellMinutes <= 0)
+    (point.kind === "stop" || point.kind === "optional") && point.dwellMinutes <= 0
   ))) throw new Error("INVALID_WAYPOINTS");
   const lunches = selectedWaypoints.filter((point) => point.stopRole === "lunch");
   const dinners = selectedWaypoints.filter((point) => point.stopRole === "dinner");

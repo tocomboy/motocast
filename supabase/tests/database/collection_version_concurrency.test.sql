@@ -39,19 +39,19 @@ create trigger delay_test_collection_version
 
 select dblink_connect('collection_c1', 'host=127.0.0.1 port=5432 dbname=postgres user=supabase_admin password=postgres');
 select dblink_connect('collection_c2', 'host=127.0.0.1 port=5432 dbname=postgres user=supabase_admin password=postgres');
-select dblink_exec('collection_c1', 'set role authenticated');
-select dblink_exec('collection_c2', 'set role authenticated');
-select dblink_exec('collection_c1', 'set "request.jwt.claim.sub" = ''73000000-0000-0000-0000-000000000003''');
-select dblink_exec('collection_c2', 'set "request.jwt.claim.sub" = ''73000000-0000-0000-0000-000000000003''');
+select dblink_exec('collection_c1', 'set role service_role');
+select dblink_exec('collection_c2', 'set role service_role');
 
 select dblink_send_query('collection_c1', $query$
-  select version_number from public.save_collection_version(
+  select version_number from public.save_collection_version_internal(
+    '73000000-0000-0000-0000-000000000003',
     '73000000-0000-0000-0000-000000000013', '동시 버전', '',
     '[{"id":"point","label":"지점","kakaoPlaceId":"point","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"지점","address":"테스트 주소","roadAddress":null,"longitude":127.1,"latitude":37.1,"kind":"pass-through","dwellMinutes":0,"selected":true,"winding":true}]'::jsonb
   )
 $query$);
 select dblink_send_query('collection_c2', $query$
-  select version_number from public.save_collection_version(
+  select version_number from public.save_collection_version_internal(
+    '73000000-0000-0000-0000-000000000003',
     '73000000-0000-0000-0000-000000000013', '동시 버전', '',
     '[{"id":"point","label":"지점","kakaoPlaceId":"point","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"지점","address":"테스트 주소","roadAddress":null,"longitude":127.1,"latitude":37.1,"kind":"pass-through","dwellMinutes":0,"selected":true,"winding":true}]'::jsonb
   )
@@ -82,6 +82,14 @@ select
   row_number() over () || ' - ' || description
 from tap_results;
 select '1..' || count(*) from tap_results;
+
+do $$
+begin
+  if exists (select 1 from tap_results where not ok) then
+    raise exception 'CONCURRENCY_TEST_FAILED';
+  end if;
+end;
+$$;
 
 -- The disposable local verification database owns dblink. Keeping an extension
 -- that existed before this suite avoids deleting shared local test capability;

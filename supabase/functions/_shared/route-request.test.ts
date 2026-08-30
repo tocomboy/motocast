@@ -59,6 +59,13 @@ describe("parseRouteRequest", () => {
     expect(parsed.waypoints[0].stopRole).toBe("lunch");
   });
 
+  it("removes any unselected template point while preserving selected order", async () => {
+    const disabledWinding = await point({ kakaoPlaceId: "disabled", selected: false, winding: true });
+    const selectedVia = await point({ kakaoPlaceId: "selected", winding: true });
+    const parsed = await parseRouteRequest(await request([disabledWinding, selectedVia]), secret);
+    expect(parsed.waypoints.map((item) => item.kakaoPlaceId)).toEqual(["lunch", "selected"]);
+  });
+
   it("normalizes pass-through dwell to zero", async () => {
     const via = await point({ kind: "pass-through", dwellMinutes: 60 });
     const parsed = await parseRouteRequest(await request([via]), secret);
