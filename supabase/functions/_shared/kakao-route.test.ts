@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assertKakaoRouteMatchesPoints, normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload } from "./kakao-route";
+import { assertKakaoRouteMatchesPoints, assertKakaoSectionsContinuous, normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload } from "./kakao-route";
 
 function payload() {
   return {
@@ -75,5 +75,15 @@ describe("normalizeKakaoRoutePayload", () => {
       { name: "끊긴 구간", distance: 6000, duration: 900, vertexes: [127.18, 37.58, 127.2, 37.6] },
     ];
     expect(() => normalizeKakaoRoutePayload(value)).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+  });
+
+  it("rejects a gap introduced only when separately valid provider calls are combined", () => {
+    const first = normalizeKakaoRoutePayload(payload()).sections[0];
+    const second = structuredClone(first);
+    first.roads.at(-1)!.vertexes = [127.1, 37.5, 127.154, 37.554];
+    second.roads[0].vertexes = [127.146, 37.546, 127.2, 37.6];
+    expect(() => assertKakaoSectionsContinuous([first])).not.toThrow();
+    expect(() => assertKakaoSectionsContinuous([second])).not.toThrow();
+    expect(() => assertKakaoSectionsContinuous([first, second])).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
   });
 });

@@ -2,7 +2,7 @@ import { consumeBudget, requireMember } from "../_shared/auth.ts";
 import { executeBudgetedProviderCall } from "../_shared/budgeted-call.ts";
 import { candidatePolicy } from "../_shared/candidate-policy.ts";
 import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
-import { assertKakaoRouteMatchesPoints, normalizeKakaoRoutesPayload } from "../_shared/kakao-route.ts";
+import { assertKakaoRouteMatchesPoints, assertKakaoSectionsContinuous, normalizeKakaoRoutesPayload, type NormalizedKakaoRoute } from "../_shared/kakao-route.ts";
 import { applyMotorcycleRoutePolicy } from "../_shared/kakao-safety.ts";
 import { assertWithinHardReturn } from "../_shared/route-deadline.ts";
 import { parseRouteRequest, type RoutePointRequest } from "../_shared/route-request.ts";
@@ -120,6 +120,7 @@ Deno.serve(async (request) => {
     let departure = new Date(input.departureAt);
     let totalDistance = 0;
     let totalDuration = 0;
+    const acceptedSections: NormalizedKakaoRoute["sections"] = [];
 
     while (cursor < points.length - 1) {
       const { endIndex, via } = nextChunk(points, cursor);
@@ -150,6 +151,7 @@ Deno.serve(async (request) => {
       const chunkPoints = [points[cursor], ...via, points[endIndex]];
       for (let index = 0; index < selected.result.sections.length; index += 1) {
         const section = selected.result.sections[index];
+        acceptedSections.push(section);
         const from = chunkPoints[index];
         const to = chunkPoints[index + 1];
         const arrivedAt = new Date(departure.getTime() + section.duration * 1000);
@@ -183,6 +185,7 @@ Deno.serve(async (request) => {
       cursor = endIndex;
     }
 
+    assertKakaoSectionsContinuous(acceptedSections);
     assertWithinHardReturn(departure.toISOString(), input.hardReturnAt);
 
     return jsonResponse(buildSafeRouteResponse({

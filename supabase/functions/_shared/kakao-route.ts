@@ -150,9 +150,13 @@ export function assertKakaoRouteMatchesPoints(route: NormalizedKakaoRoute, point
       throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
     }
   }
-  for (let index = 1; index < route.sections.length; index += 1) {
-    const previous = sectionEndpoints(route.sections[index - 1]);
-    const current = sectionEndpoints(route.sections[index]);
+  assertKakaoSectionsContinuous(route.sections);
+}
+
+export function assertKakaoSectionsContinuous(sections: NormalizedKakaoRoute["sections"]) {
+  for (let index = 1; index < sections.length; index += 1) {
+    const previous = sectionEndpoints(sections[index - 1]);
+    const current = sectionEndpoints(sections[index]);
     if (!geometryNear(previous.end, current.start)) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
   }
 }
