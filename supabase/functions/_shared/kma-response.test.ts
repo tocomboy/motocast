@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import { parseKmaItems } from "./kma-response";
+import { weatherFailureKind } from "./weather-failure";
 
 describe("parseKmaItems", () => {
   it("classifies malformed provider JSON as a KMA response failure", async () => {
     await expect(parseKmaItems(new Response("not-json"))).rejects.toThrow("KMA_INVALID_RESPONSE");
+  });
+
+  it.each(["null", "[]", '"unexpected"'])("classifies structurally invalid provider JSON %s", async (body) => {
+    const error = await parseKmaItems(new Response(body)).catch((reason: unknown) => reason);
+    expect(error).toEqual(new Error("KMA_INVALID_RESPONSE"));
+    expect(weatherFailureKind(error)).toBe("provider");
   });
 
   it("rejects provider status and empty forecast payloads", async () => {
