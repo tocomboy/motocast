@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { consumeKakaoOidcHandoff, isKakaoOidcHandoff } from "@/lib/auth/kakao-oidc";
+import {
+  consumeKakaoOidcHandoff,
+  isKakaoOidcHandoff,
+  KAKAO_OIDC_BINDING_COOKIE,
+  kakaoOidcBindingFromCookie,
+  kakaoOidcBindingHash,
+  signInWithBoundKakaoOidc,
+} from "@/lib/auth/kakao-oidc";
 import { finalizeAuthenticatedLogin } from "@/lib/auth/login-finalization";
 import { isTrustedSameOriginJsonRequest } from "@/lib/auth/request-policy";
 import { isSupabaseAuthCookieName, supabaseAuthCookieNames } from "@/lib/auth/session-cookies";
@@ -12,9 +19,10 @@ const noStoreHeaders = {
   "x-content-type-options": "nosniff",
 };
 
-function completionResponse(redirect: string, status: number) {
+function completionResponse(redirect: string, status: number, clearInvite = false) {
   const response = NextResponse.json({ redirect }, { status, headers: noStoreHeaders });
-  response.cookies.delete("motocast_invite");
+  response.cookies.delete(KAKAO_OIDC_BINDING_COOKIE);
+  if (clearInvite) response.cookies.delete("motocast_invite");
   return response;
 }
 
@@ -29,7 +37,7 @@ async function deniedCompletion(
 ) {
   const { error } = await supabase.auth.signOut({ scope: "local" });
   if (error) console.error("local sign-out failed after denied Kakao OIDC completion");
-  const response = completionResponse(redirect, 403);
+  const response = completionResponse(redirect, 403, true);
   for (const name of authCookieNames) response.cookies.delete(name);
   return response;
 }
@@ -46,6 +54,8 @@ export async function POST(request: Request) {
     handoff = null;
   }
   if (!isKakaoOidcHandoff(handoff)) return invalidCompletion();
+  const binding = kakaoOidcBindingFromCookie(request.headers.get("cookie"));
+  if (!binding) return invalidCompletion();
 
   const authCookieNames = new Set(supabaseAuthCookieNames(request.headers.get("cookie")));
   const supabase = await createServerSupabase((names) => {
@@ -54,14 +64,19 @@ export async function POST(request: Request) {
 
   try {
     const { url, publishableKey } = publicSupabaseEnv();
-    const oidc = await consumeKakaoOidcHandoff(url, publishableKey, new URL(request.url).origin, handoff);
-    const { error } = await supabase.auth.signInWithIdToken({
-      provider: "kakao",
-      token: oidc.idToken,
-      access_token: oidc.accessToken,
-      nonce: oidc.nonce,
-    });
-    if (error) throw new Error("OIDC_ID_TOKEN_REJECTED");
+    const bindingHash = await kakaoOidcBindingHash(binding);
+    const oidc = await consumeKakaoOidcHandoff(
+      url,
+      publishableKey,
+      new URL(request.url).origin,
+      handoff,
+      bindingHash,
+    );
+    await signInWithBoundKakaoOidc(
+      oidc,
+      bindingHash,
+      (credentials) => supabase.auth.signInWithIdToken(credentials),
+    );
 
     const finalization = await finalizeAuthenticatedLogin(supabase, request.headers.get("cookie"));
     if (finalization === "invalid_invite") {
@@ -70,7 +85,7 @@ export async function POST(request: Request) {
     if (finalization === "invite_required") {
       return deniedCompletion(supabase, authCookieNames, "/login?error=invite_required");
     }
-    return completionResponse("/", 200);
+    return completionResponse("/", 200, true);
   } catch {
     console.error("Kakao OIDC completion failed");
     const { error } = await supabase.auth.signOut({ scope: "local" });

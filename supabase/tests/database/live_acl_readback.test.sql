@@ -17,6 +17,11 @@ insert into acl_results(ok, description) values
   (not has_function_privilege('authenticated', 'public.consume_daily_api_budget(text,text,integer)', 'EXECUTE'), 'authenticated cannot provide a budget limit'),
   (not has_function_privilege('authenticated', 'public.save_collection_version(uuid,text,text,jsonb)', 'EXECUTE'), 'browser cannot save unverified collection JSON'),
   (not has_function_privilege('authenticated', 'public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)', 'EXECUTE'), 'browser cannot insert weather snapshots'),
+  (not has_function_privilege('anon', 'public.create_kakao_oidc_handoff_internal(text,text,text,timestamptz)', 'EXECUTE'), 'anon cannot create OIDC handoffs'),
+  (not has_function_privilege('authenticated', 'public.create_kakao_oidc_handoff_internal(text,text,text,timestamptz)', 'EXECUTE'), 'authenticated cannot create OIDC handoffs'),
+  (not has_function_privilege('anon', 'public.consume_kakao_oidc_handoff_internal(text,text)', 'EXECUTE'), 'anon cannot consume OIDC handoffs'),
+  (not has_function_privilege('authenticated', 'public.consume_kakao_oidc_handoff_internal(text,text)', 'EXECUTE'), 'authenticated cannot consume OIDC handoffs'),
+  ((select relrowsecurity from pg_class where oid = 'public.kakao_oidc_handoffs'::regclass), 'OIDC handoff table has RLS enabled'),
   (not has_table_privilege('authenticated', 'public.trips', 'TRUNCATE'), 'browser cannot truncate trips'),
   (not has_table_privilege('authenticated', 'public.weather_snapshots', 'REFERENCES'), 'browser cannot create references to weather snapshots'),
   (not has_table_privilege('authenticated', 'public.share_links', 'TRIGGER'), 'browser cannot create triggers on shares'),
@@ -64,8 +69,8 @@ with allowed(function_signature) as (
     ('public.stage_route_candidate_internal(uuid,uuid,jsonb,jsonb)'),
     ('public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)'),
     ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)'),
-    ('public.create_kakao_oidc_handoff_internal(text,text,timestamptz)'),
-    ('public.consume_kakao_oidc_handoff_internal(text)')
+    ('public.create_kakao_oidc_handoff_internal(text,text,text,timestamptz)'),
+    ('public.consume_kakao_oidc_handoff_internal(text,text)')
 )
 insert into acl_results(ok, description)
 select
@@ -106,8 +111,8 @@ with allowed(function_oid) as (
     ('public.stage_route_candidate_internal(uuid,uuid,jsonb,jsonb)'::regprocedure::oid),
     ('public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)'::regprocedure::oid),
     ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)'::regprocedure::oid),
-    ('public.create_kakao_oidc_handoff_internal(text,text,timestamptz)'::regprocedure::oid),
-    ('public.consume_kakao_oidc_handoff_internal(text)'::regprocedure::oid)
+    ('public.create_kakao_oidc_handoff_internal(text,text,text,timestamptz)'::regprocedure::oid),
+    ('public.consume_kakao_oidc_handoff_internal(text,text)'::regprocedure::oid)
 )
 insert into acl_results(ok, description)
 select

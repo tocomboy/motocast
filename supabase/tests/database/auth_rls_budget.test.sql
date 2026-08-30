@@ -14,7 +14,7 @@ values
   ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000002', 'authenticated', 'authenticated', 'rider-a@motocast.test', '', now(), now(), now(), '{"provider":"kakao","providers":["kakao"]}', '{"name":"라이더 A"}'),
   ('00000000-0000-0000-0000-000000000000', '30000000-0000-0000-0000-000000000003', 'authenticated', 'authenticated', 'rider-b@motocast.test', '', now(), now(), now(), '{"provider":"kakao","providers":["kakao"]}', '{"name":"라이더 B"}'),
   ('00000000-0000-0000-0000-000000000000', '40000000-0000-0000-0000-000000000004', 'authenticated', 'authenticated', 'revoked@motocast.test', '', now(), now(), now(), '{"provider":"kakao","providers":["kakao"]}', '{"name":"회수 라이더"}'),
-  ('00000000-0000-0000-0000-000000000000', '50000000-0000-0000-0000-000000000005', 'authenticated', 'authenticated', 'invite-c@motocast.test', '', now(), now(), now(), '{"provider":"kakao","providers":["kakao"]}', '{"name":"초대 C"}'),
+  ('00000000-0000-0000-0000-000000000000', '50000000-0000-0000-0000-000000000005', 'authenticated', 'authenticated', 'invite-c@motocast.test', '', now(), now(), now(), '{"provider":"kakao","providers":["kakao"]}', '{"name":"초대 C","picture":"https://example.invalid/kakao-picture.png"}'),
   ('00000000-0000-0000-0000-000000000000', '60000000-0000-0000-0000-000000000006', 'authenticated', 'authenticated', 'invite-d@motocast.test', '', now(), now(), now(), '{"provider":"kakao","providers":["kakao"]}', '{"name":"초대 D"}');
 
 insert into public.memberships(user_id, role, revoked_at)
@@ -73,7 +73,8 @@ select public.claim_invite((select invite_token from new_invite));
 select public.claim_invite((select invite_token from new_invite));
 insert into tap_results values
   ((select count(*) from public.memberships where user_id = '50000000-0000-0000-0000-000000000005') = 1, 'first invited user claims successfully'),
-  ((select count(*) from public.memberships where user_id = '50000000-0000-0000-0000-000000000005') = 1, 'same user can retry a committed invitation claim idempotently');
+  ((select count(*) from public.memberships where user_id = '50000000-0000-0000-0000-000000000005') = 1, 'same user can retry a committed invitation claim idempotently'),
+  ((select avatar_url = 'https://example.invalid/kakao-picture.png' from public.profiles where id = '50000000-0000-0000-0000-000000000005'), 'direct Kakao OIDC picture metadata is preserved in the rider profile');
 
 reset role;
 insert into tap_results values

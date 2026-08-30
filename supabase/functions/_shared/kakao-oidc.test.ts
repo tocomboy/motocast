@@ -16,11 +16,12 @@ import {
 
 const secret = "test-only-secret-that-is-longer-than-thirty-two-bytes";
 const origin = "https://motocast.example";
+const bindingHash = "c".repeat(64);
 
 describe("email-free Kakao OIDC Edge boundary", () => {
 it("builds an email-free and nonce-bound authorize request", async () => {
   const returnTo = validatedReturnTo(`${origin}/auth/kakao/callback`, [origin]);
-  const created = await createOidcAttempt(returnTo, secret, 1_000_000);
+  const created = await createOidcAttempt(returnTo, bindingHash, secret, 1_000_000);
   const authorize = kakaoAuthorizeUrl("client-id", "https://project.supabase.co/functions/v1/kakao-oidc/callback", created.attempt, created.authorizeNonce);
 
   expect(authorize.hostname).toBe("kauth.kakao.com");
@@ -32,7 +33,7 @@ it("builds an email-free and nonce-bound authorize request", async () => {
 
 it("rejects attempt tampering, mismatch, expiry, and open redirects", async () => {
   const returnTo = validatedReturnTo(`${origin}/auth/kakao/callback`, [origin]);
-  const created = await createOidcAttempt(returnTo, secret, 1_000_000);
+  const created = await createOidcAttempt(returnTo, bindingHash, secret, 1_000_000);
   const valid = await verifyOidcAttempt(created.cookieValue, created.attempt.state, [origin], secret, 1_001_000);
   expect(valid.nonce).toBe(created.attempt.nonce);
 
@@ -71,6 +72,7 @@ it("authenticates encrypted handoff ciphertext and expiry", async () => {
     idToken: `header.${"a".repeat(110)}.signature`,
     accessToken: "access-token-value",
     nonce: createHandoffToken(),
+    bindingHash,
     expiresAt: now + 60_000,
   };
   const encrypted = await encryptKakaoTokenPayload(payload, secret);

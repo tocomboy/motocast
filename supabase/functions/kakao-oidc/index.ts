@@ -8,6 +8,7 @@ import {
   decryptKakaoTokenPayload,
   encryptKakaoTokenPayload,
   isHandoffToken,
+  isOidcBindingHash,
   kakaoAuthorizeUrl,
   KAKAO_OIDC_CALLBACK_PATH,
   KAKAO_OIDC_HANDOFF_TTL_MS,
@@ -58,7 +59,13 @@ async function start(request: Request): Promise<Response> {
   const environment = configuredEnvironment();
   const url = new URL(request.url);
   const returnTo = validatedReturnTo(url.searchParams.get("return_to"), environment.allowedOrigins);
-  const { attempt, authorizeNonce, cookieValue } = await createOidcAttempt(returnTo, environment.stateSecret);
+  const bindingHash = url.searchParams.get("binding_hash");
+  if (!isOidcBindingHash(bindingHash)) throw new Error("OIDC_BINDING_INVALID");
+  const { attempt, authorizeNonce, cookieValue } = await createOidcAttempt(
+    returnTo,
+    bindingHash,
+    environment.stateSecret,
+  );
   const authorize = kakaoAuthorizeUrl(environment.clientId, callbackUri(request), attempt, authorizeNonce);
   return redirect(authorize.toString(), setOidcCookie(cookieValue));
 }
@@ -108,12 +115,14 @@ async function callback(request: Request): Promise<Response> {
     const encryptedPayload = await encryptKakaoTokenPayload({
       ...provider,
       nonce: attempt.nonce,
+      bindingHash: attempt.bindingHash,
       expiresAt: now + KAKAO_OIDC_HANDOFF_TTL_MS,
     }, environment.stateSecret);
     const handoff = createHandoffToken();
     const handoffHash = await sha256Hex(handoff);
     const { error } = await serviceClient().rpc("create_kakao_oidc_handoff_internal", {
       handoff_hash: handoffHash,
+      handoff_binding_hash: attempt.bindingHash,
       handoff_payload: encryptedPayload,
       handoff_expires_at: new Date(now + KAKAO_OIDC_HANDOFF_TTL_MS).toISOString(),
     });
@@ -139,13 +148,17 @@ async function consume(request: Request): Promise<Response> {
   }
 
   try {
-    const body = await request.json() as { handoff?: unknown };
-    if (!isHandoffToken(body.handoff)) throw new Error("OIDC_HANDOFF_INVALID");
+    const body = await request.json() as { handoff?: unknown; bindingHash?: unknown };
+    if (!isHandoffToken(body.handoff) || !isOidcBindingHash(body.bindingHash)) {
+      throw new Error("OIDC_HANDOFF_INVALID");
+    }
     const { data, error } = await serviceClient().rpc("consume_kakao_oidc_handoff_internal", {
       handoff_hash: await sha256Hex(body.handoff),
+      handoff_binding_hash: body.bindingHash,
     });
     if (error || typeof data !== "string") throw new Error("OIDC_HANDOFF_INVALID");
     const payload = await decryptKakaoTokenPayload(data, environment.stateSecret);
+    if (payload.bindingHash !== body.bindingHash) throw new Error("OIDC_BINDING_INVALID");
     return new Response(JSON.stringify(payload), {
       status: 200,
       headers: { ...cors, ...noStoreHeaders, "content-type": "application/json; charset=utf-8" },

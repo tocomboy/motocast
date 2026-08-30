@@ -7,11 +7,13 @@ export const KAKAO_OIDC_CALLBACK_PATH = "/functions/v1/kakao-oidc/callback";
 export const KAKAO_OIDC_HANDOFF_TTL_MS = 2 * 60 * 1000;
 const ATTEMPT_TTL_MS = 5 * 60 * 1000;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const HASH_PATTERN = /^[0-9a-f]{64}$/;
 
 export type KakaoTokenPayload = {
   idToken: string;
   accessToken: string;
   nonce: string;
+  bindingHash: string;
   expiresAt: number;
 };
 
@@ -19,6 +21,7 @@ type OidcAttempt = {
   state: string;
   nonce: string;
   returnTo: string;
+  bindingHash: string;
   issuedAt: number;
 };
 
@@ -124,13 +127,16 @@ export function validatedReturnTo(raw: string | null, allowedOrigins: readonly s
 
 export async function createOidcAttempt(
   returnTo: URL,
+  bindingHash: string,
   secret: string,
   now = Date.now(),
 ): Promise<{ attempt: OidcAttempt; authorizeNonce: string; cookieValue: string }> {
+  if (!HASH_PATTERN.test(bindingHash)) throw new Error("OIDC_BINDING_INVALID");
   const attempt: OidcAttempt = {
     state: randomToken(),
     nonce: randomToken(),
     returnTo: returnTo.toString(),
+    bindingHash,
     issuedAt: now,
   };
   const payload = base64UrlEncode(encoder.encode(JSON.stringify(attempt)));
@@ -173,6 +179,7 @@ export async function verifyOidcAttempt(
     !attempt ||
     !TOKEN_PATTERN.test(attempt.state) ||
     !TOKEN_PATTERN.test(attempt.nonce) ||
+    !HASH_PATTERN.test(attempt.bindingHash) ||
     attempt.state !== returnedState ||
     !Number.isSafeInteger(attempt.issuedAt) ||
     attempt.issuedAt > now + 30_000 ||
@@ -236,6 +243,7 @@ function validTokenPayload(value: unknown, now: number): KakaoTokenPayload {
     typeof record.idToken !== "string" || record.idToken.length < 100 || record.idToken.length > 10_000 ||
     typeof record.accessToken !== "string" || record.accessToken.length < 10 || record.accessToken.length > 10_000 ||
     typeof record.nonce !== "string" || !TOKEN_PATTERN.test(record.nonce) ||
+    typeof record.bindingHash !== "string" || !HASH_PATTERN.test(record.bindingHash) ||
     typeof record.expiresAt !== "number" || !Number.isSafeInteger(record.expiresAt) ||
     record.expiresAt <= now || record.expiresAt > now + KAKAO_OIDC_HANDOFF_TTL_MS + 30_000
   ) {
@@ -291,4 +299,8 @@ export function createHandoffToken(): string {
 
 export function isHandoffToken(value: unknown): value is string {
   return typeof value === "string" && TOKEN_PATTERN.test(value);
+}
+
+export function isOidcBindingHash(value: unknown): value is string {
+  return typeof value === "string" && HASH_PATTERN.test(value);
 }

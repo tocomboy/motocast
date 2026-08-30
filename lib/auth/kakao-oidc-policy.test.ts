@@ -9,19 +9,19 @@ const configSource = readFileSync(new URL("../../supabase/config.toml", import.m
 describe("email-free Kakao OIDC source policy", () => {
   it("does not call the hosted Kakao OAuth start path", () => {
     expect(loginSource).not.toContain("signInWithOAuth");
-    expect(loginSource).toContain("kakaoOidcStartUrl");
+    expect(loginSource).toContain('action="/api/auth/kakao/start"');
   });
 
   it("removes the fragment before sending the handoff in a same-origin body", () => {
-    expect(callbackSource).toContain("window.history.replaceState");
+    expect(callbackSource).toContain("clearKakaoOidcHandoffFragment(window)");
     expect(callbackSource).toContain('fetch("/api/auth/kakao/complete"');
     expect(callbackSource).toContain("JSON.stringify({ handoff })");
   });
 
   it("passes both nonce and access token into Supabase ID-token verification", () => {
-    expect(completionSource).toContain('provider: "kakao"');
-    expect(completionSource).toContain("access_token: oidc.accessToken");
-    expect(completionSource).toContain("nonce: oidc.nonce");
+    expect(completionSource).toContain("signInWithBoundKakaoOidc");
+    expect(completionSource).toContain("kakaoOidcBindingFromCookie");
+    expect(completionSource).toContain("bindingHash");
   });
 
   it("marks only the public OIDC function as JWT-exempt", () => {
