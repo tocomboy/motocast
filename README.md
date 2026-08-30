@@ -78,9 +78,24 @@ supabase secrets set KAKAO_REST_API_KEY=... KMA_APIHUB_KEY=...
 
 더 자세한 신고·키 관리 기준은 [SECURITY.md](SECURITY.md)를 따릅니다.
 
-## 저장소 운영
+## 브랜치와 배포 운영
 
-`main`은 항상 검증 가능한 상태로 유지합니다. 기능 브랜치에서 변경하고 Pull Request의 CI가 모두 통과한 뒤 병합하는 흐름을 권장합니다. 현재 라이선스는 정하지 않았으므로, 저장소가 공개되어 있어도 재사용 권한이 자동으로 부여되지는 않습니다.
+- `develop`: 기본 개발 브랜치입니다. 개발 변경과 통합은 이 브랜치에서 진행합니다.
+- `main`: 운영 배포 브랜치입니다. 같은 저장소의 `develop → main` Pull Request만 허용합니다.
+- CI는 `develop`과 `main`의 push 및 두 브랜치를 대상으로 하는 Pull Request에서 lint, TypeScript, 단위 테스트, 프로덕션 빌드를 실행합니다.
+- `pull_request_target` 기반의 별도 검사는 `main` 대상 PR의 출발 브랜치와 저장소 소유권을 검사합니다. PR 코드는 checkout하거나 실행하지 않습니다.
+
+`main`의 GitHub 보호 규칙은 Pull Request와 `verify`, `develop-only` 검사를 필수로 요구하며 직접 push, 강제 push, 삭제를 막습니다. 현재 라이선스는 정하지 않았으므로, 저장소가 공개되어 있어도 재사용 권한이 자동으로 부여되지는 않습니다.
+
+### Vercel CD
+
+[`vercel.json`](vercel.json)은 비용과 불필요한 배포를 줄이기 위해 `develop`과 `main`만 자동 배포 대상으로 허용합니다.
+
+- `develop` push: Preview 배포
+- `develop → main` 병합: Production 배포
+- 그 밖의 브랜치: 자동 배포하지 않음
+
+Vercel CD는 저장소의 비밀값으로 CLI 토큰을 보관하는 방식 대신 Vercel 공식 GitHub 연동을 사용합니다. 최초 한 번 Vercel에서 `tocomboy/motocast`를 가져오고 Production Branch가 `main`인지 확인해야 합니다. Vercel에는 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_KAKAO_MAP_JS_KEY`만 환경별로 등록합니다. Kakao REST 키와 기상청 키는 프런트엔드가 아니라 Supabase Edge Function secrets에 둡니다.
 
 커밋 전 확인:
 
