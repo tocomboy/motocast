@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import { KakaoMapCanvas } from "@/components/kakao-map-canvas";
+import { PlaceSearchField } from "@/components/place-search-field";
+import type { PlaceSearchResult } from "@/lib/places/search";
 import {
   demoCandidates,
   demoDepartureAt,
@@ -27,6 +29,14 @@ type PlannerDraft = {
   includeRest: boolean;
 };
 
+type PlannerPlaces = {
+  origin: PlaceSearchResult | null;
+  destination: PlaceSearchResult | null;
+  lunch: PlaceSearchResult | null;
+  dinner: PlaceSearchResult | null;
+  rest: PlaceSearchResult | null;
+};
+
 const defaultDraft: PlannerDraft = {
   origin: "팔당 출발점",
   destination: "팔당 복귀점",
@@ -36,7 +46,7 @@ const defaultDraft: PlannerDraft = {
   hardReturnTime: "18:30",
   lunch: "홍천 점심 정차",
   dinner: "",
-  includeRest: true,
+  includeRest: false,
 };
 
 const candidateTone: Record<RouteCandidate["id"], string> = {
@@ -61,6 +71,13 @@ function weatherIcon(condition: string) {
 
 export function PlannerDashboard({ connected }: { connected: boolean }) {
   const [draft, setDraft] = useState(defaultDraft);
+  const [places, setPlaces] = useState<PlannerPlaces>({
+    origin: null,
+    destination: null,
+    lunch: null,
+    dinner: null,
+    rest: null,
+  });
   const [selectedId, setSelectedId] = useState<RouteCandidate["id"]>("balanced");
   const [plannerOpen, setPlannerOpen] = useState(false);
   const [notice, setNotice] = useState(
@@ -108,15 +125,44 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
+  function selectPlace(key: keyof PlannerPlaces, place: PlaceSearchResult | null) {
+    setPlaces((current) => ({ ...current, [key]: place }));
+  }
+
+  function routePoint(
+    place: PlaceSearchResult,
+    kind: "pass-through" | "stop" | "optional",
+    dwellMinutes: number,
+    winding = false,
+  ) {
+    return {
+      ...place,
+      id: place.kakaoPlaceId,
+      label: place.name,
+      kind,
+      dwellMinutes,
+      selected: true,
+      winding,
+    };
+  }
+
   async function recalculate(event: FormEvent) {
     event.preventDefault();
-    if (!draft.origin.trim() || !draft.destination.trim() || !draft.lunch.trim()) {
+    if (!connected && (!draft.origin.trim() || !draft.destination.trim() || !draft.lunch.trim())) {
       setNotice("출발지, 복귀지, 점심 정차는 반드시 입력해야 합니다.");
       return;
     }
     if (!connected) {
       setNotice("데모 계획을 갱신했습니다. 실제 계산에는 Supabase와 카카오 API 설정이 필요합니다.");
       setPlannerOpen(false);
+      return;
+    }
+    if (!places.origin || !places.destination || !places.lunch) {
+      setNotice("출발지, 복귀지, 점심은 검색 결과에서 장소를 선택해야 합니다.");
+      return;
+    }
+    if (draft.includeRest && !places.rest) {
+      setNotice("휴식을 일정에 넣으려면 휴식 장소를 검색해서 선택해 주세요.");
       return;
     }
 
@@ -130,13 +176,13 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     setNotice("오토바이·자동차전용도로 제외 조건으로 경로를 계산 중입니다.");
     const { error } = await supabase.functions.invoke("plan-route", {
       body: {
-        origin: { ...demoMapPoints[0], name: draft.origin },
-        destination: { ...demoMapPoints.at(-1), name: draft.destination },
-        waypoints: demoMapPoints.slice(1, -1).map((point, index) => ({
-          ...point,
-          name: index === 1 ? draft.lunch : point.label,
-          dwellMinutes: index === 1 ? 60 : index === 2 && draft.includeRest ? 30 : 0,
-        })),
+        origin: routePoint(places.origin, "pass-through", 0),
+        destination: routePoint(places.destination, "pass-through", 0),
+        waypoints: [
+          routePoint(places.lunch, "stop", 60),
+          ...(draft.includeRest && places.rest ? [routePoint(places.rest, "optional", 30)] : []),
+          ...(places.dinner ? [routePoint(places.dinner, "stop", 60)] : []),
+        ],
         departureAt: `${draft.rideDate}T${draft.departureTime}:00+09:00`,
         priority: selected.id === "short" ? "DISTANCE" : selected.id === "balanced" ? "TIME" : "RECOMMEND",
       },
@@ -145,7 +191,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     setNotice(
       error
         ? "경로 갱신에 실패했습니다. 기존 계획을 유지하며, 실패를 자동차 경로로 대체하지 않았습니다."
-        : "안전 조건을 적용한 경로가 갱신되었습니다. 화면 데이터 연결은 다음 수직 슬라이스에서 완료합니다.",
+        : "안전 경로 응답을 확인했습니다. 아래 결과는 아직 예시 데이터이며 실제 응답으로 교체 중입니다.",
     );
     setPlannerOpen(false);
   }
@@ -184,18 +230,23 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
           <form onSubmit={recalculate} className="planner-form">
             <section className="form-section">
               <div className="section-label"><span>01</span>경로</div>
-              <label>
-                <span>출발지</span>
-                <input value={draft.origin} onChange={(event) => update("origin", event.target.value)} />
-              </label>
-              <label>
-                <span>복귀지</span>
-                <input value={draft.destination} onChange={(event) => update("destination", event.target.value)} />
-              </label>
-              <div className="waypoint-list">
-                <span className="waypoint-tag winding"><i />유명산 굽이길 <button type="button" aria-label="유명산 굽이길 제거">×</button></span>
-                <span className="waypoint-tag"><i />홍천 점심 <button type="button" aria-label="홍천 점심 제거">×</button></span>
-              </div>
+              {connected ? (
+                <>
+                  <PlaceSearchField label="출발지" placeholder="예: 팔당역" required selected={places.origin} onSelect={(place) => selectPlace("origin", place)} />
+                  <PlaceSearchField label="복귀지" placeholder="예: 팔당역" required selected={places.destination} onSelect={(place) => selectPlace("destination", place)} />
+                </>
+              ) : (
+                <>
+                  <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>
+                  <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>
+                </>
+              )}
+              {!connected ? (
+                <div className="waypoint-list">
+                  <span className="waypoint-tag winding"><i />유명산 굽이길 <button type="button" aria-label="유명산 굽이길 제거">×</button></span>
+                  <span className="waypoint-tag"><i />홍천 점심 <button type="button" aria-label="홍천 점심 제거">×</button></span>
+                </div>
+              ) : null}
               <button
                 className="text-button"
                 type="button"
@@ -220,13 +271,25 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
             <section className="form-section">
               <div className="section-label"><span>03</span>정차</div>
-              <label><span>점심 · 필수</span><input value={draft.lunch} onChange={(event) => update("lunch", event.target.value)} /></label>
-              <label><span>저녁 · 선택</span><input placeholder="입력하지 않아도 됩니다" value={draft.dinner} onChange={(event) => update("dinner", event.target.value)} /></label>
+              {connected ? (
+                <>
+                  <PlaceSearchField label="점심" placeholder="식당 이름 또는 지역" required selected={places.lunch} onSelect={(place) => selectPlace("lunch", place)} />
+                  <PlaceSearchField label="저녁 · 선택" placeholder="입력하지 않아도 됩니다" selected={places.dinner} onSelect={(place) => selectPlace("dinner", place)} />
+                </>
+              ) : (
+                <>
+                  <label><span>점심 · 필수</span><input value={draft.lunch} onChange={(event) => update("lunch", event.target.value)} /></label>
+                  <label><span>저녁 · 선택</span><input placeholder="입력하지 않아도 됩니다" value={draft.dinner} onChange={(event) => update("dinner", event.target.value)} /></label>
+                </>
+              )}
               <label className="toggle-row">
-                <span><strong>북한강 휴식</strong><small>선택 시 30분 계산</small></span>
+                <span><strong>휴식 일정에 포함</strong><small>장소 선택 시 기본 30분 계산</small></span>
                 <input type="checkbox" checked={draft.includeRest} onChange={(event) => update("includeRest", event.target.checked)} />
                 <i aria-hidden="true" />
               </label>
+              {connected && draft.includeRest ? (
+                <PlaceSearchField label="휴식 장소" placeholder="카페, 휴게소, 전망대" required selected={places.rest} onSelect={(place) => selectPlace("rest", place)} />
+              ) : null}
             </section>
 
             <div className="safety-note">
@@ -243,7 +306,10 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
           <div className="map-area">
             <KakaoMapCanvas points={demoMapPoints} />
             <div className="map-topbar">
-              <div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>
+              <div className="map-badges">
+                <div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>
+                <span className="example-data-badge">예시 데이터</span>
+              </div>
               <button className="map-control" type="button" aria-label="현재 위치로 이동">⌖</button>
             </div>
             <div className="ride-summary">
@@ -262,7 +328,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
           <div className="candidate-strip" aria-label="추천 경로 후보">
             <div className="strip-heading">
-              <div><p className="eyebrow">ROUTE OPTIONS</p><h2>추천 경로 3개</h2></div>
+              <div><p className="eyebrow">ROUTE OPTIONS</p><h2>추천 경로 3개 <small>예시</small></h2></div>
               <p>날씨는 순위에 반영하지 않고 구간 정보로만 표시합니다.</p>
             </div>
             <div className="candidate-grid">
