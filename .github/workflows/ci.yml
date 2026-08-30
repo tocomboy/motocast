@@ -2,14 +2,20 @@ name: CI
 
 on:
   pull_request:
+    branches: [develop, main]
   push:
-    branches: [main]
+    branches: [develop, main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    name: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
