@@ -290,7 +290,7 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 
 ### Verified 2026-08-30
 
-- Git: local `develop` is `448f756e0859ef20f5c127f29f06333fb07d12f9`, twelve commits ahead of `origin/develop` at `201e1ec12c967da57fb671fad294cf1d05b9d56c`; `main` and `origin/main` are `d0134ed93d7e0d8aed1123c5d693c665bbe646e8`. `.gitignore` remains a pre-existing user change and is excluded from MOTOCAST commits. No open PR or remote probe branch exists.
+- Git: the latest independently approved route implementation is fixed SHA `448f756e0859ef20f5c127f29f06333fb07d12f9`, based on `origin/develop` at `201e1ec12c967da57fb671fad294cf1d05b9d56c`; `main` and `origin/main` are `d0134ed93d7e0d8aed1123c5d693c665bbe646e8`. Documentation synchronization follows that implementation commit. `.gitignore` remains a pre-existing user change and is excluded from MOTOCAST commits. No open PR or remote probe branch exists.
 - GitHub: public repository; default `develop`; `main` required checks `verify` and `develop-only`; PR required with zero approvals; administrators and conversation resolution enforced; force pushes and deletion disabled.
 - Vercel: project `tocomboys-projects/motocast`, GitHub repository linked, Production Branch `main`, Node.js `24.x`. One Ready Production deployment exists and its alias indicates the import-time `develop` source. The public alias returned HTTP 200 without a Vercel Authentication redirect at audit time. No custom domain exists.
 - Vercel environment names: the three intended `NEXT_PUBLIC_*` names plus seven server-only/provider/budget names exist in both Production and Preview. Values were not read or printed.
