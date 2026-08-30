@@ -118,7 +118,7 @@ npm run lint && npm run typecheck && npm test && npm run build
 
 ## 남은 첫 버전 작업
 
-- `AUTH-004` 고정 SHA 독립 5축 리뷰와 Preview OIDC migration/Edge Function 배포·readback
+- `AUTH-004` Preview OIDC migration/Edge Function 배포·readback
 - Preview의 초대/Kakao OIDC, 권한, 장소·경로·날씨·컬렉션·공유·budget 전체 브라우저 smoke test
 - 실제 Kakao/KMA 최소 호출, stale snapshot, 비용 한도 소진 검증
 - Preview 게이트 후 `OPS-008` Production 지역 재인터뷰, `develop → main` PR, Production 사용자 관점 검증
