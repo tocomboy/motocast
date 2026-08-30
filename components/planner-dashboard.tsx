@@ -22,11 +22,13 @@ import {
   demoHardReturnAt,
   demoMapPoints,
 } from "@/lib/planner/demo";
+import { PlannerActionGate } from "@/lib/planner/action-gate";
 import { parseSafeRouteCandidateSet, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
 import { buildTimeline, formatKoreanTime, weatherRiskLabel } from "@/lib/planner/schedule";
 import type { RouteCandidate } from "@/lib/planner/types";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { parseWeatherTimelineResponse, type WeatherTimelineResponse } from "@/lib/weather/provider-contract";
+import { formatPlannerWeatherStatus } from "@/lib/weather/status";
 
 type PlannerDraft = {
   origin: string;
@@ -186,9 +188,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const selectionIntentRef = useRef(0);
   const persistedSelectedRef = useRef<RouteCandidate["id"]>("balanced");
   const selectionQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const selectionPendingRef = useRef(false);
   const weatherRequestRef = useRef(0);
-  const calculatingRef = useRef(false);
+  const actionGateRef = useRef(new PlannerActionGate());
 
   useEffect(() => {
     const saved = window.localStorage.getItem("motocast-planner-draft-v1");
@@ -247,6 +248,10 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
   const displayedCandidates = liveCandidates ?? demoCandidates;
   const selected = displayedCandidates.find((candidate) => candidate.id === selectedId) ?? displayedCandidates[0];
+  const selectedWeather = weatherByCandidate[selectedId];
+  const selectedWeatherStatus = selectedWeather
+    ? formatPlannerWeatherStatus(selectedWeather, selectedWeather.staleObservedAt ?? new Date().toISOString())
+    : null;
   const liveTimes = {
     departureAt: `${draft.rideDate}T${draft.departureTime}:00+09:00`,
     desiredReturnAt: `${draft.rideDate}T${draft.desiredReturnTime}:00+09:00`,
@@ -405,7 +410,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   }
 
   function applyCollection(points: CollectionPoint[], title: string) {
-    if (calculatingRef.current || selectionPendingRef.current) {
+    if (!actionGateRef.current.canApplyCollection()) {
       setNotice("현재 계획 상태 저장이 끝난 뒤 컬렉션을 적용해 주세요.");
       return;
     }
@@ -501,11 +506,10 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
           };
         }),
       })) ?? null);
-      setNotice(response.stale
-        ? `기상청 요청에 실패해 ${formatKoreanTime(response.generatedAt)}에 저장한 동일 경로 예보를 표시합니다. ${response.staleReason}`
-        : response.source === "cache"
-          ? "중복 호출을 막기 위해 최근 저장 예보를 사용했습니다. 날씨는 경로 순위에 반영하지 않습니다."
-          : "구간 통과 예상 시각에 맞춘 기상청 예보를 저장했습니다. 날씨는 경로 순위에 반영하지 않습니다.");
+      setNotice(formatPlannerWeatherStatus(
+        response,
+        response.staleObservedAt ?? new Date().toISOString(),
+      ).notice);
     } catch {
       setNotice("날씨 공급자 응답을 안전하게 확인하지 못해 날씨를 표시하지 않았습니다.");
     } finally {
@@ -514,18 +518,25 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   }
 
   function chooseCandidate(candidate: RouteCandidate) {
-    if (calculatingRef.current) {
-      setNotice("계획 저장이 끝난 뒤 후보를 선택해 주세요.");
+    if (actionGateRef.current.busy) {
+      setNotice(actionGateRef.current.planning
+        ? "계획 저장이 끝난 뒤 후보를 선택해 주세요."
+        : "현재 선택 경로 저장이 끝난 뒤 다른 후보를 선택해 주세요.");
       return;
     }
     weatherRequestRef.current += 1;
     setWeatherLoading(null);
     setSelectedId(candidate.id);
     if (!liveTripId) return;
+    const selectionLease = actionGateRef.current.beginSelection();
+    if (!selectionLease) {
+      setSelectedId(persistedSelectedRef.current);
+      setNotice("현재 계획 상태 저장이 끝난 뒤 후보를 선택해 주세요.");
+      return;
+    }
     const tripId = liveTripId;
     const generation = routeGenerationRef.current;
     const intent = ++selectionIntentRef.current;
-    selectionPendingRef.current = true;
     setSelectionPending(true);
     selectionQueueRef.current = selectionQueueRef.current.then(async () => {
       if (generation !== routeGenerationRef.current || liveTripIdRef.current !== tripId) return;
@@ -553,8 +564,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         setNotice("선택 경로 저장 중 오류가 발생해 마지막 저장 경로로 되돌렸습니다.");
       }
     }).finally(() => {
+      selectionLease.release();
       if (intent === selectionIntentRef.current) {
-        selectionPendingRef.current = false;
         setSelectionPending(false);
       }
     });
@@ -562,11 +573,11 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
   async function recalculate(event: FormEvent) {
     event.preventDefault();
-    if (calculatingRef.current) {
+    if (actionGateRef.current.planning) {
       setNotice("현재 계획의 계산과 저장이 끝날 때까지 기다려 주세요.");
       return;
     }
-    if (selectionPendingRef.current) {
+    if (actionGateRef.current.selection) {
       setNotice("선택 경로 저장이 끝난 뒤 다시 계산해 주세요.");
       return;
     }
@@ -594,7 +605,11 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       return;
     }
 
-    calculatingRef.current = true;
+    const planningLease = actionGateRef.current.beginPlanning();
+    if (!planningLease) {
+      setNotice("현재 계획 상태 저장이 끝난 뒤 다시 계산해 주세요.");
+      return;
+    }
     setCalculating(true);
     weatherRequestRef.current += 1;
     setWeatherLoading(null);
@@ -666,7 +681,6 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       liveTripIdRef.current = savedTripId;
       persistedSelectedRef.current = "balanced";
       selectionIntentRef.current += 1;
-      selectionPendingRef.current = false;
       setSelectionPending(false);
       selectionQueueRef.current = Promise.resolve();
       setNotice("실제 경로 3개와 계획을 저장했습니다. 선택한 균형 경로의 날씨를 조회 중입니다.");
@@ -685,7 +699,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         : `${failedCandidate ? `${failedCandidate} ` : ""}경로 공급자 응답을 안전하게 확인하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.`);
       return;
     } finally {
-      calculatingRef.current = false;
+      planningLease.release();
       setCalculating(false);
     }
     closePlannerPanel();
@@ -897,8 +911,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                   ? "예보 발행 09:00 · 예시"
                   : weatherLoading === selectedId
                     ? "기상청 예보 조회 중"
-                    : weatherByCandidate[selectedId]
-                      ? `${formatKoreanTime(weatherByCandidate[selectedId]!.issuedAt)} 발행${weatherByCandidate[selectedId]!.stale ? " · 저장본(stale)" : ""}`
+                    : selectedWeatherStatus
+                      ? selectedWeatherStatus.header
                       : "날씨 미조회"}
               </span>
             </div>

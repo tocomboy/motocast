@@ -19,9 +19,11 @@ export type WeatherForecast = {
 export type WeatherTimelineResponse = {
   generatedAt: string;
   issuedAt: string;
+  validUntil: string;
   source: "live" | "cache" | "snapshot";
   stale: boolean;
   staleReason?: string;
+  staleObservedAt?: string | null;
   forecasts: WeatherForecast[];
 };
 
@@ -100,7 +102,9 @@ export function parseWeatherTimelineResponse(value: unknown): WeatherTimelineRes
     typeof raw.stale !== "boolean" ||
     !Array.isArray(raw.forecasts) || raw.forecasts.length === 0 || raw.forecasts.length > 40 ||
     (raw.source === "snapshot") !== raw.stale ||
-    (raw.stale && (typeof raw.staleReason !== "string" || raw.staleReason.length < 1 || raw.staleReason.length > 300))
+    (raw.stale && (typeof raw.staleReason !== "string" || raw.staleReason.length < 1 || raw.staleReason.length > 300)) ||
+    (raw.stale && typeof raw.staleObservedAt !== "string") ||
+    (!raw.stale && raw.staleObservedAt !== undefined && raw.staleObservedAt !== null)
   ) throw new WeatherContractError("INVALID_WEATHER_RESPONSE");
 
   const parsed = raw.forecasts.map(parseWeatherForecast);
@@ -110,9 +114,11 @@ export function parseWeatherTimelineResponse(value: unknown): WeatherTimelineRes
   return {
     generatedAt: timestamp(raw.generatedAt),
     issuedAt: timestamp(raw.issuedAt),
+    validUntil: timestamp(raw.validUntil),
     source: raw.source as WeatherTimelineResponse["source"],
     stale: raw.stale,
     staleReason: raw.stale ? String(raw.staleReason) : undefined,
+    staleObservedAt: raw.stale ? timestamp(raw.staleObservedAt) : null,
     forecasts: parsed,
   };
 }

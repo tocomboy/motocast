@@ -200,6 +200,7 @@ async function persistSnapshot(
     target_created_at: generatedAt,
   });
   if (error) throw new Error("WEATHER_PERSIST_FAILED");
+  return validUntil;
 }
 
 async function markSnapshotStale(memberId: string, snapshotId: string, reason: string) {
@@ -235,13 +236,15 @@ Deno.serve(async (request) => {
 
     const generatedAt = new Date().toISOString();
     const forecasts = await fetchTimeline(memberId, weatherRequest.points, Deno.env.get("KMA_APIHUB_KEY") ?? null);
-    await persistSnapshot(memberId, weatherRequest, requestHash, forecasts, generatedAt);
+    const validUntil = await persistSnapshot(memberId, weatherRequest, requestHash, forecasts, generatedAt);
     const issueTimes = forecasts.flatMap((forecast) => forecast.status === "forecast" ? [forecast.issuedAt] : []);
     return jsonResponse({
       generatedAt,
       issuedAt: issueTimes.sort()[0] ?? generatedAt,
+      validUntil,
       source: "live",
       stale: false,
+      staleObservedAt: null,
       forecasts,
     }, 200, cors);
   } catch (error) {

@@ -39,6 +39,20 @@ describe("normalizeKakaoRoutePayload", () => {
     expect(() => normalizeKakaoRoutePayload(value)).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
   });
 
+  it.each([
+    {},
+    { routes: [] },
+    { routes: "not-an-array" },
+  ])("rejects a malformed successful response instead of claiming no safe route %#", (value) => {
+    expect(() => normalizeKakaoRoutePayload(value)).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+  });
+
+  it("maps only Kakao's documented no-directions code to safe-route absence", () => {
+    expect(() => normalizeKakaoRoutePayload({ routes: [{ result_code: 1 }] })).toThrow("SAFE_ROUTE_NOT_FOUND");
+    expect(() => normalizeKakaoRoutePayload({ routes: [{ result_code: 101 }] })).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+    expect(() => normalizeKakaoRoutePayload({ routes: [{ result_code: 9999 }] })).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+  });
+
   it("rejects provider totals that disagree", () => {
     const value = payload();
     value.routes[0].sections[0].roads[0].duration = 1700;

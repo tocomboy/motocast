@@ -14,6 +14,7 @@ describe("invitation token transport", () => {
     expect(consumerSource).toContain('fetch("/api/invites/accept"');
     expect(acceptSource).toContain('httpOnly: true');
     expect(acceptSource).toContain('"cache-control": "private, no-store, max-age=0"');
+    expect(acceptSource).toContain("isTrustedInviteAcceptanceRequest(request)");
   });
 
   it("does not retain a dynamic server route with the token in the request path", () => {

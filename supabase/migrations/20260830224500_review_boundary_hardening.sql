@@ -830,26 +830,28 @@ revoke truncate, references, trigger on public.profiles, public.memberships, pub
   from public, anon, authenticated, service_role;
 alter default privileges in schema public
   revoke truncate, references, trigger on tables from public, anon, authenticated, service_role;
+alter default privileges in schema public
+  revoke insert, update, delete on tables from service_role;
 
-revoke all on function public.consume_daily_api_budget(text, text, integer) from public, anon, authenticated;
-revoke all on function public.route_geometry_fingerprint(jsonb) from public, anon, authenticated;
-revoke all on function public.is_valid_verified_collection_points(jsonb) from public, anon, authenticated;
+revoke all on function public.consume_daily_api_budget(text, text, integer) from public, anon, authenticated, service_role;
+revoke all on function public.route_geometry_fingerprint(jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.is_valid_verified_collection_points(jsonb) from public, anon, authenticated, service_role;
 revoke all on function public.consume_daily_api_budget_internal(text, text, integer, uuid) from public, anon, authenticated;
-revoke all on function public.save_collection_version(uuid, text, text, jsonb) from public, anon, authenticated;
+revoke all on function public.save_collection_version(uuid, text, text, jsonb) from public, anon, authenticated, service_role;
 revoke all on function public.save_collection_version_internal(uuid, uuid, text, text, jsonb) from public, anon, authenticated;
 revoke all on function public.stage_route_candidate_internal(uuid, uuid, jsonb, jsonb) from public, anon, authenticated;
 revoke all on function public.insert_weather_snapshot_internal(uuid, uuid, text, timestamptz, timestamptz, jsonb, text, timestamptz) from public, anon, authenticated;
 revoke all on function public.mark_weather_snapshot_stale_internal(uuid, uuid, text) from public, anon, authenticated;
-revoke all on function public.save_trip_plan(jsonb, jsonb) from public, anon, authenticated;
-revoke all on function public.finalize_trip_plan(uuid, uuid) from public, anon;
-revoke all on function public.select_trip_candidate(uuid, text) from public, anon;
-revoke all on function public.delete_riding_collection(uuid) from public, anon;
-revoke all on function public.share_place(jsonb) from public, anon, authenticated;
-revoke all on function public.share_route_point(jsonb) from public, anon, authenticated;
-revoke all on function public.share_route(jsonb) from public, anon, authenticated;
-revoke all on function public.share_weather_segments(jsonb) from public, anon, authenticated;
-revoke all on function public.preview_trip_share(uuid) from public, anon;
-revoke all on function public.publish_trip_share(uuid, text) from public, anon;
+revoke all on function public.save_trip_plan(jsonb, jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.finalize_trip_plan(uuid, uuid) from public, anon, service_role;
+revoke all on function public.select_trip_candidate(uuid, text) from public, anon, service_role;
+revoke all on function public.delete_riding_collection(uuid) from public, anon, service_role;
+revoke all on function public.share_place(jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.share_route_point(jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.share_route(jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.share_weather_segments(jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.preview_trip_share(uuid) from public, anon, service_role;
+revoke all on function public.publish_trip_share(uuid, text) from public, anon, service_role;
 
 grant execute on function public.consume_daily_api_budget_internal(text, text, integer, uuid) to service_role;
 grant execute on function public.save_collection_version_internal(uuid, uuid, text, text, jsonb) to service_role;

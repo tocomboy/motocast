@@ -16,6 +16,12 @@ export type NormalizedKakaoRoute = {
 type KakaoSummaryPoint = { longitude: number; latitude: number };
 type RequestedPoint = { longitude: number; latitude: number };
 
+// Kakao documents result_code 1 as the standard directions response for
+// "길찾기 결과를 찾을 수 없음". Other non-zero codes describe bad points,
+// road-selection failures, incidents, or endpoint-specific failures and must
+// not be presented as proof that no motorcycle-safe route exists.
+const KAKAO_NO_ROUTE_RESULT_CODES = new Set([1]);
+
 function geometryNear(left: KakaoSummaryPoint, right: KakaoSummaryPoint, tolerance = 0.0002) {
   return Math.abs(left.longitude - right.longitude) <= tolerance && Math.abs(left.latitude - right.latitude) <= tolerance;
 }
@@ -97,12 +103,13 @@ function normalizeSection(value: unknown) {
 export function normalizeKakaoRoutesPayload(value: unknown): NormalizedKakaoRoute[] {
   const payload = record(value);
   if (!Array.isArray(payload.routes) || payload.routes.length === 0) {
-    throw new Error("SAFE_ROUTE_NOT_FOUND");
+    throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
   }
   return payload.routes.map((value) => {
     const route = record(value);
     if (!Number.isInteger(route.result_code)) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
-    if (route.result_code !== 0) throw new Error("SAFE_ROUTE_NOT_FOUND");
+    if (KAKAO_NO_ROUTE_RESULT_CODES.has(Number(route.result_code))) throw new Error("SAFE_ROUTE_NOT_FOUND");
+    if (route.result_code !== 0) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
     const rawSummary = record(route.summary);
     if (!Array.isArray(rawSummary.waypoints)) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
     const summary = {

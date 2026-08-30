@@ -5,6 +5,7 @@ import { parseWeatherTimelineResponse, WeatherContractError } from "./provider-c
 const response = {
   generatedAt: "2026-08-31T00:00:00.000Z",
   issuedAt: "2026-08-30T23:30:00.000Z",
+  validUntil: "2026-08-31T02:00:00.000Z",
   source: "live",
   stale: false,
   forecasts: [{
@@ -34,11 +35,14 @@ describe("parseWeatherTimelineResponse", () => {
       source: "snapshot",
       stale: true,
       staleReason: "기상청 요청에 실패했습니다.",
+      staleObservedAt: "2026-08-31T00:05:00.000Z",
     }).stale).toBe(true);
   });
 
   it.each([
     { ...response, source: "snapshot", stale: false },
+    { ...response, validUntil: undefined },
+    { ...response, source: "snapshot", stale: true, staleReason: "실패", staleObservedAt: undefined },
     { ...response, forecasts: [...response.forecasts, response.forecasts[0]] },
     { ...response, forecasts: [{ ...response.forecasts[0], condition: "storm" }] },
   ])("rejects an unsafe response %#", (value) => {
