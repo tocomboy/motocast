@@ -4,6 +4,7 @@ import { parseSelectedPlace, parseTripInput, PlannerInputError } from "./input";
 
 const place = {
   kakaoPlaceId: "12345",
+  verificationToken: "a".repeat(43),
   name: "팔당역",
   address: "경기도 남양주시 와부읍",
   roadAddress: "경기도 남양주시 경강로 111",
@@ -60,6 +61,24 @@ describe("parseTripInput", () => {
     const input = validTrip();
     input.lunch.kind = "pass-through";
     expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("INVALID_LUNCH_STOP"));
+  });
+
+  it("rejects an impossible calendar date", () => {
+    const input = validTrip();
+    input.serviceDate = "2026-02-31";
+    expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("INVALID_SERVICE_DATE"));
+  });
+
+  it("requires desired return to be later than departure like the database constraint", () => {
+    const input = validTrip();
+    input.desiredReturnAt = input.departureAt;
+    expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("INVALID_RETURN_ORDER"));
+  });
+
+  it("requires departure and hard return to remain on the service date in Seoul", () => {
+    const input = validTrip();
+    input.hardReturnAt = "2026-09-01T00:15:00+09:00";
+    expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("TRIP_MUST_FINISH_SAME_DAY"));
   });
 
   it("rejects a trip whose hard boundary reaches 24 hours", () => {

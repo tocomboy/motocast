@@ -9,6 +9,7 @@ const KOREA_BOUNDS = {
 
 export type SelectedPlace = Coordinate & {
   kakaoPlaceId: string;
+  verificationToken: string;
   name: string;
   address: string;
   roadAddress: string | null;
@@ -90,8 +91,14 @@ export function parseSelectedPlace(value: unknown): SelectedPlace {
     throw new PlannerInputError("PLACE_OUTSIDE_KOREA");
   }
 
+  const verificationToken = boundedString(raw.verificationToken, "INVALID_PLACE_VERIFICATION", 43, 43);
+  if (!/^[A-Za-z0-9_-]{43}$/.test(verificationToken)) {
+    throw new PlannerInputError("INVALID_PLACE_VERIFICATION");
+  }
+
   return {
     kakaoPlaceId: boundedString(raw.kakaoPlaceId, "INVALID_KAKAO_PLACE_ID", 1, 80),
+    verificationToken,
     name: boundedString(raw.name, "INVALID_PLACE_NAME", 1, 160),
     address: boundedString(raw.address, "INVALID_PLACE_ADDRESS", 1, 300),
     roadAddress: nullableBoundedString(raw.roadAddress, "INVALID_ROAD_ADDRESS", 300),
@@ -121,7 +128,10 @@ export function parseTripWaypoint(value: unknown): TripWaypointInput {
 }
 
 function isoDate(value: unknown, code: string): Date {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+  ) {
     throw new PlannerInputError(code);
   }
   const parsed = new Date(value);
@@ -129,10 +139,32 @@ function isoDate(value: unknown, code: string): Date {
   return parsed;
 }
 
+function validCalendarDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function seoulDate(value: Date) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(value).map((part) => [part.type, part.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 export function parseTripInput(value: unknown): TripInput {
   const raw = objectValue(value);
   const serviceDate = boundedString(raw.serviceDate, "INVALID_SERVICE_DATE", 10, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDate) || !validCalendarDate(serviceDate)) {
     throw new PlannerInputError("INVALID_SERVICE_DATE");
   }
 
@@ -140,11 +172,14 @@ export function parseTripInput(value: unknown): TripInput {
   const desiredReturn = isoDate(raw.desiredReturnAt, "INVALID_DESIRED_RETURN_AT");
   const hardReturn = isoDate(raw.hardReturnAt, "INVALID_HARD_RETURN_AT");
   const durationMs = hardReturn.getTime() - departure.getTime();
-  if (desiredReturn < departure || desiredReturn > hardReturn) {
+  if (desiredReturn <= departure || desiredReturn > hardReturn) {
     throw new PlannerInputError("INVALID_RETURN_ORDER");
   }
   if (durationMs <= 0 || durationMs >= 24 * 60 * 60_000) {
     throw new PlannerInputError("TRIP_MUST_BE_UNDER_24_HOURS");
+  }
+  if (seoulDate(departure) !== serviceDate || seoulDate(hardReturn) !== serviceDate) {
+    throw new PlannerInputError("TRIP_MUST_FINISH_SAME_DAY");
   }
 
   if (!Array.isArray(raw.waypoints) || raw.waypoints.length > 30) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parseSafeRouteResponse, ProviderContractError } from "./provider-contract";
+import { buildSafeRouteResponse } from "../../supabase/functions/_shared/route-response";
 
 const point = (id: string) => ({
   id,
@@ -13,8 +14,7 @@ const point = (id: string) => ({
 });
 
 function response() {
-  return {
-    safety: { vehicle: "motorcycle", motorwayExcluded: true, fallbackUsed: false },
+  return buildSafeRouteResponse({
     totalDistanceMeters: 12000,
     totalDurationSeconds: 1800,
     returnAt: "2026-08-31T00:30:00.000Z",
@@ -28,6 +28,7 @@ function response() {
         dwellMinutes: 0,
         distanceMeters: 12000,
         durationSeconds: 1800,
+        providerRequestNumber: 1,
         sections: [
           {
             distance: 12000,
@@ -38,7 +39,7 @@ function response() {
         forecastTraffic: true,
       },
     ],
-  };
+  });
 }
 
 describe("parseSafeRouteResponse", () => {
@@ -71,6 +72,42 @@ describe("parseSafeRouteResponse", () => {
     value.legs[0].sections[0].roads[0].vertexes = [127.1, 37.5, Number.NaN, 37.6];
     expect(() => parseSafeRouteResponse(value)).toThrowError(
       new ProviderContractError("INVALID_ROUTE_GEOMETRY"),
+    );
+  });
+
+  it("rejects odd geometry coordinate pairs", () => {
+    const value = response();
+    value.legs[0].sections[0].roads[0].vertexes = [127.1, 37.5, 127.2];
+    expect(() => parseSafeRouteResponse(value)).toThrowError(
+      new ProviderContractError("INVALID_ROUTE_GEOMETRY"),
+    );
+  });
+
+  it("rejects discontinuous leg time and endpoint sequences", () => {
+    const value = response();
+    const destination = point("destination");
+    value.legs[0].to = { ...point("middle"), dwellMinutes: 10 };
+    value.legs[0].dwellMinutes = 10;
+    value.legs.push({
+      ...value.legs[0],
+      from: point("different-middle"),
+      to: destination,
+      departureAt: "2026-08-31T00:20:00.000Z",
+      arrivalAt: "2026-08-31T00:30:00.000Z",
+      dwellMinutes: 0,
+      durationSeconds: 600,
+      distanceMeters: 4000,
+    });
+    value.totalDistanceMeters = 16000;
+    value.totalDurationSeconds = 3000;
+    expect(() => parseSafeRouteResponse(value)).toThrowError(
+      new ProviderContractError("DISCONTINUOUS_ROUTE_LEGS"),
+    );
+  });
+
+  it("rejects totals that do not match the accepted legs", () => {
+    expect(() => parseSafeRouteResponse({ ...response(), totalDurationSeconds: 60 })).toThrowError(
+      new ProviderContractError("INVALID_ROUTE_TOTALS"),
     );
   });
 });

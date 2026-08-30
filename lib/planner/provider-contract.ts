@@ -1,4 +1,5 @@
 import type { RoutePoint } from "./types";
+import { isKoreanCoordinate } from "./input";
 
 export type SafeRouteLeg = {
   from: RoutePoint;
@@ -67,14 +68,17 @@ function timestamp(value: unknown): string {
 function routePoint(value: unknown): RoutePoint {
   const raw = record(value);
   if (
-    typeof raw.id !== "string" ||
-    typeof raw.label !== "string" ||
-    typeof raw.latitude !== "number" ||
-    typeof raw.longitude !== "number" ||
+    typeof raw.id !== "string" || raw.id.length < 1 || raw.id.length > 100 ||
+    typeof raw.label !== "string" || raw.label.trim().length < 1 || raw.label.length > 160 ||
+    typeof raw.latitude !== "number" || !Number.isFinite(raw.latitude) ||
+    typeof raw.longitude !== "number" || !Number.isFinite(raw.longitude) ||
     !["pass-through", "stop", "optional"].includes(String(raw.kind)) ||
-    !Number.isInteger(raw.dwellMinutes) ||
+    !Number.isInteger(raw.dwellMinutes) || Number(raw.dwellMinutes) < 0 || Number(raw.dwellMinutes) > 1440 ||
     typeof raw.selected !== "boolean"
   ) {
+    throw new ProviderContractError("INVALID_ROUTE_POINT");
+  }
+  if (!isKoreanCoordinate({ latitude: raw.latitude, longitude: raw.longitude })) {
     throw new ProviderContractError("INVALID_ROUTE_POINT");
   }
   return {
@@ -91,8 +95,18 @@ function routePoint(value: unknown): RoutePoint {
 
 function road(value: unknown) {
   const raw = record(value);
-  if (!Array.isArray(raw.vertexes) || !raw.vertexes.every((item) => typeof item === "number" && Number.isFinite(item))) {
+  if (
+    !Array.isArray(raw.vertexes) ||
+    raw.vertexes.length < 4 ||
+    raw.vertexes.length % 2 !== 0 ||
+    !raw.vertexes.every((item) => typeof item === "number" && Number.isFinite(item))
+  ) {
     throw new ProviderContractError("INVALID_ROUTE_GEOMETRY");
+  }
+  for (let index = 0; index < raw.vertexes.length; index += 2) {
+    if (!isKoreanCoordinate({ longitude: raw.vertexes[index] as number, latitude: raw.vertexes[index + 1] as number })) {
+      throw new ProviderContractError("INVALID_ROUTE_GEOMETRY");
+    }
   }
   return {
     name: typeof raw.name === "string" ? raw.name : "",
@@ -128,7 +142,9 @@ function leg(value: unknown): SafeRouteLeg {
     via: raw.via.map(routePoint),
     departureAt,
     arrivalAt,
-    dwellMinutes: nonNegativeNumber(raw.dwellMinutes),
+    dwellMinutes: Number.isInteger(raw.dwellMinutes) && Number(raw.dwellMinutes) <= 1440
+      ? nonNegativeNumber(raw.dwellMinutes)
+      : (() => { throw new ProviderContractError("INVALID_ROUTE_LEG"); })(),
     distanceMeters: positiveNumber(raw.distanceMeters),
     durationSeconds: positiveNumber(raw.durationSeconds),
     sections: raw.sections.map(section),
@@ -151,14 +167,44 @@ export function parseSafeRouteResponse(value: unknown): SafeRouteResponse {
   }
   const legs = raw.legs.map(leg);
   const returnAt = timestamp(raw.returnAt);
-  if (returnAt !== new Date(legs.at(-1)!.arrivalAt).toISOString() && new Date(returnAt) < new Date(legs.at(-1)!.arrivalAt)) {
+  for (let index = 1; index < legs.length; index += 1) {
+    const previous = legs[index - 1];
+    const current = legs[index];
+    const expectedDeparture = new Date(
+      new Date(previous.arrivalAt).getTime() + previous.dwellMinutes * 60_000,
+    ).toISOString();
+    if (
+      current.departureAt !== expectedDeparture ||
+      current.from.id !== previous.to.id ||
+      current.from.latitude !== previous.to.latitude ||
+      current.from.longitude !== previous.to.longitude
+    ) {
+      throw new ProviderContractError("DISCONTINUOUS_ROUTE_LEGS");
+    }
+  }
+
+  const expectedReturn = new Date(
+    new Date(legs.at(-1)!.arrivalAt).getTime() + legs.at(-1)!.dwellMinutes * 60_000,
+  ).toISOString();
+  if (returnAt !== expectedReturn) {
     throw new ProviderContractError("INVALID_ROUTE_TIME");
+  }
+
+  const expectedDistance = legs.reduce((total, item) => total + item.distanceMeters, 0);
+  const expectedDuration = legs.reduce(
+    (total, item) => total + item.durationSeconds + item.dwellMinutes * 60,
+    0,
+  );
+  const totalDistanceMeters = positiveNumber(raw.totalDistanceMeters);
+  const totalDurationSeconds = positiveNumber(raw.totalDurationSeconds);
+  if (totalDistanceMeters !== expectedDistance || totalDurationSeconds !== expectedDuration) {
+    throw new ProviderContractError("INVALID_ROUTE_TOTALS");
   }
 
   return {
     safety: { vehicle: "motorcycle", motorwayExcluded: true, fallbackUsed: false },
-    totalDistanceMeters: positiveNumber(raw.totalDistanceMeters),
-    totalDurationSeconds: positiveNumber(raw.totalDurationSeconds),
+    totalDistanceMeters,
+    totalDurationSeconds,
     returnAt,
     legs,
   };
