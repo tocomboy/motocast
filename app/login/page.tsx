@@ -10,7 +10,8 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const cookieStore = await cookies();
-  const inviteReady = Boolean(cookieStore.get("motocast_invite")?.value || params.bootstrap === "1");
+  const localBootstrap = process.env.NODE_ENV !== "production" && params.bootstrap === "1";
+  const inviteReady = Boolean(cookieStore.get("motocast_invite")?.value || localBootstrap);
   const messages: Record<string, string> = {
     invalid_invite: "초대 링크가 만료되었거나 이미 사용되었습니다.",
     invite_required: "가입하려면 유효한 초대 링크가 필요합니다.",
