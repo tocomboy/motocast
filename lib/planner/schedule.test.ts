@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildTimeline, weatherRiskLabel } from "./schedule";
+import { buildTimeline, formatElapsedAge, formatKoreanDateTime, weatherRiskLabel } from "./schedule";
 import type { PlannedSegment, RoutePoint } from "./types";
 
 const issuedAt = "2026-08-30T00:00:00.000Z";
@@ -117,5 +117,16 @@ describe("weatherRiskLabel", () => {
     const rainy = segment("rain", origin, home, 30);
     rainy.weather.condition = "rain";
     expect(weatherRiskLabel(rainy)).toEqual({ level: "danger", label: "주행 주의" });
+  });
+});
+
+describe("weather snapshot age labels", () => {
+  it("shows the full Seoul date and time", () => {
+    expect(formatKoreanDateTime("2026-08-30T15:05:00.000Z")).toMatch(/2026.*08.*31.*00.*05/);
+  });
+
+  it("reports elapsed age without hiding multi-day staleness", () => {
+    expect(formatElapsedAge("2026-08-29T00:00:00.000Z", "2026-08-31T03:30:00.000Z")).toBe("2일 3시간 전");
+    expect(formatElapsedAge("2026-08-31T02:00:00.000Z", "2026-08-31T03:30:00.000Z")).toBe("1시간 30분 전");
   });
 });

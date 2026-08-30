@@ -8,7 +8,7 @@ import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 type ShareLinkRow = { id: string; createdAt: string; revokedAt: string | null };
 
-export function ShareManager({ tripId }: { tripId: string | null }) {
+export function ShareManager({ tripId, disabled = false }: { tripId: string | null; disabled?: boolean }) {
   const [links, setLinks] = useState<ShareLinkRow[]>([]);
   const [preview, setPreview] = useState<SharedRideSnapshot | null>(null);
   const [previewRaw, setPreviewRaw] = useState<unknown>(null);
@@ -52,6 +52,7 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
   const issuedUrl = issued?.tripId === tripId ? issued.url : null;
 
   async function createPreview() {
+    if (disabled) return;
     if (!tripId) {
       setStatus("실제 경로를 계산해 계획을 저장한 뒤 공유할 수 있습니다.");
       return;
@@ -88,6 +89,7 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
   }
 
   async function publish() {
+    if (disabled) return;
     if (!tripId || !activePreview || previewRaw === null || !previewToken) return;
     const supabase = getBrowserSupabase();
     if (!supabase) return;
@@ -122,6 +124,7 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
   }
 
   async function revoke(link: ShareLinkRow) {
+    if (disabled) return;
     const supabase = getBrowserSupabase();
     if (!supabase) return;
     setBusy(true);
@@ -150,7 +153,7 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
     <section className="share-manager" aria-labelledby="share-heading">
       <div className="collection-heading-row">
         <div><p className="eyebrow">EXPLICIT SHARING</p><h2 id="share-heading">라이딩 공유</h2></div>
-        <button className="secondary-button" type="button" disabled={busy || !tripId} onClick={() => void createPreview()}>
+        <button className="secondary-button" type="button" disabled={disabled || busy || !tripId} onClick={() => void createPreview()}>
           {busy ? "처리 중…" : "전체 공유 미리보기"}
         </button>
       </div>
@@ -159,7 +162,7 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
         <div className="share-preview">
           <div className="share-preview-warning"><strong>아직 공개되지 않았습니다.</strong><span>장소·시각·경로·날씨를 모두 확인하세요.</span></div>
           <SharedRideSnapshotView snapshot={activePreview} referenceTime={previewReferenceTime} preview />
-          <button className="primary-button" type="button" disabled={busy || !previewToken} onClick={() => void publish()}>이 전체 내용 그대로 불변 링크 발행</button>
+          <button className="primary-button" type="button" disabled={disabled || busy || !previewToken} onClick={() => void publish()}>이 전체 내용 그대로 불변 링크 발행</button>
         </div>
       ) : null}
 
@@ -175,7 +178,7 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
           {links.map((link) => (
             <li key={link.id}>
               <span><strong>{new Date(link.createdAt).toLocaleString("ko-KR")}</strong>{link.revokedAt ? "회수됨" : "공개 중"}</span>
-              {!link.revokedAt ? <button className="danger-text" type="button" disabled={busy} onClick={() => void revoke(link)}>링크 회수</button> : null}
+              {!link.revokedAt ? <button className="danger-text" type="button" disabled={disabled || busy} onClick={() => void revoke(link)}>링크 회수</button> : null}
             </li>
           ))}
         </ul>

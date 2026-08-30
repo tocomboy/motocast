@@ -1,4 +1,4 @@
-const CACHE_NAME = "motocast-shell-v3";
+const CACHE_NAME = "motocast-shell-v4";
 const SHELL = ["/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -17,7 +17,7 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  const sensitivePath = ["/share", "/api/", "/auth/", "/invite/", "/admin/", "/login"]
+  const sensitivePath = ["/share", "/api/", "/auth/", "/invite", "/admin/", "/login"]
     .some((prefix) => url.pathname.startsWith(prefix));
   if (event.request.method !== "GET" || url.origin !== self.location.origin || sensitivePath) return;
 

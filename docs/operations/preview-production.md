@@ -43,6 +43,8 @@ Read back project settings without printing environment values. When environment
 
 Public share links use `/share#<token>`. The fragment is not sent in the initial HTTP request; the client validates it and sends it in the JSON body of `POST /api/shares/resolve`. Do not reintroduce a dynamic `/share/<token>` page or `/api/shares/<token>` resolver because hosting request-path logs can then contain the bearer token.
 
+Invitation links use `/invite#<token>` for the same reason. The fixed client removes the fragment from browser history and posts it to `POST /api/invites/accept`, which sets the short-lived HttpOnly claim cookie. Do not reintroduce `/invite/<token>` or log the accept request body.
+
 ## Edge Function secret names
 
 Each Supabase project owns separate values for these names:

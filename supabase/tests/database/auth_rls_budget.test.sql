@@ -70,8 +70,10 @@ insert into tap_results values ((select char_length(invite_token) from new_invit
 
 select set_config('request.jwt.claim.sub', '50000000-0000-0000-0000-000000000005', true);
 select public.claim_invite((select invite_token from new_invite));
+select public.claim_invite((select invite_token from new_invite));
 insert into tap_results values
-  ((select count(*) from public.memberships where user_id = '50000000-0000-0000-0000-000000000005') = 1, 'first invited user claims successfully');
+  ((select count(*) from public.memberships where user_id = '50000000-0000-0000-0000-000000000005') = 1, 'first invited user claims successfully'),
+  ((select count(*) from public.memberships where user_id = '50000000-0000-0000-0000-000000000005') = 1, 'same user can retry a committed invitation claim idempotently');
 
 reset role;
 insert into tap_results values
@@ -86,18 +88,37 @@ insert into tap_results values (
   'deleting Auth user keeps a consumed tombstone'
 );
 
+insert into public.invitations(token_hash, created_by, created_at, expires_at, revoked_at)
+values
+  (encode(extensions.digest(repeat('e', 43), 'sha256'), 'hex'), '10000000-0000-0000-0000-000000000001', now() - interval '2 minutes', now() - interval '1 minute', null),
+  (encode(extensions.digest(repeat('r', 43), 'sha256'), 'hex'), '10000000-0000-0000-0000-000000000001', now(), now() + interval '1 day', now());
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '60000000-0000-0000-0000-000000000006', true);
 do $$
 declare
-  rejected boolean := false;
+  reused_rejected boolean := false;
+  unknown_rejected boolean := false;
+  expired_rejected boolean := false;
+  revoked_rejected boolean := false;
 begin
   begin
     perform public.claim_invite((select invite_token from new_invite));
   exception when sqlstate 'P0001' then
-    rejected := sqlerrm = 'INVITE_ALREADY_USED';
+    reused_rejected := sqlerrm = 'INVITE_ALREADY_USED';
   end;
-  insert into tap_results values (rejected, 'a deleted consumer does not make the invite reusable');
+  begin perform public.claim_invite(repeat('z', 43));
+  exception when sqlstate 'P0001' then unknown_rejected := sqlerrm = 'INVALID_INVITE'; end;
+  begin perform public.claim_invite(repeat('e', 43));
+  exception when sqlstate 'P0001' then expired_rejected := sqlerrm = 'INVALID_INVITE'; end;
+  begin perform public.claim_invite(repeat('r', 43));
+  exception when sqlstate 'P0001' then revoked_rejected := sqlerrm = 'INVALID_INVITE'; end;
+  insert into tap_results values
+    (reused_rejected, 'a deleted consumer does not make the invite reusable'),
+    (unknown_rejected, 'unknown invitation tokens are rejected without membership'),
+    (expired_rejected, 'expired invitations are rejected without membership'),
+    (revoked_rejected, 'revoked invitations are rejected without membership'),
+    ((select count(*) from public.memberships where user_id = '60000000-0000-0000-0000-000000000006') = 0, 'rejected invitation states do not create membership');
 end;
 $$;
 reset role;

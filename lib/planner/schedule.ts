@@ -86,8 +86,33 @@ export function formatKoreanTime(value: string): string {
     timeZone: "Asia/Seoul",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).format(asValidDate(value, "value"));
+}
+
+export function formatKoreanDateTime(value: string): string {
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(asValidDate(value, "value"));
+}
+
+export function formatElapsedAge(value: string, referenceTime: string): string {
+  const elapsedMinutes = Math.max(0, Math.floor(
+    (asValidDate(referenceTime, "referenceTime").getTime() - asValidDate(value, "value").getTime()) / MINUTE_MS,
+  ));
+  if (elapsedMinutes < 1) return "방금";
+  const days = Math.floor(elapsedMinutes / (24 * 60));
+  const hours = Math.floor((elapsedMinutes % (24 * 60)) / 60);
+  const minutes = elapsedMinutes % 60;
+  if (days) return `${days}일 ${hours}시간 전`;
+  if (hours) return `${hours}시간 ${minutes}분 전`;
+  return `${minutes}분 전`;
 }
 
 export function weatherRiskLabel(segment: PlannedSegment): {

@@ -52,8 +52,8 @@ export async function requestKakaoRoute(input: KakaoRouteRequest, fetchImpl: Fet
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) throw new Error("PROVIDER_AUTH_FAILED");
     if (response.status === 429) throw new Error("PROVIDER_RATE_LIMITED");
-    if (response.status >= 500) throw new Error("PROVIDER_UNAVAILABLE");
-    throw new Error("SAFE_ROUTE_NOT_FOUND");
+    if (response.status === 408 || response.status >= 500) throw new Error("PROVIDER_UNAVAILABLE");
+    throw new Error("PROVIDER_REQUEST_REJECTED");
   }
 
   const routes = normalizeKakaoRoutesPayload(await response.json());

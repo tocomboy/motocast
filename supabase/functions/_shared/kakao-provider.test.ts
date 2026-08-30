@@ -112,4 +112,23 @@ describe("requestKakaoRoute", () => {
     await expect(requestKakaoRoute(request(), fetchImpl)).rejects.toThrow("PROVIDER_UNAVAILABLE");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    [401, "PROVIDER_AUTH_FAILED"],
+    [403, "PROVIDER_AUTH_FAILED"],
+    [408, "PROVIDER_UNAVAILABLE"],
+    [429, "PROVIDER_RATE_LIMITED"],
+    [400, "PROVIDER_REQUEST_REJECTED"],
+    [422, "PROVIDER_REQUEST_REJECTED"],
+    [500, "PROVIDER_UNAVAILABLE"],
+  ] as const)("classifies HTTP %s without claiming that no safe route exists", async (status, code) => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status }));
+    await expect(requestKakaoRoute(request(), fetchImpl)).rejects.toThrow(code);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects malformed successful responses as provider contract failures", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ routes: [{ broken: true }] }));
+    await expect(requestKakaoRoute(request(), fetchImpl)).rejects.toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+  });
 });

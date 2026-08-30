@@ -188,6 +188,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const selectionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const selectionPendingRef = useRef(false);
   const weatherRequestRef = useRef(0);
+  const calculatingRef = useRef(false);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("motocast-planner-draft-v1");
@@ -282,6 +283,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
   function markRouteInputChanged() {
     routeGenerationRef.current += 1;
+    weatherRequestRef.current += 1;
+    setWeatherLoading(null);
     if (liveCandidates) setLiveResultStale(true);
   }
 
@@ -402,11 +405,19 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   }
 
   function applyCollection(points: CollectionPoint[], title: string) {
+    if (calculatingRef.current || selectionPendingRef.current) {
+      setNotice("현재 계획 상태 저장이 끝난 뒤 컬렉션을 적용해 주세요.");
+      return;
+    }
     const application = prepareCollectionApplication(points);
     routeGenerationRef.current += 1;
     const orderedPoints = application.lunch || !places.lunch
       ? application.orderedPoints
-      : [...application.orderedPoints, routePoint(places.lunch, "stop", 60, false, "lunch")];
+      : replaceCollectionStop(
+          application.orderedPoints,
+          "lunch",
+          routePoint(places.lunch, "stop", 60, false, "lunch"),
+        );
     setAppliedCollectionPoints(orderedPoints);
     setWindingPoints(application.selectedWindingPoints);
     setPlaces((current) => ({
@@ -441,7 +452,11 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       const { data, error } = await supabase.functions.invoke("weather-timeline", {
         body: { tripId, candidateProfile: candidate.id, points },
       });
-      if (generation !== routeGenerationRef.current || liveTripIdRef.current !== tripId) return;
+      if (
+        weatherRequest !== weatherRequestRef.current ||
+        generation !== routeGenerationRef.current ||
+        liveTripIdRef.current !== tripId
+      ) return;
       if (error) {
         setNotice("날씨를 조회하지 못했습니다. 저장된 동일 경로 예보가 있으면 서버가 stale 표시와 함께 반환합니다.");
         return;
@@ -499,7 +514,12 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   }
 
   function chooseCandidate(candidate: RouteCandidate) {
-    if (calculating) return;
+    if (calculatingRef.current) {
+      setNotice("계획 저장이 끝난 뒤 후보를 선택해 주세요.");
+      return;
+    }
+    weatherRequestRef.current += 1;
+    setWeatherLoading(null);
     setSelectedId(candidate.id);
     if (!liveTripId) return;
     const tripId = liveTripId;
@@ -542,6 +562,10 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
   async function recalculate(event: FormEvent) {
     event.preventDefault();
+    if (calculatingRef.current) {
+      setNotice("현재 계획의 계산과 저장이 끝날 때까지 기다려 주세요.");
+      return;
+    }
     if (selectionPendingRef.current) {
       setNotice("선택 경로 저장이 끝난 뒤 다시 계산해 주세요.");
       return;
@@ -570,8 +594,12 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       return;
     }
 
+    calculatingRef.current = true;
     setCalculating(true);
+    weatherRequestRef.current += 1;
+    setWeatherLoading(null);
     const calculationGeneration = ++routeGenerationRef.current;
+    const targetTripId = liveTripIdRef.current;
     const planningId = crypto.randomUUID();
     setNotice("오토바이·자동차전용도로 제외 조건으로 경로를 계산 중입니다.");
     const generatedWaypoints = [
@@ -588,49 +616,59 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       serviceDate: draft.rideDate,
       ...liveTimes,
     };
-    const results = await Promise.all(
-      (["balanced", "winding", "short"] as const).map((candidate) => (
-        supabase.functions.invoke("plan-route", { body: { ...commonBody, candidate } })
-      )),
-    );
-    setCalculating(false);
-    if (calculationGeneration !== routeGenerationRef.current) {
-      setNotice("계산 중 계획이 바뀌어 도착한 이전 경로를 적용하지 않았습니다. 다시 계산해 주세요.");
-      return;
-    }
-    if (results.some(({ error }) => error)) {
-      const labels = ["균형", "와인딩", "최단"];
-      const failed = results.flatMap((result, index) => result.error ? [labels[index]] : []);
-      if (liveCandidates) setLiveResultStale(true);
-      setNotice(liveCandidates
-        ? `${failed.join("·")} 경로 계산에 실패해 이전 실제 경로를 유지했습니다. 자동차 경로로 대체하지 않았습니다.`
-        : `${failed.join("·")} 경로를 안전 조건 안에서 계산하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.`);
-      return;
-    }
     try {
+      const results = await Promise.all(
+        (["balanced", "winding", "short"] as const).map((candidate) => (
+          supabase.functions.invoke("plan-route", { body: { ...commonBody, candidate } })
+        )),
+      );
+      if (
+        calculationGeneration !== routeGenerationRef.current ||
+        liveTripIdRef.current !== targetTripId
+      ) {
+        setNotice("계산 중 계획이 바뀌어 도착한 이전 경로를 적용하지 않았습니다. 다시 계산해 주세요.");
+        return;
+      }
+      if (results.some(({ error }) => error)) {
+        const labels = ["균형", "와인딩", "최단"];
+        const failed = results.flatMap((result, index) => result.error ? [labels[index]] : []);
+        if (liveCandidates) setLiveResultStale(true);
+        setNotice(liveCandidates
+          ? `${failed.join("·")} 경로 계산에 실패해 이전 실제 경로를 유지했습니다. 자동차 경로로 대체하지 않았습니다.`
+          : `${failed.join("·")} 경로를 안전 조건 안에서 계산하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.`);
+        return;
+      }
       const responses = parseSafeRouteCandidateSet(results.map(({ data }) => data));
       const candidates = responses.map((response) => liveRouteCandidate(response, liveTimes.desiredReturnAt, liveTimes.hardReturnAt));
-      setLiveCandidates(candidates);
-      setWeatherByCandidate({});
-      setLiveResultStale(false);
-      setSelectedId("balanced");
       setNotice("실제 경로 3개를 계산했습니다. 계획을 안전하게 저장하는 중입니다.");
 
       const { data: savedTripId, error: saveError } = await supabase.rpc("finalize_trip_plan", {
         target_planning_id: planningId,
-        target_trip_id: liveTripId,
+        target_trip_id: targetTripId,
       });
       if (saveError || !isUuid(savedTripId)) {
-        setLiveTripId(null);
-        liveTripIdRef.current = null;
-        setNotice("실제 안전 경로는 표시하지만 계획 저장에 실패했습니다. 날씨와 공유는 저장 성공 전까지 사용할 수 없습니다.");
+        setNotice("계획 저장에 실패해 이전 실제 경로를 유지했습니다. 날씨와 공유에는 실패한 계산을 사용하지 않습니다.");
         closePlannerPanel();
         return;
       }
+      if (
+        calculationGeneration !== routeGenerationRef.current ||
+        liveTripIdRef.current !== targetTripId
+      ) {
+        setNotice("저장 중 계획 상태가 바뀌어 도착한 결과를 화면에 적용하지 않았습니다. 다시 계산해 주세요.");
+        return;
+      }
+      setLiveCandidates(candidates);
+      setWeatherByCandidate({});
+      setLiveResultStale(false);
+      setSelectedId("balanced");
       setLiveTripId(savedTripId);
       liveTripIdRef.current = savedTripId;
       persistedSelectedRef.current = "balanced";
       selectionIntentRef.current += 1;
+      selectionPendingRef.current = false;
+      setSelectionPending(false);
+      selectionQueueRef.current = Promise.resolve();
       setNotice("실제 경로 3개와 계획을 저장했습니다. 선택한 균형 경로의 날씨를 조회 중입니다.");
       void loadWeather(candidates[0], savedTripId, calculationGeneration);
     } catch (error) {
@@ -646,6 +684,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         ? `${failedCandidate ? `${failedCandidate} ` : ""}응답을 안전하게 확인하지 못해 이전 실제 경로를 유지했습니다.`
         : `${failedCandidate ? `${failedCandidate} ` : ""}경로 공급자 응답을 안전하게 확인하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.`);
       return;
+    } finally {
+      calculatingRef.current = false;
+      setCalculating(false);
     }
     closePlannerPanel();
   }
@@ -689,6 +730,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
           </div>
 
           <form onSubmit={recalculate} className="planner-form">
+            <fieldset className="planner-fields" disabled={calculating} aria-busy={calculating}>
             <section className="form-section">
               <div className="section-label"><span>01</span>경로</div>
               {connected ? (
@@ -795,6 +837,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
             <button className="primary-button calculate" type="submit" disabled={calculating || selectionPending}>
               {calculating ? "안전 경로 계산 중…" : selectionPending ? "선택 경로 저장 중…" : "선택 경로 다시 계산"}
             </button>
+            </fieldset>
           </form>
         </aside>
 
@@ -833,7 +876,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                   type="button"
                   className={`candidate-card ${selectedId === candidate.id ? "is-selected" : ""}`}
                   key={candidate.id}
-                  disabled={calculating}
+                  disabled={calculating || selectionPending}
                   onClick={() => void chooseCandidate(candidate)}
                   aria-pressed={selectedId === candidate.id}
                 >
@@ -883,8 +926,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
           {connected ? (
             <div className="management-grid">
-              <CollectionManager currentPoints={collectionPoints} onApply={applyCollection} />
-              <ShareManager tripId={liveTripId} />
+              <CollectionManager currentPoints={collectionPoints} onApply={applyCollection} disabled={calculating || selectionPending} />
+              <ShareManager tripId={liveTripId} disabled={calculating || selectionPending} />
             </div>
           ) : null}
         </section>

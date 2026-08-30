@@ -91,4 +91,16 @@ describe("prepareCollectionApplication", () => {
     expect(result.dinner).toBeNull();
     expect(result.orderedPoints).toHaveLength(2);
   });
+
+  it("replaces an unselected lunch in its original ordered slot", () => {
+    const points = [
+      point("before"),
+      point("lunch-off", { kind: "stop", dwellMinutes: 60, stopRole: "lunch", selected: false }),
+      point("after"),
+    ];
+    const replacement = point("current-lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" });
+    expect(replaceCollectionStop(points, "lunch", replacement).map((item) => item.id)).toEqual([
+      "before", "current-lunch", "after",
+    ]);
+  });
 });

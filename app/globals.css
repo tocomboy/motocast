@@ -336,6 +336,14 @@ button {
   margin-top: 24px;
 }
 
+.planner-fields {
+  border: 0;
+  display: contents;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
 .form-section {
   border-top: 1px solid var(--line);
   display: grid;

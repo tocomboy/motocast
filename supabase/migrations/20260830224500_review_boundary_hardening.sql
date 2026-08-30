@@ -429,6 +429,7 @@ begin
     select 1 from public.memberships where user_id = member_id and revoked_at is null
   ) then raise exception 'MEMBERSHIP_REQUIRED'; end if;
   if target_candidate_profile not in ('balanced', 'winding', 'short')
+     or target_request_hash is null
      or target_request_hash !~ '^[0-9a-f]{64}$'
      or jsonb_typeof(target_segments) <> 'array'
      or jsonb_array_length(target_segments) not between 1 and 40
@@ -820,15 +821,15 @@ create policy "share_links_owner_read" on public.share_links for select
 revoke insert, update, delete on public.riding_collections, public.collection_versions,
   public.trips, public.trip_waypoints, public.route_cache, public.weather_snapshots,
   public.share_links, public.route_plan_drafts, public.share_preview_grants
-  from public, anon, authenticated;
-revoke select on public.route_plan_drafts, public.share_preview_grants from public, anon, authenticated;
+  from public, anon, authenticated, service_role;
+revoke select on public.route_plan_drafts, public.share_preview_grants from public, anon, authenticated, service_role;
 revoke truncate, references, trigger on public.profiles, public.memberships, public.invitations,
   public.riding_collections, public.collection_versions, public.trips, public.trip_waypoints,
   public.route_cache, public.weather_snapshots, public.share_links, public.api_usage_daily,
   public.route_plan_drafts, public.share_preview_grants
-  from public, anon, authenticated;
+  from public, anon, authenticated, service_role;
 alter default privileges in schema public
-  revoke truncate, references, trigger on tables from public, anon, authenticated;
+  revoke truncate, references, trigger on tables from public, anon, authenticated, service_role;
 
 revoke all on function public.consume_daily_api_budget(text, text, integer) from public, anon, authenticated;
 revoke all on function public.route_geometry_fingerprint(jsonb) from public, anon, authenticated;

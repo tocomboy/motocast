@@ -101,6 +101,7 @@ export function normalizeKakaoRoutesPayload(value: unknown): NormalizedKakaoRout
   }
   return payload.routes.map((value) => {
     const route = record(value);
+    if (!Number.isInteger(route.result_code)) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
     if (route.result_code !== 0) throw new Error("SAFE_ROUTE_NOT_FOUND");
     const rawSummary = record(route.summary);
     if (!Array.isArray(rawSummary.waypoints)) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");

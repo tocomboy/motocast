@@ -15,10 +15,18 @@ with tests(id, ok, description) as (
     (13, not has_table_privilege('authenticated', 'public.weather_snapshots', 'REFERENCES'), 'browser cannot create references to weather snapshots'),
     (14, not has_table_privilege('authenticated', 'public.share_links', 'TRIGGER'), 'browser cannot create triggers on shares'),
     (15, not has_table_privilege('anon', 'public.riding_collections', 'TRUNCATE'), 'anonymous role cannot truncate collections'),
-    (16, not has_table_privilege('anon', 'public.memberships', 'REFERENCES'), 'anonymous role cannot create references to memberships')
+    (16, not has_table_privilege('anon', 'public.memberships', 'REFERENCES'), 'anonymous role cannot create references to memberships'),
+    (17, not has_table_privilege('service_role', 'public.riding_collections', 'INSERT'), 'service role cannot bypass collection aggregate RPCs'),
+    (18, not has_table_privilege('service_role', 'public.trips', 'UPDATE'), 'service role cannot bypass trip aggregate RPCs'),
+    (19, not has_table_privilege('service_role', 'public.route_cache', 'DELETE'), 'service role cannot directly mutate provider routes'),
+    (20, not has_table_privilege('service_role', 'public.weather_snapshots', 'INSERT'), 'service role cannot bypass route-bound weather RPCs'),
+    (21, not has_table_privilege('service_role', 'public.share_links', 'UPDATE'), 'service role cannot bypass immutable share RPCs'),
+    (22, not has_table_privilege('service_role', 'public.route_plan_drafts', 'SELECT'), 'service role cannot read staged route internals directly'),
+    (23, not has_table_privilege('service_role', 'public.share_preview_grants', 'SELECT'), 'service role cannot read preview capability hashes'),
+    (24, not has_table_privilege('service_role', 'public.trips', 'TRUNCATE'), 'service role cannot truncate trip aggregates')
 )
 select (case when ok then 'ok ' else 'not ok ' end) || id || ' - ' || description
 from tests
 order by id;
 
-select '1..16';
+select '1..24';

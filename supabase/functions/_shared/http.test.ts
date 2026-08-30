@@ -26,4 +26,11 @@ describe("safe provider errors", () => {
       expect(safeErrorMessage(new Error(code))).toContain("공급자");
     }
   });
+
+  it("keeps rejected provider requests distinct from temporary outages", () => {
+    const rejected = new Error("PROVIDER_REQUEST_REJECTED");
+    expect(safeErrorStatus(rejected)).toBe(502);
+    expect(safeErrorMessage(rejected)).toContain("공급자");
+    expect(safeErrorStatus(new Error("PROVIDER_UNAVAILABLE"))).toBe(503);
+  });
 });

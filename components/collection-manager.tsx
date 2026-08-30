@@ -8,9 +8,10 @@ import { getBrowserSupabase } from "@/lib/supabase/browser";
 type CollectionManagerProps = {
   currentPoints: CollectionPoint[];
   onApply: (points: CollectionPoint[], title: string) => void;
+  disabled?: boolean;
 };
 
-export function CollectionManager({ currentPoints, onApply }: CollectionManagerProps) {
+export function CollectionManager({ currentPoints, onApply, disabled = false }: CollectionManagerProps) {
   const [collections, setCollections] = useState<RidingCollection[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -43,6 +44,7 @@ export function CollectionManager({ currentPoints, onApply }: CollectionManagerP
   }, [loadCollections]);
 
   async function saveVersion(collection: RidingCollection | null) {
+    if (disabled) return;
     const collectionTitle = collection?.title ?? title.trim();
     const collectionDescription = collection?.description ?? description;
     if (!collectionTitle || currentPoints.length === 0) {
@@ -73,6 +75,7 @@ export function CollectionManager({ currentPoints, onApply }: CollectionManagerP
   }
 
   async function deleteCollection(collection: RidingCollection) {
+    if (disabled) return;
     if (!window.confirm(`${collection.title} 컬렉션과 모든 버전을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
     const supabase = getBrowserSupabase();
     if (!supabase) return;
@@ -96,13 +99,13 @@ export function CollectionManager({ currentPoints, onApply }: CollectionManagerP
           <p className="eyebrow">MY RIDING COLLECTIONS</p>
           <h2 id="collection-heading">라이딩 컬렉션</h2>
         </div>
-        <button className="text-button" type="button" onClick={() => void loadCollections()}>새로고침</button>
+        <button className="text-button" type="button" disabled={disabled} onClick={() => void loadCollections()}>새로고침</button>
       </div>
 
       <div className="collection-create">
-        <label><span>새 컬렉션 이름</span><input maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="예: 북한강 아침 코스" /></label>
-        <label><span>설명 · 선택</span><textarea maxLength={2000} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="도로 특징이나 주의점을 기록하세요." /></label>
-        <button className="secondary-button" type="button" disabled={busyId !== null || currentPoints.length === 0} onClick={() => void saveVersion(null)}>
+        <label><span>새 컬렉션 이름</span><input disabled={disabled} maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="예: 북한강 아침 코스" /></label>
+        <label><span>설명 · 선택</span><textarea disabled={disabled} maxLength={2000} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="도로 특징이나 주의점을 기록하세요." /></label>
+        <button className="secondary-button" type="button" disabled={disabled || busyId !== null || currentPoints.length === 0} onClick={() => void saveVersion(null)}>
           {busyId === "new" ? "저장 중…" : `현재 경유지로 새 컬렉션 저장 · ${currentPoints.length}개`}
         </button>
       </div>
@@ -117,9 +120,9 @@ export function CollectionManager({ currentPoints, onApply }: CollectionManagerP
                 {collection.description ? <small>{collection.description}</small> : null}
               </div>
               <div className="collection-actions">
-                <button type="button" onClick={() => onApply(collection.latestVersion.points, collection.title)}>계획에 적용</button>
-                <button type="button" disabled={busyId !== null || currentPoints.length === 0} onClick={() => void saveVersion(collection)}>새 버전</button>
-                <button className="danger-text" type="button" disabled={busyId !== null} onClick={() => void deleteCollection(collection)}>삭제</button>
+                <button type="button" disabled={disabled} onClick={() => onApply(collection.latestVersion.points, collection.title)}>계획에 적용</button>
+                <button type="button" disabled={disabled || busyId !== null || currentPoints.length === 0} onClick={() => void saveVersion(collection)}>새 버전</button>
+                <button className="danger-text" type="button" disabled={disabled || busyId !== null} onClick={() => void deleteCollection(collection)}>삭제</button>
               </div>
             </li>
           ))}

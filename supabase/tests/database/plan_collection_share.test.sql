@@ -147,10 +147,11 @@ insert into tap_results values
   ((select count(*) = 1 from public.trips where id = (select id from trip_result)), 'trusted staged candidates finalize one owned trip'),
   ((select count(*) = 2 from public.trip_waypoints where trip_id = (select id from trip_result)), 'plan save preserves ordered waypoints'),
   ((select count(*) = 3 from public.route_cache where trip_id = (select id from trip_result)), 'plan save atomically stores three safe candidates');
-set local role service_role;
+reset role;
 insert into tap_results values
   ((select count(*) = 0 from public.route_plan_drafts), 'finalize consumes trusted route drafts');
 
+set local role service_role;
 select public.stage_route_candidate_internal(
   '71000000-0000-0000-0000-000000000001',
   '73000000-0000-4000-8000-000000000003',
@@ -176,11 +177,13 @@ select public.stage_route_candidate_internal(
   (select plan from plan_fixture), route
 )
 from jsonb_array_elements((select routes from fixture)) as staged(route);
+reset role;
 update public.route_plan_drafts
 set created_at = now() - interval '11 minutes'
 where owner_id = '71000000-0000-0000-0000-000000000001'
   and planning_id = '73000000-0000-4000-8000-000000000005';
 
+set local role service_role;
 select public.stage_route_candidate_internal(
   '71000000-0000-0000-0000-000000000001',
   '73000000-0000-4000-8000-000000000006',
@@ -237,11 +240,12 @@ begin
 end;
 $$;
 
-set local role service_role;
+reset role;
 delete from public.route_plan_drafts
 where owner_id = '71000000-0000-0000-0000-000000000001'
   and planning_id = '73000000-0000-4000-8000-000000000002';
 
+set local role service_role;
 do $$
 declare rejected boolean := false;
 begin
@@ -283,7 +287,7 @@ select public.mark_weather_snapshot_stale_internal(
 );
 
 do $$
-declare rejected boolean := false;
+declare rejected boolean := false; null_hash_rejected boolean := false;
 begin
   begin
     perform public.insert_weather_snapshot_internal(
@@ -302,7 +306,26 @@ begin
       '2026-08-30T23:36:00.000Z'
     );
   exception when sqlstate 'P0001' then rejected := sqlerrm = 'INVALID_WEATHER_ROUTE'; end;
-  insert into tap_results values (rejected, 'trusted weather persistence rejects coordinates not derived from the stored route');
+  begin
+    perform public.insert_weather_snapshot_internal(
+      '71000000-0000-0000-0000-000000000001',
+      (select id from trip_result),
+      'balanced',
+      '2026-08-30T23:30:00.000Z',
+      '2026-08-31T02:00:00.000Z',
+      jsonb_build_array(jsonb_build_object(
+        'id', 'balanced-0', 'label', '복귀', 'longitude', 127.2, 'latitude', 37.2,
+        'eta', '2026-08-31T00:10:00.000Z', 'status', 'forecast', 'model', 'ultra',
+        'issuedAt', '2026-08-30T23:30:00.000Z', 'condition', 'clear',
+        'temperatureC', 22, 'precipitationProbability', 0, 'windSpeedMps', 1.2
+      )),
+      null,
+      '2026-08-30T23:36:00.000Z'
+    );
+  exception when sqlstate 'P0001' then null_hash_rejected := sqlerrm = 'INVALID_WEATHER_SNAPSHOT'; end;
+  insert into tap_results values
+    (rejected, 'trusted weather persistence rejects coordinates not derived from the stored route'),
+    (null_hash_rejected, 'trusted weather persistence rejects a null cache request hash');
 end;
 $$;
 
@@ -377,8 +400,8 @@ $$;
 
 create temp table expired_preview on commit drop as
 select * from public.preview_trip_share((select id from trip_result));
-grant select on expired_preview to authenticated, service_role;
-set local role service_role;
+grant select on expired_preview to authenticated;
+reset role;
 update public.share_preview_grants
 set created_at = now() - interval '2 hours', expires_at = now() - interval '1 hour'
 where token_hash = encode(extensions.digest((select preview_token from expired_preview), 'sha256'), 'hex');
