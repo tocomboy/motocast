@@ -1178,7 +1178,7 @@ button {
 
 .timeline-time span,
 .segment-copy span {
-  color: #747a75;
+  color: #555d57;
   font-size: 0.64rem;
 }
 
@@ -1476,7 +1476,10 @@ button {
   }
 
   .risk-label {
-    display: none;
+    grid-column: 3 / 5;
+    grid-row: 2;
+    justify-self: start;
+    margin-top: 4px;
   }
 }
 

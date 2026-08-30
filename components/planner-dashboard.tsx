@@ -13,7 +13,7 @@ import {
   demoHardReturnAt,
   demoMapPoints,
 } from "@/lib/planner/demo";
-import { parseSafeRouteCandidateSet, type SafeRouteResponse } from "@/lib/planner/provider-contract";
+import { parseSafeRouteCandidateSet, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
 import { buildTimeline, formatKoreanTime, weatherRiskLabel } from "@/lib/planner/schedule";
 import type { RouteCandidate } from "@/lib/planner/types";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
@@ -248,15 +248,23 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
   function addWindingPoint(place: PlaceSearchResult | null) {
     if (!place) return;
-    setWindingPoints((current) => (
-      current.some((item) => item.kakaoPlaceId === place.kakaoPlaceId) || current.length >= 20
-        ? current
-        : [...current, place]
-    ));
+    if (windingPoints.some((item) => item.kakaoPlaceId === place.kakaoPlaceId)) {
+      setWaypointStatus(`${place.name}은(는) 이미 와인딩 경유지에 있습니다.`);
+      setAddingWinding(false);
+      focusAfterWindingEdit();
+      return;
+    }
+    if (windingPoints.length >= 20) {
+      setWaypointStatus("와인딩 경유지는 최대 20개까지 추가할 수 있습니다.");
+      setAddingWinding(false);
+      focusAfterWindingEdit();
+      return;
+    }
+    setWindingPoints((current) => [...current, place]);
     setAddingWinding(false);
     setWaypointStatus(`${place.name}을(를) 와인딩 경유지 마지막에 추가했습니다.`);
     if (liveCandidates) setLiveResultStale(true);
-    window.setTimeout(() => addWindingButtonRef.current?.focus(), 0);
+    focusAfterWindingEdit(windingPoints.length + 1 >= 20);
   }
 
   function moveWindingPoint(index: number, direction: -1 | 1) {
@@ -276,7 +284,23 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     setWindingPoints((current) => current.filter((item) => item.kakaoPlaceId !== place.kakaoPlaceId));
     setWaypointStatus(`${place.name}을(를) 와인딩 경유지에서 제거했습니다.`);
     if (liveCandidates) setLiveResultStale(true);
-    window.setTimeout(() => addWindingButtonRef.current?.focus(), 0);
+    focusAfterWindingEdit();
+  }
+
+  function focusAfterWindingEdit(forceWaypoint = false) {
+    window.setTimeout(() => {
+      if (!forceWaypoint && addWindingButtonRef.current && !addWindingButtonRef.current.disabled) {
+        addWindingButtonRef.current.focus();
+        return;
+      }
+      plannerPanelRef.current?.querySelector<HTMLElement>(".waypoint-actions button:not(:disabled)")?.focus();
+    }, 0);
+  }
+
+  function cancelWindingEdit() {
+    setAddingWinding(false);
+    setWaypointStatus("와인딩 경유지 추가를 취소했습니다.");
+    focusAfterWindingEdit();
   }
 
   function closePlannerPanel() {
@@ -365,11 +389,18 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       setLiveResultStale(false);
       setSelectedId("balanced");
       setNotice("오토바이 안전 조건을 적용한 실제 경로 3개를 계산했습니다. 날씨는 아직 조회 전입니다.");
-    } catch {
+    } catch (error) {
       if (liveCandidates) setLiveResultStale(true);
+      const failedCandidate = error instanceof ProviderContractError
+        ? ({
+            INVALID_BALANCED_ROUTE_RESPONSE: "균형",
+            INVALID_WINDING_ROUTE_RESPONSE: "와인딩",
+            INVALID_SHORT_ROUTE_RESPONSE: "최단",
+          } as Record<string, string>)[error.code]
+        : undefined;
       setNotice(liveCandidates
-        ? "새 응답을 안전하게 확인하지 못해 직전 실제 경로를 유지했습니다."
-        : "경로 공급자 응답을 안전하게 확인하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.");
+        ? `${failedCandidate ? `${failedCandidate} ` : ""}응답을 안전하게 확인하지 못해 이전 실제 경로를 유지했습니다.`
+        : `${failedCandidate ? `${failedCandidate} ` : ""}경로 공급자 응답을 안전하게 확인하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.`);
       return;
     }
     closePlannerPanel();
@@ -450,7 +481,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
               {connected && addingWinding ? (
                 <div className="winding-editor">
                   <PlaceSearchField label="와인딩 경유지" placeholder="산길 입구, 고개, 전망대" selected={null} onSelect={addWindingPoint} />
-                  <button className="text-button muted" type="button" onClick={() => setAddingWinding(false)}>추가 취소</button>
+                  <button className="text-button muted" type="button" onClick={cancelWindingEdit}>추가 취소</button>
                 </div>
               ) : null}
               <button

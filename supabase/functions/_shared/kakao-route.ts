@@ -16,6 +16,18 @@ export type NormalizedKakaoRoute = {
 type KakaoSummaryPoint = { longitude: number; latitude: number };
 type RequestedPoint = { longitude: number; latitude: number };
 
+function geometryNear(left: KakaoSummaryPoint, right: KakaoSummaryPoint, tolerance = 0.0002) {
+  return Math.abs(left.longitude - right.longitude) <= tolerance && Math.abs(left.latitude - right.latitude) <= tolerance;
+}
+
+function roadStart(road: { vertexes: number[] }): KakaoSummaryPoint {
+  return { longitude: road.vertexes[0], latitude: road.vertexes[1] };
+}
+
+function roadEnd(road: { vertexes: number[] }): KakaoSummaryPoint {
+  return { longitude: road.vertexes.at(-2)!, latitude: road.vertexes.at(-1)! };
+}
+
 function record(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
@@ -74,6 +86,11 @@ function normalizeSection(value: unknown) {
     section.roads.reduce((sum, road) => sum + road.distance, 0) !== section.distance ||
     section.roads.reduce((sum, road) => sum + road.duration, 0) !== section.duration
   ) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
+  for (let index = 1; index < section.roads.length; index += 1) {
+    if (!geometryNear(roadEnd(section.roads[index - 1]), roadStart(section.roads[index]))) {
+      throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
+    }
+  }
   return section;
 }
 
@@ -132,6 +149,11 @@ export function assertKakaoRouteMatchesPoints(route: NormalizedKakaoRoute, point
     if (!near(endpoints.start, points[index]) || !near(endpoints.end, points[index + 1])) {
       throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
     }
+  }
+  for (let index = 1; index < route.sections.length; index += 1) {
+    const previous = sectionEndpoints(route.sections[index - 1]);
+    const current = sectionEndpoints(route.sections[index]);
+    if (!geometryNear(previous.end, current.start)) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
   }
 }
 

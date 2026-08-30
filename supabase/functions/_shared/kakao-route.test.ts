@@ -67,4 +67,13 @@ describe("normalizeKakaoRoutePayload", () => {
       { longitude: 127.2, latitude: 37.6 },
     ])).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
   });
+
+  it("rejects disconnected roads even when distance and duration totals agree", () => {
+    const value = payload();
+    value.routes[0].sections[0].roads = [
+      { name: "앞 구간", distance: 6000, duration: 900, vertexes: [127.1, 37.5, 127.15, 37.55] },
+      { name: "끊긴 구간", distance: 6000, duration: 900, vertexes: [127.18, 37.58, 127.2, 37.6] },
+    ];
+    expect(() => normalizeKakaoRoutePayload(value)).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+  });
 });

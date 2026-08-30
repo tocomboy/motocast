@@ -108,7 +108,7 @@ describe("parseSafeRouteResponse", () => {
       sections: [{
         distance: 4000,
         duration: 600,
-        roads: [{ name: "지방도", distance: 4000, duration: 600, vertexes: [127.1, 37.5, 127.2, 37.6] }],
+        roads: [{ name: "지방도", distance: 4000, duration: 600, vertexes: [127.2, 37.6, 127.3, 37.7] }],
       }],
     });
     value.totalDistanceMeters = 16000;
@@ -148,9 +148,24 @@ describe("parseSafeRouteResponse", () => {
       new ProviderContractError("INVALID_ROUTE_TOTALS"),
     );
   });
+
+  it("rejects disconnected adjacent roads", () => {
+    const value = response();
+    value.legs[0].sections[0].roads = [
+      { name: "앞", distance: 6000, duration: 900, vertexes: [127.1, 37.5, 127.15, 37.55] },
+      { name: "뒤", distance: 6000, duration: 900, vertexes: [127.18, 37.58, 127.2, 37.6] },
+    ];
+    expect(() => parseSafeRouteResponse(value)).toThrow("DISCONTINUOUS_ROUTE_GEOMETRY");
+  });
 });
 
 describe("parseSafeRouteCandidateSet", () => {
+  it("retains the expected candidate identity when one response is malformed", () => {
+    const balanced = response();
+    balanced.legs[0].sections = [];
+    expect(() => parseSafeRouteCandidateSet([balanced, response(), response()])).toThrow("INVALID_BALANCED_ROUTE_RESPONSE");
+  });
+
   it("requires each candidate identity exactly once in request order", () => {
     const balanced = response();
     const winding = structuredClone(balanced);
@@ -165,8 +180,13 @@ describe("parseSafeRouteCandidateSet", () => {
 
   it("rejects route identities that draw the same geometry", () => {
     const balanced = response();
+    balanced.legs[0].sections[0].roads[0].vertexes = [127.1, 37.5, 127.15, 37.55, 127.2, 37.6];
     const winding = structuredClone(balanced);
     winding.candidate = { id: "winding", label: "와인딩 추정", estimatedWinding: true };
+    winding.legs[0].sections[0].roads = [
+      { name: "앞", distance: 6000, duration: 900, vertexes: [127.1, 37.5, 127.15, 37.55] },
+      { name: "뒤", distance: 6000, duration: 900, vertexes: [127.15, 37.55, 127.2, 37.6] },
+    ];
     const short = structuredClone(balanced);
     short.candidate = { id: "short", label: "최단", estimatedWinding: false };
     expect(() => parseSafeRouteCandidateSet([balanced, winding, short])).toThrow("DUPLICATE_ROUTE_CANDIDATES");

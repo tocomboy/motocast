@@ -121,6 +121,15 @@ function road(value: unknown) {
   };
 }
 
+function geometryPoint(vertexes: number[], atEnd: boolean) {
+  const index = atEnd ? vertexes.length - 2 : 0;
+  return { longitude: vertexes[index], latitude: vertexes[index + 1] };
+}
+
+function geometryNear(left: { longitude: number; latitude: number }, right: { longitude: number; latitude: number }) {
+  return Math.abs(left.longitude - right.longitude) <= 0.0002 && Math.abs(left.latitude - right.latitude) <= 0.0002;
+}
+
 function section(value: unknown) {
   const raw = record(value);
   if (!Array.isArray(raw.roads) || raw.roads.length === 0) {
@@ -135,6 +144,12 @@ function section(value: unknown) {
   const roadDuration = parsed.roads.reduce((total, item) => total + item.duration, 0);
   if (roadDistance !== parsed.distance || roadDuration !== parsed.duration) {
     throw new ProviderContractError("INVALID_ROUTE_TOTALS");
+  }
+  for (let index = 1; index < parsed.roads.length; index += 1) {
+    if (!geometryNear(
+      geometryPoint(parsed.roads[index - 1].vertexes, true),
+      geometryPoint(parsed.roads[index].vertexes, false),
+    )) throw new ProviderContractError("DISCONTINUOUS_ROUTE_GEOMETRY");
   }
   return parsed;
 }
@@ -198,6 +213,15 @@ export function parseSafeRouteResponse(value: unknown): SafeRouteResponse {
     throw new ProviderContractError("INVALID_ROUTE_LEGS");
   }
   const legs = raw.legs.map(leg);
+  const allSections = legs.flatMap((item) => item.sections);
+  for (let index = 1; index < allSections.length; index += 1) {
+    const previousRoad = allSections[index - 1].roads.at(-1)!;
+    const currentRoad = allSections[index].roads[0];
+    if (!geometryNear(
+      geometryPoint(previousRoad.vertexes, true),
+      geometryPoint(currentRoad.vertexes, false),
+    )) throw new ProviderContractError("DISCONTINUOUS_ROUTE_GEOMETRY");
+  }
   const returnAt = timestamp(raw.returnAt);
   for (let index = 1; index < legs.length; index += 1) {
     const previous = legs[index - 1];
@@ -248,22 +272,31 @@ export function parseSafeRouteResponse(value: unknown): SafeRouteResponse {
 }
 
 export function routeResponseFingerprint(response: SafeRouteResponse) {
-  const coordinates = response.legs.flatMap((item) => item.sections.flatMap((item) => (
-    item.roads.flatMap((item) => item.vertexes)
-  )));
-  const pairs: string[] = [];
-  for (let index = 0; index + 1 < coordinates.length; index += 2) {
-    if (index === 0 || index + 2 >= coordinates.length || index % Math.max(2, Math.floor(coordinates.length / 24) * 2) === 0) {
-      pairs.push(`${coordinates[index].toFixed(4)},${coordinates[index + 1].toFixed(4)}`);
+  const points: Array<{ longitude: number; latitude: number }> = [];
+  for (const leg of response.legs) for (const section of leg.sections) for (const road of section.roads) {
+    for (let index = 0; index + 1 < road.vertexes.length; index += 2) {
+      const point = { longitude: road.vertexes[index], latitude: road.vertexes[index + 1] };
+      const previous = points.at(-1);
+      if (!previous || previous.longitude !== point.longitude || previous.latitude !== point.latitude) points.push(point);
     }
   }
-  return pairs.join("|");
+  const step = Math.max(1, Math.floor(points.length / 12));
+  return points
+    .filter((_, index) => index === 0 || index === points.length - 1 || index % step === 0)
+    .map((point) => `${point.longitude.toFixed(4)},${point.latitude.toFixed(4)}`)
+    .join("|");
 }
 
 export function parseSafeRouteCandidateSet(values: unknown[]): SafeRouteResponse[] {
   const expected = ["balanced", "winding", "short"] as const;
   if (values.length !== expected.length) throw new ProviderContractError("INVALID_ROUTE_CANDIDATE_SET");
-  const parsed = values.map(parseSafeRouteResponse);
+  const parsed = values.map((value, index) => {
+    try {
+      return parseSafeRouteResponse(value);
+    } catch {
+      throw new ProviderContractError(`INVALID_${expected[index].toUpperCase()}_ROUTE_RESPONSE`);
+    }
+  });
   if (parsed.some((candidate, index) => candidate.candidate.id !== expected[index])) {
     throw new ProviderContractError("INVALID_ROUTE_CANDIDATE_SET");
   }
