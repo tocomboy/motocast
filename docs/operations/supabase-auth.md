@@ -54,6 +54,8 @@ commit;
 5. `/login`에서 다시 Kakao 로그인한다. 기존 active member는 초대 링크 없이 로그인할 수 있어야 한다.
 6. `/admin/invites`에서 첫 초대를 생성한 뒤 원문 token이 DB, 로그, 브라우저 분석 도구에 남지 않는지 확인한다.
 
+초대 fragment는 고정 `/api/invites/accept`로만 보내며, 이 endpoint는 동일 출처 `application/json` POST만 허용한다. 브라우저 개발자 도구에서 cross-site·`text/plain` 요청이 generic `400`과 `no-store`로 거부되고 `motocast_invite` cookie를 만들지 않는지 확인한다.
+
 `/login?bootstrap=1`은 로컬 개발 편의만을 위한 표시 조건이며 Production bootstrap 경로가 아니다.
 
 ## 거부된 OAuth 사용자 정리

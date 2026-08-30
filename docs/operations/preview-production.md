@@ -25,6 +25,8 @@ Project: `tocomboys-projects/motocast`.
 
 Read back project settings without printing environment values. When environment entries are audited, print names, targets, and IDs only.
 
+Verified Preview configuration on 2026-08-31: the three public names above exist only as `Preview (develop)` Config entries, and no server-only/provider/budget name remains in that Vercel scope. Production settings are intentionally frozen until the post-Preview `OPS-008` interview.
+
 ## Supabase promotion order
 
 1. After confirming the exact target and receiving approval, reset only the disposable local PostgreSQL 17 instance at `127.0.0.1:54322`; then apply all migrations from an empty database and run the explicit database tests. Never use this reset against either hosted project.
@@ -37,13 +39,13 @@ Read back project settings without printing environment values. When environment
 
 4. Apply to Preview only, then read back migration versions, RLS, function ACLs, and Edge Function versions.
 5. Deploy `search-places`, `plan-route`, `weather-timeline`, and `save-collection` from the reviewed fixed SHA.
-6. Register Preview-only Auth provider redirects and server secrets through the Supabase Dashboard or masked CLI input. Never put values in command arguments or shell history.
+6. Register Preview-only Auth provider redirects and server secrets through the Supabase Dashboard or masked CLI input. Never put values in command arguments or shell history. This setup is complete for `MOTOCAST_Preview`; live readback must still confirm names and enabled/URL states after deployment.
 7. Use disposable Preview identities to execute the complete Preview gate.
 8. Resolve `OPS-008`, back up the chosen empty/pre-cutover Production database, and repeat the reviewed migration/function sequence for Production.
 
 Public share links use `/share#<token>`. The fragment is not sent in the initial HTTP request; the client validates it and sends it in the JSON body of `POST /api/shares/resolve`. Do not reintroduce a dynamic `/share/<token>` page or `/api/shares/<token>` resolver because hosting request-path logs can then contain the bearer token.
 
-Invitation links use `/invite#<token>` for the same reason. The fixed client removes the fragment from browser history and posts it to `POST /api/invites/accept`, which sets the short-lived HttpOnly claim cookie. Do not reintroduce `/invite/<token>` or log the accept request body.
+Invitation links use `/invite#<token>` for the same reason. The fixed client removes the fragment from browser history and posts it to same-origin `application/json` `POST /api/invites/accept`, which sets the short-lived HttpOnly claim cookie. The endpoint rejects missing/mismatched Origin, cross-site Fetch Metadata, and non-JSON content before parsing or setting a cookie. Do not reintroduce `/invite/<token>` or log the accept request body.
 
 ## Edge Function secret names
 

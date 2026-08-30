@@ -76,12 +76,12 @@ The two-connection collection and invitation/budget suites require the disposabl
 
 Additional required suites by boundary:
 
-- Auth/RLS: administrator, Rider A, Rider B, revoked member, authenticated non-member, anonymous.
-- Invitations: create, invalid, expiry, revoke, same-user idempotency, distinct-user concurrency.
+- Auth/RLS: administrator, Rider A, Rider B, revoked member, authenticated non-member, anonymous; complete service-role DML/RPC allow/deny matrix and migration-role future-table default-ACL probe.
+- Invitations: create, invalid, expiry, revoke, same-origin JSON acceptance, cross-site/non-JSON denial without cookie, same-user idempotency, distinct-user concurrency.
 - Sharing: preview, publish, immutable source edit, revoke, reissue, unknown/revoked token, cross-user management denial.
 - Budget: missing, zero, below limit, exact limit, exhausted, concurrent calls, Seoul date rollover, provider failure decision.
-- Routes: provider request interception on current/future/split calls, safe-route absence, waypoint boundaries, hard-return filtering, distinct candidate identity, no passenger-car fallback.
-- Weather: six-hour and five-day exact boundaries, grid conversion, cache deduplication, snapshot success/failure/stale/no-snapshot.
+- Routes: provider request interception on current/future/split calls, documented no-route result classification versus malformed/unknown provider responses, waypoint boundaries, hard-return filtering, distinct candidate identity, no passenger-car fallback.
+- Weather: six-hour and five-day exact boundaries, grid conversion, cache deduplication, snapshot success/failure/stale/no-snapshot, full multi-day age and simultaneous provider-failure/expiry display.
 - Browser/PWA: mobile and desktop, keyboard/focus/labels, loading/error/stale/live, manifest/service worker update.
 
 ## 4. Commit and fixed-SHA review boundary

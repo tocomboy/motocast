@@ -2,7 +2,7 @@
 
 지인 라이더를 위한 국내 당일 오토바이 경로·시간대별 날씨 계획 PWA입니다. 출발/복귀 시각과 식사 정차, 선택 휴식을 반영해 세 가지 경로 후보를 비교하고, 각 구간의 예상 통과 시각에 맞춘 기상청 예보를 보여주는 것을 목표로 합니다.
 
-> 현재 상태: 프로덕션 구현 및 배포 검증 중입니다. 실제 장소·서로 다른 안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 신뢰된 경로 결과만 저장하는 계획 확정, 검증된 장소만 저장하는 사용자별 컬렉션 버전, 전체 공유 미리보기/불변 발행/회수/재발행 UI가 구현되어 있습니다. 공유와 초대 bearer token은 서버 요청 경로 대신 URL fragment에 두고 고정 API 경로의 POST 본문으로 전달합니다. 로컬 DB의 Auth/RLS/budget/컬렉션/공유와 경로 최종화 동시성 검증은 통과했지만 새 migration과 함수는 아직 hosted Preview/Production에 배포되지 않았고 실제 Kakao/KMA·OAuth 브라우저 검증도 남아 있습니다.
+> 현재 상태: Preview 게이트를 준비 중입니다. 실제 장소·서로 다른 안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 신뢰된 경로 결과만 저장하는 계획 확정, 검증된 장소만 저장하는 사용자별 컬렉션 버전, 전체 공유 미리보기/불변 발행/회수/재발행 UI가 구현되어 있습니다. 공유와 초대 bearer token은 서버 요청 경로 대신 URL fragment에 두고 고정 API 경로의 POST 본문으로 전달하며, 초대 수락은 동일 출처 JSON 요청만 허용합니다. Preview Auth·secret 이름·Vercel 공개 변수는 구성됐고 fresh 로컬 DB의 전체 migration/RLS/RPC/동시성 검증은 통과했지만, reviewed migration/함수의 Preview 배포와 실제 Kakao/KMA·OAuth 브라우저 검증은 남아 있습니다. Production 변경은 `OPS-008` 재인터뷰 전까지 보류합니다.
 
 ## 고정된 제품 원칙
 
@@ -63,7 +63,7 @@ PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v 
 
 프로젝트별 데이터·비밀값·배포 경계와 현재 상태는 [Preview/Production 운영 절차](docs/operations/preview-production.md)를 따릅니다.
 
-관리자는 로그인 후 `/admin/invites`에서 7일짜리 일회용 초대 링크를 만들 수 있습니다. 데이터베이스에는 링크 원문 대신 SHA-256 해시만 저장되고, 링크는 `/invite#<token>` 형식이라 최초 HTTP 요청 경로와 호스팅 로그에 토큰을 넣지 않습니다.
+관리자는 로그인 후 `/admin/invites`에서 7일짜리 일회용 초대 링크를 만들 수 있습니다. 데이터베이스에는 링크 원문 대신 SHA-256 해시만 저장되고, 링크는 `/invite#<token>` 형식이라 최초 HTTP 요청 경로와 호스팅 로그에 토큰을 넣지 않습니다. 고정 accept API는 동일 출처 `application/json` 요청만 처리하고 cross-site 요청에는 claim cookie를 설정하지 않습니다.
 
 Edge Function 배포 예시는 다음과 같습니다. 실제 프로젝트 연결과 비밀값 등록은 Supabase CLI 로그인 후 수행합니다.
 
@@ -116,7 +116,7 @@ npm run lint && npm run typecheck && npm test && npm run build
 
 ## 남은 첫 버전 작업
 
-- Production Supabase 지역 결정과 hosted migration/Edge Function/Auth/secrets 설정
-- Preview 전용 Vercel public 변수 연결과 전체 브라우저 smoke test
+- 고정 SHA 독립 5축 리뷰와 Preview migration/Edge Function 배포·readback
+- Preview의 초대/Kakao OAuth, 권한, 장소·경로·날씨·컬렉션·공유·budget 전체 브라우저 smoke test
 - 실제 Kakao/KMA 최소 호출, stale snapshot, 비용 한도 소진 검증
-- 고정 SHA 독립 리뷰, `develop → main` PR, Production 사용자 관점 검증
+- Preview 게이트 후 `OPS-008` Production 지역 재인터뷰, `develop → main` PR, Production 사용자 관점 검증

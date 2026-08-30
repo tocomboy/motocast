@@ -55,11 +55,11 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### AUTH-002 — Invitation token storage
 
 - Status: `CONFIRMED`
-- Decision: Generate invitation tokens from at least 32 random bytes, return the plaintext only at creation, and store only a SHA-256 hash. Invitation links put the bearer token in the URL fragment (`/invite#<token>`), immediately remove it from browser history, and send it only in a JSON body to a fixed no-store POST endpoint that sets the short-lived HttpOnly claim cookie. Claiming is transactional and row-locked so at most one distinct user succeeds.
+- Decision: Generate invitation tokens from at least 32 random bytes, return the plaintext only at creation, and store only a SHA-256 hash. Invitation links put the bearer token in the URL fragment (`/invite#<token>`), immediately remove it from browser history, and send it only in a JSON body to a fixed no-store POST endpoint that requires the same HTTP origin and rejects cross-site/non-JSON requests before setting the short-lived HttpOnly claim cookie. Claiming is transactional and row-locked so at most one distinct user succeeds.
 - Rationale: Database disclosure must not reveal usable invitation links.
 - User impact: Lost links cannot be retrieved and must be reissued.
 - Affected: invitation RPCs, admin UI, fixed accept endpoint, logs, service worker, tests.
-- Verification: schema/readback, no-plaintext search, no dynamic token-path route, same-user retry, invalid/expired/revoked cases, and two-session distinct-user concurrency.
+- Verification: schema/readback, no-plaintext search, no dynamic token-path route, same-origin JSON/CSRF denial, same-user retry, invalid/expired/revoked cases, and two-session distinct-user concurrency.
 - Confirmed: 2026-08-30.
 
 #### AUTH-003 — Uninvited OAuth account lifecycle
@@ -87,11 +87,11 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### DATA-003 — Trusted aggregate mutation boundary
 
 - Status: `CONFIRMED`
-- Decision: The browser may request planning actions but cannot directly create or mutate route-backed trip aggregates, immutable collection versions, weather snapshots, or share snapshots. The service role also has no direct DML on these aggregate or staging tables. Trusted Edge Functions use only reviewed SECURITY DEFINER RPCs to stage provider-verified route candidates under the authenticated owner and a short-lived planning ID; an owner-only RPC atomically finalizes exactly one balanced, winding, and shortest set. Aggregate selection and deletion use narrow owner-checked RPCs, while direct table mutation remains denied.
+- Decision: The browser may request planning actions but cannot directly create or mutate route-backed trip aggregates, immutable collection versions, weather snapshots, or share snapshots. The service role also has no direct DML on current aggregate or staging tables, cannot execute legacy/browser mutation RPCs, and does not inherit direct DML on future tables created by the migration role. Trusted Edge Functions use only reviewed SECURITY DEFINER RPCs to stage provider-verified route candidates under the authenticated owner and a short-lived planning ID; an owner-only RPC atomically finalizes exactly one balanced, winding, and shortest set. Aggregate selection and deletion use narrow owner-checked RPCs, while direct table mutation remains denied.
 - Rationale: RLS ownership alone cannot prove that browser-supplied route JSON came from the motorcycle-safe provider boundary or preserve multi-table invariants.
 - User impact: A plan is saved only after all three verified candidates are ready; partial, expired, cross-user, or browser-forged route sets fail explicitly.
 - Affected: route Edge Function, route draft tables, trip/route/waypoint policies, finalization and selection RPCs, planner UI.
-- Verification: browser/service-role direct-DML denial, narrow service-role RPC grants, exact-three/one-plan finalization, expiry, replay, cross-user, two-session finalizer race, and forced mid-write transaction rollback tests.
+- Verification: browser/service-role direct-DML denial across every protected table and operation, future-table default-ACL probe, narrow service-role RPC allow/deny matrix, exact-three/one-plan finalization, expiry, replay, cross-user, two-session finalizer race, and forced mid-write transaction rollback tests.
 - Confirmed as security implementation of `DATA-001` and `ROUTE-001`: 2026-08-30.
 
 #### DATA-002 — Riding collections
@@ -165,7 +165,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Rationale: Kakao documents car type 7 as motorcycle and `motorway` as exclusion of motorway/automobile-only road.
 - User impact: If a compliant route cannot be returned, planning fails explicitly instead of showing an unsafe substitute.
 - Affected: route provider adapter, request logging, tests, failure UI.
-- Verification: intercepted request assertions for every call path; no-fallback test; real legal-route smoke test.
+- Verification: intercepted request assertions for every call path; only documented `result_code=1` maps to no-route while malformed/unknown results fail as provider-contract errors; no-fallback test; real legal-route smoke test.
 - Confirmed: 2026-08-30.
 
 #### ROUTE-002 — Three candidate identities
@@ -213,11 +213,11 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### WEATHER-002 — Snapshot and stale behavior
 
 - Status: `CONFIRMED`
-- Decision: Persist the last successful forecast snapshot with issue and retrieval times. On provider failure, keep it readable and label it stale with a safe failure reason; never present stale data as current.
+- Decision: Persist the last successful forecast snapshot with issue, retrieval, validity, and stale-observation times. On provider failure, keep it readable and label it stale with a safe failure reason, full Seoul date/time, elapsed age, and independent expiry state; never present stale data as current.
 - Rationale: Stored trip information remains useful during an outage without hiding freshness risk.
 - User impact: Riders see the last known forecast and how old it is.
 - Affected: snapshot schema, cache policy, UI, logs/status.
-- Verification: success-then-failure test, age calculation, no-snapshot failure state.
+- Verification: success-then-failure test, multi-day age and simultaneous provider-failure/expiry display, no-snapshot failure state.
 - Confirmed: 2026-08-30.
 
 ### Cost and failure handling
@@ -323,6 +323,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Affected: Supabase Production project, Vercel Production variables, Kakao OAuth redirects, secrets, migrations, backup and cutover plan.
 - Verification: explicit user decision, project region readback, empty/pre-cutover data audit, and final Production project reference evidence.
 - Recorded: 2026-08-30.
+- Interview update: On 2026-08-31 the user explicitly deferred every Production Supabase/Vercel change until the Preview gate is complete. The decision remains `NEEDS_INTERVIEW`; neither hosted Production project nor its data may be reset, migrated, or reconfigured in the Preview phase.
 
 ## Live-state snapshot
 
@@ -330,14 +331,14 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 
 ### Verified 2026-08-31
 
-- Git: the reviewed head was `c62cc3d0aa971dab648bb42e24b40eb8e89b80e1`. Its independent review reported `BLOCKER 0 / HIGH 1` plus medium/low follow-ups. Correction commit `f5f5eed` closes the finalization UI race, stale-weather response/age display, collection lunch ordering, provider failure classification, resolver outage contract, invitation token path exposure, service-role aggregate DML, and missing invitation/finalization concurrency evidence. Independent delta review of the new documentation head is pending. `.gitignore` remains a pre-existing user change and is excluded.
+- Git: correction commit `203757b40e268c554168c4a9fb843b03e6b6dc0f` closes the second review findings from documentation head `de78b71686f639f1596e062f3e931e826fb4935e`: explicit Kakao no-route classification, execution-backed persistence locking, planner stale age/expiry, same-origin invitation acceptance, complete service-role DML/RPC denial, and migration-role default ACL coverage. A documentation evidence commit and independent five-axis delta review are pending. `.gitignore` remains a pre-existing user change and is excluded.
 - GitHub: public repository; default `develop`; `main` required checks `verify` and `develop-only`; PR required with zero approvals; administrators and conversation resolution enforced; force pushes and deletion disabled.
 - Vercel: project `tocomboys-projects/motocast`, GitHub repository linked, Production Branch `main`. Following the user interview, API readback now reports Node.js `20.x` and `ssoProtection.deploymentType=preview`, so Preview requires Vercel Authentication while Production remains outside that platform gate. One Ready Production deployment still comes from the import-time `develop` source. No custom domain exists.
-- Vercel environment names: the three intended `NEXT_PUBLIC_*` names plus seven server-only/provider/budget names exist in both Production and Preview. Values were not read or printed.
+- Vercel environment names: the `develop` Preview scope contains only `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `NEXT_PUBLIC_KAKAO_MAP_JS_KEY`, each as branch-specific `Config`. The mistaken `KAKAO_MAP_JS_KEY` entry and all Preview server-only values are absent. Production configuration was intentionally not changed or re-audited in this phase.
 - Supabase Production: project `obodvbyzptxeehgpcpkd` (`motocast`, Tokyo `ap-northeast-1`, PostgreSQL 17.6.1) is `ACTIVE_HEALTHY` and locally linked. Migrations `20260830193000`, `20260830204000`, and reviewed privilege hardening `20260830212000` are applied. Live ACL readback passes 6/6 assertions; all 11 public tables have RLS enabled. `search-places`, `plan-route`, and `weather-timeline` are deployed as active version 1, but the current functions are not yet redeployed and user-defined secret names remain empty. Secret values were not read or printed.
-- Supabase Preview: project `lehjmbgfpoemqcwxowbx` (`MOTOCAST_Preview`, Seoul `ap-northeast-2`, PostgreSQL 17.6.1) is separately `ACTIVE_HEALTHY` and currently empty/unlinked. The earlier no-write dry run confirmed the then-current four migrations through `20260830223000` were pending. The repository now contains a fifth review-hardening migration, `20260830224500`; a new dry run and all writes remain blocked until the corrected fixed-SHA independent review passes. Production and Preview refs are distinct. Full migrations/functions/provider secrets/Auth settings are not yet applied.
-- Local database: a minimal Supabase PostgreSQL 17 instance incrementally applied all five migrations. The current review-hardening migration reapplies successfully. Auth/RLS/budget `31/31`, live ACL `24/24`, and plan/collection/weather/share `50/50` pass (`105/105` combined). Separate two-connection suites pass collection/FK `4/4`, invitation/budget/share publication `7/7`, and route finalization/rollback `10/10`; each suite exits nonzero if any assertion is false. A destructive fresh reset/apply is `NOT_RUN` pending explicit approval to erase only the disposable local database at `127.0.0.1:54322`. These local results do not replace connected Preview/Production verification.
-- Writer verification for correction commit `f5f5eed`: ESLint passes; Vitest passes `30 files / 155 tests`; cached Deno 2.9.6 checks all four Edge Function entrypoints; TypeScript and the production build pass in an exact writable `/tmp` copy because the Windows-mounted workspace returned `EROFS` for generated cache files. The first temporary build attempt failed because a `node_modules` symlink crossed Turbopack's project boundary; copying dependencies into the same temporary root passed, and the temporary validation copy was deleted afterward. The `npx deno` bootstrap also had one `EAI_AGAIN` setup error before the cached executable passed.
+- Supabase Preview: project `lehjmbgfpoemqcwxowbx` (`MOTOCAST_Preview`, Seoul `ap-northeast-2`) is `ACTIVE_HEALTHY`. Kakao Auth is enabled; Site URL and callback allowlist match the fixed `develop` Preview origin. Exactly eight user-defined Edge Function secret names are present: Kakao REST, KMA APIHub, place verification, allowed origins, three Kakao route limits, and the KMA limit. Values were not read or printed. Migrations and Edge Functions remain undeployed (`functions=[]`) until fixed-SHA review approval.
+- Local database: after exact Docker/workdir/port readback and explicit user approval, only the disposable PostgreSQL 17 database at `127.0.0.1:54322` was reset from empty. All five migrations applied in order and `20260830224500` reapplied successfully. All `13/13` public tables have RLS, and all `20/20` application-owned SECURITY DEFINER functions have a fixed search path (the two additional public SECURITY DEFINER functions belong to the disposable-test `dblink` extension). Auth/RLS/budget `31/31`, live ACL `64/64`, and plan/collection/weather/share `50/50` pass (`145/145` combined). Separate two-connection suites pass collection/FK `4/4`, invitation/budget/share publication `7/7`, and route finalization/rollback `10/10`; each suite exits nonzero if any assertion is false. The first fresh run exposed 13 ACL failures, which were corrected and then re-proven from a second fresh reset. Neither hosted project was reset or mutated.
+- Writer verification for correction commit `203757b`: ESLint passes; Vitest passes `32 files / 168 tests`; cached Deno 2.9.6 checks all four Edge Function entrypoints; `npm ci` reports zero vulnerabilities and the clean writable `/tmp` copy passes TypeScript and Production build. The mounted workspace still reports an expected `SETUP_OR_IMPORT_FAILURE` from read-only `tsconfig.tsbuildinfo` plus stale `.next` references; the isolated exact copy is the product verdict. Independent review and Preview provider/browser verification remain pending.
 - Repository: verified Kakao place selection, three server-owned route strategies, custom winding waypoint editing, hard-return exclusion, and actual provider geometry rendering are connected in the planner. Route ETA weather, collection version/apply UI, explicit immutable sharing, and the public resolver are implemented and locally verified, but the new migration and function are not yet hosted or browser-smoke-tested.
 
 ## Implementation status
@@ -353,21 +354,21 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 - Safe provider-contract parsing and actual route geometry rendering; example and live states remain visibly distinct.
 - Transactional plan persistence and ordered collection versioning begin in `20260830223000`. Migration `20260830224500` adds trusted Edge-only route staging, three distinct route-geometry finalization, verified-place collection persistence through `save-collection`, route-bound weather snapshot persistence and stale observation, immutable aggregate DML denial, narrow owner RPCs, a ten-minute single-use preview capability, snapshot-local waypoint IDs, and an explicit nested-field share allowlist. Neither migration is deployed to either hosted project.
 - Public share bearer tokens are emitted as `/share#<token>` and resolved by a fixed-path `POST /api/shares/resolve`, so the token is not placed in the initial hosting request path. The service worker bypasses `/share` and does not cache the shared page or resolver response.
-- Invitation bearer tokens are emitted as `/invite#<token>`, removed from browser history, and accepted only by fixed-path `POST /api/invites/accept` before the HttpOnly OAuth claim cookie is set. Dynamic invitation token paths were removed and the service worker bypasses `/invite`.
+- Invitation bearer tokens are emitted as `/invite#<token>`, removed from browser history, and accepted only by same-origin JSON `POST /api/invites/accept` before the HttpOnly OAuth claim cookie is set. Cross-site/non-JSON requests are rejected without a cookie; dynamic invitation token paths were removed and the service worker bypasses `/invite`.
 - Provider calculation and transactional plan finalization share one synchronous UI lock. Candidate selection, recalculation, collection application, and sharing stay blocked through persistence; generation/trip identity and weather-request identity prevent late results from overwriting the current plan.
-- Route ETA is connected to the weather request contract, with exact six-hour/five-day model boundaries, per-request deduplication, recent cache reuse, durable same-route snapshots, explicit stale fallback, and KMA grid conversion regression coverage. Hosted provider execution remains unverified.
+- Route ETA is connected to the weather request contract, with exact six-hour/five-day model boundaries, per-request deduplication, recent cache reuse, durable same-route snapshots, explicit stale fallback, full multi-day age and expiry display, and KMA grid conversion regression coverage. Hosted provider execution remains unverified.
 - Vercel project runtime and deployment protection now match `OPS-004` and `OPS-005` by API readback.
 - Basic schedule unit tests and CI workflows.
 
 ### Incomplete
 
-- Current Edge Function code redeployment, Auth provider/redirect/secrets configuration, and post-deployment readback.
+- Preview migration/Edge Function deployment and post-deployment schema/RLS/RPC/function readback. Preview Auth, redirect, secret names, and Vercel public variables are configured.
 - AUTH-003 migrations and sensitive RPC ACLs are live and independently approved; full OAuth and A/B/admin/revoked connected tests remain pending.
 - Actual Kakao route and KMA response smoke tests; provider-backed candidate distinctness remains unverified.
 - Deploying and connected-testing route ETA weather, collection CRUD/version/apply, and immutable share preview/publish/resolver/revoke/reissue.
 - Resolving `OPS-008` for the Production Supabase region before real rider data is accepted.
-- Full RLS, concurrency, provider, browser, Preview, and Production tests.
-- Vercel secret cleanup, Preview public-variable isolation, and a new `main`-origin Production deployment. Runtime alignment and Preview-only deployment protection are already configured and still require deployment-level smoke verification.
+- Hosted RLS/provider/browser/Preview tests and all Production tests. The full local fresh-migration, RLS/RPC, and concurrency suites are GREEN.
+- A new reviewed `develop` Preview deployment and, only after a new `OPS-008` interview, a `main`-origin Production deployment. Runtime alignment, Preview variable isolation, and Preview-only deployment protection are configured and still require deployment-level smoke verification.
 
 ## Deprecated decisions
 
