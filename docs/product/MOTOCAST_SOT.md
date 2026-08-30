@@ -290,12 +290,12 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 
 ### Verified 2026-08-30
 
-- Git: local `develop` is `90f7f522bea5bb92c348b656bd80d8797d636653`, three commits ahead of `origin/develop` at `201e1ec12c967da57fb671fad294cf1d05b9d56c`; `main` and `origin/main` are `d0134ed93d7e0d8aed1123c5d693c665bbe646e8`. `.gitignore` remains a pre-existing user change and is excluded from MOTOCAST commits. No open PR or remote probe branch exists.
+- Git: local `develop` is `448f756e0859ef20f5c127f29f06333fb07d12f9`, twelve commits ahead of `origin/develop` at `201e1ec12c967da57fb671fad294cf1d05b9d56c`; `main` and `origin/main` are `d0134ed93d7e0d8aed1123c5d693c665bbe646e8`. `.gitignore` remains a pre-existing user change and is excluded from MOTOCAST commits. No open PR or remote probe branch exists.
 - GitHub: public repository; default `develop`; `main` required checks `verify` and `develop-only`; PR required with zero approvals; administrators and conversation resolution enforced; force pushes and deletion disabled.
 - Vercel: project `tocomboys-projects/motocast`, GitHub repository linked, Production Branch `main`, Node.js `24.x`. One Ready Production deployment exists and its alias indicates the import-time `develop` source. The public alias returned HTTP 200 without a Vercel Authentication redirect at audit time. No custom domain exists.
 - Vercel environment names: the three intended `NEXT_PUBLIC_*` names plus seven server-only/provider/budget names exist in both Production and Preview. Values were not read or printed.
-- Supabase: project `obodvbyzptxeehgpcpkd` (`motocast`, Seoul `ap-northeast-1`, PostgreSQL 17.6.1) is `ACTIVE_HEALTHY` and locally linked. Migrations `20260830193000`, `20260830204000`, and reviewed privilege hardening `20260830212000` are applied. Live ACL readback passes 6/6 assertions; all 11 public tables have RLS enabled. Deployed Edge Functions and user-defined secret names remain empty. Secret values were not read or printed. Full A/B/admin/revoked RLS fixtures remain not run because the linked CLI test role cannot create `auth.users` fixtures.
-- Repository: initial schema plus invite-only forward migration and three Edge Functions exist; the UI still uses demo coordinates/results after successful provider invocation. Collection/share persistence UI and public share resolver are absent.
+- Supabase: project `obodvbyzptxeehgpcpkd` (`motocast`, Seoul `ap-northeast-1`, PostgreSQL 17.6.1) is `ACTIVE_HEALTHY` and locally linked. Migrations `20260830193000`, `20260830204000`, and reviewed privilege hardening `20260830212000` are applied. Live ACL readback passes 6/6 assertions; all 11 public tables have RLS enabled. `search-places`, `plan-route`, and `weather-timeline` are deployed as active version 1, but the current `plan-route` commit is not yet redeployed and user-defined secret names remain empty. Secret values were not read or printed. Full A/B/admin/revoked RLS fixtures remain not run because the linked CLI test role cannot create `auth.users` fixtures.
+- Repository: verified Kakao place selection, three server-owned route strategies, custom winding waypoint editing, hard-return exclusion, and actual provider geometry rendering are connected in the planner. Weather is still explicitly shown as not queried for live routes. Collection/share persistence UI and public share resolver are absent.
 
 ## Implementation status
 
@@ -304,16 +304,19 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 - Responsive PWA shell and Kakao map canvas.
 - Supabase browser/server client scaffolding and Kakao OAuth callback.
 - Invitation, membership, collection, trip, cache, weather snapshot, share, and budget schema with initial RLS.
-- Route and weather Edge Function drafts with server-enforced `car_type=7` and `avoid=motorway`.
+- Verified Kakao place search with a selected-versus-typed UI state.
+- Balanced, winding, and shortest route orchestration with server-enforced `car_type=7`, `avoid=motorway`, hard-return exclusion, no passenger-car fallback, and provider waypoint/geometry continuity validation.
+- Custom winding waypoint editing and an honestly labelled `와인딩 추정` alternative when no custom winding point exists.
+- Safe provider-contract parsing and actual route geometry rendering; example and live states remain visibly distinct.
+- Weather Edge Function draft; live-route weather remains unconnected in the planner.
 - Basic schedule unit tests and CI workflows.
 
 ### Incomplete
 
-- Edge Function/Auth provider/redirect/secrets deployment and post-deployment readback.
+- Current Edge Function code redeployment, Auth provider/redirect/secrets configuration, and post-deployment readback.
 - AUTH-003 migrations and sensitive RPC ACLs are live and independently approved; full OAuth and A/B/admin/revoked connected tests remain pending.
-- Real Kakao place search and verified-coordinate form state.
-- Three real and distinguishable candidate orchestration, hard-return filtering, and ROUTE-003 resolution.
-- Mapping route/weather responses into the UI; durable cache/stale behavior.
+- Actual Kakao route and KMA response smoke tests; provider-backed candidate distinctness remains unverified.
+- Mapping route ETA into weather requests and the UI; durable cache/stale behavior.
 - Collection CRUD/version/apply UI and persistence.
 - Immutable share preview/publish/resolver/revoke/reissue.
 - Full RLS, concurrency, provider, browser, Preview, and Production tests.
