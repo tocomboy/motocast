@@ -366,7 +366,7 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 - Fresh Vercel Preview deployment after server-secret cleanup and deployment-level environment readback.
 - AUTH-003 migrations and sensitive RPC ACLs are live and independently approved; full OAuth and A/B/admin/revoked connected tests remain pending.
 - Actual Kakao route and KMA response smoke tests; provider-backed candidate distinctness remains unverified.
-- Deploying and connected-testing route ETA weather, collection CRUD/version/apply, and immutable share preview/publish/resolver/revoke/reissue.
+- Authenticated connected smoke testing for route ETA weather, collection CRUD/version/apply, and immutable share preview/publish/resolver/revoke/reissue.
 - Resolving `OPS-008` for the Production Supabase region before real rider data is accepted.
 - Hosted RLS/provider/browser/Preview tests and all Production tests. The full local fresh-migration, RLS/RPC, and concurrency suites are GREEN.
 - A new reviewed `develop` Preview deployment and, only after a new `OPS-008` interview, a `main`-origin Production deployment. Runtime alignment, Preview variable isolation, and Preview-only deployment protection are configured and still require deployment-level smoke verification.

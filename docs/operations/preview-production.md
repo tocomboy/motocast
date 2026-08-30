@@ -39,7 +39,7 @@ Verified Preview configuration on 2026-08-31: the three public names above exist
 
 4. Apply to Preview only, then read back migration versions, RLS, function ACLs, and Edge Function versions.
 5. Deploy `search-places`, `plan-route`, `weather-timeline`, and `save-collection` from the reviewed fixed SHA.
-6. Register Preview-only Auth provider redirects and server secrets through the Supabase Dashboard or masked CLI input. Never put values in command arguments or shell history. This setup is complete for `MOTOCAST_Preview`; live readback must still confirm names and enabled/URL states after deployment.
+6. Register Preview-only Auth provider redirects and server secrets through the Supabase Dashboard or masked CLI input. Never put values in command arguments or shell history. This setup and its name/enabled/URL readback are complete for `MOTOCAST_Preview`; repeat the readback after any relevant configuration change or redeployment.
 7. Use disposable Preview identities to execute the complete Preview gate.
 8. Resolve `OPS-008`, back up the chosen empty/pre-cutover Production database, and repeat the reviewed migration/function sequence for Production.
 
