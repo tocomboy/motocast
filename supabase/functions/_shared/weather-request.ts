@@ -8,6 +8,12 @@ export type WeatherPoint = {
   eta: string;
 };
 
+export type WeatherRequest = {
+  points: WeatherPoint[];
+  tripId: string | null;
+  candidateProfile: "balanced" | "winding" | "short";
+};
+
 export function parseWeatherPoints(value: unknown, nowMs = Date.now()): WeatherPoint[] {
   if (!value || typeof value !== "object" || !Array.isArray((value as { points?: unknown }).points)) {
     throw new Error("INVALID_REQUEST");
@@ -31,4 +37,21 @@ export function parseWeatherPoints(value: unknown, nowMs = Date.now()): WeatherP
       eta: eta.toISOString(),
     };
   });
+}
+
+export function parseWeatherRequest(value: unknown, nowMs = Date.now()): WeatherRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_REQUEST");
+  const raw = value as { tripId?: unknown; candidateProfile?: unknown };
+  if (
+    raw.tripId !== undefined && raw.tripId !== null &&
+    (typeof raw.tripId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw.tripId))
+  ) throw new Error("INVALID_TRIP");
+  if (!['balanced', 'winding', 'short'].includes(String(raw.candidateProfile))) {
+    throw new Error("INVALID_CANDIDATE");
+  }
+  return {
+    points: parseWeatherPoints(value, nowMs),
+    tripId: typeof raw.tripId === "string" ? raw.tripId : null,
+    candidateProfile: raw.candidateProfile as WeatherRequest["candidateProfile"],
+  };
 }

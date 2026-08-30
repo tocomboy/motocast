@@ -70,10 +70,11 @@ insert into tap_results values ((select char_length(invite_token) from new_invit
 select set_config('request.jwt.claim.sub', '50000000-0000-0000-0000-000000000005', true);
 select public.claim_invite((select invite_token from new_invite));
 insert into tap_results values
-  ((select count(*) from public.memberships where user_id = '50000000-0000-0000-0000-000000000005') = 1, 'first invited user claims successfully'),
-  ((select consumed_at is not null from public.invitations where consumed_by = '50000000-0000-0000-0000-000000000005'), 'claim stores the consumed tombstone');
+  ((select count(*) from public.memberships where user_id = '50000000-0000-0000-0000-000000000005') = 1, 'first invited user claims successfully');
 
 reset role;
+insert into tap_results values
+  ((select consumed_at is not null from public.invitations where consumed_by = '50000000-0000-0000-0000-000000000005'), 'claim stores the consumed tombstone');
 create temp table invite_audit on commit drop as
 select id, consumed_at from public.invitations
 where consumed_by = '50000000-0000-0000-0000-000000000005';
@@ -98,6 +99,7 @@ begin
   insert into tap_results values (rejected, 'a deleted consumer does not make the invite reusable');
 end;
 $$;
+reset role;
 insert into tap_results values (
   (select invitation.consumed_at = audit.consumed_at
    from public.invitations invitation cross join invite_audit audit
@@ -105,6 +107,7 @@ insert into tap_results values (
   'failed second claim preserves the first consumed_at'
 );
 
+set local role authenticated;
 select set_config('request.jwt.claim.sub', '20000000-0000-0000-0000-000000000002', true);
 insert into tap_results values
   (public.consume_daily_api_budget('tap_test', 'boundary', 2) = 1, 'first budget call is consumed'),
@@ -121,12 +124,12 @@ begin
   insert into tap_results values (rejected, 'third budget call fails closed');
 end;
 $$;
+reset role;
 insert into tap_results values (
   (select calls = 2 from public.api_usage_daily where provider = 'tap_test' and operation = 'boundary'),
   'failed budget call does not exceed the ledger limit'
 );
 
-reset role;
 select
   (case when ok then 'ok ' else 'not ok ' end) ||
   row_number() over () || ' - ' || description

@@ -2,7 +2,7 @@
 
 지인 라이더를 위한 국내 당일 오토바이 경로·시간대별 날씨 계획 PWA입니다. 출발/복귀 시각과 식사 정차, 선택 휴식을 반영해 세 가지 경로 후보를 비교하고, 각 구간의 예상 통과 시각에 맞춘 기상청 예보를 보여주는 것을 목표로 합니다.
 
-> 현재 상태: 프로덕션 구현 중입니다. 반응형 계획 화면, 초대 기반 카카오 로그인 경계, 실제 카카오 장소 선택, 오토바이 안전 경로 후보 3개와 실제 지도 형상 표시, Supabase 스키마/RLS, 기상청 예보 Edge Function, 일일 API 하드 스톱이 구현되어 있습니다. 실제 구간 날씨 연결과 컬렉션·공유 UI는 아직 완료되지 않았으며, 연결 전 화면의 예시 결과와 계산 후 실제 경로는 명시적으로 구분됩니다.
+> 현재 상태: 프로덕션 구현 및 배포 검증 중입니다. 실제 장소·안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 계획 자동 저장, 사용자별 컬렉션 버전, 공유 미리보기/불변 발행/회수/재발행 UI와 토큰 전용 공개 resolver가 구현되어 있습니다. 로컬 DB의 Auth/RLS/budget/컬렉션/공유 검증은 통과했지만 새 migration과 함수는 아직 hosted Preview/Production에 배포되지 않았고 실제 Kakao/KMA·OAuth 브라우저 검증도 남아 있습니다.
 
 ## 고정된 제품 원칙
 
@@ -24,15 +24,14 @@
 
 ## 로컬 실행
 
-Node.js 20.9 이상이 필요합니다.
+Node.js 20.x가 필요합니다. 로컬, GitHub CI, Vercel 런타임을 같은 major로 고정합니다.
 
 ```bash
 npm ci
-cp .env.example .env.local
 npm run dev
 ```
 
-`.env.local`에는 실제 키를 입력하되 Git에 추가하지 않습니다. 외부 서비스 없이 화면만 확인하려면 환경변수를 비워 둔 채 실행하면 합성 위치와 합성 예보를 사용하는 데모 모드로 열립니다. 연결 환경에서도 실제 경로 계산 전에는 결과 영역에 `예시 데이터`가 표시되며, 세 경로가 모두 안전하게 계산된 뒤에만 `실제 경로`로 전환됩니다.
+실제 연결이 필요하면 `.env.local`을 직접 만들고 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_KAKAO_MAP_JS_KEY`만 넣습니다. 파일이나 값을 Git에 추가하지 않습니다. 외부 서비스 없이 화면만 확인하려면 환경변수를 비워 둔 채 실행하면 합성 위치와 합성 예보를 사용하는 데모 모드로 열립니다. 연결 환경에서도 실제 경로 계산 전에는 결과 영역에 `예시 데이터`가 표시되며, 세 경로가 모두 안전하게 계산된 뒤에만 `실제 경로`로 전환됩니다.
 
 검증 명령은 다음과 같습니다.
 
@@ -44,12 +43,22 @@ npm test
 npm run build
 ```
 
+DB migration과 RLS/RPC는 실제 프로젝트와 분리된 로컬 Supabase PostgreSQL 17에서 검증합니다.
+
+```bash
+npx --yes supabase@2.116.0 start --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+npx --yes supabase@2.116.0 test db --local supabase/tests/database/auth_rls_budget.test.sql supabase/tests/database/live_acl_readback.test.sql supabase/tests/database/plan_collection_share.test.sql
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/collection_version_concurrency.test.sql
+```
+
 ## Supabase 설정
 
-1. Supabase Free 프로젝트를 연결하고 CLI로 `supabase/migrations/`의 migration을 순서대로 적용합니다.
+1. Production과 Preview에 서로 다른 Supabase Free 프로젝트를 사용하고 CLI로 `supabase/migrations/`의 migration을 순서대로 적용합니다.
 2. Kakao를 Auth provider로 설정하고 콜백 주소를 Supabase가 안내하는 주소와 일치시킵니다.
 3. `search-places`, `plan-route`, `weather-timeline` Edge Function을 배포하고 서버 전용 비밀값을 Supabase Dashboard secret store에 등록합니다.
 4. 최초 관리자 등록과 거부된 OAuth 사용자 정리는 [Supabase Auth 운영 절차](docs/operations/supabase-auth.md)를 따릅니다.
+
+프로젝트별 데이터·비밀값·배포 경계와 현재 상태는 [Preview/Production 운영 절차](docs/operations/preview-production.md)를 따릅니다.
 
 관리자는 로그인 후 `/admin/invites`에서 7일짜리 일회용 초대 링크를 만들 수 있습니다. 데이터베이스에는 링크 원문 대신 SHA-256 해시만 저장됩니다.
 
@@ -87,7 +96,7 @@ supabase functions deploy weather-timeline
 
 [`vercel.json`](vercel.json)은 비용과 불필요한 배포를 줄이기 위해 `develop`과 `main`만 자동 배포 대상으로 허용합니다.
 
-- `develop` push: Preview 배포
+- `develop` push: Vercel Authentication으로 보호된 Preview 배포, Preview 전용 Supabase 사용
 - `develop → main` 병합: Production 배포
 - 그 밖의 브랜치: 자동 배포하지 않음
 
@@ -103,7 +112,7 @@ npm run lint && npm run typecheck && npm test && npm run build
 
 ## 남은 첫 버전 작업
 
-- 구간 ETA를 날씨 Edge Function과 연결하고 실패 시 마지막 정상 스냅샷 표시
-- 사용자별 라이딩 컬렉션 저장과 커스텀 와인딩 경유지 영속화
-- 공유 미리보기, 불변 버전 발행, 링크 회수·재발행
-- 실제 Supabase/Kakao/KMA 환경의 통합 테스트
+- Production Supabase 지역 결정과 hosted migration/Edge Function/Auth/secrets 설정
+- Preview 전용 Vercel public 변수 연결과 전체 브라우저 smoke test
+- 실제 Kakao/KMA 최소 호출, stale snapshot, 비용 한도 소진 검증
+- 고정 SHA 독립 리뷰, `develop → main` PR, Production 사용자 관점 검증

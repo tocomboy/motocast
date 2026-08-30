@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseWeatherPoints } from "./weather-request";
+import { parseWeatherPoints, parseWeatherRequest } from "./weather-request";
 
 const point = {
   id: "pal-dang",
@@ -21,5 +21,23 @@ describe("parseWeatherPoints", () => {
     "2026-08-31T09:00:00",
   ])("rejects invalid or timezone-less ETA %s", (eta) => {
     expect(() => parseWeatherPoints({ points: [{ ...point, eta }] }, now)).toThrow("INVALID_POINT");
+  });
+
+  it("accepts an owned-trip request shape", () => {
+    expect(parseWeatherRequest({
+      tripId: "f5ef8f03-bf21-4a9b-bf2b-82ce63cfc53e",
+      candidateProfile: "balanced",
+      points: [point],
+    }, now)).toMatchObject({
+      tripId: "f5ef8f03-bf21-4a9b-bf2b-82ce63cfc53e",
+      candidateProfile: "balanced",
+    });
+  });
+
+  it.each([
+    { tripId: "not-a-uuid", candidateProfile: "balanced" },
+    { tripId: null, candidateProfile: "fastest" },
+  ])("rejects invalid request metadata %#", (metadata) => {
+    expect(() => parseWeatherRequest({ ...metadata, points: [point] }, now)).toThrow(/^INVALID_/);
   });
 });

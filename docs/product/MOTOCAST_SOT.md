@@ -107,7 +107,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### SHARE-002 — Share token handling
 
 - Status: `CONFIRMED`
-- Decision: Share tokens use at least 32 random bytes; store only SHA-256 hashes. The public resolver returns the published snapshot only and never exposes owner source tables or management metadata.
+- Decision: Share tokens use at least 32 random bytes; store only SHA-256 hashes. The public resolver returns the published snapshot only and never exposes owner source tables, management metadata, or internal place-verification proofs. All user-facing ride, place, schedule, route, and weather information remains in the full preview without automatic redaction.
 - Rationale: A database leak must not produce usable public links.
 - User impact: A lost link cannot be recovered; it can only be revoked and reissued.
 - Affected: share RPC/endpoint, schema, logging, tests.
@@ -257,22 +257,22 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### OPS-004 — Vercel runtime and secrets
 
 - Status: `CONFIRMED`
-- Decision: Use Vercel Hobby and the default `vercel.app` domain unless the user supplies a custom domain. Pin one currently supported Node.js LTS major consistently across `package.json`, CI, and Vercel. Vercel keeps only the three `NEXT_PUBLIC_*` variables; provider, service-role, origin, and budget secrets live in Supabase.
-- Rationale: Avoid runtime drift and duplicate high-value secrets.
+- Decision: Use Vercel Hobby and the default `vercel.app` domain unless the user supplies a custom domain. Pin Node.js `20.x` consistently across `package.json`, GitHub CI, and Vercel. Vercel keeps only the three `NEXT_PUBLIC_*` variables; provider, service-role, origin, and budget secrets live in Supabase.
+- Rationale: Node.js 20 is already the locally and CI-verified baseline, so aligning Vercel down from its current 24.x setting avoids an unnecessary runtime migration while removing drift. Keeping server-only values in Supabase reduces credential exposure.
 - User impact: Stable builds with a smaller credential exposure surface.
 - Affected: package metadata, CI, Vercel project, Supabase secrets.
 - Verification: official runtime documentation, project/API readback, build output, environment-name readback.
-- Confirmed: 2026-08-30.
+- Confirmed by user interview: 2026-08-30.
 
 #### OPS-005 — Deployment protection
 
-- Status: `NEEDS_INTERVIEW`
-- Decision: Production must be reachable to invited riders through app authentication, not Vercel-team authentication. Choose the separate Preview protection policy before external Preview smoke testing.
-- Rationale: Vercel Authentication limits access independently of MOTOCAST membership; Preview contains unreleased behavior and should have an intentional policy.
-- User impact: Production works for acquaintances without Vercel accounts; Preview may be owner-only or test-link accessible.
+- Status: `CONFIRMED`
+- Decision: Production is reachable through MOTOCAST invitation and Kakao authentication without Vercel-team authentication. Enable Vercel Authentication for Preview deployments only.
+- Rationale: Preview contains unreleased behavior and test data, while invited acquaintances must be able to reach Production without owning a Vercel account.
+- User impact: Preview requires authorized Vercel access; Production uses only the application's invitation and Kakao login boundary.
 - Affected: Vercel Deployment Protection, E2E automation, Preview instructions.
-- Verification: anonymous HTTP response and protected/unprotected Preview access test.
-- Recorded: 2026-08-30.
+- Verification: anonymous Production response reaches the application; anonymous Preview is challenged; an authorized Preview smoke test can proceed.
+- Confirmed by user interview: 2026-08-30.
 
 #### OPS-006 — Backup and free-plan operation
 
@@ -284,6 +284,26 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Verification: documented restore/readback drill using non-production data and dashboard/CLI log access.
 - Confirmed: 2026-08-30.
 
+#### OPS-007 — Preview data isolation
+
+- Status: `CONFIRMED`
+- Decision: Use a second Supabase Free project dedicated to Vercel Preview. Preview must use separate Auth users, rider data, provider secrets, budgets, and publishable credentials from Production; migrations and Edge Function code remain version-aligned.
+- Rationale: A Preview defect or test must not read, mutate, or spend against Production identities, plans, shares, or secrets. Supabase Free currently permits two active free projects in one organization, which fits the small private-service boundary without adding a paid service.
+- User impact: Preview testing uses disposable test identities and data; real riders and Production plans remain isolated.
+- Affected: Supabase projects, migrations, Auth providers and redirects, Edge Functions, Vercel Preview environment variables, runbooks.
+- Verification: distinct project references and environment-name ownership readback, schema/function parity, Preview test identity, and negative checks showing no Production data is reachable.
+- Confirmed by user interview: 2026-08-30.
+
+#### OPS-008 — Production Supabase region
+
+- Status: `NEEDS_INTERVIEW`
+- Decision: Choose whether the current Production project remains in AWS `ap-northeast-1` (Tokyo) or is replaced with a Seoul `ap-northeast-2` project before real rider data is accepted.
+- Rationale: Live readback corrected an earlier mistaken region label: `ap-northeast-1` is Tokyo, not Seoul. Preview is already isolated in Seoul. Replacing Production now minimizes migration risk but requires recreating or repurposing one of the two Free projects; keeping Tokyo avoids project replacement but retains Japan data residency and modest additional latency.
+- User impact: Core behavior is the same; the choice changes data location, expected latency, and the operational work needed before launch.
+- Affected: Supabase Production project, Vercel Production variables, Kakao OAuth redirects, secrets, migrations, backup and cutover plan.
+- Verification: explicit user decision, project region readback, empty/pre-cutover data audit, and final Production project reference evidence.
+- Recorded: 2026-08-30.
+
 ## Live-state snapshot
 
 This snapshot is evidence, not a permanent decision. Re-read live state before promotion.
@@ -292,10 +312,12 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 
 - Git: the latest independently approved route implementation is fixed SHA `448f756e0859ef20f5c127f29f06333fb07d12f9`, based on `origin/develop` at `201e1ec12c967da57fb671fad294cf1d05b9d56c`; `main` and `origin/main` are `d0134ed93d7e0d8aed1123c5d693c665bbe646e8`. Documentation synchronization follows that implementation commit. `.gitignore` remains a pre-existing user change and is excluded from MOTOCAST commits. No open PR or remote probe branch exists.
 - GitHub: public repository; default `develop`; `main` required checks `verify` and `develop-only`; PR required with zero approvals; administrators and conversation resolution enforced; force pushes and deletion disabled.
-- Vercel: project `tocomboys-projects/motocast`, GitHub repository linked, Production Branch `main`, Node.js `24.x`. One Ready Production deployment exists and its alias indicates the import-time `develop` source. The public alias returned HTTP 200 without a Vercel Authentication redirect at audit time. No custom domain exists.
+- Vercel: project `tocomboys-projects/motocast`, GitHub repository linked, Production Branch `main`. Following the user interview, API readback now reports Node.js `20.x` and `ssoProtection.deploymentType=preview`, so Preview requires Vercel Authentication while Production remains outside that platform gate. One Ready Production deployment still comes from the import-time `develop` source. No custom domain exists.
 - Vercel environment names: the three intended `NEXT_PUBLIC_*` names plus seven server-only/provider/budget names exist in both Production and Preview. Values were not read or printed.
-- Supabase: project `obodvbyzptxeehgpcpkd` (`motocast`, Seoul `ap-northeast-1`, PostgreSQL 17.6.1) is `ACTIVE_HEALTHY` and locally linked. Migrations `20260830193000`, `20260830204000`, and reviewed privilege hardening `20260830212000` are applied. Live ACL readback passes 6/6 assertions; all 11 public tables have RLS enabled. `search-places`, `plan-route`, and `weather-timeline` are deployed as active version 1, but the current `plan-route` commit is not yet redeployed and user-defined secret names remain empty. Secret values were not read or printed. Full A/B/admin/revoked RLS fixtures remain not run because the linked CLI test role cannot create `auth.users` fixtures.
-- Repository: verified Kakao place selection, three server-owned route strategies, custom winding waypoint editing, hard-return exclusion, and actual provider geometry rendering are connected in the planner. Weather is still explicitly shown as not queried for live routes. Collection/share persistence UI and public share resolver are absent.
+- Supabase Production: project `obodvbyzptxeehgpcpkd` (`motocast`, Tokyo `ap-northeast-1`, PostgreSQL 17.6.1) is `ACTIVE_HEALTHY` and locally linked. Migrations `20260830193000`, `20260830204000`, and reviewed privilege hardening `20260830212000` are applied. Live ACL readback passes 6/6 assertions; all 11 public tables have RLS enabled. `search-places`, `plan-route`, and `weather-timeline` are deployed as active version 1, but the current functions are not yet redeployed and user-defined secret names remain empty. Secret values were not read or printed.
+- Supabase Preview: project `lehjmbgfpoemqcwxowbx` (`MOTOCAST_Preview`, Seoul `ap-northeast-2`, PostgreSQL 17.6.1) is separately `ACTIVE_HEALTHY` and currently empty/unlinked. A no-write dry run confirms all four repository migrations, including `20260830223000`, are pending. Production and Preview refs are distinct. Full migrations/functions/provider secrets/Auth settings are not yet applied.
+- Local database: a minimal Supabase PostgreSQL 17 instance applied all four migrations. Auth/RLS/budget, live ACL, and plan/collection/share tests pass `57/57`; a separate two-connection collection/FK test passes `4/4`. Reapplying `20260830223000` succeeds and exposed/fixed the prior restrictive collection-version FK. These local results do not replace connected Preview/Production verification.
+- Repository: verified Kakao place selection, three server-owned route strategies, custom winding waypoint editing, hard-return exclusion, and actual provider geometry rendering are connected in the planner. Route ETA weather, collection version/apply UI, explicit immutable sharing, and the public resolver are implemented and locally verified, but the new migration and function are not yet hosted or browser-smoke-tested.
 
 ## Implementation status
 
@@ -308,7 +330,9 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 - Balanced, winding, and shortest route orchestration with server-enforced `car_type=7`, `avoid=motorway`, hard-return exclusion, no passenger-car fallback, and provider waypoint/geometry continuity validation.
 - Custom winding waypoint editing and an honestly labelled `와인딩 추정` alternative when no custom winding point exists.
 - Safe provider-contract parsing and actual route geometry rendering; example and live states remain visibly distinct.
-- Weather Edge Function draft; live-route weather remains unconnected in the planner.
+- Transactional plan persistence, ordered collection versioning, explicit share preview/publish/revoke/reissue, and a token-only public resolver are implemented in migration `20260830223000` but are not deployed to either hosted project.
+- Route ETA is connected to the weather request contract, with exact six-hour/five-day model boundaries, per-request deduplication, recent cache reuse, durable same-route snapshots, explicit stale fallback, and KMA grid conversion regression coverage. Hosted provider execution remains unverified.
+- Vercel project runtime and deployment protection now match `OPS-004` and `OPS-005` by API readback.
 - Basic schedule unit tests and CI workflows.
 
 ### Incomplete
@@ -316,11 +340,10 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 - Current Edge Function code redeployment, Auth provider/redirect/secrets configuration, and post-deployment readback.
 - AUTH-003 migrations and sensitive RPC ACLs are live and independently approved; full OAuth and A/B/admin/revoked connected tests remain pending.
 - Actual Kakao route and KMA response smoke tests; provider-backed candidate distinctness remains unverified.
-- Mapping route ETA into weather requests and the UI; durable cache/stale behavior.
-- Collection CRUD/version/apply UI and persistence.
-- Immutable share preview/publish/resolver/revoke/reissue.
+- Deploying and connected-testing route ETA weather, collection CRUD/version/apply, and immutable share preview/publish/resolver/revoke/reissue.
+- Resolving `OPS-008` for the Production Supabase region before real rider data is accepted.
 - Full RLS, concurrency, provider, browser, Preview, and Production tests.
-- Vercel secret cleanup, runtime alignment, Preview protection decision, new `main`-origin Production deployment.
+- Vercel secret cleanup, Preview public-variable isolation, and a new `main`-origin Production deployment. Runtime alignment and Preview-only deployment protection are already configured and still require deployment-level smoke verification.
 
 ## Deprecated decisions
 

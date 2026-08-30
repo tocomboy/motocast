@@ -20,6 +20,11 @@ export type WeatherSnapshot = {
   precipitationProbability: number | null;
   windSpeedMps: number | null;
   issuedAt: string;
+  retrievedAt?: string;
+  model?: "ultra" | "short";
+  status?: "forecast" | "outside-window" | "unavailable";
+  stale?: boolean;
+  staleReason?: string;
 };
 
 export type PlannedSegment = {

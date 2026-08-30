@@ -57,6 +57,16 @@ npx --yes supabase@2.116.0 test db --linked supabase/tests/database/live_acl_rea
 
 `auth_rls_budget.test.sql` creates rollback-only `auth.users` fixtures and must run against a local disposable Supabase database or another explicitly disposable fixture-capable database. A linked role that cannot write `auth.users` is `SETUP/IMPORT FAILURE`, not a product assertion failure and not broad RLS GREEN.
 
+The full local database boundary uses the repository `supabase/config.toml` and explicit suites:
+
+```bash
+npx --yes supabase@2.116.0 start --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+npx --yes supabase@2.116.0 test db --local supabase/tests/database/auth_rls_budget.test.sql supabase/tests/database/live_acl_readback.test.sql supabase/tests/database/plan_collection_share.test.sql
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/collection_version_concurrency.test.sql
+```
+
+The two-connection collection suite requires the disposable local `supabase_admin` role because PostgreSQL restricts `dblink` credential forwarding for non-superusers. It must never target a hosted project. Record it separately from the rollback-only RLS/RPC suite.
+
 6. Scan staged and tracked changes for secrets, invitation/share tokens, real rider locations, and schedules without printing secret values.
 7. Record `NOT_RUN` checks and the exact blocker.
 
