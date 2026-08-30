@@ -49,6 +49,14 @@ npm run build
 git diff --check
 ```
 
+Connected Supabase checks use explicit files so a restricted linked test role is not mistaken for a full fixture-capable environment:
+
+```bash
+npx --yes supabase@2.116.0 test db --linked supabase/tests/database/live_acl_readback.test.sql
+```
+
+`auth_rls_budget.test.sql` creates rollback-only `auth.users` fixtures and must run against a local disposable Supabase database or another explicitly disposable fixture-capable database. A linked role that cannot write `auth.users` is `SETUP/IMPORT FAILURE`, not a product assertion failure and not broad RLS GREEN.
+
 6. Scan staged and tracked changes for secrets, invitation/share tokens, real rider locations, and schedules without printing secret values.
 7. Record `NOT_RUN` checks and the exact blocker.
 

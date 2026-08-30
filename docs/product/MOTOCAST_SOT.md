@@ -294,7 +294,7 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 - GitHub: public repository; default `develop`; `main` required checks `verify` and `develop-only`; PR required with zero approvals; administrators and conversation resolution enforced; force pushes and deletion disabled.
 - Vercel: project `tocomboys-projects/motocast`, GitHub repository linked, Production Branch `main`, Node.js `24.x`. One Ready Production deployment exists and its alias indicates the import-time `develop` source. The public alias returned HTTP 200 without a Vercel Authentication redirect at audit time. No custom domain exists.
 - Vercel environment names: the three intended `NEXT_PUBLIC_*` names plus seven server-only/provider/budget names exist in both Production and Preview. Values were not read or printed.
-- Supabase: project `obodvbyzptxeehgpcpkd` (`motocast`, Seoul `ap-northeast-1`, PostgreSQL 17.6.1) is `ACTIVE_HEALTHY` and locally linked. Migrations `20260830193000` and `20260830204000` are applied. Live ACL readback exposed Supabase default anonymous EXECUTE grants, so forward hardening migration `20260830212000` is pending review before application. Deployed Edge Functions and user-defined secret names remain empty. Secret values were not read or printed.
+- Supabase: project `obodvbyzptxeehgpcpkd` (`motocast`, Seoul `ap-northeast-1`, PostgreSQL 17.6.1) is `ACTIVE_HEALTHY` and locally linked. Migrations `20260830193000`, `20260830204000`, and reviewed privilege hardening `20260830212000` are applied. Live ACL readback passes 6/6 assertions; all 11 public tables have RLS enabled. Deployed Edge Functions and user-defined secret names remain empty. Secret values were not read or printed. Full A/B/admin/revoked RLS fixtures remain not run because the linked CLI test role cannot create `auth.users` fixtures.
 - Repository: initial schema plus invite-only forward migration and three Edge Functions exist; the UI still uses demo coordinates/results after successful provider invocation. Collection/share persistence UI and public share resolver are absent.
 
 ## Implementation status
@@ -309,8 +309,8 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 
 ### Incomplete
 
-- Live Supabase migration/function/Auth/provider/redirect/secrets deployment and post-deployment readback.
-- AUTH-003 cleanup and invite lifecycle migration are implemented locally but awaiting independent delta review and live transaction tests.
+- Edge Function/Auth provider/redirect/secrets deployment and post-deployment readback.
+- AUTH-003 migrations and sensitive RPC ACLs are live and independently approved; full OAuth and A/B/admin/revoked connected tests remain pending.
 - Real Kakao place search and verified-coordinate form state.
 - Three real and distinguishable candidate orchestration, hard-return filtering, and ROUTE-003 resolution.
 - Mapping route/weather responses into the UI; durable cache/stale behavior.
