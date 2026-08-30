@@ -1,0 +1,176 @@
+import type { Coordinate, WaypointKind } from "./types";
+
+const KOREA_BOUNDS = {
+  minLatitude: 32.8,
+  maxLatitude: 38.7,
+  minLongitude: 124.5,
+  maxLongitude: 132,
+} as const;
+
+export type SelectedPlace = Coordinate & {
+  kakaoPlaceId: string;
+  name: string;
+  address: string;
+  roadAddress: string | null;
+};
+
+export type TripWaypointInput = {
+  place: SelectedPlace;
+  kind: WaypointKind;
+  dwellMinutes: number;
+  selected: boolean;
+  winding: boolean;
+};
+
+export type TripInput = {
+  title: string;
+  serviceDate: string;
+  departureAt: string;
+  desiredReturnAt: string;
+  hardReturnAt: string;
+  origin: SelectedPlace;
+  destination: SelectedPlace;
+  lunch: TripWaypointInput;
+  dinner: TripWaypointInput | null;
+  waypoints: TripWaypointInput[];
+};
+
+export class PlannerInputError extends Error {
+  constructor(public readonly code: string) {
+    super(code);
+    this.name = "PlannerInputError";
+  }
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new PlannerInputError("INVALID_OBJECT");
+  }
+  return value as Record<string, unknown>;
+}
+
+function boundedString(value: unknown, code: string, minimum: number, maximum: number): string {
+  if (typeof value !== "string") throw new PlannerInputError(code);
+  const normalized = value.trim();
+  if (normalized.length < minimum || normalized.length > maximum) {
+    throw new PlannerInputError(code);
+  }
+  return normalized;
+}
+
+function nullableBoundedString(value: unknown, code: string, maximum: number): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  return boundedString(value, code, 1, maximum);
+}
+
+function finiteNumber(value: unknown, code: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new PlannerInputError(code);
+  }
+  return value;
+}
+
+export function isKoreanCoordinate(coordinate: Coordinate): boolean {
+  return (
+    coordinate.latitude >= KOREA_BOUNDS.minLatitude &&
+    coordinate.latitude <= KOREA_BOUNDS.maxLatitude &&
+    coordinate.longitude >= KOREA_BOUNDS.minLongitude &&
+    coordinate.longitude <= KOREA_BOUNDS.maxLongitude
+  );
+}
+
+export function parseSelectedPlace(value: unknown): SelectedPlace {
+  const raw = objectValue(value);
+  const coordinate = {
+    latitude: finiteNumber(raw.latitude, "INVALID_PLACE_COORDINATE"),
+    longitude: finiteNumber(raw.longitude, "INVALID_PLACE_COORDINATE"),
+  };
+
+  if (!isKoreanCoordinate(coordinate)) {
+    throw new PlannerInputError("PLACE_OUTSIDE_KOREA");
+  }
+
+  return {
+    kakaoPlaceId: boundedString(raw.kakaoPlaceId, "INVALID_KAKAO_PLACE_ID", 1, 80),
+    name: boundedString(raw.name, "INVALID_PLACE_NAME", 1, 160),
+    address: boundedString(raw.address, "INVALID_PLACE_ADDRESS", 1, 300),
+    roadAddress: nullableBoundedString(raw.roadAddress, "INVALID_ROAD_ADDRESS", 300),
+    ...coordinate,
+  };
+}
+
+export function parseTripWaypoint(value: unknown): TripWaypointInput {
+  const raw = objectValue(value);
+  if (!(["pass-through", "stop", "optional"] as const).includes(raw.kind as WaypointKind)) {
+    throw new PlannerInputError("INVALID_WAYPOINT_KIND");
+  }
+  if (typeof raw.selected !== "boolean" || typeof raw.winding !== "boolean") {
+    throw new PlannerInputError("INVALID_WAYPOINT_FLAGS");
+  }
+  if (!Number.isInteger(raw.dwellMinutes) || Number(raw.dwellMinutes) < 0 || Number(raw.dwellMinutes) > 1440) {
+    throw new PlannerInputError("INVALID_DWELL_MINUTES");
+  }
+
+  return {
+    place: parseSelectedPlace(raw.place),
+    kind: raw.kind as WaypointKind,
+    dwellMinutes: Number(raw.dwellMinutes),
+    selected: raw.selected,
+    winding: raw.winding,
+  };
+}
+
+function isoDate(value: unknown, code: string): Date {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+    throw new PlannerInputError(code);
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) throw new PlannerInputError(code);
+  return parsed;
+}
+
+export function parseTripInput(value: unknown): TripInput {
+  const raw = objectValue(value);
+  const serviceDate = boundedString(raw.serviceDate, "INVALID_SERVICE_DATE", 10, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) {
+    throw new PlannerInputError("INVALID_SERVICE_DATE");
+  }
+
+  const departure = isoDate(raw.departureAt, "INVALID_DEPARTURE_AT");
+  const desiredReturn = isoDate(raw.desiredReturnAt, "INVALID_DESIRED_RETURN_AT");
+  const hardReturn = isoDate(raw.hardReturnAt, "INVALID_HARD_RETURN_AT");
+  const durationMs = hardReturn.getTime() - departure.getTime();
+  if (desiredReturn < departure || desiredReturn > hardReturn) {
+    throw new PlannerInputError("INVALID_RETURN_ORDER");
+  }
+  if (durationMs <= 0 || durationMs >= 24 * 60 * 60_000) {
+    throw new PlannerInputError("TRIP_MUST_BE_UNDER_24_HOURS");
+  }
+
+  if (!Array.isArray(raw.waypoints) || raw.waypoints.length > 30) {
+    throw new PlannerInputError("INVALID_WAYPOINT_COUNT");
+  }
+
+  const lunch = parseTripWaypoint(raw.lunch);
+  if (lunch.kind !== "stop" || !lunch.selected || lunch.dwellMinutes <= 0) {
+    throw new PlannerInputError("INVALID_LUNCH_STOP");
+  }
+
+  const dinner = raw.dinner === null || raw.dinner === undefined ? null : parseTripWaypoint(raw.dinner);
+  if (dinner && (dinner.kind !== "stop" || !dinner.selected || dinner.dwellMinutes <= 0)) {
+    throw new PlannerInputError("INVALID_DINNER_STOP");
+  }
+
+  return {
+    title: boundedString(raw.title, "INVALID_TRIP_TITLE", 1, 120),
+    serviceDate,
+    departureAt: departure.toISOString(),
+    desiredReturnAt: desiredReturn.toISOString(),
+    hardReturnAt: hardReturn.toISOString(),
+    origin: parseSelectedPlace(raw.origin),
+    destination: parseSelectedPlace(raw.destination),
+    lunch,
+    dinner,
+    waypoints: raw.waypoints.map(parseTripWaypoint),
+  };
+}
