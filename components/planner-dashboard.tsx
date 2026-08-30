@@ -7,6 +7,12 @@ import { CollectionManager } from "@/components/collection-manager";
 import { KakaoMapCanvas } from "@/components/kakao-map-canvas";
 import { PlaceSearchField } from "@/components/place-search-field";
 import { ShareManager } from "@/components/share-manager";
+import {
+  insertCollectionWinding,
+  prepareCollectionApplication,
+  replaceCollectionStop,
+  setCollectionRestSelected,
+} from "@/lib/collections/application";
 import type { CollectionPoint } from "@/lib/collections/contracts";
 import type { PlaceSearchResult } from "@/lib/places/search";
 import {
@@ -84,6 +90,13 @@ function weatherIcon(condition: string) {
   return "미정";
 }
 
+function weatherModelLabel(status: string | undefined, model: string | undefined) {
+  if (status === "outside-window") return "상세 예보 기간 밖 · API 미호출";
+  if (model === "ultra") return "초단기예보";
+  if (model === "short") return "단기예보";
+  return "날씨 미조회";
+}
+
 function liveRouteCandidate(response: SafeRouteResponse, desiredReturnAt: string, hardReturnAt: string): RouteCandidate {
   const stopMinutes = response.legs.reduce((total, leg) => total + leg.dwellMinutes, 0);
   const rideMinutes = Math.ceil(response.legs.reduce((total, leg) => total + leg.durationSeconds, 0) / 60);
@@ -143,6 +156,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     rest: null,
   });
   const [windingPoints, setWindingPoints] = useState<PlaceSearchResult[]>([]);
+  const [appliedCollectionPoints, setAppliedCollectionPoints] = useState<CollectionPoint[] | null>(null);
   const [addingWinding, setAddingWinding] = useState(false);
   const [selectedId, setSelectedId] = useState<RouteCandidate["id"]>("balanced");
   const [liveCandidates, setLiveCandidates] = useState<RouteCandidate[] | null>(null);
@@ -162,6 +176,11 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const plannerPanelRef = useRef<HTMLElement>(null);
   const mobilePlanButtonRef = useRef<HTMLButtonElement>(null);
   const addWindingButtonRef = useRef<HTMLButtonElement>(null);
+  const routeGenerationRef = useRef(0);
+  const liveTripIdRef = useRef<string | null>(null);
+  const selectionIntentRef = useRef(0);
+  const persistedSelectedRef = useRef<RouteCandidate["id"]>("balanced");
+  const selectionQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     const saved = window.localStorage.getItem("motocast-planner-draft-v1");
@@ -244,6 +263,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     : demoMapPoints;
 
   const collectionPoints = useMemo<CollectionPoint[]>(() => {
+    if (appliedCollectionPoints) return appliedCollectionPoints;
     if (!connected || !places.lunch) return [];
     return [
       ...windingPoints.map((place) => routePoint(place, "pass-through", 0, true)),
@@ -251,21 +271,46 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       ...(draft.includeRest && places.rest ? [routePoint(places.rest, "optional", 30, false, "rest")] : []),
       ...(places.dinner ? [routePoint(places.dinner, "stop", 60, false, "dinner")] : []),
     ];
-  }, [connected, draft.includeRest, places.dinner, places.lunch, places.rest, windingPoints]);
+  }, [appliedCollectionPoints, connected, draft.includeRest, places.dinner, places.lunch, places.rest, windingPoints]);
+
+  function markRouteInputChanged() {
+    routeGenerationRef.current += 1;
+    if (liveCandidates) setLiveResultStale(true);
+  }
 
   function update<K extends keyof PlannerDraft>(key: K, value: PlannerDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
-    if (liveCandidates) setLiveResultStale(true);
+    if (key === "includeRest") {
+      setAppliedCollectionPoints((current) => current ? setCollectionRestSelected(current, value === true) : null);
+    }
+    markRouteInputChanged();
   }
 
   function selectPlace(key: keyof PlannerPlaces, place: PlaceSearchResult | null) {
     setPlaces((current) => ({ ...current, [key]: place }));
-    if (liveCandidates) setLiveResultStale(true);
+    const stop = {
+      lunch: { kind: "stop" as const, dwellMinutes: 60, stopRole: "lunch" as const },
+      dinner: { kind: "stop" as const, dwellMinutes: 60, stopRole: "dinner" as const },
+      rest: { kind: "optional" as const, dwellMinutes: 30, stopRole: "rest" as const },
+    }[key as "lunch" | "dinner" | "rest"];
+    if (stop) {
+      setAppliedCollectionPoints((current) => {
+        if (!current) return null;
+        const replacement = place
+          ? routePoint(place, stop.kind, stop.dwellMinutes, false, stop.stopRole)
+          : null;
+        return replaceCollectionStop(current, stop.stopRole, replacement);
+      });
+    }
+    markRouteInputChanged();
   }
 
   function addWindingPoint(place: PlaceSearchResult | null) {
     if (!place) return;
-    if (windingPoints.some((item) => item.kakaoPlaceId === place.kakaoPlaceId)) {
+    if (
+      windingPoints.some((item) => item.kakaoPlaceId === place.kakaoPlaceId) ||
+      appliedCollectionPoints?.some((item) => item.kakaoPlaceId === place.kakaoPlaceId)
+    ) {
       setWaypointStatus(`${place.name}은(는) 이미 와인딩 경유지에 있습니다.`);
       setAddingWinding(false);
       focusAfterWindingEdit();
@@ -278,9 +323,14 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       return;
     }
     setWindingPoints((current) => [...current, place]);
+    setAppliedCollectionPoints((current) => {
+      if (!current) return null;
+      const point = routePoint(place, "pass-through", 0, true);
+      return insertCollectionWinding(current, point);
+    });
     setAddingWinding(false);
     setWaypointStatus(`${place.name}을(를) 와인딩 경유지 마지막에 추가했습니다.`);
-    if (liveCandidates) setLiveResultStale(true);
+    markRouteInputChanged();
     focusAfterWindingEdit(windingPoints.length + 1 >= 20);
   }
 
@@ -294,13 +344,13 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       return next;
     });
     if (place) setWaypointStatus(`${place.name}을(를) ${index + direction + 1}번째로 이동했습니다.`);
-    if (liveCandidates) setLiveResultStale(true);
+    markRouteInputChanged();
   }
 
   function removeWindingPoint(place: PlaceSearchResult) {
     setWindingPoints((current) => current.filter((item) => item.kakaoPlaceId !== place.kakaoPlaceId));
     setWaypointStatus(`${place.name}을(를) 와인딩 경유지에서 제거했습니다.`);
-    if (liveCandidates) setLiveResultStale(true);
+    markRouteInputChanged();
     focusAfterWindingEdit();
   }
 
@@ -344,39 +394,24 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     };
   }
 
-  function asSearchPlace(point: CollectionPoint): PlaceSearchResult {
-    return {
-      kakaoPlaceId: point.kakaoPlaceId,
-      verificationToken: point.verificationToken,
-      name: point.name,
-      address: point.address,
-      roadAddress: point.roadAddress,
-      longitude: point.longitude,
-      latitude: point.latitude,
-      category: "",
-      phone: null,
-      placeUrl: null,
-    };
-  }
-
   function applyCollection(points: CollectionPoint[], title: string) {
-    const lunch = points.find((point) => point.stopRole === "lunch");
-    const dinner = points.find((point) => point.stopRole === "dinner");
-    const rest = points.find((point) => point.stopRole === "rest");
-    setWindingPoints(points.filter((point) => point.winding).map(asSearchPlace));
+    const application = prepareCollectionApplication(points);
+    routeGenerationRef.current += 1;
+    setAppliedCollectionPoints(application.orderedPoints);
+    setWindingPoints(application.selectedWindingPoints);
     setPlaces((current) => ({
       ...current,
-      lunch: lunch ? asSearchPlace(lunch) : current.lunch,
-      dinner: dinner ? asSearchPlace(dinner) : null,
-      rest: rest ? asSearchPlace(rest) : null,
+      lunch: application.lunch ?? current.lunch,
+      dinner: application.dinner,
+      rest: application.rest,
     }));
-    setDraft((current) => ({ ...current, includeRest: Boolean(rest) }));
+    setDraft((current) => ({ ...current, includeRest: application.includeRest }));
     if (liveCandidates) setLiveResultStale(true);
     setWaypointStatus(`${title} 컬렉션의 최신 불변 버전을 계획에 적용했습니다.`);
     setNotice("컬렉션을 적용했습니다. 변경된 장소로 안전 경로를 다시 계산해 주세요.");
   }
 
-  async function loadWeather(candidate: RouteCandidate, tripId: string) {
+  async function loadWeather(candidate: RouteCandidate, tripId: string, generation = routeGenerationRef.current) {
     const supabase = getBrowserSupabase();
     if (!supabase) return;
     if (candidate.segments.some((segment) => !segment.arrivalAt)) {
@@ -394,6 +429,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     const { data, error } = await supabase.functions.invoke("weather-timeline", {
       body: { tripId, candidateProfile: candidate.id, points },
     });
+    if (generation !== routeGenerationRef.current || liveTripIdRef.current !== tripId) return;
     setWeatherLoading((current) => current === candidate.id ? null : current);
     if (error) {
       setNotice("날씨를 조회하지 못했습니다. 저장된 동일 경로 예보가 있으면 서버가 stale 표시와 함께 반환합니다.");
@@ -450,22 +486,36 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     }
   }
 
-  async function chooseCandidate(candidate: RouteCandidate) {
+  function chooseCandidate(candidate: RouteCandidate) {
     setSelectedId(candidate.id);
     if (!liveTripId) return;
-    const supabase = getBrowserSupabase();
-    if (!supabase) return;
-    const { data, error } = await supabase
-      .from("trips")
-      .update({ selected_profile: candidate.id, updated_at: new Date().toISOString() })
-      .eq("id", liveTripId)
-      .select("id")
-      .maybeSingle();
-    if (error || !data) {
-      setNotice("경로 비교는 가능하지만 선택 경로를 저장하지 못했습니다. 공유 전 다시 선택해 주세요.");
-      return;
-    }
-    if (!weatherByCandidate[candidate.id]) await loadWeather(candidate, liveTripId);
+    const tripId = liveTripId;
+    const intent = ++selectionIntentRef.current;
+    selectionQueueRef.current = selectionQueueRef.current.then(async () => {
+      const supabase = getBrowserSupabase();
+      if (!supabase) return;
+      const { error } = await supabase.rpc("select_trip_candidate", {
+        target_trip_id: tripId,
+        target_profile: candidate.id,
+      });
+      if (liveTripIdRef.current !== tripId) return;
+      if (error) {
+        if (intent === selectionIntentRef.current) {
+          setSelectedId(persistedSelectedRef.current);
+          setNotice("선택 경로를 저장하지 못해 마지막 저장 경로로 되돌렸습니다.");
+        }
+        return;
+      }
+      persistedSelectedRef.current = candidate.id;
+      if (intent === selectionIntentRef.current && !weatherByCandidate[candidate.id]) {
+        await loadWeather(candidate, tripId);
+      }
+    }).catch(() => {
+      if (intent === selectionIntentRef.current && liveTripIdRef.current === tripId) {
+        setSelectedId(persistedSelectedRef.current);
+        setNotice("선택 경로 저장 중 오류가 발생해 마지막 저장 경로로 되돌렸습니다.");
+      }
+    });
   }
 
   async function recalculate(event: FormEvent) {
@@ -495,16 +545,20 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     }
 
     setCalculating(true);
+    const calculationGeneration = ++routeGenerationRef.current;
+    const planningId = crypto.randomUUID();
     setNotice("오토바이·자동차전용도로 제외 조건으로 경로를 계산 중입니다.");
+    const generatedWaypoints = [
+      ...windingPoints.map((place) => routePoint(place, "pass-through", 0, true)),
+      routePoint(places.lunch, "stop", 60, false, "lunch"),
+      ...(draft.includeRest && places.rest ? [routePoint(places.rest, "optional", 30, false, "rest")] : []),
+      ...(places.dinner ? [routePoint(places.dinner, "stop", 60, false, "dinner")] : []),
+    ];
     const commonBody = {
+      planningId,
       origin: routePoint(places.origin, "pass-through", 0),
       destination: routePoint(places.destination, "pass-through", 0),
-      waypoints: [
-        ...windingPoints.map((place) => routePoint(place, "pass-through", 0, true)),
-        routePoint(places.lunch, "stop", 60, false, "lunch"),
-        ...(draft.includeRest && places.rest ? [routePoint(places.rest, "optional", 30, false, "rest")] : []),
-        ...(places.dinner ? [routePoint(places.dinner, "stop", 60, false, "dinner")] : []),
-      ],
+      waypoints: appliedCollectionPoints ?? generatedWaypoints,
       serviceDate: draft.rideDate,
       ...liveTimes,
     };
@@ -514,6 +568,10 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       )),
     );
     setCalculating(false);
+    if (calculationGeneration !== routeGenerationRef.current) {
+      setNotice("계산 중 계획이 바뀌어 도착한 이전 경로를 적용하지 않았습니다. 다시 계산해 주세요.");
+      return;
+    }
     if (results.some(({ error }) => error)) {
       const labels = ["균형", "와인딩", "최단"];
       const failed = results.flatMap((result, index) => result.error ? [labels[index]] : []);
@@ -532,22 +590,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       setSelectedId("balanced");
       setNotice("실제 경로 3개를 계산했습니다. 계획을 안전하게 저장하는 중입니다.");
 
-      const lunchStop = routePoint(places.lunch, "stop", 60, false, "lunch");
-      const dinnerStop = places.dinner ? routePoint(places.dinner, "stop", 60, false, "dinner") : null;
-      const { data: savedTripId, error: saveError } = await supabase.rpc("save_trip_plan", {
-        plan: {
-          tripId: liveTripId,
-          title: `${places.origin.name} → ${places.destination.name}`,
-          serviceDate: draft.rideDate,
-          ...liveTimes,
-          origin: commonBody.origin,
-          destination: commonBody.destination,
-          lunchStop,
-          dinnerStop,
-          waypoints: commonBody.waypoints,
-          selectedProfile: "balanced",
-        },
-        routes: responses,
+      const { data: savedTripId, error: saveError } = await supabase.rpc("finalize_trip_plan", {
+        target_planning_id: planningId,
+        target_trip_id: liveTripId,
       });
       if (saveError || typeof savedTripId !== "string" || !/^[0-9a-f-]{36}$/i.test(savedTripId)) {
         setLiveTripId(null);
@@ -556,8 +601,11 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         return;
       }
       setLiveTripId(savedTripId);
+      liveTripIdRef.current = savedTripId;
+      persistedSelectedRef.current = "balanced";
+      selectionIntentRef.current += 1;
       setNotice("실제 경로 3개와 계획을 저장했습니다. 선택한 균형 경로의 날씨를 조회 중입니다.");
-      void loadWeather(candidates[0], savedTripId);
+      void loadWeather(candidates[0], savedTripId, calculationGeneration);
     } catch (error) {
       if (liveCandidates) setLiveResultStale(true);
       const failedCandidate = error instanceof ProviderContractError
@@ -627,7 +675,19 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                   <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>
                 </>
               )}
-              {connected && windingPoints.length ? (
+              {connected && appliedCollectionPoints ? (
+                <ol className="ordered-waypoints" aria-label="적용된 컬렉션 경유지 순서">
+                  {appliedCollectionPoints.map((point, index) => (
+                    <li className="ordered-waypoint" key={`${point.kakaoPlaceId}-${index}`}>
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <div>
+                        <strong>{point.name}</strong>
+                        <small>{point.kind} · {point.dwellMinutes}분 · {point.selected ? "선택됨" : "선택 안 됨"}{point.winding ? " · 와인딩" : ""}</small>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : connected && windingPoints.length ? (
                 <ol className="ordered-waypoints" aria-label="커스텀 와인딩 경유지 순서">
                   {windingPoints.map((place, index) => (
                     <li className="ordered-waypoint" key={place.kakaoPlaceId}>
@@ -783,6 +843,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                       <span className="weather-word">{weatherIcon(segment.weather.condition)}</span>
                       <strong>{segment.weather.temperatureC ?? "–"}°</strong>
                       <small>강수 {segment.weather.precipitationProbability ?? "–"}% · 바람 {segment.weather.windSpeedMps ?? "–"}m/s</small>
+                      <small>{weatherModelLabel(segment.weather.status, segment.weather.model)}</small>
                     </div>
                     <span className={`risk-label ${risk.level}`}>{risk.label}</span>
                   </article>

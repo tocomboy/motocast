@@ -83,4 +83,6 @@ select
 from tap_results;
 select '1..' || count(*) from tap_results;
 
-drop extension dblink;
+-- The disposable local verification database owns dblink. Keeping an extension
+-- that existed before this suite avoids deleting shared local test capability;
+-- the next run removes any test trigger/function/fixture residue up front.

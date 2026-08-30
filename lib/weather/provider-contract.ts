@@ -46,7 +46,7 @@ function timestamp(value: unknown) {
   return parsed.toISOString();
 }
 
-function forecast(value: unknown): WeatherForecast {
+export function parseWeatherForecast(value: unknown): WeatherForecast {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new WeatherContractError("INVALID_WEATHER_RESPONSE");
   }
@@ -103,7 +103,7 @@ export function parseWeatherTimelineResponse(value: unknown): WeatherTimelineRes
     (raw.stale && (typeof raw.staleReason !== "string" || raw.staleReason.length < 1 || raw.staleReason.length > 300))
   ) throw new WeatherContractError("INVALID_WEATHER_RESPONSE");
 
-  const parsed = raw.forecasts.map(forecast);
+  const parsed = raw.forecasts.map(parseWeatherForecast);
   if (new Set(parsed.map((item) => item.id)).size !== parsed.length) {
     throw new WeatherContractError("DUPLICATE_WEATHER_POINTS");
   }

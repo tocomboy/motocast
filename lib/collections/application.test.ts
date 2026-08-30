@@ -1,0 +1,84 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  insertCollectionWinding,
+  prepareCollectionApplication,
+  replaceCollectionStop,
+  setCollectionRestSelected,
+} from "./application";
+import type { CollectionPoint } from "./contracts";
+
+function point(id: string, overrides: Partial<CollectionPoint> = {}): CollectionPoint {
+  return {
+    id,
+    label: id,
+    kakaoPlaceId: id,
+    verificationToken: "a".repeat(43),
+    name: id,
+    address: "테스트 주소",
+    roadAddress: null,
+    longitude: 127,
+    latitude: 37,
+    kind: "pass-through",
+    dwellMinutes: 0,
+    selected: true,
+    winding: false,
+    ...overrides,
+  };
+}
+
+describe("prepareCollectionApplication", () => {
+  it("preserves the full ordered template while activating only selected winding/rest points", () => {
+    const points = [
+      point("plain"),
+      point("winding-off", { winding: true, selected: false }),
+      point("lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" }),
+      point("rest-off", { kind: "optional", dwellMinutes: 30, stopRole: "rest", selected: false }),
+      point("winding-on", { winding: true }),
+    ];
+    const result = prepareCollectionApplication(points);
+    expect(result.orderedPoints.map((item) => item.id)).toEqual([
+      "plain", "winding-off", "lunch", "rest-off", "winding-on",
+    ]);
+    expect(result.selectedWindingPoints.map((item) => item.kakaoPlaceId)).toEqual(["winding-on"]);
+    expect(result.includeRest).toBe(false);
+    expect(result.lunch?.kakaoPlaceId).toBe("lunch");
+  });
+
+  it("keeps the original ordered points available when schedule fields change after apply", () => {
+    const points = [
+      point("plain"),
+      point("lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" }),
+      point("rest", { kind: "optional", dwellMinutes: 30, stopRole: "rest" }),
+    ];
+    const result = prepareCollectionApplication(points);
+    expect(result.orderedPoints).toEqual(points);
+    expect(result.orderedPoints).not.toBe(points);
+  });
+
+  it("updates one meal in place without losing unrelated ordered points", () => {
+    const points = [
+      point("plain"),
+      point("old-lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" }),
+      point("duplicate-lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" }),
+      point("tail"),
+    ];
+    const replacement = point("new-lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" });
+    expect(replaceCollectionStop(points, "lunch", replacement).map((item) => item.id)).toEqual([
+      "plain", "new-lunch", "tail",
+    ]);
+  });
+
+  it("toggles only rest selection and inserts a new winding point before lunch", () => {
+    const points = [
+      point("plain"),
+      point("rest", { kind: "optional", dwellMinutes: 30, stopRole: "rest", selected: false }),
+      point("lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" }),
+    ];
+    const selected = setCollectionRestSelected(points, true);
+    expect(selected.find((item) => item.id === "rest")?.selected).toBe(true);
+    expect(insertCollectionWinding(selected, point("new-winding", { winding: true })).map((item) => item.id)).toEqual([
+      "plain", "rest", "new-winding", "lunch",
+    ]);
+  });
+});

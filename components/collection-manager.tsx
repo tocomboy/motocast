@@ -75,12 +75,11 @@ export function CollectionManager({ currentPoints, onApply }: CollectionManagerP
     const supabase = getBrowserSupabase();
     if (!supabase) return;
     setBusyId(collection.id);
-    const { error, count } = await supabase
-      .from("riding_collections")
-      .delete({ count: "exact" })
-      .eq("id", collection.id);
+    const { error } = await supabase.rpc("delete_riding_collection", {
+      target_collection_id: collection.id,
+    });
     setBusyId(null);
-    if (error || count !== 1) {
+    if (error) {
       setStatus("컬렉션을 삭제하지 못했습니다. 이미 삭제됐거나 이용 권한이 없습니다.");
       return;
     }

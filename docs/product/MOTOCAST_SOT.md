@@ -84,6 +84,16 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Verification: User A/B, administrator, revoked member, and anonymous matrix on every table and RPC.
 - Confirmed: 2026-08-30.
 
+#### DATA-003 — Trusted aggregate mutation boundary
+
+- Status: `CONFIRMED`
+- Decision: The browser may request planning actions but cannot directly create or mutate route-backed trip aggregates, immutable collection versions, weather snapshots, or share snapshots. Trusted Edge Functions stage provider-verified route candidates under the authenticated owner and a short-lived planning ID; an owner-only RPC atomically finalizes exactly one balanced, winding, and shortest set. Aggregate selection and deletion use narrow owner-checked RPCs, while direct table mutation remains denied.
+- Rationale: RLS ownership alone cannot prove that browser-supplied route JSON came from the motorcycle-safe provider boundary or preserve multi-table invariants.
+- User impact: A plan is saved only after all three verified candidates are ready; partial, expired, cross-user, or browser-forged route sets fail explicitly.
+- Affected: route Edge Function, route draft tables, trip/route/waypoint policies, finalization and selection RPCs, planner UI.
+- Verification: browser-role direct-DML denial, service-role staging, exact-three/one-plan finalization, expiry, replay, cross-user, and transaction rollback tests.
+- Confirmed as security implementation of `DATA-001` and `ROUTE-001`: 2026-08-30.
+
 #### DATA-002 — Riding collections
 
 - Status: `CONFIRMED`
@@ -113,6 +123,16 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Affected: share RPC/endpoint, schema, logging, tests.
 - Verification: no-plaintext search, resolver contract test, revoked/unknown token denial, access-log redaction.
 - Confirmed: 2026-08-30.
+
+#### SHARE-003 — Preview-to-publish capability
+
+- Status: `CONFIRMED`
+- Decision: A full share preview issues a cryptographically random, ten-minute, single-use approval capability whose plaintext is returned only to that owner and whose SHA-256 hash and snapshot hash are stored. Publication row-locks the grant and source trip, rebuilds the allowlisted snapshot, requires an identical hash, consumes the capability, and creates the immutable share in one transaction. Direct browser inserts or updates of shares and snapshots are denied.
+- Rationale: A client-side equality check leaves a race in which the source can change after preview and before publish.
+- User impact: The published link is guaranteed to contain the exact full snapshot most recently approved; an expired, reused, or stale preview requires a new preview.
+- Affected: preview/publish RPCs, grant table, share UI, snapshot allowlist, RLS and grants.
+- Verification: exact preview/publish, source-change rejection, expiry, single-use, concurrent use, nested-field allowlist, direct-DML denial, revoke and reissue tests.
+- Confirmed as security implementation of `SHARE-001`: 2026-08-30.
 
 ### Trip inputs and schedule
 
@@ -310,13 +330,13 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 
 ### Verified 2026-08-30
 
-- Git: the latest independently approved route implementation is fixed SHA `448f756e0859ef20f5c127f29f06333fb07d12f9`, based on `origin/develop` at `201e1ec12c967da57fb671fad294cf1d05b9d56c`; `main` and `origin/main` are `d0134ed93d7e0d8aed1123c5d693c665bbe646e8`. Documentation synchronization follows that implementation commit. `.gitignore` remains a pre-existing user change and is excluded from MOTOCAST commits. No open PR or remote probe branch exists.
+- Git: the latest committed implementation is fixed SHA `874075f3e1d3826553dff4ce2d30cbdeb27d0593`, based on `origin/develop` at `201e1ec12c967da57fb671fad294cf1d05b9d56c`; `main` and `origin/main` are `d0134ed93d7e0d8aed1123c5d693c665bbe646e8`. Independent review of that SHA found plan/share trust-boundary and UI issues; the correction is currently uncommitted and is not yet approved. `.gitignore` remains a pre-existing user change and is excluded from MOTOCAST commits. No open PR or remote probe branch exists.
 - GitHub: public repository; default `develop`; `main` required checks `verify` and `develop-only`; PR required with zero approvals; administrators and conversation resolution enforced; force pushes and deletion disabled.
 - Vercel: project `tocomboys-projects/motocast`, GitHub repository linked, Production Branch `main`. Following the user interview, API readback now reports Node.js `20.x` and `ssoProtection.deploymentType=preview`, so Preview requires Vercel Authentication while Production remains outside that platform gate. One Ready Production deployment still comes from the import-time `develop` source. No custom domain exists.
 - Vercel environment names: the three intended `NEXT_PUBLIC_*` names plus seven server-only/provider/budget names exist in both Production and Preview. Values were not read or printed.
 - Supabase Production: project `obodvbyzptxeehgpcpkd` (`motocast`, Tokyo `ap-northeast-1`, PostgreSQL 17.6.1) is `ACTIVE_HEALTHY` and locally linked. Migrations `20260830193000`, `20260830204000`, and reviewed privilege hardening `20260830212000` are applied. Live ACL readback passes 6/6 assertions; all 11 public tables have RLS enabled. `search-places`, `plan-route`, and `weather-timeline` are deployed as active version 1, but the current functions are not yet redeployed and user-defined secret names remain empty. Secret values were not read or printed.
-- Supabase Preview: project `lehjmbgfpoemqcwxowbx` (`MOTOCAST_Preview`, Seoul `ap-northeast-2`, PostgreSQL 17.6.1) is separately `ACTIVE_HEALTHY` and currently empty/unlinked. A no-write dry run confirms all four repository migrations, including `20260830223000`, are pending. Production and Preview refs are distinct. Full migrations/functions/provider secrets/Auth settings are not yet applied.
-- Local database: a minimal Supabase PostgreSQL 17 instance applied all four migrations. Auth/RLS/budget, live ACL, and plan/collection/share tests pass `57/57`; a separate two-connection collection/FK test passes `4/4`. Reapplying `20260830223000` succeeds and exposed/fixed the prior restrictive collection-version FK. These local results do not replace connected Preview/Production verification.
+- Supabase Preview: project `lehjmbgfpoemqcwxowbx` (`MOTOCAST_Preview`, Seoul `ap-northeast-2`, PostgreSQL 17.6.1) is separately `ACTIVE_HEALTHY` and currently empty/unlinked. The earlier no-write dry run confirmed the then-current four migrations through `20260830223000` were pending. The repository now contains a fifth review-hardening migration, `20260830224500`; a new dry run and all writes remain blocked until fixed-SHA independent review passes. Production and Preview refs are distinct. Full migrations/functions/provider secrets/Auth settings are not yet applied.
+- Local database: a minimal Supabase PostgreSQL 17 instance incrementally applied all five migrations. Auth/RLS/budget, live ACL, and plan/collection/share tests pass `68/68`; a separate two-connection collection/FK test passes `4/4`. Reapplying `20260830224500` passes after one development-time idempotency error was corrected. A destructive fresh reset/apply is `NOT_RUN` pending explicit approval to erase only the disposable local database at `127.0.0.1:54322`. These local results do not replace connected Preview/Production verification.
 - Repository: verified Kakao place selection, three server-owned route strategies, custom winding waypoint editing, hard-return exclusion, and actual provider geometry rendering are connected in the planner. Route ETA weather, collection version/apply UI, explicit immutable sharing, and the public resolver are implemented and locally verified, but the new migration and function are not yet hosted or browser-smoke-tested.
 
 ## Implementation status
@@ -330,7 +350,7 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 - Balanced, winding, and shortest route orchestration with server-enforced `car_type=7`, `avoid=motorway`, hard-return exclusion, no passenger-car fallback, and provider waypoint/geometry continuity validation.
 - Custom winding waypoint editing and an honestly labelled `와인딩 추정` alternative when no custom winding point exists.
 - Safe provider-contract parsing and actual route geometry rendering; example and live states remain visibly distinct.
-- Transactional plan persistence, ordered collection versioning, explicit share preview/publish/revoke/reissue, and a token-only public resolver are implemented in migration `20260830223000` but are not deployed to either hosted project.
+- Transactional plan persistence and ordered collection versioning begin in `20260830223000`. Migration `20260830224500` adds trusted Edge-only route staging, exact-three atomic finalization, immutable aggregate DML denial, narrow owner RPCs, a ten-minute single-use preview capability, and an explicit nested-field share allowlist. Neither migration is deployed to either hosted project.
 - Route ETA is connected to the weather request contract, with exact six-hour/five-day model boundaries, per-request deduplication, recent cache reuse, durable same-route snapshots, explicit stale fallback, and KMA grid conversion regression coverage. Hosted provider execution remains unverified.
 - Vercel project runtime and deployment protection now match `OPS-004` and `OPS-005` by API readback.
 - Basic schedule unit tests and CI workflows.

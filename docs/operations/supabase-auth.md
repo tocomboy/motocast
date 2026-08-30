@@ -4,7 +4,7 @@
 
 ## 최초 관리자 bootstrap
 
-1. 두 migration과 Auth callback을 먼저 배포하고 Kakao provider 및 redirect URL을 설정한다.
+1. 고정 SHA 독립 리뷰를 통과한 전체 migration과 Auth callback을 먼저 배포하고 Kakao provider 및 redirect URL을 설정한다.
 2. 운영 `/login`에서 서비스 소유자의 Kakao 로그인을 한 번 수행한다. 초대가 없으므로 callback은 이용을 거부하고 로컬 세션을 제거하지만, Supabase `auth.users`에는 최소 Auth 사용자만 남는다.
 3. Supabase Dashboard의 Authentication 사용자 화면과 `auth.identities`의 `provider = 'kakao'` 정보를 사용해 본인 계정의 정확한 UUID를 확인한다. 닉네임만으로 선택하지 않는다.
 4. SQL Editor에서 아래 transaction의 `TARGET-UUID`를 확인한 UUID로 바꿔 실행한다. 실행 전후 대상이 한 행인지 확인한다.

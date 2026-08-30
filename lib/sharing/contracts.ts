@@ -1,5 +1,6 @@
 import { parseSafeRouteCandidateSet, type SafeRouteResponse } from "../planner/provider-contract";
 import { parseStrictRfc3339 } from "../../supabase/functions/_shared/strict-time";
+import { parseWeatherForecast, type WeatherForecast } from "../weather/provider-contract";
 
 export type SharedPlace = {
   id: string;
@@ -36,8 +37,9 @@ export type SharedRideSnapshot = {
     source: "kma";
     issuedAt: string;
     retrievedAt: string;
+    validUntil: string;
     candidateProfile: "balanced" | "winding" | "short";
-    segments: unknown[];
+    segments: WeatherForecast[];
   };
 };
 
@@ -105,19 +107,21 @@ export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
     if (
       parsed.source !== "kma" ||
       !["balanced", "winding", "short"].includes(String(parsed.candidateProfile)) ||
-      !Array.isArray(parsed.segments)
+      !Array.isArray(parsed.segments) || parsed.segments.length < 1 || parsed.segments.length > 40
     ) throw new Error("INVALID_SHARE_SNAPSHOT");
     return {
       source: "kma" as const,
       issuedAt: timestamp(parsed.issuedAt),
       retrievedAt: timestamp(parsed.retrievedAt),
+      validUntil: timestamp(parsed.validUntil),
       candidateProfile: parsed.candidateProfile as "balanced" | "winding" | "short",
-      segments: parsed.segments,
+      segments: parsed.segments.map(parseWeatherForecast),
     };
   })();
 
   const waypoints = raw.waypoints.map(waypoint).sort((left, right) => left.position - right.position);
   if (waypoints.some((item, index) => item.position !== index)) throw new Error("INVALID_SHARE_SNAPSHOT");
+  if (weather && weather.candidateProfile !== selectedProfile) throw new Error("INVALID_SHARE_SNAPSHOT");
   return {
     schemaVersion: 1,
     trip: {

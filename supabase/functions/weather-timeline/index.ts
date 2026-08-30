@@ -1,4 +1,4 @@
-import { consumeBudget, requireMember } from "../_shared/auth.ts";
+import { consumeBudget, requireMember, serviceClient } from "../_shared/auth.ts";
 import {
   closestForecast,
   conditionFrom,
@@ -117,7 +117,7 @@ async function fetchForecast(input: {
   return { values: closestForecast(items, input.target), base };
 }
 
-async function fetchTimeline(supabase: MemberClient, points: WeatherPoint[], apiKey: string | null): Promise<TimelineForecast[]> {
+async function fetchTimeline(memberId: string, points: WeatherPoint[], apiKey: string | null): Promise<TimelineForecast[]> {
   const now = new Date();
   const cache = new Map<string, ForecastResult>();
   const forecasts: TimelineForecast[] = [];
@@ -137,7 +137,7 @@ async function fetchTimeline(supabase: MemberClient, points: WeatherPoint[], api
     const cacheKey = `${model}:${nx}:${ny}:${target.date}:${target.time}`;
     let forecast = cache.get(cacheKey);
     if (!forecast) {
-      await consumeBudget(supabase, "kma", model === "ultra" ? "ultra_forecast" : "short_forecast", parseLimit());
+      await consumeBudget(memberId, "kma", model === "ultra" ? "ultra_forecast" : "short_forecast", parseLimit());
       forecast = await fetchForecast({ model, nx, ny, apiKey, target, now });
       cache.set(cacheKey, forecast);
     }
@@ -158,7 +158,6 @@ async function fetchTimeline(supabase: MemberClient, points: WeatherPoint[], api
 }
 
 async function persistSnapshot(
-  supabase: MemberClient,
   request: WeatherRequest,
   requestHash: string,
   forecasts: TimelineForecast[],
@@ -169,7 +168,7 @@ async function persistSnapshot(
   const oldestIssue = issueTimes.length ? Math.min(...issueTimes) : Date.parse(generatedAt);
   const lastEta = Math.max(...request.points.map((point) => Date.parse(point.eta)));
   const validUntil = new Date(Math.max(lastEta + 60 * 60_000, oldestIssue + 60 * 60_000)).toISOString();
-  const { error } = await supabase.from("weather_snapshots").insert({
+  const { error } = await serviceClient().from("weather_snapshots").insert({
     trip_id: request.tripId,
     source: "kma",
     issued_at: new Date(oldestIssue).toISOString(),
@@ -189,10 +188,13 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405, cors);
 
   let supabase: MemberClient | null = null;
+  let memberId: string | null = null;
   let weatherRequest: WeatherRequest | null = null;
   let requestHash: string | null = null;
   try {
-    ({ supabase } = await requireMember(request));
+    const member = await requireMember(request);
+    supabase = member.supabase;
+    memberId = member.user.id;
     weatherRequest = parseWeatherRequest(await request.json());
     if (weatherRequest.tripId) await assertOwnedTrip(supabase, weatherRequest.tripId);
     requestHash = await weatherRequestHash(weatherRequest);
@@ -203,8 +205,8 @@ Deno.serve(async (request) => {
     }
 
     const generatedAt = new Date().toISOString();
-    const forecasts = await fetchTimeline(supabase, weatherRequest.points, Deno.env.get("KMA_APIHUB_KEY") ?? null);
-    await persistSnapshot(supabase, weatherRequest, requestHash, forecasts, generatedAt);
+    const forecasts = await fetchTimeline(memberId, weatherRequest.points, Deno.env.get("KMA_APIHUB_KEY") ?? null);
+    await persistSnapshot(weatherRequest, requestHash, forecasts, generatedAt);
     const issueTimes = forecasts.flatMap((forecast) => forecast.status === "forecast" ? [forecast.issuedAt] : []);
     return jsonResponse({
       generatedAt,

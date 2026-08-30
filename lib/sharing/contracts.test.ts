@@ -65,4 +65,36 @@ describe("parseSharedRideSnapshot", () => {
       trip: { ...snapshot.trip, origin: { ...snapshot.trip.origin, verificationToken: "a".repeat(43) } },
     })).toThrow("INVALID_SHARE_SNAPSHOT");
   });
+
+  it("accepts the DB snapshot weather whitelist and preserves model/window fields", () => {
+    const withWeather = {
+      ...snapshot,
+      weather: {
+        source: "kma",
+        issuedAt: "2026-08-30T23:30:00.000Z",
+        retrievedAt: "2026-08-30T23:35:00.000Z",
+        validUntil: "2026-08-31T02:00:00.000Z",
+        candidateProfile: "balanced",
+        segments: [{
+          id: "balanced-0",
+          label: "복귀",
+          longitude: 127.2,
+          latitude: 37.2,
+          eta: "2026-08-31T00:10:00.000Z",
+          status: "forecast",
+          model: "ultra",
+          issuedAt: "2026-08-30T23:30:00.000Z",
+          condition: "clear",
+          temperatureC: 22,
+          precipitationProbability: 0,
+          windSpeedMps: 1.2,
+        }],
+      },
+    };
+    expect(parseSharedRideSnapshot(withWeather).weather?.segments[0]).toMatchObject({
+      id: "balanced-0",
+      model: "ultra",
+      condition: "clear",
+    });
+  });
 });

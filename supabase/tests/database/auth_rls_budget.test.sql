@@ -3,7 +3,7 @@
 begin;
 
 create temp table tap_results(ok boolean not null, description text not null) on commit drop;
-grant insert, select on tap_results to anon, authenticated;
+grant insert, select on tap_results to anon, authenticated, service_role;
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password,
@@ -39,7 +39,8 @@ insert into tap_results values
   (not has_function_privilege('anon', 'public.consume_daily_api_budget(text,text,integer)', 'EXECUTE'), 'anon cannot execute budget RPC'),
   (has_function_privilege('authenticated', 'public.claim_invite(text)', 'EXECUTE'), 'authenticated can execute claim_invite'),
   (has_function_privilege('authenticated', 'public.create_invite(interval)', 'EXECUTE'), 'authenticated can execute create_invite'),
-  (has_function_privilege('authenticated', 'public.consume_daily_api_budget(text,text,integer)', 'EXECUTE'), 'authenticated can execute budget RPC');
+  (not has_function_privilege('authenticated', 'public.consume_daily_api_budget(text,text,integer)', 'EXECUTE'), 'authenticated cannot supply a budget limit directly'),
+  (has_function_privilege('service_role', 'public.consume_daily_api_budget_internal(text,text,integer,uuid)', 'EXECUTE'), 'trusted Edge role can execute the fixed-input budget RPC');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '20000000-0000-0000-0000-000000000002', true);
@@ -107,17 +108,16 @@ insert into tap_results values (
   'failed second claim preserves the first consumed_at'
 );
 
-set local role authenticated;
-select set_config('request.jwt.claim.sub', '20000000-0000-0000-0000-000000000002', true);
+set local role service_role;
 insert into tap_results values
-  (public.consume_daily_api_budget('tap_test', 'boundary', 2) = 1, 'first budget call is consumed'),
-  (public.consume_daily_api_budget('tap_test', 'boundary', 2) = 2, 'second budget call reaches the hard limit');
+  (public.consume_daily_api_budget_internal('kma', 'ultra_forecast', 2, '20000000-0000-0000-0000-000000000002') = 1, 'first trusted budget call is consumed'),
+  (public.consume_daily_api_budget_internal('kma', 'ultra_forecast', 2, '20000000-0000-0000-0000-000000000002') = 2, 'second trusted budget call reaches the hard limit');
 do $$
 declare
   rejected boolean := false;
 begin
   begin
-    perform public.consume_daily_api_budget('tap_test', 'boundary', 2);
+    perform public.consume_daily_api_budget_internal('kma', 'ultra_forecast', 2, '20000000-0000-0000-0000-000000000002');
   exception when sqlstate 'P0001' then
     rejected := sqlerrm = 'API_DAILY_BUDGET_EXHAUSTED';
   end;
@@ -126,7 +126,7 @@ end;
 $$;
 reset role;
 insert into tap_results values (
-  (select calls = 2 from public.api_usage_daily where provider = 'tap_test' and operation = 'boundary'),
+  (select calls = 2 from public.api_usage_daily where provider = 'kma' and operation = 'ultra_forecast'),
   'failed budget call does not exceed the ledger limit'
 );
 

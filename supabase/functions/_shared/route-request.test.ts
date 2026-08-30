@@ -30,6 +30,7 @@ async function point(overrides: Partial<RoutePointRequest> = {}): Promise<RouteP
 async function request(waypoints: RoutePointRequest[] = []) {
   const lunch = await point({ kakaoPlaceId: "lunch", kind: "stop", dwellMinutes: 60, stopRole: "lunch" });
   return {
+    planningId: "123e4567-e89b-42d3-a456-426614174000",
     origin: await point({ kakaoPlaceId: "origin" }),
     destination: await point({ kakaoPlaceId: "destination" }),
     waypoints: [lunch, ...waypoints],
@@ -76,6 +77,11 @@ describe("parseRouteRequest", () => {
     await expect(parseRouteRequest(invalid, secret)).rejects.toThrow("INVALID_ROUTE_TIME");
     const legacy = { ...await request(), candidate: undefined, priority: "DISTANCE" };
     await expect(parseRouteRequest(legacy, secret)).rejects.toThrow("INVALID_CANDIDATE");
+  });
+
+  it("requires a v4 planning id for trusted candidate staging", async () => {
+    const invalid = { ...await request(), planningId: "client-label" };
+    await expect(parseRouteRequest(invalid, secret)).rejects.toThrow("INVALID_PLANNING_ID");
   });
 
   it("rejects an overnight route even when it is under 24 hours", async () => {

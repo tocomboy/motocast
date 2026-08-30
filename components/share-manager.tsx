@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { formatKoreanTime } from "@/lib/planner/schedule";
+import { SharedRideSnapshotView } from "@/components/shared-ride-snapshot";
 import { parseSharedRideSnapshot, type SharedRideSnapshot } from "@/lib/sharing/contracts";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
@@ -13,7 +13,9 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
   const [preview, setPreview] = useState<SharedRideSnapshot | null>(null);
   const [previewRaw, setPreviewRaw] = useState<unknown>(null);
   const [previewTripId, setPreviewTripId] = useState<string | null>(null);
-  const [issued, setIssued] = useState<{ tripId: string; url: string } | null>(null);
+  const [previewToken, setPreviewToken] = useState<string | null>(null);
+  const [previewReferenceTime, setPreviewReferenceTime] = useState<string>(new Date(0).toISOString());
+  const [issued, setIssued] = useState<{ tripId: string; shareId: string; url: string } | null>(null);
   const [status, setStatus] = useState("공유는 미리보기 후에만 발행됩니다.");
   const [busy, setBusy] = useState(false);
 
@@ -63,10 +65,21 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
       setStatus("공유 미리보기를 만들지 못했습니다. 저장 상태와 권한을 확인해 주세요.");
       return;
     }
+    if (!Array.isArray(data) || data.length !== 1) {
+      setStatus("공유 미리보기 응답을 안전하게 확인하지 못했습니다.");
+      return;
+    }
+    const row = data[0] as { preview_snapshot?: unknown; preview_token?: unknown };
+    if (typeof row.preview_token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(row.preview_token)) {
+      setStatus("공유 미리보기 승인 정보를 안전하게 확인하지 못했습니다.");
+      return;
+    }
     try {
-      setPreview(parseSharedRideSnapshot(data));
-      setPreviewRaw(data);
+      setPreview(parseSharedRideSnapshot(row.preview_snapshot));
+      setPreviewRaw(row.preview_snapshot);
+      setPreviewToken(row.preview_token);
       setPreviewTripId(tripId);
+      setPreviewReferenceTime(new Date().toISOString());
       setIssued(null);
       setStatus("아래 전체 내용을 확인한 뒤에만 링크를 발행하세요.");
     } catch {
@@ -75,32 +88,30 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
   }
 
   async function publish() {
-    if (!tripId || !activePreview || previewRaw === null) return;
+    if (!tripId || !activePreview || previewRaw === null || !previewToken) return;
     const supabase = getBrowserSupabase();
     if (!supabase) return;
     setBusy(true);
-    const { data, error } = await supabase.rpc("publish_trip_share", { target_trip_id: tripId });
+    const { data, error } = await supabase.rpc("publish_trip_share", {
+      target_trip_id: tripId,
+      approved_preview_token: previewToken,
+    });
     if (error || !Array.isArray(data) || data.length !== 1) {
       setBusy(false);
       setStatus("공유 링크를 발행하지 못했습니다.");
       return;
     }
-    const result = data[0] as { share_id?: unknown; share_token?: unknown; published_snapshot?: unknown };
+    const result = data[0] as { share_id?: unknown; share_token?: unknown };
     const token = result.share_token;
     const shareId = result.share_id;
-    const matchesPreview = JSON.stringify(result.published_snapshot) === JSON.stringify(previewRaw);
-    if (
-      typeof shareId !== "string" || typeof token !== "string" ||
-      !/^[A-Za-z0-9_-]{43}$/.test(token) || !matchesPreview
-    ) {
-      if (typeof shareId === "string") await supabase.rpc("revoke_share", { target_share_id: shareId });
+    if (typeof shareId !== "string" || typeof token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(token)) {
       setBusy(false);
-      setStatus("발행본이 승인한 미리보기와 일치하지 않아 링크를 즉시 회수했습니다.");
-      await loadLinks();
+      setStatus("발행 결과를 안전하게 확인하지 못했습니다. 공유 기록에서 공개 상태를 확인해 주세요.");
       return;
     }
     setBusy(false);
-    setIssued({ tripId, url: `${window.location.origin}/share/${token}` });
+    setPreviewToken(null);
+    setIssued({ tripId, shareId, url: `${window.location.origin}/share/${token}` });
     setStatus("불변 공유 링크를 발행했습니다. 원본을 수정해도 이 링크의 내용은 바뀌지 않습니다.");
     await loadLinks();
   }
@@ -115,7 +126,7 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
       setStatus("공유 링크를 회수하지 못했습니다. 이미 회수됐거나 권한이 없습니다.");
       return;
     }
-    setIssued(null);
+    if (issued?.shareId === link.id) setIssued(null);
     setStatus("공유 링크를 회수했습니다. 다시 공유하려면 새 미리보기와 새 링크를 발행하세요.");
     await loadLinks();
   }
@@ -142,26 +153,8 @@ export function ShareManager({ tripId }: { tripId: string | null }) {
       {activePreview ? (
         <div className="share-preview">
           <div className="share-preview-warning"><strong>아직 공개되지 않았습니다.</strong><span>장소·시각·경로·날씨를 모두 확인하세요.</span></div>
-          <h3>{activePreview.trip.title}</h3>
-          <dl>
-            <div><dt>날짜</dt><dd>{activePreview.trip.serviceDate}</dd></div>
-            <div><dt>출발</dt><dd>{activePreview.trip.origin.label} · {formatKoreanTime(activePreview.trip.departureAt)}</dd></div>
-            <div><dt>복귀</dt><dd>{activePreview.trip.destination.label} · 최종 {formatKoreanTime(activePreview.trip.hardReturnAt)}</dd></div>
-            <div><dt>점심</dt><dd>{activePreview.trip.lunchStop.label}</dd></div>
-            <div><dt>저녁</dt><dd>{activePreview.trip.dinnerStop?.label ?? "없음"}</dd></div>
-            <div><dt>날씨</dt><dd>{activePreview.weather ? `${activePreview.weather.segments.length}개 지점 · ${formatKoreanTime(activePreview.weather.issuedAt)} 발행` : "저장된 예보 없음"}</dd></div>
-          </dl>
-          <ol>
-            {activePreview.waypoints.map((point) => (
-              <li key={point.position}><strong>{point.label}</strong><span>{point.kind} · {point.dwellMinutes}분 · {point.latitude.toFixed(5)}, {point.longitude.toFixed(5)}</span></li>
-            ))}
-          </ol>
-          <div className="share-route-summary">
-            {activePreview.routes.map((route) => (
-              <span key={route.candidate.id}><strong>{route.candidate.label}</strong>{Math.round(route.totalDistanceMeters / 100) / 10} km · {Math.ceil(route.totalDurationSeconds / 60)}분</span>
-            ))}
-          </div>
-          <button className="primary-button" type="button" disabled={busy} onClick={() => void publish()}>이 내용 그대로 불변 링크 발행</button>
+          <SharedRideSnapshotView snapshot={activePreview} referenceTime={previewReferenceTime} preview />
+          <button className="primary-button" type="button" disabled={busy || !previewToken} onClick={() => void publish()}>이 전체 내용 그대로 불변 링크 발행</button>
         </div>
       ) : null}
 

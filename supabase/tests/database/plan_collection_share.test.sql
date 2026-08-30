@@ -3,7 +3,7 @@
 begin;
 
 create temp table tap_results(ok boolean not null, description text not null) on commit drop;
-grant insert, select on tap_results to anon, authenticated;
+grant insert, select on tap_results to anon, authenticated, service_role;
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password,
@@ -59,7 +59,8 @@ returns jsonb language sql immutable as $$
         'duration', 600,
         'roads', jsonb_build_array(jsonb_build_object(
           'name', '테스트 도로', 'distance', 10000, 'duration', 600,
-          'vertexes', jsonb_build_array(127, 37, middle_lon, 37.1, 127.2, 37.2)
+          'vertexes', jsonb_build_array(127, 37, middle_lon, 37.1, 127.2, 37.2),
+          'verificationToken', 'must-never-be-public'
         ))
       ))
     ))
@@ -77,12 +78,13 @@ select
     pg_temp.test_route('winding', 127.1),
     pg_temp.test_route('short', 127.15)
   ) as routes;
-grant select on fixture to authenticated;
+grant select on fixture to authenticated, service_role;
 
 insert into tap_results values
   (not has_function_privilege('anon', 'public.save_collection_version(uuid,text,text,jsonb)', 'EXECUTE'), 'anon cannot save collection versions'),
-  (not has_function_privilege('anon', 'public.save_trip_plan(jsonb,jsonb)', 'EXECUTE'), 'anon cannot save plans'),
-  (not has_function_privilege('anon', 'public.publish_trip_share(uuid)', 'EXECUTE'), 'anon cannot publish shares'),
+  (not has_function_privilege('authenticated', 'public.save_trip_plan(jsonb,jsonb)', 'EXECUTE'), 'browser cannot persist untrusted route JSON directly'),
+  (not has_function_privilege('anon', 'public.publish_trip_share(uuid,text)', 'EXECUTE'), 'anon cannot publish shares'),
+  (has_function_privilege('service_role', 'public.stage_route_candidate_internal(uuid,uuid,jsonb,jsonb)', 'EXECUTE'), 'trusted Edge role can stage provider candidates'),
   (has_function_privilege('anon', 'public.resolve_share(text)', 'EXECUTE'), 'anon can resolve only a tokenized public snapshot'),
   (not has_function_privilege('authenticated', 'public.build_trip_share_snapshot(uuid,uuid)', 'EXECUTE'), 'authenticated cannot call the private snapshot builder');
 
@@ -119,32 +121,48 @@ select jsonb_build_object(
     'waypoints', (select points from fixture),
     'selectedProfile', 'balanced'
   ) as plan;
-grant select on plan_fixture to authenticated;
+grant select on plan_fixture to authenticated, service_role;
 
 create temp table trip_result(id uuid) on commit drop;
+set local role service_role;
+select public.stage_route_candidate_internal(
+  '71000000-0000-0000-0000-000000000001',
+  '73000000-0000-4000-8000-000000000001',
+  (select plan from plan_fixture),
+  route
+)
+from jsonb_array_elements((select routes from fixture)) as staged(route);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
 insert into trip_result
-select public.save_trip_plan((select plan from plan_fixture), (select routes from fixture));
+select public.finalize_trip_plan('73000000-0000-4000-8000-000000000001', null);
 grant select on trip_result to authenticated;
 insert into tap_results values
-  ((select count(*) = 1 from public.trips where id = (select id from trip_result)), 'plan save creates one owned trip'),
+  ((select count(*) = 1 from public.trips where id = (select id from trip_result)), 'trusted staged candidates finalize one owned trip'),
   ((select count(*) = 2 from public.trip_waypoints where trip_id = (select id from trip_result)), 'plan save preserves ordered waypoints'),
   ((select count(*) = 3 from public.route_cache where trip_id = (select id from trip_result)), 'plan save atomically stores three safe candidates');
+set local role service_role;
+insert into tap_results values
+  ((select count(*) = 0 from public.route_plan_drafts), 'finalize consumes trusted route drafts');
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
 
 do $$
 declare rejected boolean := false;
 begin
   begin
-    perform public.save_trip_plan(
-      jsonb_set((select plan from plan_fixture), '{waypoints}', jsonb_build_array(
-        pg_temp.test_point('winding', '와인딩', 127.05, 37.05, 'pass-through', 0, true)
-      )),
-      (select routes from fixture)
+    perform public.save_collection_version(
+      null,
+      '누락 플래그',
+      '',
+      (select points #- '{0,selected}' from fixture)
     );
-  exception when sqlstate 'P0001' then rejected := sqlerrm = 'INVALID_PLAN_STOPS'; end;
-  insert into tap_results values (rejected, 'plan save rejects a waypoint list that omits the required lunch stop');
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'INVALID_COLLECTION'; end;
+  insert into tap_results values (rejected, 'collection rejects a waypoint missing the selected flag');
 end;
 $$;
 
+reset role;
 insert into public.weather_snapshots(
   trip_id, source, issued_at, valid_until, segments, request_hash, candidate_profile
 ) values (
@@ -153,29 +171,77 @@ insert into public.weather_snapshots(
     'id', 'balanced-0', 'label', '복귀', 'longitude', 127.2, 'latitude', 37.2,
     'eta', '2026-08-31T00:10:00.000Z', 'status', 'forecast', 'model', 'ultra',
     'issuedAt', '2026-08-30T23:30:00.000Z', 'condition', 'clear',
-    'temperatureC', 22, 'precipitationProbability', 0, 'windSpeedMps', 1.2
+    'temperatureC', 22, 'precipitationProbability', 0, 'windSpeedMps', 1.2,
+    'verificationToken', 'must-never-be-public'
   )),
   repeat('b', 64), 'balanced'
 );
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
 
 create temp table preview_result on commit drop as
-select public.preview_trip_share((select id from trip_result)) as snapshot;
+select * from public.preview_trip_share((select id from trip_result));
 grant select on preview_result to authenticated;
 create temp table published_result on commit drop as
-select * from public.publish_trip_share((select id from trip_result));
+select * from public.publish_trip_share(
+  (select id from trip_result),
+  (select preview_token from preview_result)
+);
 grant select on published_result to authenticated;
 insert into tap_results values
-  ((select published_snapshot = snapshot from published_result cross join preview_result), 'published snapshot exactly matches the approved preview'),
-  ((select snapshot -> 'weather' is not null from preview_result), 'share includes weather only when it matches the selected stored route'),
+  ((select published_snapshot = preview_snapshot from published_result cross join preview_result), 'published snapshot exactly matches the approved preview capability'),
+  ((select preview_snapshot -> 'weather' is not null from preview_result), 'share includes weather only when it matches the selected stored route'),
+  ((select preview_snapshot -> 'waypoints' -> 0 ->> 'id' is not null from preview_result), 'share waypoint producer includes a stable id required by the parser'),
+  ((select preview_snapshot -> 'weather' ? 'validUntil' from preview_result), 'share exposes weather validity for freshness display'),
   ((select char_length(share_token) = 43 from published_result), 'share token contains 32 random base64url bytes'),
   ((select token_hash <> share_token and char_length(token_hash) = 64 from public.share_links cross join published_result), 'database stores only the share token hash'),
-  ((select published_snapshot::text not like '%verificationToken%' from published_result), 'public snapshot excludes internal place verification proofs');
+  ((select published_snapshot::text not like '%verificationToken%' from published_result), 'public snapshot recursively excludes internal place verification proofs');
 
-update public.trips set title = '원본 수정됨' where id = (select id from trip_result);
+do $$
+declare reused_rejected boolean := false; version_dml_rejected boolean := false; share_dml_rejected boolean := false;
+begin
+  begin
+    perform public.publish_trip_share(
+      (select id from trip_result),
+      (select preview_token from preview_result)
+    );
+  exception when sqlstate 'P0001' then reused_rejected := sqlerrm = 'SHARE_PREVIEW_REQUIRED'; end;
+  begin
+    update public.collection_versions set title = '변조' where id = (select version_id from collection_result);
+  exception when insufficient_privilege then version_dml_rejected := true; end;
+  begin
+    update public.share_links set revoked_at = null where id = (select share_id from published_result);
+  exception when insufficient_privilege then share_dml_rejected := true; end;
+  insert into tap_results values
+    (reused_rejected, 'preview capability is single use'),
+    (version_dml_rejected, 'browser cannot mutate immutable collection versions directly'),
+    (share_dml_rejected, 'browser cannot mutate immutable share rows directly');
+end;
+$$;
+
+create temp table stale_preview on commit drop as
+select * from public.preview_trip_share((select id from trip_result));
+grant select on stale_preview to authenticated;
+select public.select_trip_candidate((select id from trip_result), 'winding');
 insert into tap_results values (
-  (select public.resolve_share(share_token) -> 'trip' ->> 'title' = '팔당 당일 라이딩' from published_result),
+  (select public.resolve_share(share_token) -> 'trip' ->> 'selectedProfile' = 'balanced' from published_result),
   'source edits do not change an existing immutable share'
 );
+
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.publish_trip_share(
+      (select id from trip_result),
+      (select preview_token from stale_preview)
+    );
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'SHARE_PREVIEW_STALE'; end;
+  insert into tap_results values
+    (rejected, 'source changes make a prior preview capability stale'),
+    ((select count(*) = 1 from public.share_links), 'stale preview rejection creates no public link');
+end;
+$$;
 
 select public.revoke_share((select share_id from published_result));
 do $$
@@ -190,12 +256,18 @@ begin
 end;
 $$;
 
+create temp table reissue_preview on commit drop as
+select * from public.preview_trip_share((select id from trip_result));
+grant select on reissue_preview to authenticated;
 create temp table reissued_result on commit drop as
-select * from public.publish_trip_share((select id from trip_result));
+select * from public.publish_trip_share(
+  (select id from trip_result),
+  (select preview_token from reissue_preview)
+);
 grant select on reissued_result to authenticated, anon;
 insert into tap_results values
   ((select reissued.share_token <> original.share_token from reissued_result reissued cross join published_result original), 'reissue creates a different token'),
-  ((select public.resolve_share(share_token) -> 'trip' ->> 'title' = '원본 수정됨' from reissued_result), 'reissue publishes a new current immutable snapshot');
+  ((select public.resolve_share(share_token) -> 'trip' ->> 'selectedProfile' = 'winding' from reissued_result), 'reissue publishes the newly previewed current snapshot');
 
 select set_config('request.jwt.claim.sub', '72000000-0000-0000-0000-000000000002', true);
 insert into tap_results values
@@ -224,7 +296,7 @@ $$;
 set local role anon;
 select set_config('request.jwt.claim.sub', '', true);
 insert into tap_results values (
-  (select public.resolve_share(share_token) -> 'trip' ->> 'title' = '원본 수정됨' from reissued_result),
+  (select public.resolve_share(share_token) -> 'trip' ->> 'selectedProfile' = 'winding' from reissued_result),
   'anonymous reader receives only the published snapshot through the resolver'
 );
 

@@ -1,4 +1,4 @@
-import { consumeBudget, requireMember } from "../_shared/auth.ts";
+import { consumeBudget, requireMember, serviceClient } from "../_shared/auth.ts";
 import { executeBudgetedProviderCall } from "../_shared/budgeted-call.ts";
 import { candidatePolicy } from "../_shared/candidate-policy.ts";
 import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
@@ -60,6 +60,24 @@ function responsePoint(point: RoutePointRequest) {
   };
 }
 
+function storagePoint(point: RoutePointRequest) {
+  return {
+    id: point.id,
+    label: point.label,
+    kakaoPlaceId: point.kakaoPlaceId,
+    name: point.name,
+    address: point.address,
+    roadAddress: point.roadAddress,
+    longitude: point.longitude,
+    latitude: point.latitude,
+    kind: point.kind,
+    dwellMinutes: point.dwellMinutes,
+    selected: point.selected,
+    winding: point.winding === true,
+    ...(point.stopRole ? { stopRole: point.stopRole } : {}),
+  };
+}
+
 async function requestKakaoRoute(input: {
   origin: RoutePointRequest;
   destination: RoutePointRequest;
@@ -106,7 +124,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405, cors);
 
   try {
-    const { supabase } = await requireMember(request);
+    const { user } = await requireMember(request);
     const verificationSecret = Deno.env.get("PLACE_VERIFICATION_SECRET");
     if (!verificationSecret) throw new Error("PLACE_VERIFICATION_NOT_CONFIGURED");
     const input = await parseRouteRequest(await request.json(), verificationSecret);
@@ -128,7 +146,7 @@ Deno.serve(async (request) => {
       const operation = isFuture ? "future_directions" : "directions";
       const hardLimit = limitFromEnv(isFuture ? "KAKAO_FUTURE_DAILY_LIMIT" : "KAKAO_CURRENT_DAILY_LIMIT");
       const providerCall = (requestAlternatives: boolean, excludedFingerprints?: Set<string>) => executeBudgetedProviderCall(
-        () => consumeBudget(supabase, "kakao", operation, hardLimit),
+        () => consumeBudget(user.id, "kakao", operation, hardLimit),
         () => requestKakaoRoute({
           origin: points[cursor],
           destination: points[endIndex],
@@ -188,13 +206,37 @@ Deno.serve(async (request) => {
     assertKakaoSectionsContinuous(acceptedSections);
     assertWithinHardReturn(departure.toISOString(), input.hardReturnAt);
 
-    return jsonResponse(buildSafeRouteResponse({
+    const route = buildSafeRouteResponse({
       candidate: policy.metadata,
       totalDistanceMeters: totalDistance,
       totalDurationSeconds: totalDuration,
       returnAt: departure.toISOString(),
       legs,
-    }), 200, cors);
+    });
+    const lunchStop = input.waypoints.find((point) => point.stopRole === "lunch")!;
+    const dinnerStop = input.waypoints.find((point) => point.stopRole === "dinner") ?? null;
+    const stagedPlan = {
+      title: `${input.origin.name} → ${input.destination.name}`,
+      serviceDate: input.serviceDate,
+      departureAt: input.departureAt,
+      desiredReturnAt: input.desiredReturnAt,
+      hardReturnAt: input.hardReturnAt,
+      origin: storagePoint(input.origin),
+      destination: storagePoint(input.destination),
+      lunchStop: storagePoint(lunchStop),
+      dinnerStop: dinnerStop ? storagePoint(dinnerStop) : null,
+      waypoints: input.waypoints.map(storagePoint),
+      selectedProfile: "balanced",
+    };
+    const { error: stageError } = await serviceClient().rpc("stage_route_candidate_internal", {
+      member_id: user.id,
+      target_planning_id: input.planningId,
+      staged_plan: stagedPlan,
+      staged_route: route,
+    });
+    if (stageError) throw new Error("ROUTE_PERSIST_FAILED");
+
+    return jsonResponse(route, 200, cors);
   } catch (error) {
     console.error("plan-route failed", error instanceof Error ? error.message : "unknown error");
     return jsonResponse({ error: safeErrorMessage(error) }, safeErrorStatus(error), cors);

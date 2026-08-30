@@ -27,7 +27,7 @@ Read back project settings without printing environment values. When environment
 
 ## Supabase promotion order
 
-1. Run all local migrations and explicit database tests against the disposable PostgreSQL 17 instance.
+1. After confirming the exact target and receiving approval, reset only the disposable local PostgreSQL 17 instance at `127.0.0.1:54322`; then apply all migrations from an empty database and run the explicit database tests. Never use this reset against either hosted project.
 2. Obtain fixed-SHA independent data-integrity and security approval.
 3. Dry-run Preview migration application:
 

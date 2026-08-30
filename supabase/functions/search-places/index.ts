@@ -20,7 +20,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405, cors);
 
   try {
-    const { supabase } = await requireMember(request);
+    const { user } = await requireMember(request);
     const input = parsePlaceSearchRequest(await request.json());
     const apiKey = Deno.env.get("KAKAO_REST_API_KEY");
     if (!apiKey) throw new Error("PROVIDER_NOT_CONFIGURED");
@@ -34,7 +34,7 @@ Deno.serve(async (request) => {
     url.searchParams.set("sort", "accuracy");
 
     const { result: provider } = await executeBudgetedProviderCall(
-      () => consumeBudget(supabase, "kakao", "local_keyword_search", localLimit()),
+      () => consumeBudget(user.id, "kakao", "local_keyword_search", localLimit()),
       () => fetch(url, {
         headers: { Authorization: `KakaoAK ${apiKey}` },
         signal: AbortSignal.timeout(8_000),
