@@ -1,0 +1,54 @@
+import { describe, expect, it } from "vitest";
+
+import { candidatePolicy } from "./candidate-policy";
+import type { RoutePointRequest, RouteRequest } from "./route-request";
+
+function point(id: string, winding = false): RoutePointRequest {
+  return {
+    id,
+    label: id,
+    kakaoPlaceId: id,
+    verificationToken: "a".repeat(43),
+    name: id,
+    address: "경기도 테스트 주소",
+    roadAddress: null,
+    longitude: 127,
+    latitude: 37,
+    kind: "pass-through",
+    dwellMinutes: 0,
+    selected: true,
+    winding,
+  };
+}
+
+function request(candidate: RouteRequest["candidate"], waypoints: RoutePointRequest[] = []): RouteRequest {
+  return {
+    origin: point("origin"),
+    destination: point("destination"),
+    waypoints,
+    serviceDate: "2026-08-31",
+    departureAt: "2026-08-30T22:30:00.000Z",
+    desiredReturnAt: "2026-08-31T08:30:00.000Z",
+    hardReturnAt: "2026-08-31T09:30:00.000Z",
+    candidate,
+  };
+}
+
+describe("candidatePolicy", () => {
+  it("derives provider priority on the trusted server", () => {
+    expect(candidatePolicy(request("balanced")).priority).toBe("RECOMMEND");
+    expect(candidatePolicy(request("short")).priority).toBe("DISTANCE");
+  });
+
+  it("keeps custom winding points mandatory only for the winding candidate", () => {
+    const winding = point("winding", true);
+    expect(candidatePolicy(request("winding", [winding])).points).toContain(winding);
+    expect(candidatePolicy(request("balanced", [winding])).points).not.toContain(winding);
+  });
+
+  it("requests alternatives and uses the honest label without custom winding points", () => {
+    const policy = candidatePolicy(request("winding"));
+    expect(policy.requestAlternatives).toBe(true);
+    expect(policy.metadata).toEqual({ id: "winding", label: "와인딩 추정", estimatedWinding: true });
+  });
+});

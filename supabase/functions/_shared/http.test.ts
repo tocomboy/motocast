@@ -13,4 +13,10 @@ describe("safe provider errors", () => {
     expect(safeErrorStatus(new Error("INVALID_REQUEST"))).toBe(400);
     expect(safeErrorStatus(new Error("API_DAILY_BUDGET_EXHAUSTED"))).toBe(429);
   });
+
+  it("uses an unprocessable response for a hard-return exclusion", () => {
+    const error = new Error("ROUTE_EXCEEDS_HARD_RETURN");
+    expect(safeErrorMessage(error)).toContain("최종 복귀");
+    expect(safeErrorStatus(error)).toBe(422);
+  });
 });

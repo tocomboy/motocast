@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeKakaoRoutePayload } from "./kakao-route";
+import { normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload } from "./kakao-route";
 
 function payload() {
   return {
@@ -19,6 +19,12 @@ function payload() {
 describe("normalizeKakaoRoutePayload", () => {
   it("accepts a complete route with geometry", () => {
     expect(normalizeKakaoRoutePayload(payload()).summary.distance).toBe(12000);
+  });
+
+  it("keeps validated alternative routes for winding selection", () => {
+    const value = payload();
+    value.routes.push(structuredClone(value.routes[0]));
+    expect(normalizeKakaoRoutesPayload(value)).toHaveLength(2);
   });
 
   it("rejects a route without drawable sections", () => {

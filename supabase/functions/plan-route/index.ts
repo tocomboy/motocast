@@ -1,9 +1,13 @@
 import { consumeBudget, requireMember } from "../_shared/auth.ts";
 import { executeBudgetedProviderCall } from "../_shared/budgeted-call.ts";
+import { candidatePolicy } from "../_shared/candidate-policy.ts";
 import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
-import { normalizeKakaoRoutePayload } from "../_shared/kakao-route.ts";
-import { parseRouteRequest, type RoutePointRequest, type RouteRequest } from "../_shared/route-request.ts";
+import { normalizeKakaoRoutesPayload } from "../_shared/kakao-route.ts";
+import { applyMotorcycleRoutePolicy } from "../_shared/kakao-safety.ts";
+import { assertWithinHardReturn } from "../_shared/route-deadline.ts";
+import { parseRouteRequest, type RoutePointRequest } from "../_shared/route-request.ts";
 import { buildSafeRouteResponse } from "../_shared/route-response.ts";
+import { routeFingerprint, selectEstimatedWindingRoute } from "../_shared/winding.ts";
 
 function limitFromEnv(name: string): number {
   const raw = Deno.env.get(name);
@@ -61,7 +65,8 @@ async function requestKakaoRoute(input: {
   destination: RoutePointRequest;
   waypoints: RoutePointRequest[];
   departureAt: Date;
-  priority: RouteRequest["priority"];
+  priority: "RECOMMEND" | "DISTANCE";
+  requestAlternatives: boolean;
   apiKey: string;
 }) {
   const isFuture = input.departureAt.getTime() > Date.now() + 5 * 60_000;
@@ -71,15 +76,18 @@ async function requestKakaoRoute(input: {
   url.searchParams.set("destination", pointParam(input.destination));
   if (input.waypoints.length) url.searchParams.set("waypoints", input.waypoints.map(pointParam).join("|"));
   if (isFuture) url.searchParams.set("departure_time", futureTime(input.departureAt));
-  url.searchParams.set("priority", input.priority ?? "RECOMMEND");
-  url.searchParams.set("car_type", "7");
-  url.searchParams.set("avoid", "motorway");
-  url.searchParams.set("roadevent", "0");
-  url.searchParams.set("summary", "false");
+  applyMotorcycleRoutePolicy(url, input.priority, input.requestAlternatives);
 
-  const response = await fetch(url, { headers: { Authorization: `KakaoAK ${input.apiKey}` } });
+  const response = await fetch(url, {
+    headers: { Authorization: `KakaoAK ${input.apiKey}` },
+    signal: AbortSignal.timeout(8_000),
+  });
   if (!response.ok) throw new Error("SAFE_ROUTE_NOT_FOUND");
-  const route = normalizeKakaoRoutePayload(await response.json());
+  const routes = normalizeKakaoRoutesPayload(await response.json());
+  const route = input.requestAlternatives
+    ? selectEstimatedWindingRoute(routes, new Set([routeFingerprint(routes[0])]))
+    : routes[0];
+  if (!route) throw new Error("SAFE_ROUTE_NOT_FOUND");
   return { route, isFuture };
 }
 
@@ -97,7 +105,8 @@ Deno.serve(async (request) => {
     const apiKey = Deno.env.get("KAKAO_REST_API_KEY");
     if (!apiKey) throw new Error("PROVIDER_NOT_CONFIGURED");
 
-    const points = [input.origin, ...input.waypoints, input.destination];
+    const policy = candidatePolicy(input);
+    const points = policy.points;
     const legs = [];
     let cursor = 0;
     let departure = new Date(input.departureAt);
@@ -116,7 +125,8 @@ Deno.serve(async (request) => {
           destination: points[endIndex],
           waypoints: via,
           departureAt: departure,
-          priority: input.priority,
+          priority: policy.priority,
+          requestAlternatives: policy.requestAlternatives,
           apiKey,
         }),
       );
@@ -150,7 +160,10 @@ Deno.serve(async (request) => {
       cursor = endIndex;
     }
 
+    assertWithinHardReturn(departure.toISOString(), input.hardReturnAt);
+
     return jsonResponse(buildSafeRouteResponse({
+      candidate: policy.metadata,
       totalDistanceMeters: totalDistance,
       totalDurationSeconds: totalDuration,
       returnAt: departure.toISOString(),

@@ -1,5 +1,5 @@
 import { verifyPlace, type VerifiablePlace } from "./place-verification.ts";
-import { parseStrictRfc3339 } from "./strict-time.ts";
+import { isStrictCalendarDate, parseStrictRfc3339, seoulCalendarDate } from "./strict-time.ts";
 
 export type RoutePointRequest = VerifiablePlace & {
   id: string;
@@ -17,8 +17,11 @@ export type RouteRequest = {
   origin: RoutePointRequest;
   destination: RoutePointRequest;
   waypoints: RoutePointRequest[];
+  serviceDate: string;
   departureAt: string;
-  priority: "RECOMMEND" | "TIME" | "DISTANCE";
+  desiredReturnAt: string;
+  hardReturnAt: string;
+  candidate: "balanced" | "winding" | "short";
 };
 
 function validPoint(value: unknown): value is RoutePointRequest {
@@ -61,11 +64,22 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
   if (!Array.isArray(body.waypoints) || !body.waypoints.every(validPoint) || body.waypoints.length > 30) {
     throw new Error("INVALID_WAYPOINTS");
   }
-  if (body.priority && !["RECOMMEND", "TIME", "DISTANCE"].includes(body.priority)) {
-    throw new Error("INVALID_PRIORITY");
-  }
   const departure = parseStrictRfc3339(body.departureAt);
-  if (!departure) throw new Error("INVALID_DEPARTURE");
+  const desiredReturn = parseStrictRfc3339(body.desiredReturnAt);
+  const hardReturn = parseStrictRfc3339(body.hardReturnAt);
+  if (!departure || !desiredReturn || !hardReturn) throw new Error("INVALID_ROUTE_TIME");
+  if (
+    desiredReturn <= departure || hardReturn < desiredReturn ||
+    hardReturn.getTime() - departure.getTime() >= 24 * 60 * 60_000
+  ) throw new Error("INVALID_ROUTE_TIME");
+  if (
+    !isStrictCalendarDate(body.serviceDate) ||
+    seoulCalendarDate(departure) !== body.serviceDate ||
+    seoulCalendarDate(hardReturn) !== body.serviceDate
+  ) throw new Error("INVALID_ROUTE_TIME");
+  if (!body.candidate || !["balanced", "winding", "short"].includes(body.candidate)) {
+    throw new Error("INVALID_CANDIDATE");
+  }
 
   const selectedWaypoints = body.waypoints.filter((point) => point.kind !== "optional" || point.selected);
   if (selectedWaypoints.some((point) => (
@@ -83,7 +97,10 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
     origin: canonicalPoint(body.origin, true),
     destination: canonicalPoint(body.destination, true),
     waypoints: selectedWaypoints.map((point) => canonicalPoint(point)),
+    serviceDate: body.serviceDate,
     departureAt: departure.toISOString(),
-    priority: body.priority ?? "RECOMMEND",
+    desiredReturnAt: desiredReturn.toISOString(),
+    hardReturnAt: hardReturn.toISOString(),
+    candidate: body.candidate,
   };
 }

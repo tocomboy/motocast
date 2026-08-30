@@ -536,6 +536,77 @@ button {
   gap: 7px;
 }
 
+.ordered-waypoints {
+  display: grid;
+  gap: 7px;
+}
+
+.ordered-waypoint {
+  align-items: center;
+  background: #fbe6dc;
+  border: 1px solid #f1c8b7;
+  border-radius: 9px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 9px;
+}
+
+.ordered-waypoint > span {
+  color: var(--orange-deep);
+  font-family: Georgia, serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.ordered-waypoint > div:not(.waypoint-actions) {
+  display: grid;
+  min-width: 0;
+}
+
+.ordered-waypoint strong,
+.ordered-waypoint small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ordered-waypoint strong { font-size: 0.72rem; }
+.ordered-waypoint small { color: var(--ink-soft); font-size: 0.61rem; }
+
+.waypoint-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.waypoint-actions button {
+  background: rgba(255, 253, 248, 0.72);
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.68rem;
+  height: 25px;
+  width: 25px;
+}
+
+.waypoint-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.winding-editor {
+  background: #fbf4eb;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.text-button.muted {
+  color: var(--ink-soft);
+}
+
 .waypoint-tag {
   align-items: center;
   background: #edf1ed;
@@ -835,7 +906,8 @@ button {
   color: #a9bbb1;
 }
 
-.example-data-badge {
+.example-data-badge,
+.live-data-badge {
   backdrop-filter: blur(8px);
   background: rgba(255, 253, 248, 0.94);
   border: 1px solid rgba(24, 34, 29, 0.16);
@@ -845,6 +917,12 @@ button {
   font-weight: 800;
   letter-spacing: 0.04em;
   padding: 9px 11px;
+}
+
+.live-data-badge {
+  background: rgba(225, 242, 232, 0.95);
+  border-color: rgba(52, 93, 71, 0.28);
+  color: #345d47;
 }
 
 .map-control {

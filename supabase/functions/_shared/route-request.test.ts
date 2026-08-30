@@ -31,8 +31,11 @@ async function request(waypoints: RoutePointRequest[] = []) {
     origin: await point({ kakaoPlaceId: "origin" }),
     destination: await point({ kakaoPlaceId: "destination" }),
     waypoints,
+    serviceDate: "2026-08-31",
     departureAt: "2026-08-31T07:30:00+09:00",
-    priority: "RECOMMEND" as const,
+    desiredReturnAt: "2026-08-31T17:30:00+09:00",
+    hardReturnAt: "2026-08-31T18:30:00+09:00",
+    candidate: "balanced" as const,
   };
 }
 
@@ -60,8 +63,25 @@ describe("parseRouteRequest", () => {
 
   it("rejects normalized or timezone-less departure timestamps", async () => {
     const impossible = { ...await request(), departureAt: "2026-02-31T07:30:00+09:00" };
-    await expect(parseRouteRequest(impossible, secret)).rejects.toThrow("INVALID_DEPARTURE");
+    await expect(parseRouteRequest(impossible, secret)).rejects.toThrow("INVALID_ROUTE_TIME");
     const local = { ...await request(), departureAt: "2026-08-31T07:30:00" };
-    await expect(parseRouteRequest(local, secret)).rejects.toThrow("INVALID_DEPARTURE");
+    await expect(parseRouteRequest(local, secret)).rejects.toThrow("INVALID_ROUTE_TIME");
+  });
+
+  it("rejects an invalid return boundary and client-defined provider priority", async () => {
+    const invalid = { ...await request(), hardReturnAt: "2026-08-31T17:00:00+09:00" };
+    await expect(parseRouteRequest(invalid, secret)).rejects.toThrow("INVALID_ROUTE_TIME");
+    const legacy = { ...await request(), candidate: undefined, priority: "DISTANCE" };
+    await expect(parseRouteRequest(legacy, secret)).rejects.toThrow("INVALID_CANDIDATE");
+  });
+
+  it("rejects an overnight route even when it is under 24 hours", async () => {
+    const overnight = {
+      ...await request(),
+      departureAt: "2026-08-31T23:00:00+09:00",
+      desiredReturnAt: "2026-09-01T00:30:00+09:00",
+      hardReturnAt: "2026-09-01T01:00:00+09:00",
+    };
+    await expect(parseRouteRequest(overnight, secret)).rejects.toThrow("INVALID_ROUTE_TIME");
   });
 });

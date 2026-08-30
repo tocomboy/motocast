@@ -59,25 +59,31 @@ function normalizeSection(value: unknown) {
   return section;
 }
 
-export function normalizeKakaoRoutePayload(value: unknown): NormalizedKakaoRoute {
+export function normalizeKakaoRoutesPayload(value: unknown): NormalizedKakaoRoute[] {
   const payload = record(value);
   if (!Array.isArray(payload.routes) || payload.routes.length === 0) {
     throw new Error("SAFE_ROUTE_NOT_FOUND");
   }
-  const route = record(payload.routes[0]);
-  if (route.result_code !== 0) throw new Error("SAFE_ROUTE_NOT_FOUND");
-  const rawSummary = record(route.summary);
-  const summary = {
-    distance: integer(rawSummary.distance, true),
-    duration: integer(rawSummary.duration, true),
-  };
-  if (!Array.isArray(route.sections) || route.sections.length === 0) {
-    throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
-  }
-  const sections = route.sections.map(normalizeSection);
-  if (
-    sections.reduce((sum, section) => sum + section.distance, 0) !== summary.distance ||
-    sections.reduce((sum, section) => sum + section.duration, 0) !== summary.duration
-  ) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
-  return { summary, sections };
+  return payload.routes.map((value) => {
+    const route = record(value);
+    if (route.result_code !== 0) throw new Error("SAFE_ROUTE_NOT_FOUND");
+    const rawSummary = record(route.summary);
+    const summary = {
+      distance: integer(rawSummary.distance, true),
+      duration: integer(rawSummary.duration, true),
+    };
+    if (!Array.isArray(route.sections) || route.sections.length === 0) {
+      throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
+    }
+    const sections = route.sections.map(normalizeSection);
+    if (
+      sections.reduce((sum, section) => sum + section.distance, 0) !== summary.distance ||
+      sections.reduce((sum, section) => sum + section.duration, 0) !== summary.duration
+    ) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
+    return { summary, sections };
+  });
+}
+
+export function normalizeKakaoRoutePayload(value: unknown): NormalizedKakaoRoute {
+  return normalizeKakaoRoutesPayload(value)[0];
 }

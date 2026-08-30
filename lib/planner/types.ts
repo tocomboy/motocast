@@ -47,5 +47,6 @@ export type RouteCandidate = {
   returnAt: string;
   fitsDesiredReturn: boolean;
   fitsHardReturn: boolean;
+  path?: Coordinate[];
   segments: PlannedSegment[];
 };

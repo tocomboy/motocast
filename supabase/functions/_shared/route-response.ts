@@ -13,6 +13,11 @@ export type RouteResponseLeg<TPoint, TSection> = {
 };
 
 export function buildSafeRouteResponse<TPoint, TSection>(input: {
+  candidate: {
+    id: "balanced" | "winding" | "short";
+    label: string;
+    estimatedWinding: boolean;
+  };
   totalDistanceMeters: number;
   totalDurationSeconds: number;
   returnAt: string;

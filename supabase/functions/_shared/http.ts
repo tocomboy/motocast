@@ -32,6 +32,7 @@ export function safeErrorMessage(error: unknown) {
   if (error.message === "PLACE_VERIFICATION_NOT_CONFIGURED") return "장소 검증 설정이 완료되지 않았습니다.";
   if (error.message === "UNVERIFIED_PLACE") return "검색 결과에서 장소를 다시 선택해 주세요.";
   if (error.message === "SAFE_ROUTE_NOT_FOUND") return "오토바이 안전 조건을 만족하는 경로를 찾지 못했습니다.";
+  if (error.message === "ROUTE_EXCEEDS_HARD_RETURN") return "최종 복귀 시각 안에 도착하는 경로를 찾지 못했습니다.";
   if (error.message === "PROVIDER_NOT_CONFIGURED") return "경로 공급자 설정이 완료되지 않았습니다.";
   return "외부 서비스 요청에 실패했습니다. 기존 저장 계획은 유지됩니다.";
 }
@@ -41,6 +42,7 @@ export function safeErrorStatus(error: unknown) {
   if (error.message.includes("AUTH_REQUIRED")) return 401;
   if (error.message.includes("MEMBERSHIP_REQUIRED")) return 403;
   if (error.message.includes("API_DAILY_BUDGET_EXHAUSTED")) return 429;
+  if (error.message === "ROUTE_EXCEEDS_HARD_RETURN") return 422;
   if (
     error.message.includes("NOT_CONFIGURED") ||
     error.message === "PROVIDER_NOT_CONFIGURED"

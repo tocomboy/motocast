@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 
 type MapPoint = { label: string; latitude: number; longitude: number };
+type PathPoint = { latitude: number; longitude: number };
 
-export function KakaoMapCanvas({ points }: { points: MapPoint[] }) {
+export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: PathPoint[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appKey = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY;
   const [state, setState] = useState<"loading" | "ready" | "demo" | "error">(
@@ -19,16 +20,18 @@ export function KakaoMapCanvas({ points }: { points: MapPoint[] }) {
       window.kakao.maps.load(() => {
         if (!containerRef.current || !window.kakao?.maps) return;
         const maps = window.kakao.maps;
-        const path = points.map((point) => new maps.LatLng(point.latitude, point.longitude));
-        const map = new maps.Map(containerRef.current, { center: path[0], level: 8 });
+        const markerPath = points.map((point) => new maps.LatLng(point.latitude, point.longitude));
+        const routePath = (path?.length ? path : points).map((point) => new maps.LatLng(point.latitude, point.longitude));
+        const map = new maps.Map(containerRef.current, { center: markerPath[0], level: 8 });
         const bounds = new maps.LatLngBounds();
-        path.forEach((position, index) => {
+        routePath.forEach((position) => bounds.extend(position));
+        markerPath.forEach((position, index) => {
           bounds.extend(position);
           new maps.Marker({ map, position, title: points[index].label });
         });
         new maps.Polyline({
           map,
-          path,
+          path: routePath,
           strokeWeight: 5,
           strokeColor: "#ef6a3a",
           strokeOpacity: 0.9,
@@ -58,7 +61,7 @@ export function KakaoMapCanvas({ points }: { points: MapPoint[] }) {
     script.addEventListener("error", () => setState("error"), { once: true });
     document.head.appendChild(script);
     return () => script.removeEventListener("load", renderMap);
-  }, [appKey, points]);
+  }, [appKey, path, points]);
 
   return (
     <div className="map-shell" aria-label="선택한 라이딩 경로 지도">

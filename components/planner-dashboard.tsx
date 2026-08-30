@@ -13,6 +13,7 @@ import {
   demoHardReturnAt,
   demoMapPoints,
 } from "@/lib/planner/demo";
+import { parseSafeRouteResponse, type SafeRouteResponse } from "@/lib/planner/provider-contract";
 import { buildTimeline, formatKoreanTime, weatherRiskLabel } from "@/lib/planner/schedule";
 import type { RouteCandidate } from "@/lib/planner/types";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
@@ -69,6 +70,53 @@ function weatherIcon(condition: string) {
   return "미정";
 }
 
+function liveRouteCandidate(response: SafeRouteResponse, desiredReturnAt: string, hardReturnAt: string): RouteCandidate {
+  const stopMinutes = response.legs.reduce((total, leg) => total + leg.dwellMinutes, 0);
+  const rideMinutes = Math.ceil(response.legs.reduce((total, leg) => total + leg.durationSeconds, 0) / 60);
+  const descriptions: Record<RouteCandidate["id"], string> = {
+    balanced: "주행 시간과 경로의 균형",
+    winding: response.candidate.estimatedWinding ? "대안 경로 곡률 기반 추정" : "커스텀 와인딩 경유지 필수 통과",
+    short: "총 거리를 우선한 경로",
+  };
+  const path = response.legs.flatMap((leg) => (
+    leg.sections.flatMap((section) => section.roads.flatMap((road) => {
+      const points = [];
+      for (let index = 0; index < road.vertexes.length; index += 2) {
+        points.push({ longitude: road.vertexes[index], latitude: road.vertexes[index + 1] });
+      }
+      return points;
+    }))
+  )).filter((point, index, points) => (
+    index === 0 || point.longitude !== points[index - 1].longitude || point.latitude !== points[index - 1].latitude
+  ));
+  return {
+    id: response.candidate.id,
+    label: response.candidate.label,
+    description: descriptions[response.candidate.id],
+    distanceKm: Math.round(response.totalDistanceMeters / 100) / 10,
+    rideMinutes,
+    stopMinutes,
+    returnAt: response.returnAt,
+    fitsDesiredReturn: new Date(response.returnAt) <= new Date(desiredReturnAt),
+    fitsHardReturn: new Date(response.returnAt) <= new Date(hardReturnAt),
+    path,
+    segments: response.legs.map((leg, index) => ({
+      id: `${response.candidate.id}-${index}`,
+      from: leg.from,
+      to: leg.to,
+      distanceKm: Math.round(leg.distanceMeters / 100) / 10,
+      rideMinutes: Math.ceil(leg.durationSeconds / 60),
+      weather: {
+        condition: "unknown",
+        temperatureC: null,
+        precipitationProbability: null,
+        windSpeedMps: null,
+        issuedAt: leg.arrivalAt,
+      },
+    })),
+  };
+}
+
 export function PlannerDashboard({ connected }: { connected: boolean }) {
   const [draft, setDraft] = useState(defaultDraft);
   const [places, setPlaces] = useState<PlannerPlaces>({
@@ -78,7 +126,10 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     dinner: null,
     rest: null,
   });
+  const [windingPoints, setWindingPoints] = useState<PlaceSearchResult[]>([]);
+  const [addingWinding, setAddingWinding] = useState(false);
   const [selectedId, setSelectedId] = useState<RouteCandidate["id"]>("balanced");
+  const [liveCandidates, setLiveCandidates] = useState<RouteCandidate[] | null>(null);
   const [plannerOpen, setPlannerOpen] = useState(false);
   const [notice, setNotice] = useState(
     connected
@@ -105,21 +156,30 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     window.localStorage.setItem("motocast-planner-draft-v1", JSON.stringify(draft));
   }, [draft]);
 
-  const selected = demoCandidates.find((candidate) => candidate.id === selectedId) ?? demoCandidates[0];
+  const displayedCandidates = liveCandidates ?? demoCandidates;
+  const selected = displayedCandidates.find((candidate) => candidate.id === selectedId) ?? displayedCandidates[0];
+  const liveTimes = {
+    departureAt: `${draft.rideDate}T${draft.departureTime}:00+09:00`,
+    desiredReturnAt: `${draft.rideDate}T${draft.desiredReturnTime}:00+09:00`,
+    hardReturnAt: `${draft.rideDate}T${draft.hardReturnTime}:00+09:00`,
+  };
   const timeline = useMemo(
     () =>
       buildTimeline({
-        departureAt: demoDepartureAt,
-        desiredReturnAt: demoDesiredReturnAt,
-        hardReturnAt: demoHardReturnAt,
+        departureAt: liveCandidates ? liveTimes.departureAt : demoDepartureAt,
+        desiredReturnAt: liveCandidates ? liveTimes.desiredReturnAt : demoDesiredReturnAt,
+        hardReturnAt: liveCandidates ? liveTimes.hardReturnAt : demoHardReturnAt,
         segments: selected.segments.map((segment) =>
           segment.to.id === "rest"
             ? { ...segment, to: { ...segment.to, selected: draft.includeRest } }
             : segment,
         ),
       }),
-    [draft.includeRest, selected],
+    [draft.includeRest, liveCandidates, liveTimes.departureAt, liveTimes.desiredReturnAt, liveTimes.hardReturnAt, selected],
   );
+  const selectedMapPoints = liveCandidates
+    ? [selected.segments[0].from, ...selected.segments.map((segment) => segment.to)]
+    : demoMapPoints;
 
   function update<K extends keyof PlannerDraft>(key: K, value: PlannerDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -127,6 +187,26 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
   function selectPlace(key: keyof PlannerPlaces, place: PlaceSearchResult | null) {
     setPlaces((current) => ({ ...current, [key]: place }));
+  }
+
+  function addWindingPoint(place: PlaceSearchResult | null) {
+    if (!place) return;
+    setWindingPoints((current) => (
+      current.some((item) => item.kakaoPlaceId === place.kakaoPlaceId) || current.length >= 20
+        ? current
+        : [...current, place]
+    ));
+    setAddingWinding(false);
+  }
+
+  function moveWindingPoint(index: number, direction: -1 | 1) {
+    setWindingPoints((current) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
   }
 
   function routePoint(
@@ -174,25 +254,43 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
     setCalculating(true);
     setNotice("오토바이·자동차전용도로 제외 조건으로 경로를 계산 중입니다.");
-    const { error } = await supabase.functions.invoke("plan-route", {
-      body: {
-        origin: routePoint(places.origin, "pass-through", 0),
-        destination: routePoint(places.destination, "pass-through", 0),
-        waypoints: [
-          routePoint(places.lunch, "stop", 60),
-          ...(draft.includeRest && places.rest ? [routePoint(places.rest, "optional", 30)] : []),
-          ...(places.dinner ? [routePoint(places.dinner, "stop", 60)] : []),
-        ],
-        departureAt: `${draft.rideDate}T${draft.departureTime}:00+09:00`,
-        priority: selected.id === "short" ? "DISTANCE" : selected.id === "balanced" ? "TIME" : "RECOMMEND",
-      },
-    });
-    setCalculating(false);
-    setNotice(
-      error
-        ? "경로 갱신에 실패했습니다. 기존 계획을 유지하며, 실패를 자동차 경로로 대체하지 않았습니다."
-        : "안전 경로 응답을 확인했습니다. 아래 결과는 아직 예시 데이터이며 실제 응답으로 교체 중입니다.",
+    const commonBody = {
+      origin: routePoint(places.origin, "pass-through", 0),
+      destination: routePoint(places.destination, "pass-through", 0),
+      waypoints: [
+        ...windingPoints.map((place) => routePoint(place, "pass-through", 0, true)),
+        routePoint(places.lunch, "stop", 60),
+        ...(draft.includeRest && places.rest ? [routePoint(places.rest, "optional", 30)] : []),
+        ...(places.dinner ? [routePoint(places.dinner, "stop", 60)] : []),
+      ],
+      serviceDate: draft.rideDate,
+      ...liveTimes,
+    };
+    const results = await Promise.all(
+      (["balanced", "winding", "short"] as const).map((candidate) => (
+        supabase.functions.invoke("plan-route", { body: { ...commonBody, candidate } })
+      )),
     );
+    setCalculating(false);
+    if (results.some(({ error }) => error)) {
+      setNotice(liveCandidates
+        ? "새 계산에 실패해 직전 실제 경로를 유지했습니다. 자동차 경로로 대체하지 않았습니다."
+        : "세 경로 중 하나 이상을 안전 조건 안에서 계산하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.");
+      return;
+    }
+    try {
+      const candidates = results.map(({ data }) => (
+        liveRouteCandidate(parseSafeRouteResponse(data), liveTimes.desiredReturnAt, liveTimes.hardReturnAt)
+      ));
+      setLiveCandidates(candidates);
+      setSelectedId("balanced");
+      setNotice("오토바이 안전 조건을 적용한 실제 경로 3개를 계산했습니다. 날씨는 아직 조회 전입니다.");
+    } catch {
+      setNotice(liveCandidates
+        ? "새 응답을 안전하게 확인하지 못해 직전 실제 경로를 유지했습니다."
+        : "경로 공급자 응답을 안전하게 확인하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.");
+      return;
+    }
     setPlannerOpen(false);
   }
 
@@ -241,18 +339,39 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                   <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>
                 </>
               )}
-              {!connected ? (
+              {connected && windingPoints.length ? (
+                <div className="ordered-waypoints" aria-label="커스텀 와인딩 경유지 순서">
+                  {windingPoints.map((place, index) => (
+                    <div className="ordered-waypoint" key={place.kakaoPlaceId}>
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <div><strong>{place.name}</strong><small>{place.roadAddress ?? place.address}</small></div>
+                      <div className="waypoint-actions">
+                        <button type="button" disabled={index === 0} onClick={() => moveWindingPoint(index, -1)} aria-label={`${place.name} 위로 이동`}>↑</button>
+                        <button type="button" disabled={index === windingPoints.length - 1} onClick={() => moveWindingPoint(index, 1)} aria-label={`${place.name} 아래로 이동`}>↓</button>
+                        <button type="button" onClick={() => setWindingPoints((current) => current.filter((item) => item.kakaoPlaceId !== place.kakaoPlaceId))} aria-label={`${place.name} 제거`}>×</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : !connected ? (
                 <div className="waypoint-list">
                   <span className="waypoint-tag winding"><i />유명산 굽이길 <button type="button" aria-label="유명산 굽이길 제거">×</button></span>
                   <span className="waypoint-tag"><i />홍천 점심 <button type="button" aria-label="홍천 점심 제거">×</button></span>
                 </div>
               ) : null}
+              {connected && addingWinding ? (
+                <div className="winding-editor">
+                  <PlaceSearchField label="와인딩 경유지" placeholder="산길 입구, 고개, 전망대" selected={null} onSelect={addWindingPoint} />
+                  <button className="text-button muted" type="button" onClick={() => setAddingWinding(false)}>추가 취소</button>
+                </div>
+              ) : null}
               <button
                 className="text-button"
                 type="button"
-                onClick={() => setNotice("커스텀 경유지는 컬렉션 저장 화면과 함께 다음 구현 단위에서 연결됩니다.")}
+                disabled={connected && (addingWinding || windingPoints.length >= 20)}
+                onClick={() => connected ? setAddingWinding(true) : setNotice("커스텀 경유지는 실제 연결 모드에서 장소 검색으로 추가합니다.")}
               >
-                + 커스텀 경유지 추가
+                + 커스텀 와인딩 경유지 추가{windingPoints.length ? ` · ${windingPoints.length}개` : ""}
               </button>
             </section>
 
@@ -304,11 +423,11 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
         <section className="route-stage" aria-label="라이딩 계획 결과">
           <div className="map-area">
-            <KakaoMapCanvas points={demoMapPoints} />
+            <KakaoMapCanvas points={selectedMapPoints} path={selected.path} />
             <div className="map-topbar">
               <div className="map-badges">
                 <div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>
-                <span className="example-data-badge">예시 데이터</span>
+                {!liveCandidates ? <span className="example-data-badge">예시 데이터</span> : <span className="live-data-badge">실제 경로</span>}
               </div>
               <button className="map-control" type="button" aria-label="현재 위치로 이동">⌖</button>
             </div>
@@ -328,11 +447,11 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
           <div className="candidate-strip" aria-label="추천 경로 후보">
             <div className="strip-heading">
-              <div><p className="eyebrow">ROUTE OPTIONS</p><h2>추천 경로 3개 <small>예시</small></h2></div>
+              <div><p className="eyebrow">ROUTE OPTIONS</p><h2>추천 경로 3개 {!liveCandidates ? <small>예시</small> : null}</h2></div>
               <p>날씨는 순위에 반영하지 않고 구간 정보로만 표시합니다.</p>
             </div>
             <div className="candidate-grid">
-              {demoCandidates.map((candidate) => (
+              {displayedCandidates.map((candidate) => (
                 <button
                   type="button"
                   className={`candidate-card ${selectedId === candidate.id ? "is-selected" : ""}`}
@@ -340,7 +459,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                   onClick={() => setSelectedId(candidate.id)}
                   aria-pressed={selectedId === candidate.id}
                 >
-                  <span className={`candidate-index ${candidateTone[candidate.id]}`}>0{demoCandidates.indexOf(candidate) + 1}</span>
+                  <span className={`candidate-index ${candidateTone[candidate.id]}`}>0{displayedCandidates.indexOf(candidate) + 1}</span>
                   <span className="candidate-copy"><strong>{candidate.label}</strong><small>{candidate.description}</small></span>
                   <span className="candidate-stats"><b>{candidate.distanceKm} km</b><small>{minutesLabel(candidate.rideMinutes)}</small></span>
                   <span className="select-mark">{selectedId === candidate.id ? "✓" : "→"}</span>
@@ -352,7 +471,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
           <div className="forecast-panel">
             <div className="forecast-heading">
               <div><p className="eyebrow">WEATHER BY ARRIVAL</p><h2>시간에 따른 구간 날씨</h2></div>
-              <span className="forecast-issued">예보 발행 09:00 · 저장됨</span>
+              <span className="forecast-issued">{liveCandidates ? "날씨 미조회" : "예보 발행 09:00 · 예시"}</span>
             </div>
             <div className="timeline-list">
               {timeline.segments.map((segment, index) => {

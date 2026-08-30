@@ -20,6 +20,11 @@ export type SafeRouteLeg = {
 };
 
 export type SafeRouteResponse = {
+  candidate: {
+    id: "balanced" | "winding" | "short";
+    label: string;
+    estimatedWinding: boolean;
+  };
   safety: {
     vehicle: "motorcycle";
     motorwayExcluded: true;
@@ -174,6 +179,13 @@ function leg(value: unknown): SafeRouteLeg {
 
 export function parseSafeRouteResponse(value: unknown): SafeRouteResponse {
   const raw = record(value);
+  const candidate = record(raw.candidate, "INVALID_ROUTE_CANDIDATE");
+  if (
+    !["balanced", "winding", "short"].includes(String(candidate.id)) ||
+    typeof candidate.label !== "string" || candidate.label.length < 1 || candidate.label.length > 80 ||
+    typeof candidate.estimatedWinding !== "boolean" ||
+    (candidate.estimatedWinding && (candidate.id !== "winding" || candidate.label !== "와인딩 추정"))
+  ) throw new ProviderContractError("INVALID_ROUTE_CANDIDATE");
   const safety = record(raw.safety, "UNSAFE_ROUTE_RESPONSE");
   if (
     safety.vehicle !== "motorcycle" ||
@@ -222,6 +234,11 @@ export function parseSafeRouteResponse(value: unknown): SafeRouteResponse {
   }
 
   return {
+    candidate: {
+      id: candidate.id as SafeRouteResponse["candidate"]["id"],
+      label: candidate.label,
+      estimatedWinding: candidate.estimatedWinding,
+    },
     safety: { vehicle: "motorcycle", motorwayExcluded: true, fallbackUsed: false },
     totalDistanceMeters,
     totalDurationSeconds,

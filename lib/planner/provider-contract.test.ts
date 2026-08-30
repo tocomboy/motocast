@@ -15,6 +15,7 @@ const point = (id: string) => ({
 
 function response() {
   return buildSafeRouteResponse({
+    candidate: { id: "balanced", label: "균형", estimatedWinding: false },
     totalDistanceMeters: 12000,
     totalDurationSeconds: 1800,
     returnAt: "2026-08-31T00:30:00.000Z",
@@ -49,6 +50,13 @@ describe("parseSafeRouteResponse", () => {
       motorwayExcluded: true,
       fallbackUsed: false,
     });
+  });
+
+  it("requires estimated winding routes to be labeled honestly", () => {
+    expect(() => parseSafeRouteResponse({
+      ...response(),
+      candidate: { id: "winding", label: "와인딩", estimatedWinding: true },
+    })).toThrowError(new ProviderContractError("INVALID_ROUTE_CANDIDATE"));
   });
 
   it.each([
