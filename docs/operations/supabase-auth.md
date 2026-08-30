@@ -1,10 +1,23 @@
 # Supabase Auth 운영 절차
 
-이 문서는 `AUTH-001`부터 `AUTH-003`까지의 운영 절차다. 실제 UUID, OAuth credential, invite token은 문서·Issue·명령 인자·로그에 남기지 않는다.
+이 문서는 `AUTH-001`부터 `AUTH-005`까지의 운영 절차다. 실제 UUID, OAuth/OIDC credential, ID/access token, handoff, invite token은 문서·Issue·명령 인자·로그에 남기지 않는다.
+
+## 이메일 없는 Kakao OIDC 설정
+
+Supabase의 기본 Kakao `signInWithOAuth()` 경로는 `account_email`을 고정 요청하므로 사용하지 않는다. 각 환경의 Kakao 앱과 Supabase 프로젝트를 다음처럼 별도로 설정한다.
+
+1. Kakao Developers의 [카카오 로그인] > [동의항목]에서 닉네임과 프로필 사진을 각각 `선택 동의`로 설정한다. 동의 목적은 실제 앱 내 표시 용도로만 적는다. `account_email`은 설정하거나 요청하지 않는다.
+2. Kakao 앱의 OpenID Connect를 활성화한다.
+3. REST API 키의 Kakao 로그인 Redirect URI에 환경별 Edge callback을 등록한다. Preview는 `https://lehjmbgfpoemqcwxowbx.supabase.co/functions/v1/kakao-oidc/callback`이다. Production URI는 `OPS-008` 확정 뒤 별도로 등록한다.
+4. Supabase [Authentication] > [Providers] > [Kakao]에서 provider와 Client Secret을 유지하고 `Allow users without an email`을 활성화한다. Supabase provider의 기존 callback은 `AUTH-004` 앱 경로가 사용하지 않지만 provider의 ID-token 검증 설정은 계속 필요하다.
+5. Supabase Edge Function secrets에 기존 `KAKAO_REST_API_KEY`와 별도로 `KAKAO_LOGIN_CLIENT_SECRET`, `KAKAO_OIDC_STATE_SECRET`을 등록한다. 로그인 Client Secret은 Kakao REST API 키에 활성화된 값을 사용하고, state secret은 비밀번호 관리 도구로 만든 독립적인 32바이트 이상 난수로 한다. 값을 CLI 인자나 셸 기록에 넣지 않는다.
+6. `kakao-oidc`만 인증 전 로그인 시작을 받아야 하므로 `verify_jwt=false`로 배포한다. `/start`는 고정 allowlist callback만 허용하고, `/callback`은 HttpOnly state cookie와 nonce를 검증하며, `/consume`은 암호화된 2분짜리 handoff를 한 번만 소비한다. 다른 네 Edge Function은 `verify_jwt=true`를 유지한다.
+
+배포 후 브라우저의 Kakao authorize URL에서 scope 이름만 확인한다. 정확히 `openid`, `profile_nickname`, `profile_image`가 있고 `account_email`은 없어야 한다. client ID, state, nonce, code, token 값은 출력하거나 기록하지 않는다.
 
 ## 최초 관리자 bootstrap
 
-1. 고정 SHA 독립 리뷰를 통과한 전체 migration과 Auth callback을 먼저 배포하고 Kakao provider 및 redirect URL을 설정한다.
+1. 고정 SHA 독립 리뷰를 통과한 전체 migration, OIDC Edge Function, Auth completion endpoint를 먼저 배포하고 위 Kakao/Supabase 설정을 완료한다.
 2. 운영 `/login`에서 서비스 소유자의 Kakao 로그인을 한 번 수행한다. 초대가 없으므로 callback은 이용을 거부하고 로컬 세션을 제거하지만, Supabase `auth.users`에는 최소 Auth 사용자만 남는다.
 3. Supabase Dashboard의 Authentication 사용자 화면과 `auth.identities`의 `provider = 'kakao'` 정보를 사용해 본인 계정의 정확한 UUID를 확인한다. 닉네임만으로 선택하지 않는다.
 4. SQL Editor에서 아래 transaction의 `TARGET-UUID`를 확인한 UUID로 바꿔 실행한다. 실행 전후 대상이 한 행인지 확인한다.

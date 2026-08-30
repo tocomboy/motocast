@@ -2,7 +2,7 @@
 
 지인 라이더를 위한 국내 당일 오토바이 경로·시간대별 날씨 계획 PWA입니다. 출발/복귀 시각과 식사 정차, 선택 휴식을 반영해 세 가지 경로 후보를 비교하고, 각 구간의 예상 통과 시각에 맞춘 기상청 예보를 보여주는 것을 목표로 합니다.
 
-> 현재 상태: Preview 게이트를 진행 중입니다. 실제 장소·서로 다른 안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 신뢰된 경로 결과만 저장하는 계획 확정, 검증된 장소만 저장하는 사용자별 컬렉션 버전, 전체 공유 미리보기/불변 발행/회수/재발행 UI가 구현되어 있습니다. 와인딩 전용 경유지는 정차 없는 통과 지점으로만 인정되어 점심·저녁·휴식이 다른 후보에서 빠지지 않습니다. 공유와 초대 bearer token은 서버 요청 경로 대신 URL fragment에 두고 고정 API 경로의 POST 본문으로 전달하며, 초대 수락은 동일 출처 JSON 요청만 허용합니다. Fresh 로컬 DB 검증과 고정 SHA 5축 독립 리뷰를 통과했고, Preview에는 전체 migration과 네 Edge Function이 배포되어 RLS·RPC ACL·JWT 설정을 readback했습니다. Vercel Preview 서버 비밀값도 제거됐으며, 새 sanitized Preview 배포와 실제 Kakao/KMA·OAuth 브라우저 검증이 남아 있습니다. Production 자격증명 생성과 배포는 `OPS-008` 재인터뷰 전까지 보류합니다.
+> 현재 상태: Preview 게이트를 진행 중입니다. 실제 장소·서로 다른 안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 신뢰된 경로 결과만 저장하는 계획 확정, 검증된 장소만 저장하는 사용자별 컬렉션 버전, 전체 공유 미리보기/불변 발행/회수/재발행 UI가 구현되어 있습니다. 공유와 초대 bearer token은 서버 요청 경로 대신 URL fragment에 두고 고정 API 경로의 POST 본문으로 전달합니다. Preview에서 Supabase 기본 Kakao OAuth가 비즈 앱 전용 `account_email`을 강제로 요청해 `KOE205`가 확인됐고, 사용자는 이메일을 수집하지 않는 Kakao OIDC 직접 연동(`AUTH-004`)을 확정했습니다. 해당 변경은 암호화된 2분짜리 단일 소비 handoff와 Supabase ID-token 검증을 포함해 로컬 `224/224` DB 검증 및 앱 테스트를 통과했지만 아직 고정 SHA 독립 리뷰와 Preview 배포 전입니다. 현재 Preview의 기존 migration·네 Edge Function은 유지되며 Production 자격증명 생성과 배포는 `OPS-008` 재인터뷰 전까지 보류합니다.
 
 ## 고정된 제품 원칙
 
@@ -38,7 +38,7 @@ npm run dev
 ```bash
 npm run lint
 npm run typecheck
-npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts supabase/functions/save-collection/index.ts
+npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts supabase/functions/save-collection/index.ts supabase/functions/kakao-oidc/index.ts
 npm test
 npm run build
 ```
@@ -52,13 +52,14 @@ npx --yes supabase@2.116.0 test db --local supabase/tests/database/auth_rls_budg
 PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/collection_version_concurrency.test.sql
 PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/invite_budget_concurrency.test.sql
 PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/route_finalization_concurrency.test.sql
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/kakao_oidc_handoff.test.sql
 ```
 
 ## Supabase 설정
 
 1. Production과 Preview에 서로 다른 Supabase Free 프로젝트를 사용하고 CLI로 `supabase/migrations/`의 migration을 순서대로 적용합니다.
-2. Kakao를 Auth provider로 설정하고 콜백 주소를 Supabase가 안내하는 주소와 일치시킵니다.
-3. `search-places`, `plan-route`, `weather-timeline`, `save-collection` Edge Function을 배포하고 서버 전용 비밀값을 Supabase Dashboard secret store에 등록합니다.
+2. Kakao를 Auth provider로 설정하되 `Allow users without an email`을 켭니다. Kakao 앱에는 이메일을 등록하지 않고 OpenID Connect, 선택 동의 닉네임·프로필 사진, 프로젝트별 `kakao-oidc/callback` URI만 등록합니다.
+3. `search-places`, `plan-route`, `weather-timeline`, `save-collection`, `kakao-oidc` Edge Function을 배포하고 서버 전용 비밀값을 Supabase Dashboard secret store에 등록합니다. `kakao-oidc`만 로그인 시작 전 공개 진입점이므로 `verify_jwt=false`이며 나머지 네 함수는 JWT 검증을 유지합니다.
 4. 최초 관리자 등록과 거부된 OAuth 사용자 정리는 [Supabase Auth 운영 절차](docs/operations/supabase-auth.md)를 따릅니다.
 
 프로젝트별 데이터·비밀값·배포 경계와 현재 상태는 [Preview/Production 운영 절차](docs/operations/preview-production.md)를 따릅니다.
@@ -72,6 +73,7 @@ supabase functions deploy search-places
 supabase functions deploy plan-route
 supabase functions deploy weather-timeline
 supabase functions deploy save-collection
+supabase functions deploy kakao-oidc --no-verify-jwt
 ```
 
 `KAKAO_LOCAL_DAILY_LIMIT`, `KAKAO_CURRENT_DAILY_LIMIT`, `KAKAO_FUTURE_DAILY_LIMIT`, `KMA_DAILY_LIMIT`도 반드시 양의 정수로 설정합니다. 비밀값이나 key는 명령 인자에 넣지 않습니다. 이 값은 비용을 보장하는 공급자 설정의 대체물이 아니므로 Kakao·기상청 콘솔에서도 유료 사용을 비활성화하고 더 낮은 쿼터를 사용해야 합니다.
@@ -116,7 +118,7 @@ npm run lint && npm run typecheck && npm test && npm run build
 
 ## 남은 첫 버전 작업
 
-- 고정 SHA 독립 5축 리뷰와 Preview migration/Edge Function 배포·readback
-- Preview의 초대/Kakao OAuth, 권한, 장소·경로·날씨·컬렉션·공유·budget 전체 브라우저 smoke test
+- `AUTH-004` 고정 SHA 독립 5축 리뷰와 Preview OIDC migration/Edge Function 배포·readback
+- Preview의 초대/Kakao OIDC, 권한, 장소·경로·날씨·컬렉션·공유·budget 전체 브라우저 smoke test
 - 실제 Kakao/KMA 최소 호출, stale snapshot, 비용 한도 소진 검증
 - Preview 게이트 후 `OPS-008` Production 지역 재인터뷰, `develop → main` PR, Production 사용자 관점 검증

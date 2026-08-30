@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 
-create extension if not exists dblink;
+create extension if not exists dblink with schema extensions;
 
 drop trigger if exists delay_test_finalize on public.trips;
 drop trigger if exists fail_test_route_insert on public.route_cache;

@@ -45,5 +45,8 @@ enabled = false
 [edge_runtime]
 enabled = false
 
+[functions.kakao-oidc]
+verify_jwt = false
+
 [analytics]
 enabled = false

@@ -37,7 +37,8 @@ with protected_tables(table_name) as (
     ('share_links'),
     ('api_usage_daily'),
     ('route_plan_drafts'),
-    ('share_preview_grants')
+    ('share_preview_grants'),
+    ('kakao_oidc_handoffs')
 ), dml(privilege_name) as (
   values ('INSERT'), ('UPDATE'), ('DELETE')
 )
@@ -51,6 +52,7 @@ order by table_name, privilege_name;
 insert into acl_results(ok, description) values
   (not has_table_privilege('service_role', 'public.route_plan_drafts', 'SELECT'), 'service role cannot read staged route internals directly'),
   (not has_table_privilege('service_role', 'public.share_preview_grants', 'SELECT'), 'service role cannot read preview capability hashes'),
+  (not has_table_privilege('service_role', 'public.kakao_oidc_handoffs', 'SELECT'), 'service role cannot read encrypted OIDC handoffs directly'),
   (not has_table_privilege('service_role', 'public.trips', 'TRUNCATE'), 'service role cannot truncate trip aggregates'),
   (not has_table_privilege('service_role', 'public.weather_snapshots', 'REFERENCES'), 'service role cannot create references from weather aggregates'),
   (not has_table_privilege('service_role', 'public.share_links', 'TRIGGER'), 'service role cannot attach triggers to immutable shares');
@@ -61,7 +63,9 @@ with allowed(function_signature) as (
     ('public.save_collection_version_internal(uuid,uuid,text,text,jsonb)'),
     ('public.stage_route_candidate_internal(uuid,uuid,jsonb,jsonb)'),
     ('public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)'),
-    ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)')
+    ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)'),
+    ('public.create_kakao_oidc_handoff_internal(text,text,timestamptz)'),
+    ('public.consume_kakao_oidc_handoff_internal(text)')
 )
 insert into acl_results(ok, description)
 select
@@ -101,7 +105,9 @@ with allowed(function_oid) as (
     ('public.save_collection_version_internal(uuid,uuid,text,text,jsonb)'::regprocedure::oid),
     ('public.stage_route_candidate_internal(uuid,uuid,jsonb,jsonb)'::regprocedure::oid),
     ('public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)'::regprocedure::oid),
-    ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)'::regprocedure::oid)
+    ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)'::regprocedure::oid),
+    ('public.create_kakao_oidc_handoff_internal(text,text,timestamptz)'::regprocedure::oid),
+    ('public.consume_kakao_oidc_handoff_internal(text)'::regprocedure::oid)
 )
 insert into acl_results(ok, description)
 select
@@ -160,5 +166,13 @@ select (case when ok then 'ok ' else 'not ok ' end) || id || ' - ' || descriptio
 from acl_results
 order by id;
 select '1..' || count(*) from acl_results;
+
+do $$
+begin
+  if exists (select 1 from acl_results where not ok) then
+    raise exception 'live ACL readback failed';
+  end if;
+end;
+$$;
 
 rollback;

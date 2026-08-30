@@ -1,13 +1,3 @@
-export function isTrustedInviteAcceptanceRequest(request: Request) {
-  const contentType = request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
-  if (contentType !== "application/json") return false;
-  if (request.headers.get("sec-fetch-site")?.toLowerCase() === "cross-site") return false;
+import { isTrustedSameOriginJsonRequest } from "./request-policy";
 
-  const origin = request.headers.get("origin");
-  if (!origin) return false;
-  try {
-    return new URL(origin).origin === new URL(request.url).origin;
-  } catch {
-    return false;
-  }
-}
+export const isTrustedInviteAcceptanceRequest = isTrustedSameOriginJsonRequest;

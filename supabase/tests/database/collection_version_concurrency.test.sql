@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 
-create extension if not exists dblink;
+create extension if not exists dblink with schema extensions;
 
 delete from auth.users where id = '73000000-0000-0000-0000-000000000003';
 drop trigger if exists delay_test_collection_version on public.collection_versions;

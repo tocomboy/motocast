@@ -2,26 +2,20 @@
 
 import { useState } from "react";
 
-import { getBrowserSupabase } from "@/lib/supabase/browser";
+import { kakaoOidcStartUrl } from "@/lib/auth/kakao-oidc";
+import { publicSupabaseEnv } from "@/lib/supabase/env";
 
 export function KakaoLoginButton({ inviteReady }: { inviteReady: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function login() {
-    const supabase = getBrowserSupabase();
-    if (!supabase) {
-      setError("Supabase 환경변수가 설정되지 않았습니다.");
-      return;
-    }
-
+  function login() {
     setLoading(true);
     setError(null);
-    const { error: authError } = await supabase.auth.signInWithOAuth({
-      provider: "kakao",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    });
-    if (authError) {
+    try {
+      const { url } = publicSupabaseEnv();
+      window.location.assign(kakaoOidcStartUrl(url, window.location.origin));
+    } catch {
       setLoading(false);
       setError("카카오 로그인을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }

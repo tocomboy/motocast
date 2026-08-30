@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { inviteTokenFromCookieHeader } from "@/lib/auth/invite-cookie";
+import { finalizeAuthenticatedLogin } from "@/lib/auth/login-finalization";
 import { isSupabaseAuthCookieName, supabaseAuthCookieNames } from "@/lib/auth/session-cookies";
 import { createServerSupabase } from "@/lib/supabase/server";
 
@@ -38,19 +38,9 @@ export async function GET(request: Request) {
   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
   if (exchangeError) return callbackErrorResponse(url);
 
-  const token = inviteTokenFromCookieHeader(request.headers.get("cookie"));
-
-  if (token) {
-    const { error: claimError } = await supabase.rpc("claim_invite", { invite_token: token });
-    if (claimError) {
-      return deniedAfterExchange(supabase, authCookieNames, url, "invalid_invite");
-    }
-  } else {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: membership } = user
-      ? await supabase.from("memberships").select("user_id").eq("user_id", user.id).is("revoked_at", null).maybeSingle()
-      : { data: null };
-    if (!membership) return deniedAfterExchange(supabase, authCookieNames, url, "invite_required");
+  const finalization = await finalizeAuthenticatedLogin(supabase, request.headers.get("cookie"));
+  if (finalization !== "accepted") {
+    return deniedAfterExchange(supabase, authCookieNames, url, finalization);
   }
 
   const response = NextResponse.redirect(new URL("/", url));
