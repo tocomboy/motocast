@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { KakaoMapCanvas } from "@/components/kakao-map-canvas";
@@ -13,7 +13,7 @@ import {
   demoHardReturnAt,
   demoMapPoints,
 } from "@/lib/planner/demo";
-import { parseSafeRouteResponse, type SafeRouteResponse } from "@/lib/planner/provider-contract";
+import { parseSafeRouteCandidateSet, type SafeRouteResponse } from "@/lib/planner/provider-contract";
 import { buildTimeline, formatKoreanTime, weatherRiskLabel } from "@/lib/planner/schedule";
 import type { RouteCandidate } from "@/lib/planner/types";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
@@ -38,10 +38,20 @@ type PlannerPlaces = {
   rest: PlaceSearchResult | null;
 };
 
+function seoulToday() {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date()).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 const defaultDraft: PlannerDraft = {
   origin: "팔당 출발점",
   destination: "팔당 복귀점",
-  rideDate: "2026-08-31",
+  rideDate: seoulToday(),
   departureTime: "07:30",
   desiredReturnTime: "17:30",
   hardReturnTime: "18:30",
@@ -105,7 +115,9 @@ function liveRouteCandidate(response: SafeRouteResponse, desiredReturnAt: string
       from: leg.from,
       to: leg.to,
       distanceKm: Math.round(leg.distanceMeters / 100) / 10,
-      rideMinutes: Math.ceil(leg.durationSeconds / 60),
+      rideMinutes: leg.durationSeconds / 60,
+      departureAt: leg.departureAt,
+      arrivalAt: leg.arrivalAt,
       weather: {
         condition: "unknown",
         temperatureC: null,
@@ -130,6 +142,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const [addingWinding, setAddingWinding] = useState(false);
   const [selectedId, setSelectedId] = useState<RouteCandidate["id"]>("balanced");
   const [liveCandidates, setLiveCandidates] = useState<RouteCandidate[] | null>(null);
+  const [liveResultStale, setLiveResultStale] = useState(false);
+  const [waypointStatus, setWaypointStatus] = useState("");
+  const [isCompact, setIsCompact] = useState(false);
   const [plannerOpen, setPlannerOpen] = useState(false);
   const [notice, setNotice] = useState(
     connected
@@ -137,6 +152,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       : "환경변수가 없어 데모 모드로 실행 중입니다. 실제 외부 API는 호출하지 않습니다.",
   );
   const [calculating, setCalculating] = useState(false);
+  const plannerPanelRef = useRef<HTMLElement>(null);
+  const mobilePlanButtonRef = useRef<HTMLButtonElement>(null);
+  const addWindingButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("motocast-planner-draft-v1");
@@ -155,6 +173,43 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   useEffect(() => {
     window.localStorage.setItem("motocast-planner-draft-v1", JSON.stringify(draft));
   }, [draft]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 820px)");
+    const updateCompact = () => setIsCompact(media.matches);
+    updateCompact();
+    media.addEventListener("change", updateCompact);
+    return () => media.removeEventListener("change", updateCompact);
+  }, []);
+
+  useEffect(() => {
+    if (!isCompact || !plannerOpen) return;
+    const firstControl = plannerPanelRef.current?.querySelector<HTMLElement>("input, button, [href], [tabindex]:not([tabindex='-1'])");
+    firstControl?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPlannerOpen(false);
+        window.setTimeout(() => mobilePlanButtonRef.current?.focus(), 0);
+        return;
+      }
+      if (event.key === "Tab") {
+        const controls = [...(plannerPanelRef.current?.querySelectorAll<HTMLElement>(
+          "input:not(:disabled), button:not(:disabled), [href], [tabindex]:not([tabindex='-1'])",
+        ) ?? [])].filter((control) => control.getClientRects().length > 0);
+        const first = controls[0];
+        const last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isCompact, plannerOpen]);
 
   const displayedCandidates = liveCandidates ?? demoCandidates;
   const selected = displayedCandidates.find((candidate) => candidate.id === selectedId) ?? displayedCandidates[0];
@@ -183,10 +238,12 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
   function update<K extends keyof PlannerDraft>(key: K, value: PlannerDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
+    if (liveCandidates) setLiveResultStale(true);
   }
 
   function selectPlace(key: keyof PlannerPlaces, place: PlaceSearchResult | null) {
     setPlaces((current) => ({ ...current, [key]: place }));
+    if (liveCandidates) setLiveResultStale(true);
   }
 
   function addWindingPoint(place: PlaceSearchResult | null) {
@@ -197,9 +254,13 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         : [...current, place]
     ));
     setAddingWinding(false);
+    setWaypointStatus(`${place.name}을(를) 와인딩 경유지 마지막에 추가했습니다.`);
+    if (liveCandidates) setLiveResultStale(true);
+    window.setTimeout(() => addWindingButtonRef.current?.focus(), 0);
   }
 
   function moveWindingPoint(index: number, direction: -1 | 1) {
+    const place = windingPoints[index];
     setWindingPoints((current) => {
       const nextIndex = index + direction;
       if (nextIndex < 0 || nextIndex >= current.length) return current;
@@ -207,6 +268,20 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
       return next;
     });
+    if (place) setWaypointStatus(`${place.name}을(를) ${index + direction + 1}번째로 이동했습니다.`);
+    if (liveCandidates) setLiveResultStale(true);
+  }
+
+  function removeWindingPoint(place: PlaceSearchResult) {
+    setWindingPoints((current) => current.filter((item) => item.kakaoPlaceId !== place.kakaoPlaceId));
+    setWaypointStatus(`${place.name}을(를) 와인딩 경유지에서 제거했습니다.`);
+    if (liveCandidates) setLiveResultStale(true);
+    window.setTimeout(() => addWindingButtonRef.current?.focus(), 0);
+  }
+
+  function closePlannerPanel() {
+    setPlannerOpen(false);
+    if (isCompact) window.setTimeout(() => mobilePlanButtonRef.current?.focus(), 0);
   }
 
   function routePoint(
@@ -214,6 +289,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     kind: "pass-through" | "stop" | "optional",
     dwellMinutes: number,
     winding = false,
+    stopRole?: "lunch" | "dinner" | "rest",
   ) {
     return {
       ...place,
@@ -223,6 +299,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       dwellMinutes,
       selected: true,
       winding,
+      stopRole,
     };
   }
 
@@ -259,9 +336,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       destination: routePoint(places.destination, "pass-through", 0),
       waypoints: [
         ...windingPoints.map((place) => routePoint(place, "pass-through", 0, true)),
-        routePoint(places.lunch, "stop", 60),
-        ...(draft.includeRest && places.rest ? [routePoint(places.rest, "optional", 30)] : []),
-        ...(places.dinner ? [routePoint(places.dinner, "stop", 60)] : []),
+        routePoint(places.lunch, "stop", 60, false, "lunch"),
+        ...(draft.includeRest && places.rest ? [routePoint(places.rest, "optional", 30, false, "rest")] : []),
+        ...(places.dinner ? [routePoint(places.dinner, "stop", 60, false, "dinner")] : []),
       ],
       serviceDate: draft.rideDate,
       ...liveTimes,
@@ -273,25 +350,29 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     );
     setCalculating(false);
     if (results.some(({ error }) => error)) {
+      const labels = ["균형", "와인딩", "최단"];
+      const failed = results.flatMap((result, index) => result.error ? [labels[index]] : []);
+      if (liveCandidates) setLiveResultStale(true);
       setNotice(liveCandidates
-        ? "새 계산에 실패해 직전 실제 경로를 유지했습니다. 자동차 경로로 대체하지 않았습니다."
-        : "세 경로 중 하나 이상을 안전 조건 안에서 계산하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.");
+        ? `${failed.join("·")} 경로 계산에 실패해 이전 실제 경로를 유지했습니다. 자동차 경로로 대체하지 않았습니다.`
+        : `${failed.join("·")} 경로를 안전 조건 안에서 계산하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.`);
       return;
     }
     try {
-      const candidates = results.map(({ data }) => (
-        liveRouteCandidate(parseSafeRouteResponse(data), liveTimes.desiredReturnAt, liveTimes.hardReturnAt)
-      ));
+      const responses = parseSafeRouteCandidateSet(results.map(({ data }) => data));
+      const candidates = responses.map((response) => liveRouteCandidate(response, liveTimes.desiredReturnAt, liveTimes.hardReturnAt));
       setLiveCandidates(candidates);
+      setLiveResultStale(false);
       setSelectedId("balanced");
       setNotice("오토바이 안전 조건을 적용한 실제 경로 3개를 계산했습니다. 날씨는 아직 조회 전입니다.");
     } catch {
+      if (liveCandidates) setLiveResultStale(true);
       setNotice(liveCandidates
         ? "새 응답을 안전하게 확인하지 못해 직전 실제 경로를 유지했습니다."
         : "경로 공급자 응답을 안전하게 확인하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.");
       return;
     }
-    setPlannerOpen(false);
+    closePlannerPanel();
   }
 
   return (
@@ -302,8 +383,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
           <span>MOTOCAST</span>
         </a>
         <div className="trip-heading">
-          <span className="trip-kicker">MON · AUG 31</span>
-          <strong>북한강 루프</strong>
+          <span className="trip-kicker">{draft.rideDate}</span>
+          <strong>당일 라이딩 계획</strong>
           <span className="private-pill">지인 전용</span>
         </div>
         <div className="header-actions">
@@ -315,14 +396,21 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       </header>
 
       <div className="workspace" id="top">
-        <aside className={`planner-panel ${plannerOpen ? "is-open" : ""}`}>
+        <aside
+          ref={plannerPanelRef}
+          className={`planner-panel ${plannerOpen ? "is-open" : ""}`}
+          inert={isCompact && !plannerOpen}
+          role={isCompact ? "dialog" : undefined}
+          aria-modal={isCompact && plannerOpen ? true : undefined}
+          aria-label={isCompact ? "라이딩 계획 편집" : undefined}
+        >
           <div className="panel-handle" aria-hidden="true" />
           <div className="panel-title-row">
             <div>
               <p className="eyebrow">PLAN THE DAY</p>
               <h1>라이딩 계획</h1>
             </div>
-            <button className="close-panel" type="button" onClick={() => setPlannerOpen(false)} aria-label="계획 패널 닫기">×</button>
+            <button className="close-panel" type="button" onClick={closePlannerPanel} aria-label="계획 패널 닫기">×</button>
           </div>
 
           <form onSubmit={recalculate} className="planner-form">
@@ -340,19 +428,19 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                 </>
               )}
               {connected && windingPoints.length ? (
-                <div className="ordered-waypoints" aria-label="커스텀 와인딩 경유지 순서">
+                <ol className="ordered-waypoints" aria-label="커스텀 와인딩 경유지 순서">
                   {windingPoints.map((place, index) => (
-                    <div className="ordered-waypoint" key={place.kakaoPlaceId}>
+                    <li className="ordered-waypoint" key={place.kakaoPlaceId}>
                       <span>{String(index + 1).padStart(2, "0")}</span>
                       <div><strong>{place.name}</strong><small>{place.roadAddress ?? place.address}</small></div>
                       <div className="waypoint-actions">
                         <button type="button" disabled={index === 0} onClick={() => moveWindingPoint(index, -1)} aria-label={`${place.name} 위로 이동`}>↑</button>
                         <button type="button" disabled={index === windingPoints.length - 1} onClick={() => moveWindingPoint(index, 1)} aria-label={`${place.name} 아래로 이동`}>↓</button>
-                        <button type="button" onClick={() => setWindingPoints((current) => current.filter((item) => item.kakaoPlaceId !== place.kakaoPlaceId))} aria-label={`${place.name} 제거`}>×</button>
+                        <button type="button" onClick={() => removeWindingPoint(place)} aria-label={`${place.name} 제거`}>×</button>
                       </div>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ol>
               ) : !connected ? (
                 <div className="waypoint-list">
                   <span className="waypoint-tag winding"><i />유명산 굽이길 <button type="button" aria-label="유명산 굽이길 제거">×</button></span>
@@ -366,6 +454,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                 </div>
               ) : null}
               <button
+                ref={addWindingButtonRef}
                 className="text-button"
                 type="button"
                 disabled={connected && (addingWinding || windingPoints.length >= 20)}
@@ -373,6 +462,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
               >
                 + 커스텀 와인딩 경유지 추가{windingPoints.length ? ` · ${windingPoints.length}개` : ""}
               </button>
+              <p className="sr-only" role="status" aria-live="polite">{waypointStatus}</p>
             </section>
 
             <section className="form-section">
@@ -427,7 +517,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
             <div className="map-topbar">
               <div className="map-badges">
                 <div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>
-                {!liveCandidates ? <span className="example-data-badge">예시 데이터</span> : <span className="live-data-badge">실제 경로</span>}
+                {!liveCandidates ? <span className="example-data-badge">예시 데이터</span> : <span className="live-data-badge">{liveResultStale ? "이전 실제 경로" : "실제 경로"}</span>}
               </div>
               <button className="map-control" type="button" aria-label="현재 위치로 이동">⌖</button>
             </div>
@@ -480,7 +570,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                   <article className="timeline-row" key={segment.id}>
                     <div className="timeline-time"><strong>{formatKoreanTime(segment.arrivalAt)}</strong><span>{index === timeline.segments.length - 1 ? "복귀" : "통과 예상"}</span></div>
                     <div className="timeline-rail"><i className={`risk-dot ${risk.level}`} />{index < timeline.segments.length - 1 ? <span /> : null}</div>
-                    <div className="segment-copy"><strong>{segment.from.label} → {segment.to.label}</strong><span>{segment.distanceKm} km · 약 {segment.rideMinutes}분</span></div>
+                    <div className="segment-copy"><strong>{segment.from.label} → {segment.to.label}</strong><span>{segment.distanceKm} km · 약 {Math.ceil(segment.rideMinutes)}분</span></div>
                     <div className={`weather-chip ${risk.level}`}>
                       <span className="weather-word">{weatherIcon(segment.weather.condition)}</span>
                       <strong>{segment.weather.temperatureC ?? "–"}°</strong>
@@ -496,8 +586,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         </section>
       </div>
 
-      <button className="mobile-plan-button" type="button" onClick={() => setPlannerOpen(true)}>계획 수정</button>
-      {plannerOpen ? <button className="panel-backdrop" type="button" aria-label="계획 패널 닫기" onClick={() => setPlannerOpen(false)} /> : null}
+      <button ref={mobilePlanButtonRef} className="mobile-plan-button" type="button" onClick={() => setPlannerOpen(true)}>계획 수정</button>
+      {plannerOpen ? <button className="panel-backdrop" type="button" aria-label="계획 패널 닫기" onClick={closePlannerPanel} /> : null}
     </main>
   );
 }

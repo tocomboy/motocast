@@ -66,16 +66,16 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
   return (
     <div className="map-shell" aria-label="선택한 라이딩 경로 지도">
       <div ref={containerRef} className={`map-canvas ${state === "ready" ? "is-ready" : ""}`} />
-      {state !== "ready" ? <SchematicRoute state={state} points={points} /> : null}
+      {state !== "ready" ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
     </div>
   );
 }
 
-function SchematicRoute({ state, points }: { state: "loading" | "demo" | "error"; points: MapPoint[] }) {
+function SchematicRoute({ state, points, actualRoute }: { state: "loading" | "demo" | "error"; points: MapPoint[]; actualRoute: boolean }) {
   return (
     <div className="schematic-map">
       <div className="map-grid" aria-hidden="true" />
-      <svg className="route-sketch" viewBox="0 0 720 430" role="img" aria-label="데모 경로 개요">
+      {!actualRoute ? <svg className="route-sketch" viewBox="0 0 720 430" role="img" aria-label="데모 경로 개요">
         <path className="route-shadow" d="M62 332 C148 270 131 170 245 194 S365 90 455 129 S546 305 662 213" />
         <path className="route-line" d="M62 332 C148 270 131 170 245 194 S365 90 455 129 S546 305 662 213" />
         {["62,332", "245,194", "455,129", "662,213"].map((coordinates, index) => {
@@ -89,12 +89,12 @@ function SchematicRoute({ state, points }: { state: "loading" | "demo" | "error"
             </g>
           );
         })}
-      </svg>
-      <div className="map-status">
+      </svg> : null}
+      <div className="map-status" role="status" aria-live="polite">
         <span className={`status-dot ${state}`} />
-        {state === "loading" ? "카카오 지도를 불러오는 중" : null}
-        {state === "demo" ? "카카오 지도 키 미설정 · 경로 개요 표시 중" : null}
-        {state === "error" ? "카카오 지도 로드 실패 · 저장된 경로 개요 표시 중" : null}
+        {state === "loading" ? actualRoute ? "실제 경로 지도를 불러오는 중" : "카카오 지도를 불러오는 중" : null}
+        {state === "demo" ? actualRoute ? "카카오 지도 키 미설정 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 키 미설정 · 예시 경로 개요 표시 중" : null}
+        {state === "error" ? actualRoute ? "카카오 지도 로드 실패 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 로드 실패 · 예시 경로 개요 표시 중" : null}
       </div>
     </div>
   );

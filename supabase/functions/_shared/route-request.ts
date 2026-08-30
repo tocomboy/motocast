@@ -11,6 +11,7 @@ export type RoutePointRequest = VerifiablePlace & {
   dwellMinutes: number;
   selected: boolean;
   winding?: boolean;
+  stopRole?: "lunch" | "dinner" | "rest";
 };
 
 export type RouteRequest = {
@@ -40,6 +41,7 @@ function validPoint(value: unknown): value is RoutePointRequest {
     ["pass-through", "stop", "optional"].includes(String(point.kind)) &&
     typeof point.selected === "boolean" &&
     (point.winding === undefined || typeof point.winding === "boolean") &&
+    (point.stopRole === undefined || ["lunch", "dinner", "rest"].includes(point.stopRole)) &&
     typeof point.dwellMinutes === "number" && Number.isInteger(point.dwellMinutes) &&
     point.dwellMinutes >= 0 && point.dwellMinutes <= 1440
   );
@@ -86,6 +88,15 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
     (point.kind !== "optional" && !point.selected) ||
     ((point.kind === "stop" || point.kind === "optional") && point.dwellMinutes <= 0)
   ))) throw new Error("INVALID_WAYPOINTS");
+  const lunches = selectedWaypoints.filter((point) => point.stopRole === "lunch");
+  const dinners = selectedWaypoints.filter((point) => point.stopRole === "dinner");
+  const rests = selectedWaypoints.filter((point) => point.stopRole === "rest");
+  if (
+    lunches.length !== 1 || lunches[0].kind !== "stop" ||
+    dinners.length > 1 || dinners.some((point) => point.kind !== "stop") ||
+    rests.length > 1 || rests.some((point) => point.kind !== "optional") ||
+    selectedWaypoints.some((point) => point.kind !== "pass-through" && point.stopRole === undefined)
+  ) throw new Error("INVALID_WAYPOINTS");
 
   const points = [body.origin, ...selectedWaypoints, body.destination];
   const verified = await Promise.all(points.map((point) => (

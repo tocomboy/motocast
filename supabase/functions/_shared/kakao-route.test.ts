@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload } from "./kakao-route";
+import { assertKakaoRouteMatchesPoints, normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload } from "./kakao-route";
 
 function payload() {
   return {
     routes: [{
       result_code: 0,
-      summary: { distance: 12000, duration: 1800 },
+      summary: {
+        distance: 12000,
+        duration: 1800,
+        origin: { x: 127.1, y: 37.5 },
+        destination: { x: 127.2, y: 37.6 },
+        waypoints: [],
+      },
       sections: [{
         distance: 12000,
         duration: 1800,
@@ -37,5 +43,28 @@ describe("normalizeKakaoRoutePayload", () => {
     const value = payload();
     value.routes[0].sections[0].roads[0].duration = 1700;
     expect(() => normalizeKakaoRoutePayload(value)).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+  });
+
+  it("requires provider sections and geometry to preserve requested points", () => {
+    const route = normalizeKakaoRoutePayload(payload());
+    expect(() => assertKakaoRouteMatchesPoints(route, [
+      { longitude: 127.1, latitude: 37.5 },
+      { longitude: 127.2, latitude: 37.6 },
+    ])).not.toThrow();
+    expect(() => assertKakaoRouteMatchesPoints(route, [
+      { longitude: 127.1, latitude: 37.5 },
+      { longitude: 127.15, latitude: 37.55 },
+      { longitude: 127.2, latitude: 37.6 },
+    ])).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+  });
+
+  it("rejects a provider summary that substitutes another destination", () => {
+    const value = payload();
+    value.routes[0].summary.destination.x = 128.2;
+    const route = normalizeKakaoRoutePayload(value);
+    expect(() => assertKakaoRouteMatchesPoints(route, [
+      { longitude: 127.1, latitude: 37.5 },
+      { longitude: 127.2, latitude: 37.6 },
+    ])).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
   });
 });

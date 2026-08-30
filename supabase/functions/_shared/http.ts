@@ -34,6 +34,9 @@ export function safeErrorMessage(error: unknown) {
   if (error.message === "SAFE_ROUTE_NOT_FOUND") return "오토바이 안전 조건을 만족하는 경로를 찾지 못했습니다.";
   if (error.message === "ROUTE_EXCEEDS_HARD_RETURN") return "최종 복귀 시각 안에 도착하는 경로를 찾지 못했습니다.";
   if (error.message === "PROVIDER_NOT_CONFIGURED") return "경로 공급자 설정이 완료되지 않았습니다.";
+  if (["PROVIDER_AUTH_FAILED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE"].includes(error.message)) {
+    return "경로 공급자에 일시적인 문제가 있습니다. 기존 저장 계획은 유지됩니다.";
+  }
   return "외부 서비스 요청에 실패했습니다. 기존 저장 계획은 유지됩니다.";
 }
 
@@ -53,6 +56,7 @@ export function safeErrorStatus(error: unknown) {
     error.message === "KAKAO_PLACE_SEARCH_FAILED" ||
     error.message === "SAFE_ROUTE_NOT_FOUND"
   ) return 502;
+  if (["PROVIDER_AUTH_FAILED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE"].includes(error.message)) return 503;
   if (error.message.startsWith("INVALID_") || error.message === "UNVERIFIED_PLACE") return 400;
   return 502;
 }

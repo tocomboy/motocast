@@ -2,7 +2,7 @@ import { consumeBudget, requireMember } from "../_shared/auth.ts";
 import { executeBudgetedProviderCall } from "../_shared/budgeted-call.ts";
 import { candidatePolicy } from "../_shared/candidate-policy.ts";
 import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
-import { normalizeKakaoRoutesPayload } from "../_shared/kakao-route.ts";
+import { assertKakaoRouteMatchesPoints, normalizeKakaoRoutesPayload } from "../_shared/kakao-route.ts";
 import { applyMotorcycleRoutePolicy } from "../_shared/kakao-safety.ts";
 import { assertWithinHardReturn } from "../_shared/route-deadline.ts";
 import { parseRouteRequest, type RoutePointRequest } from "../_shared/route-request.ts";
@@ -65,30 +65,38 @@ async function requestKakaoRoute(input: {
   destination: RoutePointRequest;
   waypoints: RoutePointRequest[];
   departureAt: Date;
+  isFuture: boolean;
   priority: "RECOMMEND" | "DISTANCE";
   requestAlternatives: boolean;
+  excludedFingerprints?: Set<string>;
   apiKey: string;
 }) {
-  const isFuture = input.departureAt.getTime() > Date.now() + 5 * 60_000;
-  const endpoint = isFuture ? "future/directions" : "directions";
+  const endpoint = input.isFuture ? "future/directions" : "directions";
   const url = new URL(`https://apis-navi.kakaomobility.com/v1/${endpoint}`);
   url.searchParams.set("origin", pointParam(input.origin));
   url.searchParams.set("destination", pointParam(input.destination));
   if (input.waypoints.length) url.searchParams.set("waypoints", input.waypoints.map(pointParam).join("|"));
-  if (isFuture) url.searchParams.set("departure_time", futureTime(input.departureAt));
+  if (input.isFuture) url.searchParams.set("departure_time", futureTime(input.departureAt));
   applyMotorcycleRoutePolicy(url, input.priority, input.requestAlternatives);
 
   const response = await fetch(url, {
     headers: { Authorization: `KakaoAK ${input.apiKey}` },
     signal: AbortSignal.timeout(8_000),
   });
-  if (!response.ok) throw new Error("SAFE_ROUTE_NOT_FOUND");
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) throw new Error("PROVIDER_AUTH_FAILED");
+    if (response.status === 429) throw new Error("PROVIDER_RATE_LIMITED");
+    if (response.status >= 500) throw new Error("PROVIDER_UNAVAILABLE");
+    throw new Error("SAFE_ROUTE_NOT_FOUND");
+  }
   const routes = normalizeKakaoRoutesPayload(await response.json());
+  const requestedPoints = [input.origin, ...input.waypoints, input.destination];
+  routes.forEach((route) => assertKakaoRouteMatchesPoints(route, requestedPoints));
   const route = input.requestAlternatives
-    ? selectEstimatedWindingRoute(routes, new Set([routeFingerprint(routes[0])]))
+    ? selectEstimatedWindingRoute(routes, input.excludedFingerprints ?? new Set())
     : routes[0];
   if (!route) throw new Error("SAFE_ROUTE_NOT_FOUND");
-  return { route, isFuture };
+  return route;
 }
 
 Deno.serve(async (request) => {
@@ -118,45 +126,60 @@ Deno.serve(async (request) => {
       const isFuture = departure.getTime() > Date.now() + 5 * 60_000;
       const operation = isFuture ? "future_directions" : "directions";
       const hardLimit = limitFromEnv(isFuture ? "KAKAO_FUTURE_DAILY_LIMIT" : "KAKAO_CURRENT_DAILY_LIMIT");
-      const { requestNumber: used, result } = await executeBudgetedProviderCall(
+      const providerCall = (requestAlternatives: boolean, excludedFingerprints?: Set<string>) => executeBudgetedProviderCall(
         () => consumeBudget(supabase, "kakao", operation, hardLimit),
         () => requestKakaoRoute({
           origin: points[cursor],
           destination: points[endIndex],
           waypoints: via,
           departureAt: departure,
+          isFuture,
           priority: policy.priority,
-          requestAlternatives: policy.requestAlternatives,
+          requestAlternatives,
+          excludedFingerprints,
           apiKey,
         }),
       );
-      const arrivedAt = new Date(departure.getTime() + result.route.summary.duration * 1000);
-      const dwellMinutes = points[endIndex].dwellMinutes;
-      legs.push({
-        from: responsePoint(points[cursor]),
-        to: responsePoint(points[endIndex]),
-        via: via.map(responsePoint),
-        departureAt: departure.toISOString(),
-        arrivalAt: arrivedAt.toISOString(),
-        dwellMinutes,
-        distanceMeters: result.route.summary.distance,
-        durationSeconds: result.route.summary.duration,
-        sections: result.route.sections.map((section) => ({
-          distance: section.distance,
-          duration: section.duration,
-          roads: section.roads.map((road) => ({
-            name: road.name,
-            distance: road.distance,
-            duration: road.duration,
-            vertexes: road.vertexes,
-          })),
-        })),
-        providerRequestNumber: used,
-        forecastTraffic: result.isFuture,
-      });
-      totalDistance += result.route.summary.distance;
-      totalDuration += result.route.summary.duration + dwellMinutes * 60;
-      departure = new Date(arrivedAt.getTime() + dwellMinutes * 60_000);
+      let selected;
+      if (policy.requestAlternatives) {
+        const baseline = await providerCall(false);
+        selected = await providerCall(true, new Set([routeFingerprint(baseline.result)]));
+      } else {
+        selected = await providerCall(false);
+      }
+      const chunkPoints = [points[cursor], ...via, points[endIndex]];
+      for (let index = 0; index < selected.result.sections.length; index += 1) {
+        const section = selected.result.sections[index];
+        const from = chunkPoints[index];
+        const to = chunkPoints[index + 1];
+        const arrivedAt = new Date(departure.getTime() + section.duration * 1000);
+        const dwellMinutes = to.dwellMinutes;
+        legs.push({
+          from: responsePoint(from),
+          to: responsePoint(to),
+          via: [],
+          departureAt: departure.toISOString(),
+          arrivalAt: arrivedAt.toISOString(),
+          dwellMinutes,
+          distanceMeters: section.distance,
+          durationSeconds: section.duration,
+          sections: [{
+            distance: section.distance,
+            duration: section.duration,
+            roads: section.roads.map((road) => ({
+              name: road.name,
+              distance: road.distance,
+              duration: road.duration,
+              vertexes: road.vertexes,
+            })),
+          }],
+          providerRequestNumber: selected.requestNumber,
+          forecastTraffic: isFuture,
+        });
+        totalDistance += section.distance;
+        totalDuration += section.duration + dwellMinutes * 60;
+        departure = new Date(arrivedAt.getTime() + dwellMinutes * 60_000);
+      }
       cursor = endIndex;
     }
 

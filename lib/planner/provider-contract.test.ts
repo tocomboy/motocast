@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseSafeRouteResponse, ProviderContractError } from "./provider-contract";
+import { parseSafeRouteCandidateSet, parseSafeRouteResponse, ProviderContractError } from "./provider-contract";
 import { buildSafeRouteResponse } from "../../supabase/functions/_shared/route-response";
 
 const point = (id: string) => ({
@@ -147,5 +147,28 @@ describe("parseSafeRouteResponse", () => {
     expect(() => parseSafeRouteResponse(value)).toThrowError(
       new ProviderContractError("INVALID_ROUTE_TOTALS"),
     );
+  });
+});
+
+describe("parseSafeRouteCandidateSet", () => {
+  it("requires each candidate identity exactly once in request order", () => {
+    const balanced = response();
+    const winding = structuredClone(balanced);
+    winding.candidate = { id: "winding", label: "와인딩 추정", estimatedWinding: true };
+    winding.legs[0].sections[0].roads[0].vertexes = [127.1, 37.5, 127.25, 37.65];
+    const short = structuredClone(balanced);
+    short.candidate = { id: "short", label: "최단", estimatedWinding: false };
+    short.legs[0].sections[0].roads[0].vertexes = [127.1, 37.5, 127.3, 37.7];
+    expect(parseSafeRouteCandidateSet([balanced, winding, short])).toHaveLength(3);
+    expect(() => parseSafeRouteCandidateSet([balanced, balanced, short])).toThrow("INVALID_ROUTE_CANDIDATE_SET");
+  });
+
+  it("rejects route identities that draw the same geometry", () => {
+    const balanced = response();
+    const winding = structuredClone(balanced);
+    winding.candidate = { id: "winding", label: "와인딩 추정", estimatedWinding: true };
+    const short = structuredClone(balanced);
+    short.candidate = { id: "short", label: "최단", estimatedWinding: false };
+    expect(() => parseSafeRouteCandidateSet([balanced, winding, short])).toThrow("DUPLICATE_ROUTE_CANDIDATES");
   });
 });

@@ -19,4 +19,11 @@ describe("safe provider errors", () => {
     expect(safeErrorMessage(error)).toContain("최종 복귀");
     expect(safeErrorStatus(error)).toBe(422);
   });
+
+  it("does not mislabel provider authentication, rate, or outage failures as no safe route", () => {
+    for (const code of ["PROVIDER_AUTH_FAILED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE"]) {
+      expect(safeErrorStatus(new Error(code))).toBe(503);
+      expect(safeErrorMessage(new Error(code))).toContain("공급자");
+    }
+  });
 });

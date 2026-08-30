@@ -23,14 +23,16 @@ async function point(overrides: Partial<RoutePointRequest> = {}): Promise<RouteP
     dwellMinutes: overrides.dwellMinutes ?? 0,
     selected: overrides.selected ?? true,
     winding: overrides.winding ?? false,
+    stopRole: overrides.stopRole,
   };
 }
 
 async function request(waypoints: RoutePointRequest[] = []) {
+  const lunch = await point({ kakaoPlaceId: "lunch", kind: "stop", dwellMinutes: 60, stopRole: "lunch" });
   return {
     origin: await point({ kakaoPlaceId: "origin" }),
     destination: await point({ kakaoPlaceId: "destination" }),
-    waypoints,
+    waypoints: [lunch, ...waypoints],
     serviceDate: "2026-08-31",
     departureAt: "2026-08-31T07:30:00+09:00",
     desiredReturnAt: "2026-08-31T17:30:00+09:00",
@@ -50,15 +52,16 @@ describe("parseRouteRequest", () => {
   });
 
   it("removes an unselected optional rest from the provider route", async () => {
-    const rest = await point({ kind: "optional", selected: false, dwellMinutes: 60 });
+    const rest = await point({ kind: "optional", selected: false, dwellMinutes: 60, stopRole: "rest" });
     const parsed = await parseRouteRequest(await request([rest]), secret);
-    expect(parsed.waypoints).toEqual([]);
+    expect(parsed.waypoints).toHaveLength(1);
+    expect(parsed.waypoints[0].stopRole).toBe("lunch");
   });
 
   it("normalizes pass-through dwell to zero", async () => {
     const via = await point({ kind: "pass-through", dwellMinutes: 60 });
     const parsed = await parseRouteRequest(await request([via]), secret);
-    expect(parsed.waypoints[0].dwellMinutes).toBe(0);
+    expect(parsed.waypoints[1].dwellMinutes).toBe(0);
   });
 
   it("rejects normalized or timezone-less departure timestamps", async () => {
@@ -83,5 +86,15 @@ describe("parseRouteRequest", () => {
       hardReturnAt: "2026-09-01T01:00:00+09:00",
     };
     await expect(parseRouteRequest(overnight, secret)).rejects.toThrow("INVALID_ROUTE_TIME");
+  });
+
+  it("requires exactly one trusted lunch stop", async () => {
+    const missing = await request();
+    missing.waypoints = [];
+    await expect(parseRouteRequest(missing, secret)).rejects.toThrow("INVALID_WAYPOINTS");
+    const duplicate = await request([
+      await point({ kakaoPlaceId: "lunch-2", kind: "stop", dwellMinutes: 30, stopRole: "lunch" }),
+    ]);
+    await expect(parseRouteRequest(duplicate, secret)).rejects.toThrow("INVALID_WAYPOINTS");
   });
 });

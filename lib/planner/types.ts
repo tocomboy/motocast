@@ -28,6 +28,8 @@ export type PlannedSegment = {
   to: RoutePoint;
   distanceKm: number;
   rideMinutes: number;
+  departureAt?: string;
+  arrivalAt?: string;
   weather: WeatherSnapshot;
 };
 

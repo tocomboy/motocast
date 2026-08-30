@@ -1,11 +1,20 @@
 export type NormalizedKakaoRoute = {
-  summary: { distance: number; duration: number };
+  summary: {
+    distance: number;
+    duration: number;
+    origin: KakaoSummaryPoint;
+    destination: KakaoSummaryPoint;
+    waypoints: KakaoSummaryPoint[];
+  };
   sections: Array<{
     distance: number;
     duration: number;
     roads: Array<{ name: string; distance: number; duration: number; vertexes: number[] }>;
   }>;
 };
+
+type KakaoSummaryPoint = { longitude: number; latitude: number };
+type RequestedPoint = { longitude: number; latitude: number };
 
 function record(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -19,6 +28,15 @@ function integer(value: unknown, positive: boolean) {
     throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
   }
   return Number(value);
+}
+
+function summaryPoint(value: unknown): KakaoSummaryPoint {
+  const raw = record(value);
+  if (
+    typeof raw.x !== "number" || !Number.isFinite(raw.x) || raw.x < 124.5 || raw.x > 132 ||
+    typeof raw.y !== "number" || !Number.isFinite(raw.y) || raw.y < 32.8 || raw.y > 38.7
+  ) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
+  return { longitude: raw.x, latitude: raw.y };
 }
 
 function normalizeRoad(value: unknown) {
@@ -68,9 +86,13 @@ export function normalizeKakaoRoutesPayload(value: unknown): NormalizedKakaoRout
     const route = record(value);
     if (route.result_code !== 0) throw new Error("SAFE_ROUTE_NOT_FOUND");
     const rawSummary = record(route.summary);
+    if (!Array.isArray(rawSummary.waypoints)) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
     const summary = {
       distance: integer(rawSummary.distance, true),
       duration: integer(rawSummary.duration, true),
+      origin: summaryPoint(rawSummary.origin),
+      destination: summaryPoint(rawSummary.destination),
+      waypoints: rawSummary.waypoints.map(summaryPoint),
     };
     if (!Array.isArray(route.sections) || route.sections.length === 0) {
       throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
@@ -82,6 +104,35 @@ export function normalizeKakaoRoutesPayload(value: unknown): NormalizedKakaoRout
     ) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
     return { summary, sections };
   });
+}
+
+function near(left: KakaoSummaryPoint, right: RequestedPoint) {
+  return Math.abs(left.longitude - right.longitude) <= 0.005 && Math.abs(left.latitude - right.latitude) <= 0.005;
+}
+
+function sectionEndpoints(section: NormalizedKakaoRoute["sections"][number]) {
+  const first = section.roads[0].vertexes;
+  const last = section.roads.at(-1)!.vertexes;
+  return {
+    start: { longitude: first[0], latitude: first[1] },
+    end: { longitude: last.at(-2)!, latitude: last.at(-1)! },
+  };
+}
+
+export function assertKakaoRouteMatchesPoints(route: NormalizedKakaoRoute, points: RequestedPoint[]) {
+  if (points.length < 2 || route.sections.length !== points.length - 1 || route.summary.waypoints.length !== points.length - 2) {
+    throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
+  }
+  const summarized = [route.summary.origin, ...route.summary.waypoints, route.summary.destination];
+  for (let index = 0; index < points.length; index += 1) {
+    if (!near(summarized[index], points[index])) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
+  }
+  for (let index = 0; index < route.sections.length; index += 1) {
+    const endpoints = sectionEndpoints(route.sections[index]);
+    if (!near(endpoints.start, points[index]) || !near(endpoints.end, points[index + 1])) {
+      throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
+    }
+  }
 }
 
 export function normalizeKakaoRoutePayload(value: unknown): NormalizedKakaoRoute {

@@ -34,7 +34,7 @@ export function buildTimeline(input: {
   }
 
   let cursor = departure;
-  let rideMinutes = 0;
+  let rideMilliseconds = 0;
   let stopMinutes = 0;
 
   const segments = input.segments.map((segment) => {
@@ -45,12 +45,21 @@ export function buildTimeline(input: {
       throw new Error(`segment ${segment.id} must have a non-negative dwell duration`);
     }
 
-    const segmentDeparture = cursor;
-    const arrival = new Date(segmentDeparture.getTime() + segment.rideMinutes * MINUTE_MS);
+    const exactDeparture = segment.departureAt ? asValidDate(segment.departureAt, `segment ${segment.id} departureAt`) : null;
+    const exactArrival = segment.arrivalAt ? asValidDate(segment.arrivalAt, `segment ${segment.id} arrivalAt`) : null;
+    if ((exactDeparture === null) !== (exactArrival === null)) {
+      throw new Error(`segment ${segment.id} must provide both exact timestamps`);
+    }
+    const segmentDeparture = exactDeparture ?? cursor;
+    if (segmentDeparture.getTime() !== cursor.getTime()) {
+      throw new Error(`segment ${segment.id} must be continuous`);
+    }
+    const arrival = exactArrival ?? new Date(segmentDeparture.getTime() + segment.rideMinutes * MINUTE_MS);
+    if (arrival <= segmentDeparture) throw new Error(`segment ${segment.id} must arrive after departure`);
     const dwellMinutes = segment.to.selected ? segment.to.dwellMinutes : 0;
     const nextDeparture = new Date(arrival.getTime() + dwellMinutes * MINUTE_MS);
 
-    rideMinutes += segment.rideMinutes;
+    rideMilliseconds += arrival.getTime() - segmentDeparture.getTime();
     stopMinutes += dwellMinutes;
     cursor = nextDeparture;
 
@@ -65,7 +74,7 @@ export function buildTimeline(input: {
   return {
     segments,
     returnAt: cursor.toISOString(),
-    rideMinutes,
+    rideMinutes: Math.ceil(rideMilliseconds / MINUTE_MS),
     stopMinutes,
     fitsDesiredReturn: cursor <= desiredReturn,
     fitsHardReturn: cursor <= hardReturn,

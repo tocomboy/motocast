@@ -85,6 +85,29 @@ describe("buildTimeline", () => {
       }),
     ).toThrow(/positive ride duration/);
   });
+
+  it("preserves provider timestamps without per-leg minute rounding drift", () => {
+    const origin = point("origin");
+    const pass = point("pass");
+    const home = point("home");
+    const first = segment("first", origin, pass, 1);
+    first.departureAt = "2026-08-30T00:00:00.000Z";
+    first.arrivalAt = "2026-08-30T00:00:31.000Z";
+    const second = segment("second", pass, home, 1);
+    second.departureAt = "2026-08-30T00:00:31.000Z";
+    second.arrivalAt = "2026-08-30T00:01:02.000Z";
+
+    const result = buildTimeline({
+      departureAt: "2026-08-30T00:00:00.000Z",
+      desiredReturnAt: "2026-08-30T01:00:00.000Z",
+      hardReturnAt: "2026-08-30T02:00:00.000Z",
+      segments: [first, second],
+    });
+
+    expect(result.returnAt).toBe("2026-08-30T00:01:02.000Z");
+    expect(result.rideMinutes).toBe(2);
+    expect(result.segments[0].arrivalAt).toBe(first.arrivalAt);
+  });
 });
 
 describe("weatherRiskLabel", () => {

@@ -539,6 +539,20 @@ button {
 .ordered-waypoints {
   display: grid;
   gap: 7px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sr-only {
+  clip: rect(0, 0, 0, 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 }
 
 .ordered-waypoint {
@@ -1036,7 +1050,7 @@ button {
 }
 
 .strip-heading > p {
-  color: #6f756f;
+  color: #535b55;
   font-size: 0.7rem;
   margin: 0;
 }
@@ -1100,7 +1114,7 @@ button {
 
 .candidate-copy small,
 .candidate-stats small {
-  color: #747a75;
+  color: #555d57;
   font-size: 0.64rem;
   line-height: 1.4;
 }
@@ -1134,7 +1148,7 @@ button {
 }
 
 .forecast-issued {
-  color: #717971;
+  color: #555d57;
   font-size: 0.68rem;
 }
 
@@ -1495,11 +1509,13 @@ button {
     right: 0;
     transform: translateY(105%);
     transition: transform 220ms ease;
+    visibility: hidden;
     z-index: 70;
   }
 
   .planner-panel.is-open {
     transform: translateY(0);
+    visibility: visible;
   }
 
   .panel-handle {

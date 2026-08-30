@@ -246,3 +246,28 @@ export function parseSafeRouteResponse(value: unknown): SafeRouteResponse {
     legs,
   };
 }
+
+export function routeResponseFingerprint(response: SafeRouteResponse) {
+  const coordinates = response.legs.flatMap((item) => item.sections.flatMap((item) => (
+    item.roads.flatMap((item) => item.vertexes)
+  )));
+  const pairs: string[] = [];
+  for (let index = 0; index + 1 < coordinates.length; index += 2) {
+    if (index === 0 || index + 2 >= coordinates.length || index % Math.max(2, Math.floor(coordinates.length / 24) * 2) === 0) {
+      pairs.push(`${coordinates[index].toFixed(4)},${coordinates[index + 1].toFixed(4)}`);
+    }
+  }
+  return pairs.join("|");
+}
+
+export function parseSafeRouteCandidateSet(values: unknown[]): SafeRouteResponse[] {
+  const expected = ["balanced", "winding", "short"] as const;
+  if (values.length !== expected.length) throw new ProviderContractError("INVALID_ROUTE_CANDIDATE_SET");
+  const parsed = values.map(parseSafeRouteResponse);
+  if (parsed.some((candidate, index) => candidate.candidate.id !== expected[index])) {
+    throw new ProviderContractError("INVALID_ROUTE_CANDIDATE_SET");
+  }
+  const fingerprints = new Set(parsed.map(routeResponseFingerprint));
+  if (fingerprints.size !== expected.length) throw new ProviderContractError("DUPLICATE_ROUTE_CANDIDATES");
+  return parsed;
+}
