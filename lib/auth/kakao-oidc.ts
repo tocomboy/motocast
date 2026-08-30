@@ -72,9 +72,11 @@ export function clearKakaoOidcHandoffFragment(browser: {
 export class KakaoOidcCallbackLifecycle {
   private started = false;
   private settled = false;
+  private attached = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   enter(onDelayed: () => void, delayMs: number): boolean {
+    this.attached = true;
     this.clearTimer();
     if (!this.settled) this.timer = setTimeout(() => {
       if (!this.settled) onDelayed();
@@ -85,7 +87,12 @@ export class KakaoOidcCallbackLifecycle {
   }
 
   leave() {
+    this.attached = false;
     this.clearTimer();
+  }
+
+  isAttached() {
+    return this.attached;
   }
 
   complete() {

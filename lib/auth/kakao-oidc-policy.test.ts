@@ -38,6 +38,8 @@ describe("email-free Kakao OIDC source policy", () => {
   it("keeps Strict Mode replay attached to one request without client abort", () => {
     expect(callbackSource).toContain("KakaoOidcCallbackLifecycle");
     expect(callbackSource).not.toContain("AbortController");
+    expect(callbackSource).toContain("lifecycle.isAttached()");
+    expect(callbackSource).toContain("onNavigate");
     expect(callbackSource).toContain("서버에서 이미 시작된 처리는 완료될 수 있습니다");
   });
 

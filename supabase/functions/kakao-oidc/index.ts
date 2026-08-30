@@ -2,6 +2,7 @@ import { serviceClient } from "../_shared/auth.ts";
 import { corsHeaders, jsonResponse } from "../_shared/http.ts";
 import {
   allowedOriginsFromEnvironment,
+  authenticatedOidcReturnTo,
   clearOidcCookie,
   createHandoffToken,
   createOidcAttempt,
@@ -55,8 +56,8 @@ function callbackUri(request: Request): string {
   return new URL(KAKAO_OIDC_CALLBACK_PATH, new URL(request.url).origin).toString();
 }
 
-function applicationFailureUrl(allowedOrigins: readonly string[]): string {
-  return new URL("/auth/kakao/callback?error=callback", allowedOrigins[0]).toString();
+function applicationFailureUrl(returnTo: string | URL): string {
+  return new URL("/auth/kakao/callback?error=callback", new URL(returnTo).origin).toString();
 }
 
 async function start(request: Request): Promise<Response> {
@@ -108,7 +109,7 @@ async function callback(request: Request): Promise<Response> {
     environment.stateSecret,
   );
   const clearCookie = clearOidcCookie();
-  const errorUrl = applicationFailureUrl(environment.allowedOrigins);
+  const errorUrl = applicationFailureUrl(attempt.returnTo);
   if (url.searchParams.has("error")) return redirect(errorUrl, clearCookie);
 
   try {
@@ -187,9 +188,18 @@ Deno.serve(async (request) => {
     console.error("kakao-oidc request failed", error instanceof Error ? error.message : "unknown error");
     if (pathname.endsWith("/callback")) {
       try {
-        return redirect(applicationFailureUrl(configuredEnvironment().allowedOrigins), clearOidcCookie());
+        const environment = configuredEnvironment();
+        const returnTo = await authenticatedOidcReturnTo(
+          oidcCookieFromHeader(request.headers.get("cookie")),
+          environment.allowedOrigins,
+          environment.stateSecret,
+        );
+        return redirect(applicationFailureUrl(returnTo), clearOidcCookie());
       } catch {
-        // Fall through to the generic provider-origin failure if configuration is unavailable.
+        return genericFailure(
+          error instanceof Error && error.message.includes("NOT_CONFIGURED") ? 503 : 400,
+          clearOidcCookie(),
+        );
       }
     }
     return genericFailure(

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   allowedOriginsFromEnvironment,
+  authenticatedOidcReturnTo,
   createHandoffToken,
   createOidcAttempt,
   decryptKakaoTokenPayload,
@@ -64,6 +65,23 @@ it("rejects attempt tampering, mismatch, expiry, and open redirects", async () =
     }
     if (!rejected) throw new Error("unsafe return target accepted");
   }
+});
+
+it("recovers only an authenticated initiating origin for callback cleanup", async () => {
+  const previewOrigin = "https://preview.example";
+  const returnTo = validatedReturnTo(`${previewOrigin}/auth/kakao/callback`, [origin, previewOrigin]);
+  const created = await createOidcAttempt(returnTo, bindingHash, secret, 1_000_000);
+
+  await expect(authenticatedOidcReturnTo(
+    created.cookieValue,
+    [origin, previewOrigin],
+    secret,
+  )).resolves.toEqual(returnTo);
+  await expect(authenticatedOidcReturnTo(
+    `${created.cookieValue}x`,
+    [origin, previewOrigin],
+    secret,
+  )).rejects.toThrow("OIDC_STATE_INVALID");
 });
 
 it("authenticates encrypted handoff ciphertext and expiry", async () => {

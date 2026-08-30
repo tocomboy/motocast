@@ -23,14 +23,18 @@ export function KakaoOidcCallback() {
     if (!clearKakaoOidcHandoffFragment(window)) {
       lifecycle.complete();
       void clearBrowserBinding();
-      queueMicrotask(() => setStatus("error"));
-      return;
+      queueMicrotask(() => {
+        if (lifecycle.isAttached()) setStatus("error");
+      });
+      return () => lifecycle.leave();
     }
     if (!isKakaoOidcHandoff(handoff)) {
       lifecycle.complete();
       void clearBrowserBinding();
-      queueMicrotask(() => setStatus("error"));
-      return;
+      queueMicrotask(() => {
+        if (lifecycle.isAttached()) setStatus("error");
+      });
+      return () => lifecycle.leave();
     }
 
     void (async () => {
@@ -43,13 +47,13 @@ export function KakaoOidcCallback() {
         });
         const body = await response.json() as { redirect?: unknown };
         if (typeof body.redirect === "string" && body.redirect.startsWith("/") && !body.redirect.startsWith("//")) {
-          window.location.replace(body.redirect);
+          if (lifecycle.isAttached()) window.location.replace(body.redirect);
           return;
         }
         throw new Error("OIDC_COMPLETION_FAILED");
       } catch {
         void clearBrowserBinding();
-        setStatus("error");
+        if (lifecycle.isAttached()) setStatus("error");
       } finally {
         lifecycle.complete();
       }
@@ -71,7 +75,14 @@ export function KakaoOidcCallback() {
         {error
           ? <Link className="text-link" href="/login">로그인으로 돌아가기</Link>
           : delayed
-            ? <Link className="text-link" href="/login" onClick={() => void clearBrowserBinding()}>로그인 화면으로 이동</Link>
+            ? <Link
+                className="text-link"
+                href="/login"
+                onNavigate={() => {
+                  lifecycle.leave();
+                  void clearBrowserBinding();
+                }}
+              >로그인 화면으로 이동</Link>
             : null}
       </section>
     </main>

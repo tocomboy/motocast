@@ -63,13 +63,26 @@ describe("Kakao OIDC application boundary", () => {
     const delayed = vi.fn();
     const lifecycle = new KakaoOidcCallbackLifecycle();
     expect(lifecycle.enter(delayed, 10_000)).toBe(true);
+    expect(lifecycle.isAttached()).toBe(true);
     lifecycle.leave();
+    expect(lifecycle.isAttached()).toBe(false);
     expect(lifecycle.enter(delayed, 10_000)).toBe(false);
+    expect(lifecycle.isAttached()).toBe(true);
     vi.advanceTimersByTime(10_000);
     expect(delayed).toHaveBeenCalledTimes(1);
     lifecycle.complete();
     lifecycle.leave();
+    expect(lifecycle.isAttached()).toBe(false);
     vi.useRealTimers();
+  });
+
+  it("does not allow a late callback response to navigate after the screen detaches", () => {
+    const lifecycle = new KakaoOidcCallbackLifecycle();
+    const navigate = vi.fn();
+    lifecycle.enter(vi.fn(), 10_000);
+    lifecycle.leave();
+    if (lifecycle.isAttached()) navigate("/");
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it("consumes through the fixed Edge endpoint without exposing tokens in the URL", async () => {

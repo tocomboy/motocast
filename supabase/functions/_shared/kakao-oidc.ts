@@ -155,9 +155,33 @@ export async function verifyOidcAttempt(
   secret: string,
   now = Date.now(),
 ): Promise<OidcAttempt> {
-  if (!cookieValue || !returnedState || !TOKEN_PATTERN.test(returnedState)) {
+  if (!returnedState || !TOKEN_PATTERN.test(returnedState)) throw new Error("OIDC_STATE_INVALID");
+  const attempt = await authenticatedOidcAttempt(cookieValue, secret);
+  if (
+    attempt.state !== returnedState ||
+    attempt.issuedAt > now + 30_000 ||
+    now - attempt.issuedAt > ATTEMPT_TTL_MS
+  ) {
     throw new Error("OIDC_STATE_INVALID");
   }
+  validatedReturnTo(attempt.returnTo, allowedOrigins);
+  return attempt;
+}
+
+export async function authenticatedOidcReturnTo(
+  cookieValue: string | null,
+  allowedOrigins: readonly string[],
+  secret: string,
+): Promise<URL> {
+  const attempt = await authenticatedOidcAttempt(cookieValue, secret);
+  return validatedReturnTo(attempt.returnTo, allowedOrigins);
+}
+
+async function authenticatedOidcAttempt(
+  cookieValue: string | null,
+  secret: string,
+): Promise<OidcAttempt> {
+  if (!cookieValue) throw new Error("OIDC_STATE_INVALID");
   const parts = cookieValue.split(".");
   if (parts.length !== 2) throw new Error("OIDC_STATE_INVALID");
   const [payload, signature] = parts;
@@ -180,14 +204,10 @@ export async function verifyOidcAttempt(
     !TOKEN_PATTERN.test(attempt.state) ||
     !TOKEN_PATTERN.test(attempt.nonce) ||
     !HASH_PATTERN.test(attempt.bindingHash) ||
-    attempt.state !== returnedState ||
-    !Number.isSafeInteger(attempt.issuedAt) ||
-    attempt.issuedAt > now + 30_000 ||
-    now - attempt.issuedAt > ATTEMPT_TTL_MS
+    !Number.isSafeInteger(attempt.issuedAt)
   ) {
     throw new Error("OIDC_STATE_INVALID");
   }
-  validatedReturnTo(attempt.returnTo, allowedOrigins);
   return attempt;
 }
 
