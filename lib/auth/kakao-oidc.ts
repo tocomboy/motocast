@@ -1,6 +1,12 @@
 const HANDOFF_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const HASH_PATTERN = /^[0-9a-f]{64}$/;
 export const KAKAO_OIDC_BINDING_COOKIE = "__Host-motocast_kakao_binding";
+export const KAKAO_OIDC_BINDING_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: true,
+  sameSite: "lax",
+  path: "/",
+} as const;
 
 export type KakaoOidcPayload = {
   idToken: string;
@@ -60,6 +66,36 @@ export function clearKakaoOidcHandoffFragment(browser: {
       // The caller still fails closed and must not submit the fragment.
     }
     return false;
+  }
+}
+
+export class KakaoOidcCallbackLifecycle {
+  private started = false;
+  private settled = false;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  enter(onDelayed: () => void, delayMs: number): boolean {
+    this.clearTimer();
+    if (!this.settled) this.timer = setTimeout(() => {
+      if (!this.settled) onDelayed();
+    }, delayMs);
+    if (this.started) return false;
+    this.started = true;
+    return true;
+  }
+
+  leave() {
+    this.clearTimer();
+  }
+
+  complete() {
+    this.settled = true;
+    this.clearTimer();
+  }
+
+  private clearTimer() {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
   }
 }
 

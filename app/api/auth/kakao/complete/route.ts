@@ -4,6 +4,7 @@ import {
   consumeKakaoOidcHandoff,
   isKakaoOidcHandoff,
   KAKAO_OIDC_BINDING_COOKIE,
+  KAKAO_OIDC_BINDING_COOKIE_OPTIONS,
   kakaoOidcBindingFromCookie,
   kakaoOidcBindingHash,
   signInWithBoundKakaoOidc,
@@ -21,7 +22,11 @@ const noStoreHeaders = {
 
 function completionResponse(redirect: string, status: number, clearInvite = false) {
   const response = NextResponse.json({ redirect }, { status, headers: noStoreHeaders });
-  response.cookies.delete(KAKAO_OIDC_BINDING_COOKIE);
+  response.cookies.set(KAKAO_OIDC_BINDING_COOKIE, "", {
+    ...KAKAO_OIDC_BINDING_COOKIE_OPTIONS,
+    maxAge: 0,
+    expires: new Date(0),
+  });
   if (clearInvite) response.cookies.delete("motocast_invite");
   return response;
 }

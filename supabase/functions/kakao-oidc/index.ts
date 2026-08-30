@@ -55,6 +55,10 @@ function callbackUri(request: Request): string {
   return new URL(KAKAO_OIDC_CALLBACK_PATH, new URL(request.url).origin).toString();
 }
 
+function applicationFailureUrl(allowedOrigins: readonly string[]): string {
+  return new URL("/auth/kakao/callback?error=callback", allowedOrigins[0]).toString();
+}
+
 async function start(request: Request): Promise<Response> {
   const environment = configuredEnvironment();
   const url = new URL(request.url);
@@ -104,7 +108,7 @@ async function callback(request: Request): Promise<Response> {
     environment.stateSecret,
   );
   const clearCookie = clearOidcCookie();
-  const errorUrl = new URL("/login?error=callback", attempt.returnTo).toString();
+  const errorUrl = applicationFailureUrl(environment.allowedOrigins);
   if (url.searchParams.has("error")) return redirect(errorUrl, clearCookie);
 
   try {
@@ -181,9 +185,16 @@ Deno.serve(async (request) => {
     return genericFailure(404);
   } catch (error) {
     console.error("kakao-oidc request failed", error instanceof Error ? error.message : "unknown error");
+    if (pathname.endsWith("/callback")) {
+      try {
+        return redirect(applicationFailureUrl(configuredEnvironment().allowedOrigins), clearOidcCookie());
+      } catch {
+        // Fall through to the generic provider-origin failure if configuration is unavailable.
+      }
+    }
     return genericFailure(
       error instanceof Error && error.message.includes("NOT_CONFIGURED") ? 503 : 400,
-      pathname.endsWith("/callback") ? clearOidcCookie() : undefined,
+      undefined,
     );
   }
 });

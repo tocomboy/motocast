@@ -8,6 +8,7 @@ import {
   kakaoOidcBindingFromCookie,
   kakaoOidcBindingHash,
   kakaoOidcStartUrl,
+  KakaoOidcCallbackLifecycle,
   signInWithBoundKakaoOidc,
 } from "./kakao-oidc";
 
@@ -55,6 +56,20 @@ describe("Kakao OIDC application boundary", () => {
     });
     expect(cleared).toBe(false);
     expect(replace).toHaveBeenCalledWith("/login?error=callback");
+  });
+
+  it("keeps one callback request alive through Strict Mode effect replay", () => {
+    vi.useFakeTimers();
+    const delayed = vi.fn();
+    const lifecycle = new KakaoOidcCallbackLifecycle();
+    expect(lifecycle.enter(delayed, 10_000)).toBe(true);
+    lifecycle.leave();
+    expect(lifecycle.enter(delayed, 10_000)).toBe(false);
+    vi.advanceTimersByTime(10_000);
+    expect(delayed).toHaveBeenCalledTimes(1);
+    lifecycle.complete();
+    lifecycle.leave();
+    vi.useRealTimers();
   });
 
   it("consumes through the fixed Edge endpoint without exposing tokens in the URL", async () => {

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   createKakaoOidcBrowserBinding,
   KAKAO_OIDC_BINDING_COOKIE,
+  KAKAO_OIDC_BINDING_COOKIE_OPTIONS,
   kakaoOidcBindingHash,
   kakaoOidcStartUrl,
 } from "@/lib/auth/kakao-oidc";
@@ -22,14 +23,17 @@ export async function GET(request: Request) {
       },
     });
     response.cookies.set(KAKAO_OIDC_BINDING_COOKIE, binding, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      path: "/",
+      ...KAKAO_OIDC_BINDING_COOKIE_OPTIONS,
       maxAge: 5 * 60,
     });
     return response;
   } catch {
-    return NextResponse.redirect(new URL("/login?error=callback", request.url));
+    const response = NextResponse.redirect(new URL("/login?error=callback", request.url));
+    response.cookies.set(KAKAO_OIDC_BINDING_COOKIE, "", {
+      ...KAKAO_OIDC_BINDING_COOKIE_OPTIONS,
+      maxAge: 0,
+      expires: new Date(0),
+    });
+    return response;
   }
 }
