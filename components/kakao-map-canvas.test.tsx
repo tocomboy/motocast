@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { act, create, type ReactTestRenderer, type TestRendererOptions } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { KakaoMapCanvas, type MapMarkerRole } from "./kakao-map-canvas";
+import { KakaoMapCanvas, MapOmissionList, type MapMarkerRole, type MapPoint } from "./kakao-map-canvas";
 
 type Listener = () => void;
 
@@ -230,7 +230,7 @@ describe("KakaoMapCanvas", () => {
     await act(async () => renderer.unmount());
   });
 
-  it("renders same-coordinate roles as one composite marker with a visible omitted-state legend", async () => {
+  it("renders same-coordinate roles as one composite marker", async () => {
     vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "test-public-key");
     stubBrowser();
     const maps = installMaps();
@@ -249,9 +249,50 @@ describe("KakaoMapCanvas", () => {
     expect(compositeSvg).toContain(">점</text>");
     expect(compositeSvg).toContain(">와×</text>");
     expect(maps.extend).toHaveBeenCalledTimes(1);
-    const legendText = renderer.root.findByProps({ "aria-label": "지도 지점 표시 안내" })
-      .findAllByType("li").map((item) => item.children.filter((child) => typeof child === "string").join(""));
-    expect(legendText).toContain("와인딩 · 점심 · 선택 경로 미통과");
+    await act(async () => renderer.unmount());
+  });
+
+  it("keeps omitted points visible outside map readiness and error state", async () => {
+    vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "test-public-key");
+    const scripts = stubBrowser();
+    const omittedPoints: MapPoint[] = [
+      { label: "유명산 · 선택 경로 미통과", latitude: 37.59, longitude: 127.49, role: "winding", nonTraversed: true },
+    ];
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <StrictMode>
+          <KakaoMapCanvas points={omittedPoints} />
+          <MapOmissionList points={omittedPoints} />
+        </StrictMode>,
+        rendererOptions,
+      );
+    });
+    await act(async () => scripts[0].emit("error"));
+
+    expect(statusText(renderer)).toContain("카카오 지도 로드 실패");
+    const notice = renderer.root.findByProps({ "aria-labelledby": "map-omissions-heading" });
+    expect(notice.findAllByType("li")).toHaveLength(1);
+    expect(notice.findByType("li").findAllByType("span")[1].children.join("")).toContain("와인딩 · 유명산 · 선택 경로 미통과");
+    await act(async () => renderer.unmount());
+  });
+
+  it("renders every omitted point when the supported maximum of twenty is present", async () => {
+    const omittedPoints: MapPoint[] = Array.from({ length: 20 }, (_, index) => ({
+      label: `와인딩 경유지 ${index + 1} · 선택 경로 미통과`,
+      latitude: 37.5 + index / 1000,
+      longitude: 127.1 + index / 1000,
+      role: "winding" as const,
+      nonTraversed: true,
+    }));
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<MapOmissionList points={omittedPoints} />, rendererOptions);
+    });
+
+    const items = renderer.root.findByProps({ "aria-labelledby": "map-omissions-heading" }).findAllByType("li");
+    expect(items).toHaveLength(20);
+    expect(items.at(-1)?.findAllByType("span")[1].children.join("")).toContain("와인딩 경유지 20 · 선택 경로 미통과");
     await act(async () => renderer.unmount());
   });
 

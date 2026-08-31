@@ -89,7 +89,7 @@ Additional required suites by boundary:
 - Budget: missing, zero, below limit, exact limit, exhausted, concurrent calls, Seoul date rollover, provider failure decision.
 - Routes: provider request interception on current/future/split calls, documented no-route result classification versus malformed/unknown provider responses, winding-only zero-dwell pass-through validation, required-stop preservation, waypoint boundaries, midnight-crossing expected return, exact 24-hour exclusion, distinct candidate identity, no passenger-car fallback.
 - Weather: six-hour and five-day exact boundaries, grid conversion, cache deduplication and exact cache response shape, structured provider/budget/configuration/persistence/request failure kinds, malformed provider JSON, complete-or-empty stale DB metadata, snapshot success/failure/stale/no-snapshot, independently advancing multi-day age and simultaneous failure/expiry display.
-- Browser/PWA: 320x800, 390x844, 820x1180, and 1440x900 layouts; keyboard/focus/labels, loading/error/stale/live, route-derived expected return, role-labelled map markers, manifest/service worker update. Kakao road geometry and authenticated provider smoke remain separate Preview evidence.
+- Browser/PWA: 320x800, 390x844, 820x1180, and 1440x900 layouts; keyboard/focus/labels, loading/error/stale/live, route-derived expected return, role-labelled map markers, all twenty route-omission notices in unclipped normal flow even during map SDK error, manifest/service worker update. Kakao road geometry and authenticated provider smoke remain separate Preview evidence.
 
 ## 4. Commit and fixed-SHA review boundary
 

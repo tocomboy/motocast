@@ -975,13 +975,49 @@ button {
   width: 20px;
 }
 
-.map-marker-omission {
-  flex-basis: 100%;
-}
-
 .map-marker-symbol.is-omitted {
   border-style: dashed;
   font-size: 0.5rem;
+}
+
+.map-omissions {
+  align-items: start;
+  background: rgba(255, 253, 248, 0.94);
+  border: 1px solid rgba(24, 34, 29, 0.14);
+  border-radius: 16px;
+  display: grid;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 18px;
+}
+
+.map-omissions h2 {
+  font-size: 1rem;
+  margin: 3px 0 0;
+}
+
+.map-omissions ul {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.map-omissions li {
+  align-items: center;
+  color: var(--ink-soft);
+  display: flex;
+  font-size: 0.76rem;
+  font-weight: 750;
+  gap: 8px;
+  min-width: 0;
+}
+
+.map-omissions li > span:last-child {
+  overflow-wrap: anywhere;
 }
 
 .status-dot {

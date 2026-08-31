@@ -1,4 +1,4 @@
-import { KakaoMapCanvas, type MapMarkerRole } from "@/components/kakao-map-canvas";
+import { KakaoMapCanvas, MapOmissionList, type MapMarkerRole } from "@/components/kakao-map-canvas";
 import { formatElapsedAge, formatKoreanDateTime, formatKoreanTime, formatRideTime } from "@/lib/planner/schedule";
 import type { SharedPlace, SharedRideSnapshot, SharedWaypoint } from "@/lib/sharing/contracts";
 import { weatherFailureLabel } from "@/lib/weather/status";
@@ -128,6 +128,7 @@ export function SharedRideSnapshotView({
           <span>{Math.round(selected.totalDistanceMeters / 100) / 10} km · 약 {minutes(selected.totalDurationSeconds)}</span>
         </div>
       </section>
+      <MapOmissionList points={points} />
 
       <div className="shared-grid">
         <section>

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 export type MapMarkerRole = "origin" | "destination" | "lunch" | "dinner" | "rest" | "winding" | "waypoint";
-type MapPoint = { label: string; latitude: number; longitude: number; role?: MapMarkerRole; nonTraversed?: boolean };
+export type MapPoint = { label: string; latitude: number; longitude: number; role?: MapMarkerRole; nonTraversed?: boolean };
 type PathPoint = { latitude: number; longitude: number };
 const KAKAO_MAP_LOAD_TIMEOUT_MS = 10_000;
 const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; color: string }> = {
@@ -206,7 +206,6 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
 
 function MarkerLegend({ points }: { points: MapPoint[] }) {
   const roles = Array.from(new Set(points.map((point) => point.role ?? "waypoint")));
-  const omittedPoints = points.filter((point) => point.nonTraversed);
   return (
     <ul className="map-marker-legend" aria-label="지도 지점 표시 안내">
       {roles.map((role) => (
@@ -217,18 +216,34 @@ function MarkerLegend({ points }: { points: MapPoint[] }) {
           {markerAppearance[role].label}
         </li>
       ))}
-      {omittedPoints.map((point, index) => {
-        const role = point.role ?? "waypoint";
-        return (
-          <li className="map-marker-omission" key={`${point.latitude}:${point.longitude}:${role}:${index}`}>
-            <span className="map-marker-symbol is-omitted" style={{ backgroundColor: markerAppearance[role].color }} aria-hidden="true">
-              {markerAppearance[role].symbol}×
-            </span>
-            {markerAppearance[role].label} · {point.label}
-          </li>
-        );
-      })}
     </ul>
+  );
+}
+
+export function MapOmissionList({ points }: { points: MapPoint[] }) {
+  const omittedPoints = points.filter((point) => point.nonTraversed);
+  if (!omittedPoints.length) return null;
+
+  return (
+    <section className="map-omissions" aria-labelledby="map-omissions-heading">
+      <div>
+        <p className="eyebrow">ROUTE NOTICE</p>
+        <h2 id="map-omissions-heading">선택 경로에서 지나지 않는 지점</h2>
+      </div>
+      <ul>
+        {omittedPoints.map((point, index) => {
+          const role = point.role ?? "waypoint";
+          return (
+            <li key={`${point.latitude}:${point.longitude}:${role}:${index}`}>
+              <span className="map-marker-symbol is-omitted" style={{ backgroundColor: markerAppearance[role].color }} aria-hidden="true">
+                {markerAppearance[role].symbol}×
+              </span>
+              <span>{markerAppearance[role].label} · {point.label}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
