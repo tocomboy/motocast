@@ -100,7 +100,7 @@ const profiles = [
   {
     id: "balanced" as const,
     label: "균형",
-    description: "와인딩과 복귀 여유를 함께 확보",
+    description: "주행 시간과 경로의 균형",
     distanceScale: 0.92,
     timeScale: 0.9,
   },
@@ -121,8 +121,6 @@ const profiles = [
 ];
 
 export const demoDepartureAt = "2026-08-30T22:30:00.000Z";
-export const demoDesiredReturnAt = "2026-08-31T08:30:00.000Z";
-export const demoHardReturnAt = "2026-08-31T09:30:00.000Z";
 
 export const demoCandidates: RouteCandidate[] = profiles.map((profile) => {
   const segments = windingSegments.map((segment) => ({
@@ -132,8 +130,6 @@ export const demoCandidates: RouteCandidate[] = profiles.map((profile) => {
   }));
   const timeline = buildTimeline({
     departureAt: demoDepartureAt,
-    desiredReturnAt: demoDesiredReturnAt,
-    hardReturnAt: demoHardReturnAt,
     segments,
   });
 
@@ -145,14 +141,14 @@ export const demoCandidates: RouteCandidate[] = profiles.map((profile) => {
     rideMinutes: timeline.rideMinutes,
     stopMinutes: timeline.stopMinutes,
     returnAt: timeline.returnAt,
-    fitsDesiredReturn: timeline.fitsDesiredReturn,
-    fitsHardReturn: timeline.fitsHardReturn,
     segments,
   };
 });
 
-export const demoMapPoints = Object.values(points).map((point) => ({
-  label: point.label,
-  latitude: point.latitude,
-  longitude: point.longitude,
-}));
+export const demoMapPoints = [
+  { ...points.origin, role: "origin" as const },
+  { ...points.pass, role: "winding" as const },
+  { ...points.lunch, role: "lunch" as const },
+  { ...points.rest, role: "rest" as const },
+  { ...points.destination, role: "destination" as const },
+];

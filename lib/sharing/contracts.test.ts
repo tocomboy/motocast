@@ -32,13 +32,11 @@ function route(id: "balanced" | "winding" | "short", middle: number) {
 }
 
 const snapshot = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   trip: {
     title: "당일 라이딩",
     serviceDate: "2026-08-31",
     departureAt: "2026-08-31T00:00:00.000Z",
-    desiredReturnAt: "2026-08-31T08:00:00.000Z",
-    hardReturnAt: "2026-08-31T09:00:00.000Z",
     origin,
     destination,
     lunchStop: { id: "lunch", label: "점심", longitude: 127.1, latitude: 37.1 },
@@ -56,7 +54,23 @@ const snapshot = {
 
 describe("parseSharedRideSnapshot", () => {
   it("accepts a complete immutable snapshot with three safe routes", () => {
-    expect(parseSharedRideSnapshot(snapshot)).toMatchObject({ schemaVersion: 1, weather: null });
+    expect(parseSharedRideSnapshot(snapshot)).toMatchObject({ schemaVersion: 2, weather: null });
+  });
+
+  it("keeps previously emitted schema version 1 snapshots readable", () => {
+    const legacy = {
+      ...snapshot,
+      schemaVersion: 1,
+      trip: {
+        ...snapshot.trip,
+        desiredReturnAt: "2026-08-31T08:00:00.000Z",
+        hardReturnAt: "2026-08-31T09:00:00.000Z",
+      },
+    };
+    expect(parseSharedRideSnapshot(legacy)).toMatchObject({
+      schemaVersion: 1,
+      trip: { desiredReturnAt: "2026-08-31T08:00:00.000Z" },
+    });
   });
 
   it("rejects internal place verification material from a public snapshot", () => {

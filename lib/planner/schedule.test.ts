@@ -43,8 +43,6 @@ describe("buildTimeline", () => {
 
     const result = buildTimeline({
       departureAt: "2026-08-30T00:00:00.000Z",
-      desiredReturnAt: "2026-08-30T04:00:00.000Z",
-      hardReturnAt: "2026-08-30T05:00:00.000Z",
       segments: [
         segment("a", origin, lunch, 60),
         segment("b", lunch, optionalRest, 60),
@@ -55,22 +53,6 @@ describe("buildTimeline", () => {
     expect(result.rideMinutes).toBe(180);
     expect(result.stopMinutes).toBe(60);
     expect(result.returnAt).toBe("2026-08-30T04:00:00.000Z");
-    expect(result.fitsDesiredReturn).toBe(true);
-    expect(result.fitsHardReturn).toBe(true);
-  });
-
-  it("keeps the hard return as a discard boundary", () => {
-    const origin = point("origin");
-    const home = point("home");
-    const result = buildTimeline({
-      departureAt: "2026-08-30T00:00:00.000Z",
-      desiredReturnAt: "2026-08-30T01:00:00.000Z",
-      hardReturnAt: "2026-08-30T02:00:00.000Z",
-      segments: [segment("late", origin, home, 121)],
-    });
-
-    expect(result.fitsDesiredReturn).toBe(false);
-    expect(result.fitsHardReturn).toBe(false);
   });
 
   it("rejects negative durations instead of hiding invalid data", () => {
@@ -79,8 +61,6 @@ describe("buildTimeline", () => {
     expect(() =>
       buildTimeline({
         departureAt: "2026-08-30T00:00:00.000Z",
-        desiredReturnAt: "2026-08-30T04:00:00.000Z",
-        hardReturnAt: "2026-08-30T05:00:00.000Z",
         segments: [segment("broken", origin, home, -1)],
       }),
     ).toThrow(/positive ride duration/);
@@ -99,8 +79,6 @@ describe("buildTimeline", () => {
 
     const result = buildTimeline({
       departureAt: "2026-08-30T00:00:00.000Z",
-      desiredReturnAt: "2026-08-30T01:00:00.000Z",
-      hardReturnAt: "2026-08-30T02:00:00.000Z",
       segments: [first, second],
     });
 

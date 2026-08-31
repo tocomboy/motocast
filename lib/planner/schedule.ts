@@ -7,8 +7,6 @@ export type TimelineResult = {
   returnAt: string;
   rideMinutes: number;
   stopMinutes: number;
-  fitsDesiredReturn: boolean;
-  fitsHardReturn: boolean;
 };
 
 function asValidDate(value: string, field: string): Date {
@@ -21,17 +19,9 @@ function asValidDate(value: string, field: string): Date {
 
 export function buildTimeline(input: {
   departureAt: string;
-  desiredReturnAt: string;
-  hardReturnAt: string;
   segments: PlannedSegment[];
 }): TimelineResult {
   const departure = asValidDate(input.departureAt, "departureAt");
-  const desiredReturn = asValidDate(input.desiredReturnAt, "desiredReturnAt");
-  const hardReturn = asValidDate(input.hardReturnAt, "hardReturnAt");
-
-  if (desiredReturn > hardReturn) {
-    throw new Error("desiredReturnAt must not be later than hardReturnAt");
-  }
 
   let cursor = departure;
   let rideMilliseconds = 0;
@@ -76,8 +66,6 @@ export function buildTimeline(input: {
     returnAt: cursor.toISOString(),
     rideMinutes: Math.ceil(rideMilliseconds / MINUTE_MS),
     stopMinutes,
-    fitsDesiredReturn: cursor <= desiredReturn,
-    fitsHardReturn: cursor <= hardReturn,
   };
 }
 

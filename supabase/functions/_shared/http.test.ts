@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { safeErrorMessage, safeErrorStatus } from "./http";
+import { safeErrorCode, safeErrorMessage, safeErrorStatus } from "./http";
 
 describe("safe provider errors", () => {
   it("does not mislabel malformed provider data as user input", () => {
@@ -14,10 +14,18 @@ describe("safe provider errors", () => {
     expect(safeErrorStatus(new Error("API_DAILY_BUDGET_EXHAUSTED"))).toBe(429);
   });
 
-  it("uses an unprocessable response for a hard-return exclusion", () => {
-    const error = new Error("ROUTE_EXCEEDS_HARD_RETURN");
-    expect(safeErrorMessage(error)).toContain("최종 복귀");
+  it("uses an unprocessable response for the 24-hour service limit", () => {
+    const error = new Error("ROUTE_EXCEEDS_24_HOURS");
+    expect(safeErrorMessage(error)).toContain("24시간");
     expect(safeErrorStatus(error)).toBe(422);
+  });
+
+  it("returns a stable public code only for an unavailable winding alternative", () => {
+    const unavailable = new Error("WINDING_ROUTE_UNAVAILABLE");
+    expect(safeErrorMessage(unavailable)).toContain("와인딩 경유지");
+    expect(safeErrorStatus(unavailable)).toBe(422);
+    expect(safeErrorCode(unavailable)).toBe("WINDING_ROUTE_UNAVAILABLE");
+    expect(safeErrorCode(new Error("secret internal detail"))).toBe("ROUTE_REQUEST_FAILED");
   });
 
   it("does not mislabel provider authentication, rate, or outage failures as no safe route", () => {

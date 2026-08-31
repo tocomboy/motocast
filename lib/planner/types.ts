@@ -52,8 +52,6 @@ export type RouteCandidate = {
   rideMinutes: number;
   stopMinutes: number;
   returnAt: string;
-  fitsDesiredReturn: boolean;
-  fitsHardReturn: boolean;
   path?: Coordinate[];
   segments: PlannedSegment[];
 };

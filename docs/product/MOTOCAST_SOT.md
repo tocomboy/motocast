@@ -1,6 +1,6 @@
 # MOTOCAST product source of truth
 
-Last verified: 2026-08-31 (Asia/Seoul)
+Last verified: 2026-09-01 (Asia/Seoul)
 
 This document is the single source of truth for MOTOCAST product, security, cost, and operations decisions. A `CONFIRMED` entry is binding. A `NEEDS_INTERVIEW` entry blocks only the affected slice and must fail closed. A `DEPRECATED` entry remains as decision history.
 
@@ -23,12 +23,12 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### SCOPE-001 — Service boundary
 
 - Status: `CONFIRMED`
-- Decision: Support private, acquaintances-only motorcycle rides within South Korea that start and finish within 24 hours on the same calendar trip. Lodging, public signup, and a public beta are out of scope. Deliver as a responsive web app and installable PWA.
+- Decision: Support private, acquaintances-only motorcycle rides within South Korea that finish less than 24 hours after departure. Crossing Seoul midnight is allowed; lodging, multi-day itinerary planning, public signup, and a public beta are out of scope. Deliver as a responsive web app and installable PWA.
 - Rationale: The product is a small personal service for pre-ride planning.
-- User impact: Invited riders plan a single day; no overnight itinerary or public discovery flow is shown.
+- User impact: Invited riders can keep a route that returns after midnight, but cannot plan a 24-hour-or-longer or lodging-based itinerary.
 - Affected: app navigation, validation, auth boundary, PWA manifest, deployment policy.
-- Verification: 24-hour input boundary tests, unauthenticated/unauthorized access tests, mobile/desktop/PWA smoke tests.
-- Confirmed: 2026-08-30.
+- Verification: computed return just below/at the 24-hour boundary, midnight-crossing route, unauthenticated/unauthorized access, and mobile/desktop/PWA smoke tests.
+- Confirmed: 2026-08-30; midnight interpretation updated by user interview on 2026-09-01.
 
 #### SCOPE-002 — Production truthfulness
 
@@ -170,12 +170,13 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### PLAN-002 — Schedule constraints
 
 - Status: `CONFIRMED`
-- Decision: Store departure, desired return, and hard return. Desired return is a soft constraint shown as a warning; any candidate later than hard return is excluded. Lunch is required; dinner is nullable. Only user-selected rests count, with a default dwell of 30 minutes. Restaurant break time is displayed only and never automatically rejects or rewrites a route.
-- Rationale: Riders retain control while the hard return remains enforceable.
-- User impact: Late-but-allowed candidates are warned; impossible candidates are absent.
-- Affected: trip schema, schedule engine, planner UI, candidate filtering.
-- Verification: lunch/dinner/rest and desired/hard return boundary tests.
-- Confirmed: 2026-08-30.
+- Decision: The rider enters only the ride date and departure time. Each route candidate shows its computed expected return from provider travel time plus required meals and user-selected rest dwell; there is no user-entered desired return or hard return and no deadline warning/filter. Lunch is required; dinner is nullable. Only user-selected rests count, with a default dwell of 30 minutes. Restaurant break time is displayed only and never automatically rejects or rewrites a route. A candidate may cross Seoul midnight but must return less than 24 hours after departure.
+- Rationale: The rider decided that the useful output is the route-derived expected return, while two separate return constraints add unnecessary input burden.
+- User impact: Riders enter fewer times and compare candidates by honest expected return, including next-day early-morning returns.
+- Affected: route request contract, schedule engine, planner UI, share snapshot schema, trip persistence compatibility, tests.
+- Verification: departure-date validation; lunch/dinner/rest dwell; midnight-crossing expected return; exact 24-hour rejection; no removed fields in the browser/Edge contract or schemaVersion 2 share; schemaVersion 1 compatibility.
+- Confirmed by user interview: 2026-09-01 (option B; midnight-crossing candidates explicitly retained).
+- Persistence note: Existing `trips.desired_return_at` and `trips.hard_return_at` remain non-public legacy columns for a non-destructive first-version migration. The trusted Edge boundary supplies an undisplayed same-day compatibility value only to satisfy the old storage function. It never filters a candidate, appears in the current UI, or appears in schemaVersion 2 shares. A future column cleanup requires its own reviewed migration.
 
 ### Routes and motorcycle safety
 
@@ -192,22 +193,24 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### ROUTE-002 — Three candidate identities
 
 - Status: `CONFIRMED`
-- Decision: Present exactly three distinguishable candidate identities: balanced, winding, and shortest. Weather never changes their ordering.
+- Decision: Offer up to three distinguishable candidate identities: balanced, winding, and shortest. A successfully finalized plan still contains three distinct geometries, and weather never changes their ordering. If Kakao cannot supply a genuinely different and more-curved estimated winding route, do not finalize a partial or duplicate plan; explain that the rider can add a custom winding waypoint and recalculate.
 - Rationale: The rider chose three comparison goals.
-- User impact: The UI consistently compares three named route strategies and explains unavailable candidates.
+- User impact: The UI compares three named route strategies when all are honest and safe. A missing provider alternative is shown as an actionable unavailable state rather than a fake third success.
 - Affected: orchestration, provider request strategy, UI, tests.
 - Verification: candidate identity/uniqueness tests and weather-order independence.
 - Confirmed: 2026-08-30.
+- Interview update: On 2026-08-31 the real Preview provider returned no distinct winding alternative and `SAFE_ROUTE_NOT_FOUND` was observed twice. The user selected option A: keep a maximum of three honest candidates, retain three-geometry finalization, and require a custom winding waypoint when the provider pools still cannot produce the third geometry.
 
 #### ROUTE-003 — Winding candidate derivation
 
 - Status: `CONFIRMED`
-- Decision: User-authored winding waypoints are mandatory inputs to the winding candidate. A winding-only point is strictly a zero-dwell `pass-through` with no meal/rest role; required lunch, dinner, and selected rest stops can never be removed from balanced or shortest candidates by a winding marker. When no custom winding-only point exists, request Kakao alternatives and choose a distinct motorcycle-safe candidate using a documented geometry-curvature heuristic. The UI labels this result `와인딩 추정`; it must never imply that Kakao provides a native winding priority.
+- Decision: User-authored winding waypoints are mandatory inputs to the winding candidate. A winding-only point is strictly a zero-dwell `pass-through` with no meal/rest role; required lunch, dinner, and selected rest stops can never be removed from balanced or shortest candidates by a winding marker. When no custom winding-only point exists, first obtain the normal `RECOMMEND` baseline and then inspect the full `RECOMMEND + alternatives` pool for each chunk, choosing a geometry-distinct route only when its curvature exceeds that baseline. If the alternatives request returns no route or no more-curved geometry, inspect one `TIME + alternatives` pool under the same motorcycle constraints. Baseline chunks may be retained where Kakao has no local alternative, but at least one chunk in the completed estimated-winding route must be genuinely distinct and more curved. Otherwise return `WINDING_ROUTE_UNAVAILABLE` and ask for a custom winding waypoint. The UI labels a successful result `와인딩 추정`; it must never imply that Kakao provides a native winding priority.
 - Rationale: Labeling a normal recommended route as winding would mislead riders.
-- User impact: Saved winding points are preserved. Without them, riders still receive a third candidate but can see that winding quality is an application estimate.
+- User impact: Saved winding points are preserved. Without them, riders receive a third candidate only when the provider supplies enough trustworthy geometry; otherwise they get a clear waypoint action instead of a mislabeled route.
 - Affected: collection semantics, route orchestrator, candidate availability UI, provider cost.
 - Verification: provider-request contract tests, overlapping winding/stop rejection, defense-in-depth required-stop preservation, no-custom-waypoint scenario, distinctness and labeling tests.
 - Confirmed by user interview: 2026-08-30.
+- Interview update: On 2026-08-31 the user approved the priority-pool fallback and explicit custom-waypoint recovery after the provider legally returned no distinct alternative. The earlier guarantee that every no-waypoint request would still produce a third candidate is deprecated because Kakao documents one-or-more results, not multiple distinct results.
 
 #### ROUTE-004 — Waypoint splitting
 
@@ -218,6 +221,16 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Affected: route orchestration, budget accounting, ETA engine.
 - Verification: boundary waypoint counts, split safety parameters, order/dwell/ETA continuity.
 - Confirmed: 2026-08-30.
+
+#### ROUTE-005 — Road geometry and map marker truthfulness
+
+- Status: `CONFIRMED`
+- Decision: Before a successful route calculation, never connect selected places with a synthetic straight line. After success, draw only validated Kakao Mobility road `vertexes`, replace the prior polyline immediately when the selected candidate changes, and fit bounds to the complete road geometry plus markers. Mark origin, destination, lunch, dinner, selected rest, custom winding, and other waypoints with role-specific markers whose visible letter and accessible legend supplement color. Empty geometry, SDK failure, authorization failure, or an invalid domain is an explicit failure and never becomes a synthetic success.
+- Rationale: A point-to-point line can look rideable while crossing roads or terrain that the provider never routed, and identical markers make the actual stop order hard to verify.
+- User impact: Riders see the real road shape and can distinguish every planned role at a glance and through assistive text.
+- Affected: Kakao map canvas, planner/share map-point classification, Kakao type boundary, responsive styles, unit/Playwright/Preview tests.
+- Verification: no pre-route polyline; exact provider path readback; role-specific marker image/title and non-color legend; bounds over road and marker points; candidate replacement without stale canvas; SDK/error states; connected Preview at mobile and desktop widths.
+- Confirmed by user Goal: 2026-09-01.
 
 ### Weather
 
@@ -365,22 +378,23 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 - OIDC correction review history: the preceding pending statement records its then-current stage and is superseded by this result. Fixed SHA `23c54c69d59fd7838fd0f9dd61079c9f25632742` received security, data-integrity, route-safety, and UI approval with zero findings, but correctness found `MEDIUM 3`: callback recovery coupled state/allowlist access to provider credentials, Edge failure assertions covered only a helper, and Strict Mode/detach assertions covered only the lifecycle helper. That SHA is rejected. Fixed SHA `601c1a323ceff01b729b5041452f3ab28f4d4c9a` separates verification environment from provider credentials, delegates the deployed callback path to an injected handler with provider-denial/configuration/exchange/persistence/unauthenticated execution tests, and renders the actual callback under React Strict Mode. Independent correctness, security, data-integrity, route-safety, and UI/accessibility delta reviews each report `BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 0`; all prior findings are `RESOLVED`.
 - Hosted OIDC runtime finding: the first actual Kakao browser login proved that Supabase Edge exposed an internal `http://...` `request.url`; deriving `redirect_uri` from it caused Kakao to reject a registered HTTPS callback. The reviewed correction derives one exact callback URI from trusted `SUPABASE_URL`, shares it between authorize and token exchange, and rejects non-loopback HTTP or malformed provider bases. After deployment, the real Preview flow completed successfully, created exactly one Kakao Auth identity, returned the expected pre-membership `invite_required` state, and then allowed the explicitly approved first-admin bootstrap. Invitation, revoked-member, and second-rider isolation flows remain pending.
 - HTTPS callback review history: fixed SHA `9c66cc52e8c97a3b07642bcc0db0dd52e2ee4222` passed clean-copy `npm ci` (`404` packages), ESLint, TypeScript, Vitest (`42 files / 225 tests`), the Next.js Webpack production build, all five Deno entrypoints, diff check, and a no-value-output sensitive scan. Independent route-safety review approved with zero findings. Correctness and UI/accessibility independently reported the same `MEDIUM`: helper-only assertions did not execute the deployed `/start` and token-request wiring, so the original internal-HTTP regression could return while tests stayed green. Correctness also reported `LOW 3` for empty query/fragment markers, IPv6 loopback normalization, and stale status evidence. Security and data-integrity reviewer starts failed because the selected review model was at capacity and are not approvals. SHA `9c66cc5` is rejected. Correction SHA `51b6a071ac005efe3a1e692755f5369a1e432cd4` extracts the production request handler, executes an internal-HTTP start and callback through that handler, asserts the same trusted HTTPS callback in the authorize redirect and token POST body, closes the empty-component and IPv6 boundaries, and makes ciphertext tampering deterministic. Its targeted handler/helper/callback suite passes `12/12`; the synchronized clean copy passes ESLint, TypeScript, Vitest (`43 files / 226 tests`), the Next.js Webpack production build, all five Deno entrypoints, staged diff check, and the no-value-output sensitive scan. Independent correctness, security, data-integrity, route-safety, and UI/accessibility reviews each report `BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 0`; the prior `MEDIUM 1 / LOW 3` are `RESOLVED`. The route reviewer additionally passed `34/34` focused tests. Connected Preview browser testing remains `NOT_RUN` until deployment. The exact approved local PostgreSQL 17 target at `127.0.0.1:54322` remains at `233/233`; no migration, DB test, RPC, RLS, route, weather, collection, or budget file changed. Hosted Preview and Production are unchanged.
-- Repository: verified Kakao place selection, three server-owned route strategies, custom winding waypoint editing, hard-return exclusion, and actual provider geometry rendering are connected in the planner. Route ETA weather, collection version/apply UI, explicit immutable sharing, and the public resolver are implemented, locally verified, and hosted in Preview, but authenticated provider/browser smoke testing remains pending.
+- Repository: verified Kakao place selection, three server-owned route strategies, custom winding waypoint editing, route-derived expected return, and actual provider geometry rendering are connected in the planner. Route ETA weather, collection version/apply UI, explicit immutable sharing, and the public resolver are implemented, locally verified, and hosted in Preview, but the current return-input and winding corrections still require fixed-SHA review and Preview redeployment.
 - Kakao Map runtime finding: a key-preserving request from the fixed Preview origin returned `403 NotAuthorizedError` with `App(MOTOCAST Preview) disabled OPEN_MAP_AND_LOCAL service`. This proves that the JavaScript key reached Kakao but the app-level Map/Local product is disabled. Under `COST-001`, it may be activated only after the Kakao dashboard confirms free-quota eligibility and no Biz Wallet, paid API, or automatic billing requirement. The reviewed correction replaces the prior indefinite `카카오 지도 불러오는 중` state with an explicit SDK error path and ten-second timeout; actual place/route/weather smoke remains blocked until free-only activation and the new Preview deployment.
 - Map correction review history: fixed SHA `6669ff9af8179bbec90a0b91df10e3f3725a1398` is rejected. Correctness reported `HIGH 1 / MEDIUM 2` because connected SDK failure still displayed synthetic geometry and normal/unmount transitions lacked regression coverage; route safety reported a separate `HIGH 1` because old demo geometry could remain visible under a new live badge; security reported `MEDIUM 1 / LOW 1` because a public-share fragment remained available to later third-party map code and partial SDK initialization could escape the safe error state. Data integrity approved with zero findings, and the UI reviewer start failed at model capacity and is not an approval. Correction SHA `0b3973c1dab895132de52d67dbbc1998208d6657` renders synthetic geometry only in explicit keyless demo mode, keys readiness to the current geometry, hides and makes the old canvas inert until successful redraw, catches partial SDK/script failures, removes share fragments before a single Strict Mode resolver call, and fails closed on history-cleanup failure. Correctness, security, data-integrity, and route-safety delta reviewers marked all preceding findings `RESOLVED` with zero new findings. UI/accessibility reported `MEDIUM 2`: bottom-positioned map status could be obscured by planner/share summary cards, and removing the live region on `ready` omitted an audible completion transition. SHA `3c9de0fa4db38418b2294113fd3bdc4f7122775b` kept a stable live region and moved it upward; all non-UI reviewers approved, while UI marked those two findings resolved but found the same positioning root cause at 320px where wrapped top badges could cover it (`MEDIUM 1`). Rather than tuning another fixed offset, final implementation SHA `e5a5fe3b27fd9e135c9292154e2ab456d4c8f508` centers loading/demo/error in an independently stacked bounded card and makes only ready visually hidden while preserving its audible live-region completion. Final UI/accessibility, correctness, and route-safety delta reviewers report `BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 0`; all earlier findings are `RESOLVED`, with no regression. A synchronized writable copy passes focused tests `13/13`, ESLint, TypeScript, full Vitest `45 files / 237 tests`, the 13-route production build, and all five Deno entrypoint checks; the unchanged DB remains at the earlier `233/233`. Preview redeployment and 320px/desktop browser smoke remain pending.
-- Preview map/place runtime update: reviewed SHA `a5693cd8c6c3551eddb989d01280f9263ffba8d6` deployed Ready and CI `verify` passed. After the user enabled the free Map/Local product, the fixed-origin SDK check returned `200 text/javascript` and the authenticated browser rendered the map. The first `팔당역` search returned data but the client rejected its contract. Kakao's official Local API sample proves `place_url` uses `http://place.map.kakao.com/...`; the browser intentionally accepts only HTTPS on that exact host. The current correction canonicalizes only the provider's exact Kakao place host to HTTPS at the server boundary and retains the browser allowlist. It also removes the connected map's point-to-point fallback polyline: only validated Kakao Mobility road `vertexes` may produce an actual route line. Fixed-SHA review, redeployment, and browser recheck remain pending.
+- Preview map/place/route runtime update: reviewed SHA `7fc021ee9ff5475e2023d7ca028f33665157d3e2` passed CI `verify`, deployed Ready at the fixed `develop` Preview alias, and passed authenticated map and `팔당역` place-search smoke. The server canonicalizes only the provider's exact Kakao place host to HTTPS, and the connected map draws no point-to-point fallback line. The first real three-candidate calculation then failed only the estimated winding candidate. Safe log readback at `2026-08-31T14:18:50Z` and `14:19:04Z` showed `SAFE_ROUTE_NOT_FOUND`; Kakao's official future-directions contract allows one-or-more results for `alternatives=true` and does not guarantee a distinct alternative. The user approved the `ROUTE-002`/`ROUTE-003` priority-pool and custom-waypoint recovery correction. Its new fixed SHA, reviews, Preview function deployment, and actual route/weather smoke remain pending.
+- Current correction writer evidence: the explicitly approved disposable local PostgreSQL target at `127.0.0.1:54322` was identified before reset, all seven migrations applied from empty, the latest migration reapplied, and the RLS/RPC/ACL/share/budget/collection/invite/route-finalization/OIDC suites passed `236/236`. An environment-file-free writable copy passed `npm ci` (`407` packages, `0` vulnerabilities), ESLint, TypeScript, all five Deno entrypoints, Vitest (`47 files / 263 tests`), deterministic Chromium Playwright (`9 PASS / 2 SKIP`; the two connected Preview cases remain deliberately unexecuted), the 13-route production build, diff check, and the corrected names-only secret scan. The mounted source previously produced cache-write setup failures, and one older temporary build detected an unintended leftover `.env.local`; neither is counted as product GREEN, and the clean-copy reruns are the writer evidence. A fixed commit, six-axis independent review, CI, Preview deployment, authenticated route/weather/storage smoke, and all Production work remain pending.
 - Review-process incident: a read-only data reviewer omitted explicit `GET` while querying GitHub deployments and unintentionally created empty Preview deployment record `6177684104` for parent SHA `f66f63c`. Readback proved it had no status, environment URL, or Production flag and triggered no Vercel deployment. The lead deleted that exact metadata record under the temporary-resource cleanup rule and verified `404`; existing Vercel deployment record `6176733391`, code, Supabase, and Production were untouched.
 
 ## Implementation status
 
 ### Implemented but not production-verified
 
-- Responsive PWA shell and Kakao map canvas; the fail-loud map SDK timeout correction is deployed and the authenticated Preview map renders. The follow-up place-URL and road-geometry-only correction is locally implemented and pending fixed-SHA review and Preview redeployment.
+- Responsive PWA shell and Kakao map canvas; the fail-loud map SDK timeout, exact-host place URL normalization, and road-geometry-only correction are reviewed and deployed. The current local correction adds lettered, color-independent role markers and an accessible legend for every stop type; authenticated Preview marker smoke is pending.
 - Supabase browser/server client scaffolding plus an email-free Kakao OIDC start/callback/consume flow. The flow requests only `openid`, `profile_nickname`, and `profile_image`, validates signed state, hashed nonce, and app-origin browser binding, transports tokens through an encrypted two-minute one-time handoff rather than a request URL, and completes the Supabase session with Kakao ID-token verification. The trusted-HTTPS correction is deployed and the real first-admin Preview login succeeds.
 - Invitation, membership, collection, trip, cache, weather snapshot, share, and budget schema with initial RLS.
 - Kakao place search with a selected-versus-typed UI state; the server validates the provider's exact place host and upgrades Kakao's documented HTTP detail URL to HTTPS before returning it to the browser.
-- Balanced, winding, and shortest route orchestration with server-enforced `car_type=7`, `avoid=motorway`, hard-return exclusion, no passenger-car fallback, and provider waypoint/geometry continuity validation.
-- Custom winding waypoint editing and an honestly labelled `와인딩 추정` alternative when no custom winding point exists.
+- Balanced, winding, and shortest route orchestration with server-enforced `car_type=7`, `avoid=motorway`, a computed-return duration below 24 hours, no passenger-car fallback, and provider waypoint/geometry continuity validation. The current correction pools validated `RECOMMEND` alternatives and conditionally one `TIME` alternatives request per chunk; it requires at least one more-curved distinct chunk before finalizing an estimated winding route.
+- Custom winding waypoint editing and an honestly labelled `와인딩 추정` alternative when no custom winding point exists. If no honest provider alternative exists, the route stays incomplete and the UI asks the rider to add a custom winding waypoint.
 - Safe provider-contract parsing and actual route geometry rendering; connected maps draw no point-to-point fallback line before calculation and use only validated Kakao Mobility road `vertexes` after success. Example and live states remain visibly distinct.
 - Transactional plan persistence and ordered collection versioning begin in `20260830223000`. Migration `20260830224500` adds trusted Edge-only route staging, three distinct route-geometry finalization, verified-place collection persistence through `save-collection`, route-bound weather snapshot persistence and stale observation, immutable aggregate DML denial, narrow owner RPCs, a ten-minute single-use preview capability, snapshot-local waypoint IDs, and an explicit nested-field share allowlist. Both migrations are deployed to Preview only; Production remains unchanged.
 - Migration `20260831213000_email_free_kakao_oidc.sql` adds the encrypted one-time OIDC handoff table and its two service-role-only atomic RPCs. It is verified in the disposable local database and deployed to Preview; Production remains unchanged.
@@ -389,20 +403,40 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 - Provider calculation and transactional plan finalization share one synchronous UI lock. Candidate selection, recalculation, collection application, and sharing stay blocked through persistence; generation/trip identity and weather-request identity prevent late results from overwriting the current plan.
 - Route ETA is connected to the weather request contract, with exact six-hour/five-day model boundaries, per-request deduplication, recent cache reuse, durable same-route snapshots, explicit stale fallback, full multi-day age and expiry display, and KMA grid conversion regression coverage. Hosted provider execution remains unverified.
 - Vercel project runtime and deployment protection now match `OPS-004` and `OPS-005` by API readback.
-- Basic schedule unit tests and CI workflows.
+- Unit/integration tests plus a one-worker headless Chromium Playwright layer for 320/390/820/1440 responsive, route, weather, collection/share, and authenticated Preview scenarios. CI now runs the same deterministic `npm run test:e2e`; the external login state stays outside the repository and bearer-producing live tests disable browser artifacts.
 
 ### Incomplete
 
-- Fixed-SHA review and Preview redeployment of the Kakao place URL normalization and road-geometry-only map correction.
+- Fixed-SHA review and Preview deployment of the priority-pool estimated-winding correction.
 - Connected browser verification of invitation login and revoked-member denial; direct OIDC and first-admin bootstrap are complete.
 - AUTH-003 migrations and sensitive RPC ACLs are live and independently approved; full OAuth and A/B/admin/revoked connected tests remain pending.
-- Actual Kakao route and KMA response smoke tests; provider-backed candidate distinctness remains unverified. Preview Map/Local free-only activation and map rendering are complete.
+- Actual successful Kakao three-candidate route and KMA response smoke tests; the first real route attempt proved the explicit no-distinct-winding failure path. Preview Map/Local activation, map rendering, and place search are complete.
 - Authenticated connected smoke testing for route ETA weather, collection CRUD/version/apply, and immutable share preview/publish/resolver/revoke/reissue.
 - Resolving `OPS-008` for the Production Supabase region before real rider data is accepted.
 - Hosted RLS/provider/browser/Preview tests and all Production tests. The full local fresh-migration, RLS/RPC, and concurrency suites are GREEN.
 - A new reviewed `develop` Preview deployment and, only after a new `OPS-008` interview, a `main`-origin Production deployment. Runtime alignment, Preview variable isolation, and Preview-only deployment protection are configured and still require deployment-level smoke verification.
 
 ## Deprecated decisions
+
+#### DEPRECATED-005 — User-entered desired and hard return constraints
+
+- Status: `DEPRECATED`
+- Decision: Require both a desired return and a hard return, warn after the desired time, and exclude candidates after the hard time or after Seoul midnight.
+- Rationale: The user chose route-derived expected return only and explicitly allowed candidates that cross midnight. Replaced by `PLAN-002` and the less-than-24-hour service boundary in `SCOPE-001`.
+- User impact: The planner no longer asks for two speculative return times; it shows each candidate's calculated return instead.
+- Affected: planner input, route request, schedule timeline, candidate UI, sharing schema, tests, legacy persistence adapter.
+- Verification: removed-field impact search, midnight-crossing and 24-hour boundary tests, schemaVersion 2 omission, and schemaVersion 1 compatibility.
+- Deprecated by user interview: 2026-09-01.
+
+#### DEPRECATED-004 — Guaranteed automatic winding candidate
+
+- Status: `DEPRECATED`
+- Decision: Guarantee that a rider without a custom winding waypoint always receives a third automatic winding candidate from `alternatives=true`.
+- Rationale: Real Preview evidence and Kakao's documented one-or-more response cardinality show that a distinct alternative is not guaranteed. Replaced by the confirmed `ROUTE-002`/`ROUTE-003` priority-pool attempt and explicit custom-waypoint recovery.
+- User impact: The application never relabels a duplicate or less-curved route as winding merely to reach three cards.
+- Affected: route orchestration, provider budget, failure contract, planner notice, tests.
+- Verification: no-distinct pools return `WINDING_ROUTE_UNAVAILABLE`; one distinct more-curved chunk permits a complete candidate; custom waypoint remains available.
+- Deprecated by user interview: 2026-08-31.
 
 #### DEPRECATED-001 — Kakao favorites as product storage
 

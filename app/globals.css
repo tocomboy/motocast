@@ -529,13 +529,44 @@ button {
   margin: 0;
 }
 
-.field-grid {
+.time-estimate-note {
+  align-items: center;
+  background: #edf3ef;
+  border: 1px solid #d3e0d8;
+  border-radius: 10px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 10px 11px;
 }
 
-.field-grid.three {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.time-estimate-note > span {
+  align-items: center;
+  background: #46705b;
+  border-radius: 50%;
+  color: white;
+  display: flex;
+  font-size: 0.72rem;
+  height: 26px;
+  justify-content: center;
+  width: 26px;
+}
+
+.time-estimate-note p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.time-estimate-note strong {
+  color: var(--ink);
+  font-size: 0.72rem;
+}
+
+.time-estimate-note small {
+  color: var(--ink-soft);
+  font-size: 0.64rem;
+  line-height: 1.45;
 }
 
 .waypoint-list {
@@ -903,6 +934,45 @@ button {
   padding: 0;
   white-space: nowrap;
   width: 1px;
+}
+
+.map-marker-legend {
+  align-items: center;
+  background: rgba(255, 253, 248, 0.94);
+  border: 1px solid rgba(24, 34, 29, 0.14);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 10px;
+  left: 18px;
+  list-style: none;
+  margin: 0;
+  max-width: calc(100% - 36px);
+  padding: 8px 10px;
+  position: absolute;
+  top: 18px;
+  z-index: 5;
+}
+
+.map-marker-legend li {
+  align-items: center;
+  color: var(--ink-soft);
+  display: flex;
+  font-size: 0.66rem;
+  font-weight: 750;
+  gap: 5px;
+}
+
+.map-marker-symbol {
+  align-items: center;
+  border: 1px solid rgba(255, 253, 248, 0.9);
+  border-radius: 50%;
+  color: #fffdf8;
+  display: inline-flex;
+  font-size: 0.58rem;
+  height: 20px;
+  justify-content: center;
+  width: 20px;
 }
 
 .status-dot {
@@ -1688,14 +1758,6 @@ button {
 @media (max-width: 520px) {
   .header-actions .compact {
     display: none;
-  }
-
-  .field-grid.three {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .field-grid.three label:first-child {
-    grid-column: 1 / -1;
   }
 
   .summary-metrics {

@@ -363,6 +363,9 @@ select * from public.publish_trip_share(
 grant select on published_result to authenticated;
 insert into tap_results values
   ((select published_snapshot = preview_snapshot from published_result cross join preview_result), 'published snapshot exactly matches the approved preview capability'),
+  ((select preview_snapshot ->> 'schemaVersion' = '2' from preview_result), 'new shares use the return-estimate-only schema'),
+  ((select not (preview_snapshot -> 'trip' ? 'desiredReturnAt') and not (preview_snapshot -> 'trip' ? 'hardReturnAt') from preview_result), 'new shares omit removed desired and hard return inputs'),
+  ((select preview_snapshot -> 'routes' -> 0 -> 'route' ? 'returnAt' from preview_result), 'new shares retain the computed route return time'),
   ((select preview_snapshot -> 'weather' is not null from preview_result), 'share includes weather only when it matches the selected stored route'),
   ((select preview_snapshot -> 'waypoints' -> 0 ->> 'id' = 'waypoint-0' from preview_result), 'share uses snapshot-local waypoint ids instead of owner table ids'),
   ((select preview_snapshot -> 'weather' ? 'validUntil' from preview_result), 'share exposes weather validity for freshness display'),

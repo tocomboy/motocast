@@ -39,7 +39,19 @@ The JavaScript key and allowed web origin are necessary but do not activate the 
 
 On 2026-08-31 the fixed Preview alias initially returned that exact 403 because `MOTOCAST Preview` had Map/Local disabled. After the user confirmed the free-only activation, a key-preserving request from the fixed Preview origin returned `200 text/javascript` and the authenticated browser rendered the Kakao map. The client-side error boundary retains its ten-second timeout and safe configuration error. The first real place search then exposed a separate response-contract defect: Kakao officially returns `http://place.map.kakao.com/...`, while the browser accepts only the HTTPS Kakao host. The server correction validates that exact host and upgrades the URL to HTTPS; do not weaken the browser host check or accept arbitrary provider URLs.
 
-Before an actual route response exists, the connected map may show selected markers but must not connect them with a synthetic straight line. After calculation, the only route polyline source is the ordered Kakao Mobility road `vertexes` returned and validated by `plan-route`.
+Before an actual route response exists, the connected map may show selected markers but must not connect them with a synthetic straight line. After calculation, the only route polyline source is the ordered Kakao Mobility road `vertexes` returned and validated by `plan-route`. Origin, destination, lunch, dinner, selected rest, custom winding, and other waypoint markers use distinct lettered images and a non-color legend; Preview smoke must confirm those roles and complete bounds at mobile and desktop widths.
+
+## Estimated winding recovery
+
+Kakao documents `alternatives=true` as returning one or more routes, so a distinct winding alternative is not guaranteed. For a plan without a custom winding waypoint, `plan-route` obtains a validated normal `RECOMMEND` baseline, inspects the `RECOMMEND + alternatives` pool, and consumes at most one additional `TIME + alternatives` request for a chunk whose alternatives call returns no route or no more-curved distinct geometry. Every request retains `car_type=7`, `avoid=motorway`, `roadevent=0`, and detailed geometry; every attempted request consumes budget under `COST-002`.
+
+A multi-chunk estimated winding route is accepted only when at least one chunk is geometry-distinct and more curved than its recommended baseline. Other chunks may retain that safe baseline when the provider has no local alternative. If all chunks remain baseline geometry, the function returns the public `WINDING_ROUTE_UNAVAILABLE` code, the browser asks for a custom winding waypoint, and no partial or duplicate three-candidate plan is finalized. Never generate an arbitrary detour waypoint or relabel the balanced/shortest route as winding.
+
+## Return estimate and legacy storage boundary
+
+The planner accepts a ride date and departure time only. `plan-route` derives each candidate's `returnAt` from validated Kakao section durations plus meal and selected-rest dwell, accepts a return after Seoul midnight, and rejects a computed duration of 24 hours or more. The browser cannot supply a desired or hard return value that affects this decision.
+
+The initial `trips` table still has non-null `desired_return_at` and `hard_return_at` columns. Until a separate data migration removes them, the trusted Edge Function supplies the Seoul departure-day end as an undisplayed compatibility value to the private persistence path. It is not a deadline, does not reject routes, and must never be exposed in schemaVersion 2 share snapshots. Existing immutable schemaVersion 1 shares remain readable with their historical fields.
 
 ## Supabase promotion order
 

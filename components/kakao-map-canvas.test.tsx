@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { act, create, type ReactTestRenderer, type TestRendererOptions } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { KakaoMapCanvas } from "./kakao-map-canvas";
+import { KakaoMapCanvas, type MapMarkerRole } from "./kakao-map-canvas";
 
 type Listener = () => void;
 
@@ -32,8 +32,8 @@ class FakeScript {
 }
 
 const points = [
-  { label: "출발", latitude: 37.5, longitude: 127.1 },
-  { label: "복귀", latitude: 37.6, longitude: 127.2 },
+  { label: "출발", latitude: 37.5, longitude: 127.1, role: "origin" as const },
+  { label: "복귀", latitude: 37.6, longitude: 127.2, role: "destination" as const },
 ];
 const actualPath = [
   { latitude: 37.5, longitude: 127.1 },
@@ -73,7 +73,10 @@ function installMaps({ throwOnLoad = false }: { throwOnLoad?: boolean } = {}) {
     this.setBounds = setBounds;
   });
   const Marker = vi.fn(function MarkerInstance() {});
+  const MarkerImage = vi.fn(function MarkerImageInstance() {});
   const Polyline = vi.fn(function PolylineInstance() {});
+  const Size = vi.fn(function SizeInstance() {});
+  const Point = vi.fn(function PointInstance() {});
   class LatLng {
     constructor(private latitude: number, private longitude: number) {}
     getLat() { return this.latitude; }
@@ -91,16 +94,22 @@ function installMaps({ throwOnLoad = false }: { throwOnLoad?: boolean } = {}) {
     LatLngBounds,
     Map: MapConstructor,
     Marker,
+    MarkerImage,
+    Size,
+    Point,
     Polyline,
   };
   (window as Window).kakao = { maps: maps as unknown as KakaoMapsNamespace };
-  return { loadCallbacks, MapConstructor, Marker, Polyline, extend, setBounds };
+  return { loadCallbacks, MapConstructor, Marker, MarkerImage, Polyline, extend, setBounds };
 }
 
-async function mountMap(path?: typeof actualPath) {
+async function mountMap(
+  path?: typeof actualPath,
+  mapPoints: Array<{ label: string; latitude: number; longitude: number; role?: MapMarkerRole }> = points,
+) {
   let renderer!: ReactTestRenderer;
   await act(async () => {
-    renderer = create(<StrictMode><KakaoMapCanvas points={points} path={path} /></StrictMode>, rendererOptions);
+    renderer = create(<StrictMode><KakaoMapCanvas points={mapPoints} path={path} /></StrictMode>, rendererOptions);
   });
   return renderer;
 }
@@ -152,6 +161,10 @@ describe("KakaoMapCanvas", () => {
 
     expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
     expect(maps.Marker).toHaveBeenCalledTimes(points.length);
+    expect(maps.MarkerImage).toHaveBeenCalledTimes(points.length);
+    const markerCalls = maps.Marker.mock.calls as unknown as Array<[{ title: string; image: unknown }]>;
+    expect(markerCalls.map(([options]) => options.title)).toEqual(["출발 · 출발", "복귀 · 복귀"]);
+    expect(markerCalls[0][0].image).not.toBe(markerCalls[1][0].image);
     expect(maps.Polyline).toHaveBeenCalledTimes(1);
     const polylineCalls = maps.Polyline.mock.calls as unknown as Array<[
       { path: Array<{ getLat: () => number; getLng: () => number }> },
@@ -163,6 +176,7 @@ describe("KakaoMapCanvas", () => {
     expect(mapCanvas(renderer).props.className).toContain("is-ready");
     expect(mapCanvas(renderer).props["aria-hidden"]).toBe(false);
     expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(1);
+    expect(renderer.root.findByProps({ "aria-label": "지도 지점 표시 안내" }).findAllByType("li")).toHaveLength(2);
     expect(statusText(renderer)).toContain("실제 경로 지도 준비 완료");
     expect(renderer.root.findByProps({ role: "status" }).props.className).toContain("is-visually-hidden");
     await act(async () => renderer.unmount());
@@ -180,6 +194,39 @@ describe("KakaoMapCanvas", () => {
     expect(maps.Polyline).not.toHaveBeenCalled();
     expect(maps.extend).toHaveBeenCalledTimes(points.length);
     expect(statusText(renderer)).toContain("카카오 지도 준비 완료");
+    await act(async () => renderer.unmount());
+  });
+
+  it("distinguishes every planned place role with text as well as color", async () => {
+    vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "test-public-key");
+    stubBrowser();
+    const maps = installMaps();
+    const rolePoints = [
+      { label: "출발지", latitude: 37.50, longitude: 127.10, role: "origin" as const },
+      { label: "복귀지", latitude: 37.51, longitude: 127.11, role: "destination" as const },
+      { label: "점심지", latitude: 37.52, longitude: 127.12, role: "lunch" as const },
+      { label: "저녁지", latitude: 37.53, longitude: 127.13, role: "dinner" as const },
+      { label: "휴식지", latitude: 37.54, longitude: 127.14, role: "rest" as const },
+      { label: "굽이길", latitude: 37.55, longitude: 127.15, role: "winding" as const },
+      { label: "경유지", latitude: 37.56, longitude: 127.16, role: "waypoint" as const },
+    ];
+    const renderer = await mountMap(undefined, rolePoints);
+    await flush(maps.loadCallbacks);
+
+    const markerCalls = maps.Marker.mock.calls as unknown as Array<[{ title: string }]>;
+    expect(markerCalls.map(([options]) => options.title)).toEqual([
+      "출발 · 출발지",
+      "복귀 · 복귀지",
+      "점심 · 점심지",
+      "저녁 · 저녁지",
+      "휴식 · 휴식지",
+      "와인딩 · 굽이길",
+      "경유 · 경유지",
+    ]);
+    const legend = renderer.root.findByProps({ "aria-label": "지도 지점 표시 안내" });
+    expect(legend.findAllByType("li").map((item) => item.children.at(-1))).toEqual([
+      "출발", "복귀", "점심", "저녁", "휴식", "와인딩", "경유",
+    ]);
     await act(async () => renderer.unmount());
   });
 

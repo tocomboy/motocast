@@ -45,9 +45,15 @@ npm run lint
 npm run typecheck
 npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts supabase/functions/save-collection/index.ts supabase/functions/kakao-oidc/index.ts
 npm test
+npx playwright install chromium
+npm run test:e2e
 npm run build
 git diff --check
 ```
+
+The deterministic Playwright suite runs Chromium headless with one worker through the same `npm run test:e2e` command locally and in CI. It starts a keyless local demo server and may intercept only deterministic browser contracts; it never substitutes for the connected Preview gate. `npm run test:e2e:preview` requires an explicit HTTPS `MOTOCAST_E2E_BASE_URL`. Authenticated Preview runs additionally require `MOTOCAST_E2E_STORAGE_STATE` to point outside the repository. The one-time `npm run test:e2e:auth` helper opens a headed browser and writes that state without printing cookies or tokens. The live mutation file disables screenshot, trace, and video because published share URLs are bearer credentials; all other tests retain artifacts only on failure.
+
+The live route/collection/share scenario requires explicit `MOTOCAST_E2E_LIVE_MUTATIONS=1` plus private test queries for origin, destination, lunch, rest, and winding. It creates only timestamped test-owned resources, verifies revoke and reissue, and removes or revokes them in `finally`. Never put those queries, a storage-state path inside the repository, or generated share URLs in tracked fixtures or reports.
 
 Connected Supabase checks use explicit files so a restricted linked test role is not mistaken for a full fixture-capable environment:
 
@@ -81,9 +87,9 @@ Additional required suites by boundary:
 - Invitations: create, invalid, expiry, revoke, same-origin JSON acceptance, cross-site/non-JSON denial without cookie, same-user idempotency, distinct-user concurrency.
 - Sharing: preview, publish, immutable source edit, revoke, reissue, unknown/revoked token, cross-user management denial, and previously emitted schemaVersion 1 fixture compatibility.
 - Budget: missing, zero, below limit, exact limit, exhausted, concurrent calls, Seoul date rollover, provider failure decision.
-- Routes: provider request interception on current/future/split calls, documented no-route result classification versus malformed/unknown provider responses, winding-only zero-dwell pass-through validation, required-stop preservation, waypoint boundaries, hard-return filtering, distinct candidate identity, no passenger-car fallback.
+- Routes: provider request interception on current/future/split calls, documented no-route result classification versus malformed/unknown provider responses, winding-only zero-dwell pass-through validation, required-stop preservation, waypoint boundaries, midnight-crossing expected return, exact 24-hour exclusion, distinct candidate identity, no passenger-car fallback.
 - Weather: six-hour and five-day exact boundaries, grid conversion, cache deduplication and exact cache response shape, structured provider/budget/configuration/persistence/request failure kinds, malformed provider JSON, complete-or-empty stale DB metadata, snapshot success/failure/stale/no-snapshot, independently advancing multi-day age and simultaneous failure/expiry display.
-- Browser/PWA: mobile and desktop, keyboard/focus/labels, loading/error/stale/live, manifest/service worker update.
+- Browser/PWA: 320x800, 390x844, 820x1180, and 1440x900 layouts; keyboard/focus/labels, loading/error/stale/live, route-derived expected return, role-labelled map markers, manifest/service worker update. Kakao road geometry and authenticated provider smoke remain separate Preview evidence.
 
 ## 4. Commit and fixed-SHA review boundary
 
@@ -109,7 +115,7 @@ Required review axes:
 - Correctness: normal/error/boundary/state transitions, regressions, no success-masking fallback.
 - Security: Auth, RLS bypass, token handling, cross-user access, XSS/SQL injection, validation, secret/error exposure.
 - Data integrity: migrations, foreign keys/delete rules, transactions, concurrency, atomic budgets, rowcount/write drops, time precision.
-- Route safety: `car_type=7`, `avoid=motorway`, every split/future call, no passenger-car fallback, hard-return exclusion.
+- Route safety: `car_type=7`, `avoid=motorway`, every split/future call, no passenger-car fallback, and the less-than-24-hour computed-return boundary without a same-calendar-day restriction.
 - Operations: develop/Preview and main/Production lineage, environment ownership, checks, quotas, outage readability.
 - UI/accessibility: responsive layout, keyboard/focus/labels, safe errors, loading/error/stale, non-color cues, demo/live distinction.
 

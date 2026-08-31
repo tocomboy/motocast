@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { CollectionManager } from "@/components/collection-manager";
-import { KakaoMapCanvas } from "@/components/kakao-map-canvas";
+import { KakaoMapCanvas, type MapMarkerRole } from "@/components/kakao-map-canvas";
 import { PlaceSearchField } from "@/components/place-search-field";
 import { ShareManager } from "@/components/share-manager";
 import {
@@ -18,12 +18,11 @@ import type { PlaceSearchResult } from "@/lib/places/search";
 import {
   demoCandidates,
   demoDepartureAt,
-  demoDesiredReturnAt,
-  demoHardReturnAt,
   demoMapPoints,
 } from "@/lib/planner/demo";
 import { PlannerActionGate } from "@/lib/planner/action-gate";
 import { withClientTimeout } from "@/lib/planner/client-timeout";
+import { plannerFunctionErrorCode, windingUnavailableNotice } from "@/lib/planner/function-error";
 import { parseSafeRouteCandidateSet, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
 import { buildTimeline, formatKoreanTime, weatherRiskLabel } from "@/lib/planner/schedule";
 import type { RouteCandidate } from "@/lib/planner/types";
@@ -36,8 +35,6 @@ type PlannerDraft = {
   destination: string;
   rideDate: string;
   departureTime: string;
-  desiredReturnTime: string;
-  hardReturnTime: string;
   lunch: string;
   dinner: string;
   includeRest: boolean;
@@ -66,8 +63,6 @@ const defaultDraft: PlannerDraft = {
   destination: "팔당 복귀점",
   rideDate: seoulToday(),
   departureTime: "07:30",
-  desiredReturnTime: "17:30",
-  hardReturnTime: "18:30",
   lunch: "홍천 점심 정차",
   dinner: "",
   includeRest: false,
@@ -104,7 +99,7 @@ function isUuid(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-function liveRouteCandidate(response: SafeRouteResponse, desiredReturnAt: string, hardReturnAt: string): RouteCandidate {
+function liveRouteCandidate(response: SafeRouteResponse): RouteCandidate {
   const stopMinutes = response.legs.reduce((total, leg) => total + leg.dwellMinutes, 0);
   const rideMinutes = Math.ceil(response.legs.reduce((total, leg) => total + leg.durationSeconds, 0) / 60);
   const descriptions: Record<RouteCandidate["id"], string> = {
@@ -131,8 +126,6 @@ function liveRouteCandidate(response: SafeRouteResponse, desiredReturnAt: string
     rideMinutes,
     stopMinutes,
     returnAt: response.returnAt,
-    fitsDesiredReturn: new Date(response.returnAt) <= new Date(desiredReturnAt),
-    fitsHardReturn: new Date(response.returnAt) <= new Date(hardReturnAt),
     path,
     segments: response.legs.map((leg, index) => ({
       id: `${response.candidate.id}-${index}`,
@@ -194,13 +187,26 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const actionGateRef = useRef(new PlannerActionGate());
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("motocast-planner-draft-v1");
+    const currentKey = "motocast-planner-draft-v2";
+    const legacyKey = "motocast-planner-draft-v1";
+    const saved = window.localStorage.getItem(currentKey) ?? window.localStorage.getItem(legacyKey);
     if (!saved) return;
     let restored: PlannerDraft;
     try {
-      restored = { ...defaultDraft, ...(JSON.parse(saved) as Partial<PlannerDraft>) };
+      const parsed = JSON.parse(saved) as Partial<PlannerDraft>;
+      restored = {
+        origin: typeof parsed.origin === "string" ? parsed.origin : defaultDraft.origin,
+        destination: typeof parsed.destination === "string" ? parsed.destination : defaultDraft.destination,
+        rideDate: typeof parsed.rideDate === "string" ? parsed.rideDate : defaultDraft.rideDate,
+        departureTime: typeof parsed.departureTime === "string" ? parsed.departureTime : defaultDraft.departureTime,
+        lunch: typeof parsed.lunch === "string" ? parsed.lunch : defaultDraft.lunch,
+        dinner: typeof parsed.dinner === "string" ? parsed.dinner : defaultDraft.dinner,
+        includeRest: typeof parsed.includeRest === "boolean" ? parsed.includeRest : defaultDraft.includeRest,
+      };
+      window.localStorage.removeItem(legacyKey);
     } catch {
-      window.localStorage.removeItem("motocast-planner-draft-v1");
+      window.localStorage.removeItem(currentKey);
+      window.localStorage.removeItem(legacyKey);
       return;
     }
     const task = window.setTimeout(() => setDraft(restored), 0);
@@ -208,7 +214,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem("motocast-planner-draft-v1", JSON.stringify(draft));
+    window.localStorage.setItem("motocast-planner-draft-v2", JSON.stringify(draft));
   }, [draft]);
 
   useEffect(() => {
@@ -272,27 +278,30 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       window.clearInterval(timer);
     };
   }, [selectedWeather]);
-  const liveTimes = {
-    departureAt: `${draft.rideDate}T${draft.departureTime}:00+09:00`,
-    desiredReturnAt: `${draft.rideDate}T${draft.desiredReturnTime}:00+09:00`,
-    hardReturnAt: `${draft.rideDate}T${draft.hardReturnTime}:00+09:00`,
-  };
+  const departureAt = `${draft.rideDate}T${draft.departureTime}:00+09:00`;
   const timeline = useMemo(
     () =>
       buildTimeline({
-        departureAt: liveCandidates ? liveTimes.departureAt : demoDepartureAt,
-        desiredReturnAt: liveCandidates ? liveTimes.desiredReturnAt : demoDesiredReturnAt,
-        hardReturnAt: liveCandidates ? liveTimes.hardReturnAt : demoHardReturnAt,
+        departureAt: liveCandidates ? departureAt : demoDepartureAt,
         segments: selected.segments.map((segment) =>
           segment.to.id === "rest"
             ? { ...segment, to: { ...segment.to, selected: draft.includeRest } }
             : segment,
         ),
       }),
-    [draft.includeRest, liveCandidates, liveTimes.departureAt, liveTimes.desiredReturnAt, liveTimes.hardReturnAt, selected],
+    [departureAt, draft.includeRest, liveCandidates, selected],
   );
   const selectedMapPoints = liveCandidates
-    ? [selected.segments[0].from, ...selected.segments.map((segment) => segment.to)]
+    ? [selected.segments[0].from, ...selected.segments.map((segment) => segment.to)].map((point, index, all) => {
+        let role: MapMarkerRole = "waypoint";
+        if (index === 0) role = "origin";
+        else if (index === all.length - 1) role = "destination";
+        else if (point.id === places.lunch?.kakaoPlaceId) role = "lunch";
+        else if (point.id === places.dinner?.kakaoPlaceId) role = "dinner";
+        else if (point.id === places.rest?.kakaoPlaceId) role = "rest";
+        else if (point.winding) role = "winding";
+        return { ...point, role };
+      })
     : demoMapPoints;
 
   const collectionPoints = useMemo<CollectionPoint[]>(() => {
@@ -657,7 +666,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       destination: routePoint(places.destination, "pass-through", 0),
       waypoints: appliedCollectionPoints?.filter((point) => point.selected) ?? generatedWaypoints,
       serviceDate: draft.rideDate,
-      ...liveTimes,
+      departureAt,
     };
     try {
       const results = await Promise.all(
@@ -675,14 +684,21 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       if (results.some(({ error }) => error)) {
         const labels = ["균형", "와인딩", "최단"];
         const failed = results.flatMap((result, index) => result.error ? [labels[index]] : []);
+        const windingFailureCode = results[1].error
+          ? await plannerFunctionErrorCode(results[1].error)
+          : null;
         if (liveCandidates) setLiveResultStale(true);
-        setNotice(liveCandidates
-          ? `${failed.join("·")} 경로 계산에 실패해 이전 실제 경로를 유지했습니다. 자동차 경로로 대체하지 않았습니다.`
-          : `${failed.join("·")} 경로를 안전 조건 안에서 계산하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.`);
+        if (windingFailureCode === "WINDING_ROUTE_UNAVAILABLE") {
+          setNotice(windingUnavailableNotice(Boolean(liveCandidates)));
+        } else {
+          setNotice(liveCandidates
+            ? `${failed.join("·")} 경로 계산에 실패해 이전 실제 경로를 유지했습니다. 자동차 경로로 대체하지 않았습니다.`
+            : `${failed.join("·")} 경로를 안전 조건 안에서 계산하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.`);
+        }
         return;
       }
       const responses = parseSafeRouteCandidateSet(results.map(({ data }) => data));
-      const candidates = responses.map((response) => liveRouteCandidate(response, liveTimes.desiredReturnAt, liveTimes.hardReturnAt));
+      const candidates = responses.map(liveRouteCandidate);
       setNotice("실제 경로 3개를 계산했습니다. 계획을 안전하게 저장하는 중입니다.");
 
       const { data: savedTripId, error: saveError } = await supabase.rpc("finalize_trip_plan", {
@@ -842,10 +858,10 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                 <span>라이딩 날짜</span>
                 <input type="date" value={draft.rideDate} onChange={(event) => update("rideDate", event.target.value)} />
               </label>
-              <div className="field-grid three">
-                <label><span>출발</span><input type="time" value={draft.departureTime} onChange={(event) => update("departureTime", event.target.value)} /></label>
-                <label><span>희망 복귀</span><input type="time" value={draft.desiredReturnTime} onChange={(event) => update("desiredReturnTime", event.target.value)} /></label>
-                <label><span>최종 복귀</span><input type="time" value={draft.hardReturnTime} onChange={(event) => update("hardReturnTime", event.target.value)} /></label>
+              <label><span>출발</span><input type="time" value={draft.departureTime} onChange={(event) => update("departureTime", event.target.value)} /></label>
+              <div className="time-estimate-note">
+                <span aria-hidden="true">↗</span>
+                <p><strong>복귀는 자동 계산</strong><small>경로·식사·선택 휴식을 합산해 후보별 예상 시각을 보여줍니다.</small></p>
               </div>
             </section>
 
@@ -899,11 +915,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
               <div className="summary-metrics">
                 <span><strong>{selected.distanceKm}</strong> km</span>
                 <span><strong>{minutesLabel(timeline.rideMinutes)}</strong> 주행</span>
-                <span><strong>{formatKoreanTime(timeline.returnAt)}</strong> 복귀</span>
+                <span><strong>{formatKoreanTime(timeline.returnAt)}</strong> 예상 복귀</span>
               </div>
-              <div className={`return-status ${timeline.fitsHardReturn ? "safe" : "late"}`}>
-                {timeline.fitsDesiredReturn ? "희망 복귀 안쪽" : timeline.fitsHardReturn ? "희망 복귀 초과 · 최종 시각 안쪽" : "최종 복귀 시각 초과"}
-              </div>
+              <div className="return-status safe">정차 포함 예상 복귀</div>
             </div>
           </div>
 
@@ -924,7 +938,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                 >
                   <span className={`candidate-index ${candidateTone[candidate.id]}`}>0{displayedCandidates.indexOf(candidate) + 1}</span>
                   <span className="candidate-copy"><strong>{candidate.label}</strong><small>{candidate.description}</small></span>
-                  <span className="candidate-stats"><b>{candidate.distanceKm} km</b><small>{minutesLabel(candidate.rideMinutes)}</small></span>
+                  <span className="candidate-stats"><b>{candidate.distanceKm} km</b><small>{minutesLabel(candidate.rideMinutes)} 주행</small><small>{formatKoreanTime(candidate.returnAt)} 예상 복귀</small></span>
                   <span className="select-mark">{selectedId === candidate.id ? "✓" : "→"}</span>
                 </button>
               ))}
@@ -949,7 +963,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                 const risk = weatherRiskLabel(segment);
                 return (
                   <article className="timeline-row" key={segment.id}>
-                    <div className="timeline-time"><strong>{formatKoreanTime(segment.arrivalAt)}</strong><span>{index === timeline.segments.length - 1 ? "복귀" : "통과 예상"}</span></div>
+                    <div className="timeline-time"><strong>{formatKoreanTime(segment.arrivalAt)}</strong><span>{index === timeline.segments.length - 1 ? "예상 복귀" : "통과 예상"}</span></div>
                     <div className="timeline-rail"><i className={`risk-dot ${risk.level}`} />{index < timeline.segments.length - 1 ? <span /> : null}</div>
                     <div className="segment-copy"><strong>{segment.from.label} → {segment.to.label}</strong><span>{segment.distanceKm} km · 약 {Math.ceil(segment.rideMinutes)}분</span></div>
                     <div className={`weather-chip ${risk.level}`}>

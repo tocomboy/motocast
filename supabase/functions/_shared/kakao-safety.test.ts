@@ -5,6 +5,7 @@ import { applyMotorcycleRoutePolicy } from "./kakao-safety";
 describe("applyMotorcycleRoutePolicy", () => {
   it.each([
     ["balanced", "RECOMMEND", false],
+    ["fastest winding fallback", "TIME", true],
     ["short", "DISTANCE", false],
     ["estimated winding", "RECOMMEND", true],
   ] as const)("forces motorcycle safety for %s", (_name, priority, alternatives) => {

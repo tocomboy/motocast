@@ -1,4 +1,4 @@
-import { KakaoMapCanvas } from "@/components/kakao-map-canvas";
+import { KakaoMapCanvas, type MapMarkerRole } from "@/components/kakao-map-canvas";
 import { formatElapsedAge, formatKoreanDateTime, formatKoreanTime } from "@/lib/planner/schedule";
 import type { SharedRideSnapshot } from "@/lib/sharing/contracts";
 import { weatherFailureLabel } from "@/lib/weather/status";
@@ -32,7 +32,17 @@ export function SharedRideSnapshotView({
     }
     return points;
   })));
-  const points = [selected.legs[0].from, ...selected.legs.map((leg) => leg.to)];
+  const points = [selected.legs[0].from, ...selected.legs.map((leg) => leg.to)].map((point, index, all) => {
+    const waypoint = snapshot.waypoints.find((item) => item.id === point.id);
+    let role: MapMarkerRole = "waypoint";
+    if (index === 0) role = "origin";
+    else if (index === all.length - 1) role = "destination";
+    else if (point.id === snapshot.trip.lunchStop.id) role = "lunch";
+    else if (point.id === snapshot.trip.dinnerStop?.id) role = "dinner";
+    else if (waypoint?.kind === "optional") role = "rest";
+    else if (waypoint?.winding) role = "winding";
+    return { ...point, role };
+  });
   const weatherExpired = snapshot.weather
     ? new Date(snapshot.weather.validUntil).getTime() < new Date(referenceTime).getTime()
     : false;
@@ -49,8 +59,14 @@ export function SharedRideSnapshotView({
         <dl>
           <div><dt>라이딩 날짜</dt><dd>{snapshot.trip.serviceDate}</dd></div>
           <div><dt>출발</dt><dd>{snapshot.trip.origin.label} · {formatKoreanTime(snapshot.trip.departureAt)}</dd></div>
-          <div><dt>희망 복귀</dt><dd>{formatKoreanTime(snapshot.trip.desiredReturnAt)}</dd></div>
-          <div><dt>최종 복귀</dt><dd>{snapshot.trip.destination.label} · {formatKoreanTime(snapshot.trip.hardReturnAt)}</dd></div>
+          {snapshot.schemaVersion === 1 ? (
+            <>
+              <div><dt>희망 복귀 · 이전 발행본</dt><dd>{formatKoreanTime(snapshot.trip.desiredReturnAt)}</dd></div>
+              <div><dt>최종 복귀 · 이전 발행본</dt><dd>{snapshot.trip.destination.label} · {formatKoreanTime(snapshot.trip.hardReturnAt)}</dd></div>
+            </>
+          ) : (
+            <div><dt>예상 복귀</dt><dd>{snapshot.trip.destination.label} · {formatKoreanTime(selected.returnAt)}</dd></div>
+          )}
           <div><dt>점심</dt><dd>{snapshot.trip.lunchStop.label}</dd></div>
           <div><dt>저녁</dt><dd>{snapshot.trip.dinnerStop?.label ?? "없음"}</dd></div>
           <div><dt>선택 경로</dt><dd>{selected.candidate.label}</dd></div>

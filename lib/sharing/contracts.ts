@@ -17,20 +17,18 @@ export type SharedWaypoint = SharedPlace & {
   winding: boolean;
 };
 
-export type SharedRideSnapshot = {
-  schemaVersion: 1;
-  trip: {
-    title: string;
-    serviceDate: string;
-    departureAt: string;
-    desiredReturnAt: string;
-    hardReturnAt: string;
-    origin: SharedPlace;
-    destination: SharedPlace;
-    lunchStop: SharedPlace;
-    dinnerStop: SharedPlace | null;
-    selectedProfile: "balanced" | "winding" | "short";
-  };
+type SharedTrip = {
+  title: string;
+  serviceDate: string;
+  departureAt: string;
+  origin: SharedPlace;
+  destination: SharedPlace;
+  lunchStop: SharedPlace;
+  dinnerStop: SharedPlace | null;
+  selectedProfile: "balanced" | "winding" | "short";
+};
+
+type SharedSnapshotBody = {
   waypoints: SharedWaypoint[];
   routes: SafeRouteResponse[];
   weather: null | {
@@ -46,6 +44,20 @@ export type SharedRideSnapshot = {
     segments: WeatherForecast[];
   };
 };
+
+export type SharedRideSnapshot = SharedSnapshotBody & (
+  | {
+      schemaVersion: 1;
+      trip: SharedTrip & {
+        desiredReturnAt: string;
+        hardReturnAt: string;
+      };
+    }
+  | {
+      schemaVersion: 2;
+      trip: SharedTrip;
+    }
+);
 
 function record(value: unknown, code = "INVALID_SHARE_SNAPSHOT"): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(code);
@@ -96,7 +108,7 @@ function waypoint(value: unknown): SharedWaypoint {
 
 export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
   const raw = record(value);
-  if (raw.schemaVersion !== 1 || !Array.isArray(raw.waypoints) || !Array.isArray(raw.routes)) {
+  if (![1, 2].includes(Number(raw.schemaVersion)) || !Array.isArray(raw.waypoints) || !Array.isArray(raw.routes)) {
     throw new Error("INVALID_SHARE_SNAPSHOT");
   }
   const trip = record(raw.trip);
@@ -136,22 +148,31 @@ export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
   const waypoints = raw.waypoints.map(waypoint).sort((left, right) => left.position - right.position);
   if (waypoints.some((item, index) => item.position !== index)) throw new Error("INVALID_SHARE_SNAPSHOT");
   if (weather && weather.candidateProfile !== selectedProfile) throw new Error("INVALID_SHARE_SNAPSHOT");
-  return {
-    schemaVersion: 1,
-    trip: {
-      title: boundedText(trip.title, 120),
-      serviceDate: boundedText(trip.serviceDate, 10),
-      departureAt: timestamp(trip.departureAt),
-      desiredReturnAt: timestamp(trip.desiredReturnAt),
-      hardReturnAt: timestamp(trip.hardReturnAt),
-      origin: place(trip.origin),
-      destination: place(trip.destination),
-      lunchStop: place(trip.lunchStop),
-      dinnerStop: trip.dinnerStop === null ? null : place(trip.dinnerStop),
-      selectedProfile: selectedProfile as SharedRideSnapshot["trip"]["selectedProfile"],
-    },
+  const parsedTrip: SharedTrip = {
+    title: boundedText(trip.title, 120),
+    serviceDate: boundedText(trip.serviceDate, 10),
+    departureAt: timestamp(trip.departureAt),
+    origin: place(trip.origin),
+    destination: place(trip.destination),
+    lunchStop: place(trip.lunchStop),
+    dinnerStop: trip.dinnerStop === null ? null : place(trip.dinnerStop),
+    selectedProfile: selectedProfile as SharedTrip["selectedProfile"],
+  };
+  const body = {
     waypoints,
     routes,
     weather,
   };
+  if (raw.schemaVersion === 1) {
+    return {
+      schemaVersion: 1,
+      trip: {
+        ...parsedTrip,
+        desiredReturnAt: timestamp(trip.desiredReturnAt),
+        hardReturnAt: timestamp(trip.hardReturnAt),
+      },
+      ...body,
+    };
+  }
+  return { schemaVersion: 2, trip: parsedTrip, ...body };
 }

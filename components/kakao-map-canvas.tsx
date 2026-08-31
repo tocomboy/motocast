@@ -2,9 +2,29 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type MapPoint = { label: string; latitude: number; longitude: number };
+export type MapMarkerRole = "origin" | "destination" | "lunch" | "dinner" | "rest" | "winding" | "waypoint";
+type MapPoint = { label: string; latitude: number; longitude: number; role?: MapMarkerRole };
 type PathPoint = { latitude: number; longitude: number };
 const KAKAO_MAP_LOAD_TIMEOUT_MS = 10_000;
+const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; color: string }> = {
+  origin: { label: "출발", symbol: "출", color: "#18372b" },
+  destination: { label: "복귀", symbol: "복", color: "#3e5873" },
+  lunch: { label: "점심", symbol: "점", color: "#cc5d32" },
+  dinner: { label: "저녁", symbol: "저", color: "#764a78" },
+  rest: { label: "휴식", symbol: "휴", color: "#277b74" },
+  winding: { label: "와인딩", symbol: "와", color: "#9a6427" },
+  waypoint: { label: "경유", symbol: "경", color: "#5f6d63" },
+};
+
+function markerImage(maps: KakaoMapsNamespace, role: MapMarkerRole) {
+  const appearance = markerAppearance[role];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44"><path d="M18 1C8.6 1 1 8.6 1 18c0 12.2 17 25 17 25s17-12.8 17-25C35 8.6 27.4 1 18 1Z" fill="${appearance.color}" stroke="#fffdf8" stroke-width="2"/><circle cx="18" cy="18" r="11" fill="#fffdf8"/><text x="18" y="22" text-anchor="middle" font-family="sans-serif" font-size="11" font-weight="800" fill="${appearance.color}">${appearance.symbol}</text></svg>`;
+  return new maps.MarkerImage(
+    `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    new maps.Size(36, 44),
+    { offset: new maps.Point(18, 43) },
+  );
+}
 
 export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: PathPoint[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,7 +84,14 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
             routePath.forEach((position) => bounds.extend(position));
             markerPath.forEach((position, index) => {
               bounds.extend(position);
-              new loadedMaps.Marker({ map, position, title: geometry.points[index].label });
+              const point = geometry.points[index];
+              const role = point.role ?? "waypoint";
+              new loadedMaps.Marker({
+                map,
+                position,
+                title: `${markerAppearance[role].label} · ${point.label}`,
+                image: markerImage(loadedMaps, role),
+              });
             });
             if (routePath.length) {
               new loadedMaps.Polyline({
@@ -140,8 +167,25 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
     <div className="map-shell" aria-label="선택한 라이딩 경로 지도">
       <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert={!isReady} />
       <MapStatus state={state} actualRoute={Boolean(path?.length)} />
+      {isReady ? <MarkerLegend points={points} /> : null}
       {!isReady ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
     </div>
+  );
+}
+
+function MarkerLegend({ points }: { points: MapPoint[] }) {
+  const roles = Array.from(new Set(points.map((point) => point.role ?? "waypoint")));
+  return (
+    <ul className="map-marker-legend" aria-label="지도 지점 표시 안내">
+      {roles.map((role) => (
+        <li key={role}>
+          <span className="map-marker-symbol" style={{ backgroundColor: markerAppearance[role].color }} aria-hidden="true">
+            {markerAppearance[role].symbol}
+          </span>
+          {markerAppearance[role].label}
+        </li>
+      ))}
+    </ul>
   );
 }
 

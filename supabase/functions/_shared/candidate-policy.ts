@@ -1,8 +1,9 @@
 import { isWindingOnlyWaypoint, type RoutePointRequest, type RouteRequest } from "./route-request.ts";
+import type { KakaoRoutePriority } from "./kakao-safety.ts";
 
 export type CandidatePolicy = {
   points: RoutePointRequest[];
-  priority: "RECOMMEND" | "DISTANCE";
+  priority: KakaoRoutePriority;
   requestAlternatives: boolean;
   metadata: {
     id: RouteRequest["candidate"];

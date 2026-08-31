@@ -1,13 +1,14 @@
 import { consumeBudget, requireMember, serviceClient } from "../_shared/auth.ts";
 import { executeBudgetedProviderCall } from "../_shared/budgeted-call.ts";
 import { candidatePolicy } from "../_shared/candidate-policy.ts";
-import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
-import { requestKakaoRoute } from "../_shared/kakao-provider.ts";
+import { assertEstimatedWindingAvailable, selectEstimatedWindingChunk } from "../_shared/estimated-winding.ts";
+import { corsHeaders, jsonResponse, safeErrorCode, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
+import { requestKakaoRoute, requestKakaoRoutes } from "../_shared/kakao-provider.ts";
 import { assertKakaoSectionsContinuous, type NormalizedKakaoRoute } from "../_shared/kakao-route.ts";
-import { assertWithinHardReturn } from "../_shared/route-deadline.ts";
+import type { KakaoRoutePriority } from "../_shared/kakao-safety.ts";
+import { assertRideUnder24Hours, legacyScheduleBoundary } from "../_shared/route-deadline.ts";
 import { parseRouteRequest, type RoutePointRequest } from "../_shared/route-request.ts";
 import { buildSafeRouteResponse } from "../_shared/route-response.ts";
-import { routeFingerprint } from "../_shared/winding.ts";
 
 function limitFromEnv(name: string): number {
   const raw = Deno.env.get(name);
@@ -81,32 +82,38 @@ Deno.serve(async (request) => {
     let totalDistance = 0;
     let totalDuration = 0;
     const acceptedSections: NormalizedKakaoRoute["sections"] = [];
+    const estimatedWindingChunkDistinctness: boolean[] = [];
 
     while (cursor < points.length - 1) {
       const { endIndex, via } = nextChunk(points, cursor);
       const isFuture = departure.getTime() > Date.now() + 5 * 60_000;
       const operation = isFuture ? "future_directions" : "directions";
       const hardLimit = limitFromEnv(isFuture ? "KAKAO_FUTURE_DAILY_LIMIT" : "KAKAO_CURRENT_DAILY_LIMIT");
-      const providerCall = (requestAlternatives: boolean, excludedFingerprints?: Set<string>) => executeBudgetedProviderCall(
+      const providerInput = (priority: KakaoRoutePriority, requestAlternatives: boolean) => ({
+        origin: points[cursor],
+        destination: points[endIndex],
+        waypoints: via,
+        departureAt: departure,
+        isFuture,
+        priority,
+        requestAlternatives,
+        apiKey,
+      });
+      const providerCall = (priority: KakaoRoutePriority) => executeBudgetedProviderCall(
         () => consumeBudget(user.id, "kakao", operation, hardLimit),
-        () => requestKakaoRoute({
-          origin: points[cursor],
-          destination: points[endIndex],
-          waypoints: via,
-          departureAt: departure,
-          isFuture,
-          priority: policy.priority,
-          requestAlternatives,
-          excludedFingerprints,
-          apiKey,
-        }),
+        () => requestKakaoRoute(providerInput(priority, false)),
+      );
+      const providerPoolCall = (priority: KakaoRoutePriority, requestAlternatives: boolean) => executeBudgetedProviderCall(
+        () => consumeBudget(user.id, "kakao", operation, hardLimit),
+        () => requestKakaoRoutes(providerInput(priority, requestAlternatives)),
       );
       let selected;
       if (policy.requestAlternatives) {
-        const baseline = await providerCall(false);
-        selected = await providerCall(true, new Set([routeFingerprint(baseline.result)]));
+        const windingSelection = await selectEstimatedWindingChunk(providerPoolCall);
+        selected = windingSelection.selected;
+        estimatedWindingChunkDistinctness.push(windingSelection.distinct);
       } else {
-        selected = await providerCall(false);
+        selected = await providerCall(policy.priority);
       }
       const chunkPoints = [points[cursor], ...via, points[endIndex]];
       for (let index = 0; index < selected.result.sections.length; index += 1) {
@@ -145,8 +152,9 @@ Deno.serve(async (request) => {
       cursor = endIndex;
     }
 
+    assertEstimatedWindingAvailable(policy.metadata.estimatedWinding, estimatedWindingChunkDistinctness);
     assertKakaoSectionsContinuous(acceptedSections);
-    assertWithinHardReturn(departure.toISOString(), input.hardReturnAt);
+    assertRideUnder24Hours(input.departureAt, departure.toISOString());
 
     const route = buildSafeRouteResponse({
       candidate: policy.metadata,
@@ -157,12 +165,15 @@ Deno.serve(async (request) => {
     });
     const lunchStop = input.waypoints.find((point) => point.stopRole === "lunch")!;
     const dinnerStop = input.waypoints.find((point) => point.stopRole === "dinner") ?? null;
+    const legacyBoundary = legacyScheduleBoundary(input.departureAt);
     const stagedPlan = {
       title: `${input.origin.name} → ${input.destination.name}`,
       serviceDate: input.serviceDate,
       departureAt: input.departureAt,
-      desiredReturnAt: input.desiredReturnAt,
-      hardReturnAt: input.hardReturnAt,
+      // Compatibility only: the legacy persistence function still requires these
+      // undisplayed fields. Route eligibility is governed by the computed returnAt.
+      desiredReturnAt: legacyBoundary,
+      hardReturnAt: legacyBoundary,
       origin: storagePoint(input.origin),
       destination: storagePoint(input.destination),
       lunchStop: storagePoint(lunchStop),
@@ -181,6 +192,6 @@ Deno.serve(async (request) => {
     return jsonResponse(route, 200, cors);
   } catch (error) {
     console.error("plan-route failed", error instanceof Error ? error.message : "unknown error");
-    return jsonResponse({ error: safeErrorMessage(error) }, safeErrorStatus(error), cors);
+    return jsonResponse({ error: safeErrorMessage(error), code: safeErrorCode(error) }, safeErrorStatus(error), cors);
   }
 });

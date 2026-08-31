@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { requestKakaoRoute, type KakaoRouteRequest } from "./kakao-provider";
+import { requestKakaoRoute, requestKakaoRoutes, type KakaoRouteRequest } from "./kakao-provider";
 import type { RoutePointRequest } from "./route-request";
 
 function point(id: string, longitude: number, latitude: number): RoutePointRequest {
@@ -102,6 +102,22 @@ describe("requestKakaoRoute", () => {
 
     await requestKakaoRoute(input, fetchImpl);
 
+    expect(requestedUrl!.searchParams.get("alternatives")).toBe("true");
+    expect(requestedUrl!.searchParams.get("car_type")).toBe("7");
+    expect(requestedUrl!.searchParams.get("avoid")).toBe("motorway");
+  });
+
+  it("keeps every validated provider alternative for server-owned winding selection", async () => {
+    const input = request({ priority: "TIME", requestAlternatives: true });
+    const points = [input.origin, input.destination];
+    let requestedUrl: URL | null = null;
+    const fetchImpl = vi.fn(async (raw: string | URL | Request) => {
+      requestedUrl = new URL(raw instanceof Request ? raw.url : raw.toString());
+      return Response.json({ routes: [providerRoute(points), providerRoute(points, 0.04)] });
+    });
+
+    await expect(requestKakaoRoutes(input, fetchImpl)).resolves.toHaveLength(2);
+    expect(requestedUrl!.searchParams.get("priority")).toBe("TIME");
     expect(requestedUrl!.searchParams.get("alternatives")).toBe("true");
     expect(requestedUrl!.searchParams.get("car_type")).toBe("7");
     expect(requestedUrl!.searchParams.get("avoid")).toBe("motorway");

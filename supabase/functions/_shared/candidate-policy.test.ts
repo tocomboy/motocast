@@ -23,13 +23,12 @@ function point(id: string, winding = false): RoutePointRequest {
 
 function request(candidate: RouteRequest["candidate"], waypoints: RoutePointRequest[] = []): RouteRequest {
   return {
+    planningId: "123e4567-e89b-42d3-a456-426614174000",
     origin: point("origin"),
     destination: point("destination"),
     waypoints,
     serviceDate: "2026-08-31",
     departureAt: "2026-08-30T22:30:00.000Z",
-    desiredReturnAt: "2026-08-31T08:30:00.000Z",
-    hardReturnAt: "2026-08-31T09:30:00.000Z",
     candidate,
   };
 }

@@ -36,8 +36,6 @@ async function request(waypoints: RoutePointRequest[] = []) {
     waypoints: [lunch, ...waypoints],
     serviceDate: "2026-08-31",
     departureAt: "2026-08-31T07:30:00+09:00",
-    desiredReturnAt: "2026-08-31T17:30:00+09:00",
-    hardReturnAt: "2026-08-31T18:30:00+09:00",
     candidate: "balanced" as const,
   };
 }
@@ -93,9 +91,13 @@ describe("parseRouteRequest", () => {
     await expect(parseRouteRequest(local, secret)).rejects.toThrow("INVALID_ROUTE_TIME");
   });
 
-  it("rejects an invalid return boundary and client-defined provider priority", async () => {
-    const invalid = { ...await request(), hardReturnAt: "2026-08-31T17:00:00+09:00" };
-    await expect(parseRouteRequest(invalid, secret)).rejects.toThrow("INVALID_ROUTE_TIME");
+  it("ignores removed legacy return fields and rejects client-defined provider priority", async () => {
+    const withLegacyFields = {
+      ...await request(),
+      desiredReturnAt: "invalid legacy value",
+      hardReturnAt: "invalid legacy value",
+    };
+    await expect(parseRouteRequest(withLegacyFields, secret)).resolves.not.toHaveProperty("hardReturnAt");
     const legacy = { ...await request(), candidate: undefined, priority: "DISTANCE" };
     await expect(parseRouteRequest(legacy, secret)).rejects.toThrow("INVALID_CANDIDATE");
   });
@@ -105,14 +107,14 @@ describe("parseRouteRequest", () => {
     await expect(parseRouteRequest(invalid, secret)).rejects.toThrow("INVALID_PLANNING_ID");
   });
 
-  it("rejects an overnight route even when it is under 24 hours", async () => {
-    const overnight = {
+  it("accepts a late departure without requiring a same-date return boundary", async () => {
+    const lateDeparture = {
       ...await request(),
       departureAt: "2026-08-31T23:00:00+09:00",
-      desiredReturnAt: "2026-09-01T00:30:00+09:00",
-      hardReturnAt: "2026-09-01T01:00:00+09:00",
     };
-    await expect(parseRouteRequest(overnight, secret)).rejects.toThrow("INVALID_ROUTE_TIME");
+    await expect(parseRouteRequest(lateDeparture, secret)).resolves.toMatchObject({
+      departureAt: "2026-08-31T14:00:00.000Z",
+    });
   });
 
   it("requires exactly one trusted lunch stop", async () => {

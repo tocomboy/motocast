@@ -21,8 +21,6 @@ export type RouteRequest = {
   waypoints: RoutePointRequest[];
   serviceDate: string;
   departureAt: string;
-  desiredReturnAt: string;
-  hardReturnAt: string;
   candidate: "balanced" | "winding" | "short";
 };
 
@@ -77,17 +75,10 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
     throw new Error("INVALID_WAYPOINTS");
   }
   const departure = parseStrictRfc3339(body.departureAt);
-  const desiredReturn = parseStrictRfc3339(body.desiredReturnAt);
-  const hardReturn = parseStrictRfc3339(body.hardReturnAt);
-  if (!departure || !desiredReturn || !hardReturn) throw new Error("INVALID_ROUTE_TIME");
-  if (
-    desiredReturn <= departure || hardReturn < desiredReturn ||
-    hardReturn.getTime() - departure.getTime() >= 24 * 60 * 60_000
-  ) throw new Error("INVALID_ROUTE_TIME");
+  if (!departure) throw new Error("INVALID_ROUTE_TIME");
   if (
     !isStrictCalendarDate(body.serviceDate) ||
-    seoulCalendarDate(departure) !== body.serviceDate ||
-    seoulCalendarDate(hardReturn) !== body.serviceDate
+    seoulCalendarDate(departure) !== body.serviceDate
   ) throw new Error("INVALID_ROUTE_TIME");
   if (!body.candidate || !["balanced", "winding", "short"].includes(body.candidate)) {
     throw new Error("INVALID_CANDIDATE");
@@ -123,8 +114,6 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
     waypoints: selectedWaypoints.map((point) => canonicalPoint(point)),
     serviceDate: body.serviceDate,
     departureAt: departure.toISOString(),
-    desiredReturnAt: desiredReturn.toISOString(),
-    hardReturnAt: hardReturn.toISOString(),
     candidate: body.candidate,
   };
 }

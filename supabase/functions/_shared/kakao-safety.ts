@@ -1,6 +1,8 @@
+export type KakaoRoutePriority = "RECOMMEND" | "TIME" | "DISTANCE";
+
 export function applyMotorcycleRoutePolicy(
   url: URL,
-  priority: "RECOMMEND" | "DISTANCE",
+  priority: KakaoRoutePriority,
   requestAlternatives: boolean,
 ) {
   url.searchParams.set("priority", priority);

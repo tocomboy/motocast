@@ -25,8 +25,6 @@ function validTrip() {
     title: "북한강 당일 라이딩",
     serviceDate: "2026-08-31",
     departureAt: "2026-08-31T07:30:00+09:00",
-    desiredReturnAt: "2026-08-31T17:30:00+09:00",
-    hardReturnAt: "2026-08-31T18:30:00+09:00",
     origin: place,
     destination: { ...place, kakaoPlaceId: "67890" },
     lunch: stop("lunch", 60),
@@ -82,29 +80,9 @@ describe("parseTripInput", () => {
     expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("INVALID_DEPARTURE_AT"));
   });
 
-  it("requires desired return to be later than departure like the database constraint", () => {
+  it("requires the departure timestamp to match the selected Seoul service date", () => {
     const input = validTrip();
-    input.desiredReturnAt = input.departureAt;
-    expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("INVALID_RETURN_ORDER"));
-  });
-
-  it("requires departure and hard return to remain on the service date in Seoul", () => {
-    const input = validTrip();
-    input.hardReturnAt = "2026-09-01T00:15:00+09:00";
-    expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("TRIP_MUST_FINISH_SAME_DAY"));
-  });
-
-  it("rejects a trip whose hard boundary reaches 24 hours", () => {
-    const input = validTrip();
-    input.hardReturnAt = "2026-09-01T07:30:00+09:00";
-    expect(() => parseTripInput(input)).toThrowError(
-      new PlannerInputError("TRIP_MUST_BE_UNDER_24_HOURS"),
-    );
-  });
-
-  it("rejects desired return after the hard return", () => {
-    const input = validTrip();
-    input.desiredReturnAt = "2026-08-31T19:00:00+09:00";
-    expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("INVALID_RETURN_ORDER"));
+    input.serviceDate = "2026-09-01";
+    expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("DEPARTURE_DATE_MISMATCH"));
   });
 });

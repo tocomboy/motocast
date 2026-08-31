@@ -28,8 +28,6 @@ export type TripInput = {
   title: string;
   serviceDate: string;
   departureAt: string;
-  desiredReturnAt: string;
-  hardReturnAt: string;
   origin: SelectedPlace;
   destination: SelectedPlace;
   lunch: TripWaypointInput;
@@ -164,17 +162,8 @@ export function parseTripInput(value: unknown): TripInput {
   }
 
   const departure = isoDate(raw.departureAt, "INVALID_DEPARTURE_AT");
-  const desiredReturn = isoDate(raw.desiredReturnAt, "INVALID_DESIRED_RETURN_AT");
-  const hardReturn = isoDate(raw.hardReturnAt, "INVALID_HARD_RETURN_AT");
-  const durationMs = hardReturn.getTime() - departure.getTime();
-  if (desiredReturn <= departure || desiredReturn > hardReturn) {
-    throw new PlannerInputError("INVALID_RETURN_ORDER");
-  }
-  if (durationMs <= 0 || durationMs >= 24 * 60 * 60_000) {
-    throw new PlannerInputError("TRIP_MUST_BE_UNDER_24_HOURS");
-  }
-  if (seoulDate(departure) !== serviceDate || seoulDate(hardReturn) !== serviceDate) {
-    throw new PlannerInputError("TRIP_MUST_FINISH_SAME_DAY");
+  if (seoulDate(departure) !== serviceDate) {
+    throw new PlannerInputError("DEPARTURE_DATE_MISMATCH");
   }
 
   if (!Array.isArray(raw.waypoints) || raw.waypoints.length > 30) {
@@ -195,8 +184,6 @@ export function parseTripInput(value: unknown): TripInput {
     title: boundedString(raw.title, "INVALID_TRIP_TITLE", 1, 120),
     serviceDate,
     departureAt: departure.toISOString(),
-    desiredReturnAt: desiredReturn.toISOString(),
-    hardReturnAt: hardReturn.toISOString(),
     origin: parseSelectedPlace(raw.origin),
     destination: parseSelectedPlace(raw.destination),
     lunch,
