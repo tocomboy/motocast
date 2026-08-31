@@ -27,6 +27,18 @@ Read back project settings without printing environment values. When environment
 
 Verified Preview configuration on 2026-08-31: the three public names above exist as `Preview (develop)` Config entries. A deployment-level pull exposed seven older server-only names that had been mistakenly targeted to both Preview and Production; after user confirmation they were Preview credentials rather than created Production credentials, all seven were removed from Vercel. No server-only/provider/budget name now remains in either Vercel environment. Production credentials are not yet created and remain deferred until the post-Preview `OPS-008` interview.
 
+## Kakao Map and Local activation
+
+The JavaScript key and allowed web origin are necessary but do not activate the Kakao Map product. For each environment, use the matching Kakao app and complete this check without exposing a key:
+
+1. In Kakao Developers, open the environment app and go to **Kakao Map > Usage settings**.
+2. Before changing **State** to ON, confirm the dashboard identifies the app as eligible for the Kakao Map free quota and does not require a Biz Wallet, paid API, or automatic billing. Under `COST-001`, stop and interview the user if any paid setup is required.
+3. Under the app's JavaScript key, register the exact JavaScript SDK domain. Preview uses `https://motocast-git-develop-tocomboys-projects.vercel.app`; do not use a comment URL or a deployment path.
+4. Confirm that the Vercel Preview Config name `NEXT_PUBLIC_KAKAO_MAP_JS_KEY` contains that app's JavaScript key, not its REST API key. Never print the value.
+5. Redeploy or refresh the fixed Preview alias and verify that the SDK request returns JavaScript successfully. A `403 NotAuthorizedError` saying the app disabled `OPEN_MAP_AND_LOCAL` means activation is still incomplete; it is not an application success and must not fall back to demo data.
+
+On 2026-08-31 the fixed Preview alias returned that exact 403 because `MOTOCAST Preview` had Map/Local disabled. The client-side error boundary now has a ten-second timeout and exposes a safe configuration error instead of leaving riders at `카카오 지도 불러오는 중`. Actual place, route, and weather smoke tests remain blocked until the free-only activation check passes.
+
 ## Supabase promotion order
 
 1. After confirming the exact target and receiving approval, reset only the disposable local PostgreSQL 17 instance at `127.0.0.1:54322`; then apply all migrations from an empty database and run the explicit database tests. Never use this reset against either hosted project.
@@ -40,7 +52,7 @@ Verified Preview configuration on 2026-08-31: the three public names above exist
 4. Apply to Preview only, then read back migration versions, RLS, function ACLs, and Edge Function versions.
 5. Deploy `search-places`, `plan-route`, `weather-timeline`, `save-collection`, and `kakao-oidc` from the reviewed fixed SHA. The first four retain JWT verification; only `kakao-oidc` is intentionally public with `verify_jwt=false` under `AUTH-004`.
 6. Register Preview-only Auth provider redirects and server secrets through the Supabase Dashboard or masked input. Never put values in command arguments or shell history. Preview name-only readback confirms all ten application secret names, including `KAKAO_LOGIN_CLIENT_SECRET` and `KAKAO_OIDC_STATE_SECRET`; values are never read or printed. The authorize request must use the HTTPS callback derived from `SUPABASE_URL`, not an internal Edge `request.url`.
-7. Use disposable Preview identities to execute the complete Preview gate.
+7. Use disposable Preview identities to execute the complete Preview gate. The first Kakao identity has been registered as the sole Preview administrator; use a separate invited identity for rider-isolation checks.
 8. Resolve `OPS-008`, back up the chosen empty/pre-cutover Production database, and repeat the reviewed migration/function sequence for Production.
 
 Public share links use `/share#<token>`. The fragment is not sent in the initial HTTP request; the client validates it and sends it in the JSON body of `POST /api/shares/resolve`. Do not reintroduce a dynamic `/share/<token>` page or `/api/shares/<token>` resolver because hosting request-path logs can then contain the bearer token.

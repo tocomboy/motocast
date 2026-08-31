@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 type MapPoint = { label: string; latitude: number; longitude: number };
 type PathPoint = { latitude: number; longitude: number };
+const KAKAO_MAP_LOAD_TIMEOUT_MS = 10_000;
 
 export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: PathPoint[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -15,52 +16,103 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
   useEffect(() => {
     if (!appKey) return;
 
+    let active = true;
+    let script: HTMLScriptElement | null = null;
+    let onLoad: (() => void) | null = null;
+    let onError: (() => void) | null = null;
+    const timeout = window.setTimeout(() => {
+      if (active) setState("error");
+    }, KAKAO_MAP_LOAD_TIMEOUT_MS);
+
+    const fail = () => {
+      if (!active) return;
+      window.clearTimeout(timeout);
+      setState("error");
+    };
+
     const renderMap = () => {
-      if (!containerRef.current || !window.kakao?.maps) return;
-      window.kakao.maps.load(() => {
-        if (!containerRef.current || !window.kakao?.maps) return;
-        const maps = window.kakao.maps;
-        const markerPath = points.map((point) => new maps.LatLng(point.latitude, point.longitude));
-        const routePath = (path?.length ? path : points).map((point) => new maps.LatLng(point.latitude, point.longitude));
-        const map = new maps.Map(containerRef.current, { center: markerPath[0], level: 8 });
-        const bounds = new maps.LatLngBounds();
-        routePath.forEach((position) => bounds.extend(position));
-        markerPath.forEach((position, index) => {
-          bounds.extend(position);
-          new maps.Marker({ map, position, title: points[index].label });
-        });
-        new maps.Polyline({
-          map,
-          path: routePath,
-          strokeWeight: 5,
-          strokeColor: "#ef6a3a",
-          strokeOpacity: 0.9,
-          strokeStyle: "solid",
-        });
-        map.setBounds(bounds);
-        setState("ready");
+      if (!containerRef.current) return;
+      const maps = window.kakao?.maps;
+      if (!maps) {
+        fail();
+        return;
+      }
+      maps.load(() => {
+        if (!active || !containerRef.current) return;
+        const loadedMaps = window.kakao?.maps;
+        if (!loadedMaps) {
+          fail();
+          return;
+        }
+        try {
+          const markerPath = points.map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
+          const routePath = (path?.length ? path : points).map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
+          const map = new loadedMaps.Map(containerRef.current, { center: markerPath[0], level: 8 });
+          const bounds = new loadedMaps.LatLngBounds();
+          routePath.forEach((position) => bounds.extend(position));
+          markerPath.forEach((position, index) => {
+            bounds.extend(position);
+            new loadedMaps.Marker({ map, position, title: points[index].label });
+          });
+          new loadedMaps.Polyline({
+            map,
+            path: routePath,
+            strokeWeight: 5,
+            strokeColor: "#ef6a3a",
+            strokeOpacity: 0.9,
+            strokeStyle: "solid",
+          });
+          map.setBounds(bounds);
+          window.clearTimeout(timeout);
+          setState("ready");
+        } catch {
+          fail();
+        }
       });
     };
 
     if (window.kakao?.maps) {
       renderMap();
-      return;
+    } else {
+      script = document.querySelector<HTMLScriptElement>("script[data-motocast-kakao-map]");
+      if (!script) {
+        script = document.createElement("script");
+        script.dataset.motocastKakaoMap = "true";
+        script.dataset.motocastKakaoMapStatus = "loading";
+        script.async = true;
+        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false`;
+        document.head.appendChild(script);
+      }
+
+      onLoad = () => {
+        if (!script) return;
+        if (!window.kakao?.maps) {
+          script.dataset.motocastKakaoMapStatus = "error";
+          fail();
+          return;
+        }
+        script.dataset.motocastKakaoMapStatus = "ready";
+        renderMap();
+      };
+      onError = () => {
+        if (script) script.dataset.motocastKakaoMapStatus = "error";
+        fail();
+      };
+
+      if (script.dataset.motocastKakaoMapStatus === "ready") onLoad();
+      else if (script.dataset.motocastKakaoMapStatus === "error") onError();
+      else {
+        script.addEventListener("load", onLoad, { once: true });
+        script.addEventListener("error", onError, { once: true });
+      }
     }
 
-    const existing = document.querySelector<HTMLScriptElement>("script[data-motocast-kakao-map]");
-    if (existing) {
-      existing.addEventListener("load", renderMap, { once: true });
-      return () => existing.removeEventListener("load", renderMap);
-    }
-
-    const script = document.createElement("script");
-    script.dataset.motocastKakaoMap = "true";
-    script.async = true;
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false`;
-    script.addEventListener("load", renderMap, { once: true });
-    script.addEventListener("error", () => setState("error"), { once: true });
-    document.head.appendChild(script);
-    return () => script.removeEventListener("load", renderMap);
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      if (script && onLoad) script.removeEventListener("load", onLoad);
+      if (script && onError) script.removeEventListener("error", onError);
+    };
   }, [appKey, path, points]);
 
   return (
@@ -94,7 +146,7 @@ function SchematicRoute({ state, points, actualRoute }: { state: "loading" | "de
         <span className={`status-dot ${state}`} />
         {state === "loading" ? actualRoute ? "실제 경로 지도를 불러오는 중" : "카카오 지도를 불러오는 중" : null}
         {state === "demo" ? actualRoute ? "카카오 지도 키 미설정 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 키 미설정 · 예시 경로 개요 표시 중" : null}
-        {state === "error" ? actualRoute ? "카카오 지도 로드 실패 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 로드 실패 · 예시 경로 개요 표시 중" : null}
+        {state === "error" ? actualRoute ? "카카오 지도 로드 실패 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 로드 실패 · 설정 확인 후 새로고침해 주세요" : null}
       </div>
     </div>
   );

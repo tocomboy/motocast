@@ -2,7 +2,7 @@
 
 지인 라이더를 위한 국내 당일 오토바이 경로·시간대별 날씨 계획 PWA입니다. 출발/복귀 시각과 식사 정차, 선택 휴식을 반영해 세 가지 경로 후보를 비교하고, 각 구간의 예상 통과 시각에 맞춘 기상청 예보를 보여주는 것을 목표로 합니다.
 
-> 현재 상태: Preview 게이트를 진행 중입니다. 실제 장소·서로 다른 안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 신뢰된 경로 결과만 저장하는 계획 확정, 검증된 장소만 저장하는 사용자별 컬렉션 버전, 전체 공유 미리보기/불변 발행/회수/재발행 UI가 구현되어 있습니다. 공유와 초대 bearer token은 서버 요청 경로 대신 URL fragment에 두고 고정 API 경로의 POST 본문으로 전달합니다. 이메일 없는 Kakao OIDC 직접 연동(`AUTH-004`)의 초기 고정 SHA `601c1a3`은 로컬 앱 `223/223`, DB `233/233`와 5축 독립 리뷰 finding 0을 통과했고 Preview에 배포됐습니다. 첫 실제 Kakao 로그인에서 Supabase Edge 내부 `request.url`의 `http` 스킴이 provider callback에 잘못 사용되는 배포 환경 결함이 확인됐습니다. 첫 HTTPS 수정 SHA `9c66cc5`는 실제 배포 handler를 실행하지 않는 테스트 공백 때문에 리뷰에서 거절됐고, correction SHA `51b6a07`이 production request handler를 직접 실행해 인가 URL과 token POST body가 같은 `SUPABASE_URL` 기반 HTTPS callback을 쓰는지 검증합니다. 이 SHA는 작성자 전체 검증과 5축 독립 리뷰 finding 0을 통과했으며 push·Preview 재배포 전까지 실제 로그인은 완료되지 않았고 Production은 변경하지 않았습니다.
+> 현재 상태: Preview 게이트를 진행 중입니다. 이메일 없는 Kakao OIDC 직접 연동과 HTTPS callback 수정은 검증·배포됐고, 실제 Preview 로그인과 최초 관리자 등록 및 관리자 화면 진입까지 확인했습니다. 실제 장소·안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 사용자별 컬렉션, 불변 공유 UI가 구현되어 있으나, 현재 `MOTOCAST Preview` Kakao 앱에서 지도·로컬 제품이 비활성화되어 지도 SDK가 403으로 거절되고 장소·경로 브라우저 게이트가 중단된 상태입니다. 앱은 이 공급자 설정 실패를 무한 로딩으로 숨기지 않고 명시적 오류로 전환하도록 수정·검증 중입니다. 유료 API나 자동 결제는 활성화하지 않으며 Production은 변경하지 않았습니다.
 
 ## 고정된 제품 원칙
 
@@ -80,7 +80,8 @@ supabase functions deploy kakao-oidc --no-verify-jwt
 
 ## 공개 배포 전 체크
 
-- Kakao JavaScript 키는 Vercel의 정확한 운영/미리보기 도메인으로 제한합니다.
+- Kakao 지도 제품을 활성화하기 전에 해당 앱이 무료 할당 대상이고 Biz Wallet이나 유료 API 설정을 요구하지 않는지 확인합니다. 무료 조건이 아니면 활성화하지 않고 `COST-001` 사용자 인터뷰를 다시 수행합니다.
+- Kakao JavaScript 키는 Vercel의 정확한 운영/미리보기 도메인으로 제한합니다. 자세한 확인 순서는 [Preview/Production 운영 절차](docs/operations/preview-production.md)를 따릅니다.
 - 서버 키와 Supabase service-role 키는 브라우저 변수에 넣지 않습니다.
 - Supabase Free의 비활성 프로젝트 일시정지를 감안해 출발 전에 프로젝트 상태를 확인합니다.
 - 지인 위치, 실제 초대 링크, 여행 일정은 fixture·스크린샷·Issue에 올리지 않습니다.
@@ -118,7 +119,7 @@ npm run lint && npm run typecheck && npm test && npm run build
 
 ## 남은 첫 버전 작업
 
-- `AUTH-004` HTTPS callback 수정 고정 SHA 리뷰·Preview 재배포·실제 Kakao 로그인
-- Preview의 초대/Kakao OIDC, 권한, 장소·경로·날씨·컬렉션·공유·budget 전체 브라우저 smoke test
+- 카카오 무료 할당 조건을 확인한 뒤 Preview 앱의 지도·로컬 제품을 활성화하고 지도 오류 상태 수정본을 고정 SHA로 리뷰·재배포
+- Preview의 초대 라이더, 회수 권한, 장소·경로·날씨·컬렉션·공유·budget 전체 브라우저 smoke test
 - 실제 Kakao/KMA 최소 호출, stale snapshot, 비용 한도 소진 검증
 - Preview 게이트 후 `OPS-008` Production 지역 재인터뷰, `develop → main` PR, Production 사용자 관점 검증
