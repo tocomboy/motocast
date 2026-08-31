@@ -2,7 +2,7 @@
 
 지인 라이더를 위한 국내 당일 오토바이 경로·시간대별 날씨 계획 PWA입니다. 출발/복귀 시각과 식사 정차, 선택 휴식을 반영해 세 가지 경로 후보를 비교하고, 각 구간의 예상 통과 시각에 맞춘 기상청 예보를 보여주는 것을 목표로 합니다.
 
-> 현재 상태: Preview 게이트를 진행 중입니다. 실제 장소·서로 다른 안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 신뢰된 경로 결과만 저장하는 계획 확정, 검증된 장소만 저장하는 사용자별 컬렉션 버전, 전체 공유 미리보기/불변 발행/회수/재발행 UI가 구현되어 있습니다. 공유와 초대 bearer token은 서버 요청 경로 대신 URL fragment에 두고 고정 API 경로의 POST 본문으로 전달합니다. Preview에서 Supabase 기본 Kakao OAuth가 비즈 앱 전용 `account_email`을 강제로 요청해 `KOE205`가 확인됐고, 사용자는 이메일을 수집하지 않는 Kakao OIDC 직접 연동(`AUTH-004`)을 확정했습니다. 이메일 없는 직접 OIDC 수정은 앱-origin HttpOnly 브라우저 결합, 암호화된 2분 단일 소비, 실제 진행 시계 만료, Strict Mode callback, Supabase ID-token 검증을 포함합니다. 고정 SHA `601c1a3`은 로컬 앱 `223/223`, DB `233/233` 검증과 correctness/security/data-integrity/route-safety/UI 5축 독립 리뷰에서 finding 0으로 승인됐습니다. Supabase/Vercel Preview 배포와 실제 Kakao 브라우저 smoke가 남아 있고, 현재 hosted Preview와 Production은 변경하지 않았습니다.
+> 현재 상태: Preview 게이트를 진행 중입니다. 실제 장소·서로 다른 안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 신뢰된 경로 결과만 저장하는 계획 확정, 검증된 장소만 저장하는 사용자별 컬렉션 버전, 전체 공유 미리보기/불변 발행/회수/재발행 UI가 구현되어 있습니다. 공유와 초대 bearer token은 서버 요청 경로 대신 URL fragment에 두고 고정 API 경로의 POST 본문으로 전달합니다. 이메일 없는 Kakao OIDC 직접 연동(`AUTH-004`)의 초기 고정 SHA `601c1a3`은 로컬 앱 `223/223`, DB `233/233`와 5축 독립 리뷰 finding 0을 통과했고 Preview에 배포됐습니다. 첫 실제 Kakao 로그인에서 Supabase Edge 내부 `request.url`의 `http` 스킴이 provider callback에 잘못 사용되는 배포 환경 결함이 확인됐습니다. 현재 수정은 callback URI를 신뢰된 `SUPABASE_URL`에서만 만들고 인가와 토큰 교환에 동일하게 사용하며, 공개 HTTP·경로·쿼리·자격정보가 섞인 설정을 거부합니다. 수정 고정 SHA 리뷰와 Preview 재배포 전까지 실제 로그인은 완료되지 않았고 Production은 변경하지 않았습니다.
 
 ## 고정된 제품 원칙
 
@@ -118,7 +118,7 @@ npm run lint && npm run typecheck && npm test && npm run build
 
 ## 남은 첫 버전 작업
 
-- `AUTH-004` Preview OIDC migration/Edge Function 배포·readback
+- `AUTH-004` HTTPS callback 수정 고정 SHA 리뷰·Preview 재배포·실제 Kakao 로그인
 - Preview의 초대/Kakao OIDC, 권한, 장소·경로·날씨·컬렉션·공유·budget 전체 브라우저 smoke test
 - 실제 Kakao/KMA 최소 호출, stale snapshot, 비용 한도 소진 검증
 - Preview 게이트 후 `OPS-008` Production 지역 재인터뷰, `develop → main` PR, Production 사용자 관점 검증

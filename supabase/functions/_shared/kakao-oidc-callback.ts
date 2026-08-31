@@ -17,6 +17,7 @@ export type KakaoOidcVerificationEnvironment = {
 export type KakaoOidcProviderCredentials = {
   clientId: string;
   clientSecret: string;
+  callbackUri: string;
 };
 
 export type KakaoOidcHandoffInput = {
@@ -31,7 +32,6 @@ export type KakaoOidcCallbackRuntime = {
   providerCredentials(): KakaoOidcProviderCredentials;
   exchangeCode(
     code: string,
-    request: Request,
     credentials: KakaoOidcProviderCredentials,
   ): Promise<{ idToken: string; accessToken: string }>;
   persistHandoff(input: KakaoOidcHandoffInput): Promise<void>;
@@ -79,7 +79,7 @@ async function verifiedCallback(
   try {
     const code = url.searchParams.get("code");
     if (!code) throw new Error("OIDC_CODE_INVALID");
-    const provider = await runtime.exchangeCode(code, request, runtime.providerCredentials());
+    const provider = await runtime.exchangeCode(code, runtime.providerCredentials());
     const now = runtime.now();
     const encryptedPayload = await encryptKakaoTokenPayload({
       ...provider,

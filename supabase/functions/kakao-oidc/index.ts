@@ -13,7 +13,7 @@ import {
   isHandoffToken,
   isOidcBindingHash,
   kakaoAuthorizeUrl,
-  KAKAO_OIDC_CALLBACK_PATH,
+  kakaoOidcProviderConfiguration,
   parseKakaoTokenResponse,
   setOidcCookie,
   sha256Hex,
@@ -48,14 +48,11 @@ function verificationEnvironment(): KakaoOidcVerificationEnvironment {
 }
 
 function providerCredentials(): KakaoOidcProviderCredentials {
-  const clientId = Deno.env.get("KAKAO_REST_API_KEY");
-  const clientSecret = Deno.env.get("KAKAO_LOGIN_CLIENT_SECRET");
-  if (!clientId || !clientSecret) throw new Error("OIDC_PROVIDER_NOT_CONFIGURED");
-  return { clientId, clientSecret };
-}
-
-function callbackUri(request: Request): string {
-  return new URL(KAKAO_OIDC_CALLBACK_PATH, new URL(request.url).origin).toString();
+  return kakaoOidcProviderConfiguration({
+    clientId: Deno.env.get("KAKAO_REST_API_KEY"),
+    clientSecret: Deno.env.get("KAKAO_LOGIN_CLIENT_SECRET"),
+    supabaseUrl: Deno.env.get("SUPABASE_URL"),
+  });
 }
 
 async function start(request: Request): Promise<Response> {
@@ -70,13 +67,12 @@ async function start(request: Request): Promise<Response> {
     bindingHash,
     environment.stateSecret,
   );
-  const authorize = kakaoAuthorizeUrl(credentials.clientId, callbackUri(request), attempt, authorizeNonce);
+  const authorize = kakaoAuthorizeUrl(credentials.clientId, credentials.callbackUri, attempt, authorizeNonce);
   return redirect(authorize.toString(), setOidcCookie(cookieValue));
 }
 
 async function exchangeKakaoCode(
   code: string,
-  request: Request,
   credentials: KakaoOidcProviderCredentials,
 ): Promise<{ idToken: string; accessToken: string }> {
   if (!/^[A-Za-z0-9_-]{1,512}$/u.test(code)) throw new Error("OIDC_CODE_INVALID");
@@ -84,7 +80,7 @@ async function exchangeKakaoCode(
     grant_type: "authorization_code",
     client_id: credentials.clientId,
     client_secret: credentials.clientSecret,
-    redirect_uri: callbackUri(request),
+    redirect_uri: credentials.callbackUri,
     code,
   });
   const response = await fetch("https://kauth.kakao.com/oauth/token", {

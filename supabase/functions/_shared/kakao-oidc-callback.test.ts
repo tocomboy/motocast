@@ -27,7 +27,11 @@ async function callbackFixture(query: string) {
       allowedOrigins: [firstOrigin, initiatingOrigin],
       stateSecret,
     }),
-    providerCredentials: () => ({ clientId: "client-id", clientSecret: "client-secret" }),
+    providerCredentials: () => ({
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      callbackUri: "https://project.supabase.co/functions/v1/kakao-oidc/callback",
+    }),
     exchangeCode: vi.fn().mockResolvedValue({
       idToken: `header.${"a".repeat(110)}.signature`,
       accessToken: "access-token-value",
@@ -67,6 +71,11 @@ describe("Kakao OIDC callback handler", () => {
     const { request, runtime } = await callbackFixture("code=valid-code");
     runtime.persistHandoff = vi.fn().mockRejectedValue(new Error("OIDC_HANDOFF_PERSISTENCE_FAILED"));
     expectInitiatingOriginFailure(await handleKakaoOidcCallback(request, runtime));
+    expect(runtime.exchangeCode).toHaveBeenCalledWith("valid-code", {
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      callbackUri: "https://project.supabase.co/functions/v1/kakao-oidc/callback",
+    });
   });
 
   it("does not guess an application origin for an unauthenticated attempt", async () => {

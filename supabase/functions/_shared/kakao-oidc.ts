@@ -17,6 +17,40 @@ export type KakaoTokenPayload = {
   expiresAt: number;
 };
 
+export function kakaoOidcProviderConfiguration(input: {
+  clientId: string | undefined;
+  clientSecret: string | undefined;
+  supabaseUrl: string | undefined;
+}) {
+  if (!input.clientId || !input.clientSecret || !input.supabaseUrl) {
+    throw new Error("OIDC_PROVIDER_NOT_CONFIGURED");
+  }
+
+  let base: URL;
+  try {
+    base = new URL(input.supabaseUrl);
+  } catch {
+    throw new Error("OIDC_PROVIDER_NOT_CONFIGURED");
+  }
+  const loopback = base.protocol === "http:" && ["127.0.0.1", "localhost", "::1"].includes(base.hostname);
+  if (
+    (base.protocol !== "https:" && !loopback) ||
+    base.username ||
+    base.password ||
+    base.pathname !== "/" ||
+    base.search ||
+    base.hash
+  ) {
+    throw new Error("OIDC_PROVIDER_NOT_CONFIGURED");
+  }
+
+  return {
+    clientId: input.clientId,
+    clientSecret: input.clientSecret,
+    callbackUri: new URL(KAKAO_OIDC_CALLBACK_PATH, base.origin).toString(),
+  };
+}
+
 type OidcAttempt = {
   state: string;
   nonce: string;

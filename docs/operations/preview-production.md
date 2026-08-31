@@ -39,7 +39,7 @@ Verified Preview configuration on 2026-08-31: the three public names above exist
 
 4. Apply to Preview only, then read back migration versions, RLS, function ACLs, and Edge Function versions.
 5. Deploy `search-places`, `plan-route`, `weather-timeline`, `save-collection`, and `kakao-oidc` from the reviewed fixed SHA. The first four retain JWT verification; only `kakao-oidc` is intentionally public with `verify_jwt=false` under `AUTH-004`.
-6. Register Preview-only Auth provider redirects and server secrets through the Supabase Dashboard or masked input. Never put values in command arguments or shell history. The earlier eight-secret setup is verified, while `KAKAO_LOGIN_CLIENT_SECRET`, `KAKAO_OIDC_STATE_SECRET`, the email-optional provider flag, Kakao OpenID activation, and the new Edge callback URI remain required before the OIDC deployment can pass smoke testing.
+6. Register Preview-only Auth provider redirects and server secrets through the Supabase Dashboard or masked input. Never put values in command arguments or shell history. Preview name-only readback confirms all ten application secret names, including `KAKAO_LOGIN_CLIENT_SECRET` and `KAKAO_OIDC_STATE_SECRET`; values are never read or printed. The authorize request must use the HTTPS callback derived from `SUPABASE_URL`, not an internal Edge `request.url`.
 7. Use disposable Preview identities to execute the complete Preview gate.
 8. Resolve `OPS-008`, back up the chosen empty/pre-cutover Production database, and repeat the reviewed migration/function sequence for Production.
 
