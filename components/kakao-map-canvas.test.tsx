@@ -105,7 +105,7 @@ function installMaps({ throwOnLoad = false }: { throwOnLoad?: boolean } = {}) {
 
 async function mountMap(
   path?: typeof actualPath,
-  mapPoints: Array<{ label: string; latitude: number; longitude: number; role?: MapMarkerRole }> = points,
+  mapPoints: Array<{ label: string; latitude: number; longitude: number; role?: MapMarkerRole; nonTraversed?: boolean }> = points,
 ) {
   let renderer!: ReactTestRenderer;
   await act(async () => {
@@ -227,6 +227,31 @@ describe("KakaoMapCanvas", () => {
     expect(legend.findAllByType("li").map((item) => item.children.at(-1))).toEqual([
       "출발", "복귀", "점심", "저녁", "휴식", "와인딩", "경유",
     ]);
+    await act(async () => renderer.unmount());
+  });
+
+  it("renders same-coordinate roles as one composite marker with a visible omitted-state legend", async () => {
+    vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "test-public-key");
+    stubBrowser();
+    const maps = installMaps();
+    const renderer = await mountMap(undefined, [
+      { label: "점심", latitude: 37.52, longitude: 127.12, role: "lunch" },
+      { label: "점심 · 선택 경로 미통과", latitude: 37.52, longitude: 127.12, role: "winding", nonTraversed: true },
+    ]);
+    await flush(maps.loadCallbacks);
+
+    expect(maps.Marker).toHaveBeenCalledTimes(1);
+    expect(maps.MarkerImage).toHaveBeenCalledTimes(1);
+    const markerCall = maps.Marker.mock.calls[0] as unknown as [{ title: string }];
+    expect(markerCall[0].title).toBe("점심 · 점심 / 와인딩 · 점심 · 선택 경로 미통과");
+    const markerImageCall = maps.MarkerImage.mock.calls[0] as unknown as [string];
+    const compositeSvg = decodeURIComponent(markerImageCall[0].replace("data:image/svg+xml;charset=UTF-8,", ""));
+    expect(compositeSvg).toContain(">점</text>");
+    expect(compositeSvg).toContain(">와×</text>");
+    expect(maps.extend).toHaveBeenCalledTimes(1);
+    const legendText = renderer.root.findByProps({ "aria-label": "지도 지점 표시 안내" })
+      .findAllByType("li").map((item) => item.children.filter((child) => typeof child === "string").join(""));
+    expect(legendText).toContain("와인딩 · 점심 · 선택 경로 미통과");
     await act(async () => renderer.unmount());
   });
 

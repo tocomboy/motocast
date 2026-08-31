@@ -975,6 +975,15 @@ button {
   width: 20px;
 }
 
+.map-marker-omission {
+  flex-basis: 100%;
+}
+
+.map-marker-symbol.is-omitted {
+  border-style: dashed;
+  font-size: 0.5rem;
+}
+
 .status-dot {
   background: #d49b3e;
   border-radius: 50%;

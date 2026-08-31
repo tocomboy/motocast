@@ -57,7 +57,20 @@ describe("buildSharedMapPoints", () => {
       { role: "origin" },
       { role: "lunch" },
       { role: "destination" },
-      { role: "winding", label: "점심 · 선택 경로 미통과" },
+      { role: "winding", label: "점심 · 선택 경로 미통과", nonTraversed: true },
     ]);
+  });
+
+  it("matches same-place winding and lunch route points one-to-one for the winding candidate", () => {
+    expect(buildSharedMapPoints({
+      routePoints: [origin, lunch, lunch, destination],
+      lunchStop: { ...lunch, id: "trip-lunch" },
+      dinnerStop: null,
+      selectedProfile: "winding",
+      waypoints: [
+        { ...lunch, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
+        { ...lunch, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+      ],
+    }).map((point) => point.role)).toEqual(["origin", "winding", "lunch", "destination"]);
   });
 });

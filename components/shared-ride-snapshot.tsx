@@ -41,17 +41,17 @@ export function buildSharedMapPoints(input: {
     : traversedWaypoints.filter((waypoint) => !waypoint.winding);
   const matchedWaypoints = new Set<SharedWaypoint>();
   const routePoints = input.routePoints.map((point, index, all) => {
-    const matchingWaypoints = index > 0 && index < all.length - 1
-      ? candidateWaypoints.filter((waypoint) => sameSharedPlace(point, waypoint))
-      : [];
-    matchingWaypoints.forEach((waypoint) => matchedWaypoints.add(waypoint));
+    const matchingWaypoint = index > 0 && index < all.length - 1
+      ? candidateWaypoints.find((waypoint) => !matchedWaypoints.has(waypoint) && sameSharedPlace(point, waypoint))
+      : undefined;
+    if (matchingWaypoint) matchedWaypoints.add(matchingWaypoint);
     let role: MapMarkerRole = "waypoint";
     if (index === 0) role = "origin";
     else if (index === all.length - 1) role = "destination";
+    else if (matchingWaypoint?.kind === "optional") role = "rest";
+    else if (matchingWaypoint?.winding) role = "winding";
     else if (sameSharedPlace(point, input.lunchStop)) role = "lunch";
     else if (sameSharedPlace(point, input.dinnerStop)) role = "dinner";
-    else if (matchingWaypoints.some((waypoint) => waypoint.kind === "optional")) role = "rest";
-    else if (matchingWaypoints.some((waypoint) => waypoint.winding)) role = "winding";
     return { ...point, role };
   });
   const omittedWaypoints = traversedWaypoints
@@ -62,7 +62,7 @@ export function buildSharedMapPoints(input: {
       else if (waypoint.winding) role = "winding";
       else if (sameSharedPlace(waypoint, input.lunchStop)) role = "lunch";
       else if (sameSharedPlace(waypoint, input.dinnerStop)) role = "dinner";
-      return { ...waypoint, label: `${waypoint.label} · 선택 경로 미통과`, role };
+      return { ...waypoint, label: `${waypoint.label} · 선택 경로 미통과`, role, nonTraversed: true };
     });
   return [...routePoints, ...omittedWaypoints];
 }

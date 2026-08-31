@@ -121,6 +121,7 @@ for each row execute function public.delay_test_finalize();
 
 select dblink_connect('route_c1', 'host=127.0.0.1 port=5432 dbname=postgres user=supabase_admin password=postgres');
 select dblink_connect('route_c2', 'host=127.0.0.1 port=5432 dbname=postgres user=supabase_admin password=postgres');
+select dblink_connect('route_c3', 'host=127.0.0.1 port=5432 dbname=postgres user=supabase_admin password=postgres');
 select dblink_exec('route_c1', 'set role authenticated');
 select dblink_exec('route_c2', 'set role authenticated');
 select dblink_exec('route_c1', 'set "request.jwt.claim.sub" = ''75000000-0000-0000-0000-000000000001''');
@@ -241,8 +242,140 @@ insert into tap_results values (
 );
 reset role;
 
+-- A finalizer whose statement snapshot contains only two rows must not admit a
+-- third row inserted while it is waiting for an existing row lock. The former
+-- multi-statement finalizer saw that phantom in its later aggregate.
+insert into public.route_plan_drafts(owner_id, planning_id, candidate_profile, plan, route, geometry_fingerprint)
+select
+  '75000000-0000-0000-0000-000000000001',
+  '76000000-0000-4000-8000-000000000004',
+  route -> 'candidate' ->> 'id',
+  (select plan from route_fixture),
+  route,
+  public.route_geometry_fingerprint(route)
+from jsonb_array_elements((select routes from route_fixture)) as staged(route)
+where route -> 'candidate' ->> 'id' in ('balanced', 'winding');
+select dblink_exec('route_c2', 'reset role');
+select dblink_exec('route_c2', 'begin');
+select dblink_send_query('route_c2', $$
+  select 1
+  from public.route_plan_drafts
+  where owner_id = '75000000-0000-0000-0000-000000000001'
+    and planning_id = '76000000-0000-4000-8000-000000000004'
+    and candidate_profile = 'balanced'
+  for update
+$$);
+select locked from dblink_get_result('route_c2') as response(locked integer);
+select locked from dblink_get_result('route_c2') as response(locked integer);
+select dblink_send_query('route_c1', $$
+  select public.test_finalize_route('76000000-0000-4000-8000-000000000004', null)
+$$);
+select pg_sleep(0.2);
+insert into tap_results values (
+  dblink_is_busy('route_c1') = 1,
+  'two-row finalizer waits on the pre-existing draft lock'
+);
+select dblink_exec('route_c3', $$
+  insert into public.route_plan_drafts(owner_id, planning_id, candidate_profile, plan, route, geometry_fingerprint)
+  select owner_id, planning_id, 'short', plan,
+    jsonb_set(
+      jsonb_set(
+        jsonb_set(route, '{candidate,id}', '"short"'::jsonb),
+        '{candidate,label}', '"short"'::jsonb
+      ),
+      '{legs,0,sections,0,roads,0,vertexes,2}', '127.15'::jsonb
+    ),
+    repeat('9', 64)
+  from public.route_plan_drafts
+  where owner_id = '75000000-0000-0000-0000-000000000001'
+    and planning_id = '76000000-0000-4000-8000-000000000004'
+    and candidate_profile = 'balanced'
+$$);
+select dblink_exec('route_c2', 'commit');
+create temp table phantom_finalize_result(result text);
+insert into phantom_finalize_result
+select result from dblink_get_result('route_c1') as response(result text);
+select result from dblink_get_result('route_c1') as response(result text);
+insert into tap_results values
+  ((select result = 'ROUTE_PLAN_NOT_READY' from phantom_finalize_result), 'one locked statement snapshot rejects a late third route'),
+  ((select count(*) = 3 from public.route_plan_drafts
+    where owner_id = '75000000-0000-0000-0000-000000000001'
+      and planning_id = '76000000-0000-4000-8000-000000000004'), 'late insert remains retryable after failed finalization');
+delete from public.route_plan_drafts
+where owner_id = '75000000-0000-0000-0000-000000000001'
+  and planning_id = '76000000-0000-4000-8000-000000000004';
+
+-- Once three rows are copied by the locked statement, a retry that tries to
+-- replace one route with duplicate geometry must wait and affect no consumed row.
+insert into public.route_plan_drafts(owner_id, planning_id, candidate_profile, plan, route, geometry_fingerprint)
+select
+  '75000000-0000-0000-0000-000000000001',
+  '76000000-0000-4000-8000-000000000005',
+  route -> 'candidate' ->> 'id',
+  (select plan from route_fixture),
+  route,
+  public.route_geometry_fingerprint(route)
+from jsonb_array_elements((select routes from route_fixture)) as staged(route);
+create or replace function public.delay_test_finalize()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+begin
+  if new.user_id = '75000000-0000-0000-0000-000000000001' then
+    perform pg_sleep(1);
+  end if;
+  return new;
+end;
+$$;
+create trigger delay_test_finalize before insert on public.trips
+for each row execute function public.delay_test_finalize();
+select dblink_send_query('route_c1', $$
+  select public.test_finalize_route('76000000-0000-4000-8000-000000000005', null)
+$$);
+select pg_sleep(0.2);
+select dblink_send_query('route_c2', $$
+  with balanced as (
+    select route
+    from public.route_plan_drafts
+    where owner_id = '75000000-0000-0000-0000-000000000001'
+      and planning_id = '76000000-0000-4000-8000-000000000005'
+      and candidate_profile = 'balanced'
+  ), updated as (
+    update public.route_plan_drafts
+    set route = (select route from balanced), geometry_fingerprint = repeat('8', 64)
+    where owner_id = '75000000-0000-0000-0000-000000000001'
+      and planning_id = '76000000-0000-4000-8000-000000000005'
+      and candidate_profile = 'short'
+    returning 1
+  )
+  select count(*)::integer from updated
+$$);
+select pg_sleep(0.2);
+insert into tap_results values (
+  dblink_is_busy('route_c2') = 1,
+  'a route retry waits while the verified route set is being stored'
+);
+create temp table stable_finalize_result(result text);
+insert into stable_finalize_result
+select result from dblink_get_result('route_c1') as response(result text);
+select result from dblink_get_result('route_c1') as response(result text);
+create temp table blocked_update_result(affected integer);
+insert into blocked_update_result
+select affected from dblink_get_result('route_c2') as response(affected integer);
+select affected from dblink_get_result('route_c2') as response(affected integer);
+drop trigger delay_test_finalize on public.trips;
+drop function public.delay_test_finalize();
+insert into tap_results values
+  ((select result ~ '^[0-9a-f-]{36}$' from stable_finalize_result), 'stable three-route finalization succeeds'),
+  ((select affected = 0 from blocked_update_result), 'blocked retry cannot update a consumed route draft'),
+  ((select count(distinct public.route_geometry_fingerprint(summary)) = 3
+    from public.route_cache
+    where trip_id = (
+      select result::uuid from stable_finalize_result
+      where result ~ '^[0-9a-f-]{36}$'
+    )), 'stored routes are the same three distinct geometries that were validated');
+
 select dblink_disconnect('route_c1');
 select dblink_disconnect('route_c2');
+select dblink_disconnect('route_c3');
 drop function public.test_finalize_route(uuid, uuid);
 delete from auth.users where id = '75000000-0000-0000-0000-000000000001';
 

@@ -87,7 +87,9 @@ async function deleteOwnedTrip(page: Page, tripId: string) {
 }
 
 test.afterEach(async ({ context }, testInfo) => {
-  testInfo.setTimeout(180_000);
+  // The three worst-case cleanup paths total 180 seconds; keep another full
+  // minute for page creation/closure and Playwright hook bookkeeping.
+  testInfo.setTimeout(240_000);
   const cleanup = pendingCleanup;
   pendingCleanup = null;
   if (!cleanup) return;

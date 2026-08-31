@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 export type MapMarkerRole = "origin" | "destination" | "lunch" | "dinner" | "rest" | "winding" | "waypoint";
-type MapPoint = { label: string; latitude: number; longitude: number; role?: MapMarkerRole };
+type MapPoint = { label: string; latitude: number; longitude: number; role?: MapMarkerRole; nonTraversed?: boolean };
 type PathPoint = { latitude: number; longitude: number };
 const KAKAO_MAP_LOAD_TIMEOUT_MS = 10_000;
 const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; color: string }> = {
@@ -16,14 +16,45 @@ const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; c
   waypoint: { label: "경유", symbol: "경", color: "#5f6d63" },
 };
 
-function markerImage(maps: KakaoMapsNamespace, role: MapMarkerRole) {
-  const appearance = markerAppearance[role];
+function markerImage(maps: KakaoMapsNamespace, points: MapPoint[]) {
+  const markerKinds = Array.from(new Map(points.map((point) => {
+    const role = point.role ?? "waypoint";
+    return [`${role}:${Boolean(point.nonTraversed)}`, { role, nonTraversed: Boolean(point.nonTraversed) }] as const;
+  })).values());
+  if (markerKinds.length > 1 || markerKinds[0].nonTraversed) {
+    const width = 12 + markerKinds.length * 26;
+    const center = width / 2;
+    const badges = markerKinds.map(({ role, nonTraversed }, index) => {
+      const appearance = markerAppearance[role];
+      const cx = 19 + index * 26;
+      const symbol = `${appearance.symbol}${nonTraversed ? "×" : ""}`;
+      return `<circle cx="${cx}" cy="18" r="11" fill="${appearance.color}"/><text x="${cx}" y="21.5" text-anchor="middle" font-family="sans-serif" font-size="${nonTraversed ? 8 : 10}" font-weight="800" fill="#fffdf8">${symbol}</text>`;
+    }).join("");
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="44" viewBox="0 0 ${width} 44"><path d="M${center - 6} 33 L${center} 43 L${center + 6} 33Z" fill="#fffdf8" stroke="#18372b" stroke-width="1.5"/><rect x="1" y="1" width="${width - 2}" height="34" rx="17" fill="#fffdf8" stroke="#18372b" stroke-width="1.5"/>${badges}</svg>`;
+    return new maps.MarkerImage(
+      `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+      new maps.Size(width, 44),
+      { offset: new maps.Point(center, 43) },
+    );
+  }
+  const appearance = markerAppearance[markerKinds[0].role];
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44"><path d="M18 1C8.6 1 1 8.6 1 18c0 12.2 17 25 17 25s17-12.8 17-25C35 8.6 27.4 1 18 1Z" fill="${appearance.color}" stroke="#fffdf8" stroke-width="2"/><circle cx="18" cy="18" r="11" fill="#fffdf8"/><text x="18" y="22" text-anchor="middle" font-family="sans-serif" font-size="11" font-weight="800" fill="${appearance.color}">${appearance.symbol}</text></svg>`;
   return new maps.MarkerImage(
     `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
     new maps.Size(36, 44),
     { offset: new maps.Point(18, 43) },
   );
+}
+
+function markerGroups(points: MapPoint[]) {
+  const groups = new Map<string, { latitude: number; longitude: number; points: MapPoint[] }>();
+  points.forEach((point) => {
+    const key = `${point.latitude}:${point.longitude}`;
+    const group = groups.get(key);
+    if (group) group.points.push(point);
+    else groups.set(key, { latitude: point.latitude, longitude: point.longitude, points: [point] });
+  });
+  return Array.from(groups.values());
 }
 
 export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: PathPoint[] }) {
@@ -77,20 +108,20 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
             return;
           }
           try {
-            const markerPath = geometry.points.map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
+            const groupedMarkers = markerGroups(geometry.points);
+            const markerPath = groupedMarkers.map((group) => new loadedMaps.LatLng(group.latitude, group.longitude));
             const routePath = geometry.path.map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
             const map = new loadedMaps.Map(containerRef.current, { center: markerPath[0], level: 8 });
             const bounds = new loadedMaps.LatLngBounds();
             routePath.forEach((position) => bounds.extend(position));
             markerPath.forEach((position, index) => {
               bounds.extend(position);
-              const point = geometry.points[index];
-              const role = point.role ?? "waypoint";
+              const group = groupedMarkers[index];
               new loadedMaps.Marker({
                 map,
                 position,
-                title: `${markerAppearance[role].label} · ${point.label}`,
-                image: markerImage(loadedMaps, role),
+                title: group.points.map((point) => `${markerAppearance[point.role ?? "waypoint"].label} · ${point.label}`).join(" / "),
+                image: markerImage(loadedMaps, group.points),
               });
             });
             if (routePath.length) {
@@ -175,6 +206,7 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
 
 function MarkerLegend({ points }: { points: MapPoint[] }) {
   const roles = Array.from(new Set(points.map((point) => point.role ?? "waypoint")));
+  const omittedPoints = points.filter((point) => point.nonTraversed);
   return (
     <ul className="map-marker-legend" aria-label="지도 지점 표시 안내">
       {roles.map((role) => (
@@ -185,6 +217,17 @@ function MarkerLegend({ points }: { points: MapPoint[] }) {
           {markerAppearance[role].label}
         </li>
       ))}
+      {omittedPoints.map((point, index) => {
+        const role = point.role ?? "waypoint";
+        return (
+          <li className="map-marker-omission" key={`${point.latitude}:${point.longitude}:${role}:${index}`}>
+            <span className="map-marker-symbol is-omitted" style={{ backgroundColor: markerAppearance[role].color }} aria-hidden="true">
+              {markerAppearance[role].symbol}×
+            </span>
+            {markerAppearance[role].label} · {point.label}
+          </li>
+        );
+      })}
     </ul>
   );
 }

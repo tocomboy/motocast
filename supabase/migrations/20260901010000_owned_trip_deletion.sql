@@ -59,27 +59,30 @@ begin
   -- Establish the write lock before row locks so any future stronger migration
   -- lock cannot form a table-lock upgrade cycle with finalization.
   lock table public.route_plan_drafts in row exclusive mode;
-  perform 1 from public.route_plan_drafts
-  where owner_id = current_user_id and planning_id = target_planning_id
-  for update;
-
+  -- Lock, validate and copy the exact route set in one statement snapshot. A
+  -- concurrent insert cannot appear only in a later aggregate, and an update
+  -- to any copied route waits until this transaction finishes.
+  with locked_drafts as materialized (
+    select candidate_profile, plan, route
+    from public.route_plan_drafts
+    where owner_id = current_user_id
+      and planning_id = target_planning_id
+      and created_at >= now() - interval '10 minutes'
+    order by case candidate_profile
+      when 'balanced' then 1 when 'winding' then 2 else 3 end
+    for update
+  )
   select count(*), count(distinct plan::text),
-    count(distinct public.route_geometry_fingerprint(route)), min(plan::text)::jsonb
-  into draft_count, plan_count, fingerprint_count, staged_plan
-  from public.route_plan_drafts
-  where owner_id = current_user_id
-    and planning_id = target_planning_id
-    and created_at >= now() - interval '10 minutes';
+    count(distinct public.route_geometry_fingerprint(route)),
+    min(plan::text)::jsonb,
+    jsonb_agg(route order by case candidate_profile
+      when 'balanced' then 1 when 'winding' then 2 else 3 end)
+  into draft_count, plan_count, fingerprint_count, staged_plan, staged_routes
+  from locked_drafts;
 
   if draft_count <> 3 or plan_count <> 1 or fingerprint_count <> 3 then
     raise exception 'ROUTE_PLAN_NOT_READY';
   end if;
-
-  select jsonb_agg(route order by case candidate_profile
-    when 'balanced' then 1 when 'winding' then 2 else 3 end)
-  into staged_routes
-  from public.route_plan_drafts
-  where owner_id = current_user_id and planning_id = target_planning_id;
 
   staged_plan := case
     when target_trip_id is null then staged_plan - 'tripId'
