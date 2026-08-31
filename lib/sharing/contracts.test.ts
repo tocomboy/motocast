@@ -120,6 +120,23 @@ describe("parseSharedRideSnapshot", () => {
     expect(() => parseSharedRideSnapshot({ ...snapshot, schemaVersion: "2" })).toThrow("INVALID_SHARE_SNAPSHOT");
   });
 
+  it("rejects coerced waypoint positions in both current and legacy snapshots", () => {
+    for (const schemaVersion of [1, 2] as const) {
+      for (const position of [null, "", "0"]) {
+        expect(() => parseSharedRideSnapshot({
+          ...snapshot,
+          schemaVersion,
+          trip: schemaVersion === 1 ? {
+            ...snapshot.trip,
+            desiredReturnAt: "2026-08-31T08:00:00.000Z",
+            hardReturnAt: "2026-08-31T09:00:00.000Z",
+          } : snapshot.trip,
+          waypoints: [{ ...snapshot.waypoints[0], position }],
+        })).toThrow("INVALID_SHARE_SNAPSHOT");
+      }
+    }
+  });
+
   it("rejects internal place verification material from a public snapshot", () => {
     expect(() => parseSharedRideSnapshot({
       ...snapshot,

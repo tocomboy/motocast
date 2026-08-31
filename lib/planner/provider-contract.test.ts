@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseSafeRouteCandidateSet, parseSafeRouteResponse, ProviderContractError } from "./provider-contract";
+import { parseSafeRouteCandidateSet, parseSafeRouteResponse, ProviderContractError, routeResponseFingerprint } from "./provider-contract";
 import { buildSafeRouteResponse } from "../../supabase/functions/_shared/route-response";
 
 const point = (id: string) => ({
@@ -206,5 +206,21 @@ describe("parseSafeRouteCandidateSet", () => {
     short.legs[0].sections[0].roads[0].vertexes[6] += 0.0005;
 
     expect(parseSafeRouteCandidateSet([balanced, winding, short])).toHaveLength(3);
+  });
+
+  it("uses decimal half-up microdegrees at the six-place tie boundary", () => {
+    const tie = response();
+    tie.legs[0].sections[0].roads[0].vertexes = [127.05, 37.5, 127.0500005, 37.6];
+    const rounded = structuredClone(tie);
+    rounded.legs[0].sections[0].roads[0].vertexes = [127.05, 37.5, 127.050001, 37.6];
+    expect(routeResponseFingerprint(parseSafeRouteResponse(tie)))
+      .toBe(routeResponseFingerprint(parseSafeRouteResponse(rounded)));
+
+    const belowTie = structuredClone(tie);
+    belowTie.legs[0].sections[0].roads[0].vertexes = [127.05, 37.5, 127.05000049, 37.6];
+    const roundedDown = structuredClone(tie);
+    roundedDown.legs[0].sections[0].roads[0].vertexes = [127.05, 37.5, 127.05, 37.6];
+    expect(routeResponseFingerprint(parseSafeRouteResponse(belowTie)))
+      .toBe(routeResponseFingerprint(parseSafeRouteResponse(roundedDown)));
   });
 });

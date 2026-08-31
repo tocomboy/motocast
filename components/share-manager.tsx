@@ -176,7 +176,7 @@ export function ShareManager({ tripId, disabled = false }: { tripId: string | nu
       {links.length ? (
         <ul className="share-link-list" aria-label="내 공유 발행 기록">
           {links.map((link) => (
-            <li key={link.id}>
+            <li key={link.id} data-share-id={link.id}>
               <span><strong>{new Date(link.createdAt).toLocaleString("ko-KR")}</strong>{link.revokedAt ? "회수됨" : "공개 중"}</span>
               {!link.revokedAt ? <button className="danger-text" type="button" disabled={disabled || busy} onClick={() => void revoke(link)}>링크 회수</button> : null}
             </li>

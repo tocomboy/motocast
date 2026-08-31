@@ -194,6 +194,43 @@ insert into tap_results values
   ((select count(*) = 3 from public.route_cache r join public.trips t on t.id = r.trip_id where t.user_id = '75000000-0000-0000-0000-000000000001'), 'failed replacement restores all original routes'),
   ((select count(*) = 3 from public.route_plan_drafts where owner_id = '75000000-0000-0000-0000-000000000001' and planning_id = '76000000-0000-4000-8000-000000000002'), 'failed replacement preserves the retryable route drafts');
 
+-- Simulate the migration's table-lock boundary. A route writer must remain
+-- blocked until the fingerprint replacement/backfill transaction releases it.
+create or replace function public.test_route_fingerprint_migration_lock()
+returns integer
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare affected integer;
+begin
+  lock table public.route_plan_drafts in share row exclusive mode;
+  perform pg_sleep(1);
+  update public.route_plan_drafts
+  set geometry_fingerprint = public.route_geometry_fingerprint(route);
+  get diagnostics affected = row_count;
+  return affected;
+end;
+$$;
+select dblink_exec('route_c1', 'reset role');
+select dblink_exec('route_c2', 'reset role');
+select dblink_send_query('route_c1', 'select public.test_route_fingerprint_migration_lock()');
+select pg_sleep(0.2);
+select dblink_send_query('route_c2', $$
+  update public.route_plan_drafts
+  set created_at = created_at
+  where owner_id = '75000000-0000-0000-0000-000000000001'
+    and planning_id = '76000000-0000-4000-8000-000000000002'
+  returning 1
+$$);
+select pg_sleep(0.2);
+insert into tap_results values (
+  dblink_is_busy('route_c2') = 1,
+  'fingerprint migration lock serializes a concurrent route-draft writer'
+);
+select affected from dblink_get_result('route_c1') as response(affected integer);
+select affected from dblink_get_result('route_c2') as response(affected integer);
+drop function public.test_route_fingerprint_migration_lock();
+
 select dblink_disconnect('route_c1');
 select dblink_disconnect('route_c2');
 drop function public.test_finalize_route(uuid, uuid);

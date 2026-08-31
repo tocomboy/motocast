@@ -89,13 +89,13 @@ function place(value: unknown): SharedPlace {
 
 function waypoint(value: unknown, schemaVersion: 1 | 2): SharedWaypoint {
   const raw = record(value);
-  const position = Number(raw.position);
+  const position = raw.position;
   const parsedPlace = place({
     ...raw,
     id: schemaVersion === 1 && raw.id === undefined ? `waypoint-${position}` : raw.id,
   });
   if (
-    !Number.isInteger(position) || position < 0 ||
+    typeof position !== "number" || !Number.isInteger(position) || position < 0 ||
     !["pass-through", "stop", "optional"].includes(String(raw.kind)) ||
     !Number.isInteger(raw.dwellMinutes) || Number(raw.dwellMinutes) < 0 || Number(raw.dwellMinutes) > 1440 ||
     typeof raw.selected !== "boolean" || typeof raw.winding !== "boolean"

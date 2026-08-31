@@ -113,7 +113,7 @@ export function CollectionManager({ currentPoints, onApply, disabled = false }: 
       {collections.length ? (
         <ul className="collection-list">
           {collections.map((collection) => (
-            <li key={collection.id}>
+            <li key={collection.id} data-collection-id={collection.id}>
               <div>
                 <strong>{collection.title}</strong>
                 <span>v{collection.latestVersion.number} · 경유지 {collection.latestVersion.points.length}개</span>

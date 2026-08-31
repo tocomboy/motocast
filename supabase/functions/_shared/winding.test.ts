@@ -42,6 +42,13 @@ describe("winding heuristic", () => {
     expect(routeFingerprint(alternative)).not.toBe(routeFingerprint(baseline));
   });
 
+  it("uses decimal half-up microdegrees at the six-place tie boundary", () => {
+    expect(routeFingerprint(route([127.05, 37, 127.0500005, 37.1])))
+      .toBe(routeFingerprint(route([127.05, 37, 127.050001, 37.1])));
+    expect(routeFingerprint(route([127.05, 37, 127.05000049, 37.1])))
+      .toBe(routeFingerprint(route([127.05, 37, 127.05, 37.1])));
+  });
+
   it("is deterministic for duplicate points and incomplete geometry", () => {
     expect(curvatureScore(route([127, 37, 127, 37, 127.1, 37]))).toBe(0);
     expect(curvatureScore({ summary: { distance: 1, duration: 1 } })).toBe(0);

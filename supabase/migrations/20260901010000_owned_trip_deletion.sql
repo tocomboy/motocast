@@ -1,5 +1,11 @@
 -- Keep the trusted database finalization identity aligned with the Edge and
--- browser contracts: every road vertex participates at six decimal places.
+-- browser contracts: every road vertex participates as a half-up rounded
+-- integer microdegree. Drain and exclude concurrent stage/finalize writers
+-- until the replacement function and backfill commit together.
+begin;
+
+lock table public.route_plan_drafts in share row exclusive mode;
+
 create or replace function public.route_geometry_fingerprint(route jsonb)
 returns text
 language sql
@@ -21,7 +27,7 @@ as $$
     from vertices
   )
   select encode(extensions.digest(coalesce(string_agg(
-    round(longitude, 6)::text || ',' || round(latitude, 6)::text,
+    round(longitude * 1000000)::bigint::text || ',' || round(latitude * 1000000)::bigint::text,
     '|' order by leg_position, section_position, road_position, vertex_position
   ) filter (where previous_longitude is distinct from longitude or previous_latitude is distinct from latitude), 'empty'), 'sha256'), 'hex')
   from ordered;
@@ -55,3 +61,5 @@ $$;
 
 revoke all on function public.delete_owned_trip(uuid) from public, anon, authenticated, service_role;
 grant execute on function public.delete_owned_trip(uuid) to authenticated;
+
+commit;

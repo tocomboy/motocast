@@ -82,6 +82,9 @@ function inheritedEnvironment(): Record<string, string> {
 
 const parsedBaseUrl = new URL(baseURL);
 if (runMode === "preview") {
+  if (process.platform === "win32") {
+    throw new Error("Authenticated Preview E2E requires POSIX owner-only file permissions; run it from WSL or Linux");
+  }
   if (!configuredBaseUrl || parsedBaseUrl.origin !== previewOrigin || parsedBaseUrl.pathname !== "/" || parsedBaseUrl.search || parsedBaseUrl.hash) {
     throw new Error(`Preview tests require the exact approved Preview origin: ${previewOrigin}`);
   }

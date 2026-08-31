@@ -21,4 +21,23 @@ describe("buildSharedMapPoints", () => {
       ],
     }).map((point) => point.role)).toEqual(["origin", "lunch", "rest", "winding", "destination"]);
   });
+
+  it("keeps later stop roles when the selected route omits an earlier winding waypoint", () => {
+    expect(buildSharedMapPoints({
+      routePoints: [origin, lunch, rest, destination],
+      lunchStop: { ...lunch, id: "trip-lunch" },
+      dinnerStop: null,
+      waypoints: [
+        { ...winding, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
+        { ...lunch, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+        { ...rest, id: "waypoint-2", position: 2, kind: "optional", dwellMinutes: 30, selected: true, winding: false },
+      ],
+    })).toMatchObject([
+      { role: "origin" },
+      { role: "lunch" },
+      { role: "rest" },
+      { role: "destination" },
+      { role: "winding", label: "와인딩 · 선택 경로 미통과" },
+    ]);
+  });
 });

@@ -35,20 +35,32 @@ export function buildSharedMapPoints(input: {
   dinnerStop: SharedPlace | null;
 }) {
   const traversedWaypoints = input.waypoints.filter((item) => item.selected);
-  return input.routePoints.map((point, index, all) => {
-    const expectedWaypoint = index > 0 && index < all.length - 1
-      ? traversedWaypoints[index - 1]
-      : undefined;
-    const waypoint = sameSharedPlace(point, expectedWaypoint) ? expectedWaypoint : undefined;
+  const matchedWaypoints = new Set<SharedWaypoint>();
+  const routePoints = input.routePoints.map((point, index, all) => {
+    const matchingWaypoints = index > 0 && index < all.length - 1
+      ? traversedWaypoints.filter((waypoint) => sameSharedPlace(point, waypoint))
+      : [];
+    matchingWaypoints.forEach((waypoint) => matchedWaypoints.add(waypoint));
     let role: MapMarkerRole = "waypoint";
     if (index === 0) role = "origin";
     else if (index === all.length - 1) role = "destination";
     else if (sameSharedPlace(point, input.lunchStop)) role = "lunch";
     else if (sameSharedPlace(point, input.dinnerStop)) role = "dinner";
-    else if (waypoint?.kind === "optional") role = "rest";
-    else if (waypoint?.winding) role = "winding";
+    else if (matchingWaypoints.some((waypoint) => waypoint.kind === "optional")) role = "rest";
+    else if (matchingWaypoints.some((waypoint) => waypoint.winding)) role = "winding";
     return { ...point, role };
   });
+  const omittedWaypoints = traversedWaypoints
+    .filter((waypoint) => !matchedWaypoints.has(waypoint))
+    .map((waypoint) => {
+      let role: MapMarkerRole = "waypoint";
+      if (sameSharedPlace(waypoint, input.lunchStop)) role = "lunch";
+      else if (sameSharedPlace(waypoint, input.dinnerStop)) role = "dinner";
+      else if (waypoint.kind === "optional") role = "rest";
+      else if (waypoint.winding) role = "winding";
+      return { ...waypoint, label: `${waypoint.label} · 선택 경로 미통과`, role };
+    });
+  return [...routePoints, ...omittedWaypoints];
 }
 
 export function SharedRideSnapshotView({

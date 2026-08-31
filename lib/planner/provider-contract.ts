@@ -281,8 +281,15 @@ export function routeResponseFingerprint(response: SafeRouteResponse) {
     }
   }
   return points
-    .map((point) => `${point.longitude.toFixed(6)},${point.latitude.toFixed(6)}`)
+    .map((point) => `${coordinateMicros(point.longitude)},${coordinateMicros(point.latitude)}`)
     .join("|");
+}
+
+function coordinateMicros(value: number) {
+  const [whole, fraction = ""] = String(value).split(".");
+  const sixDigits = `${fraction}000000`.slice(0, 6);
+  const micros = Number(whole) * 1_000_000 + Number(sixDigits);
+  return micros + (Number(fraction[6] ?? "0") >= 5 ? 1 : 0);
 }
 
 export function parseSafeRouteCandidateSet(values: unknown[]): SafeRouteResponse[] {

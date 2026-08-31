@@ -71,7 +71,14 @@ export function curvatureScore(route: RouteGeometry) {
 export function routeFingerprint(route: RouteGeometry) {
   const points = coordinates(route);
   if (!points.length) return `empty:${route.summary.distance}:${route.summary.duration}`;
-  return points.map(([longitude, latitude]) => `${longitude.toFixed(6)},${latitude.toFixed(6)}`).join("|");
+  return points.map(([longitude, latitude]) => `${coordinateMicros(longitude)},${coordinateMicros(latitude)}`).join("|");
+}
+
+function coordinateMicros(value: number) {
+  const [whole, fraction = ""] = String(value).split(".");
+  const sixDigits = `${fraction}000000`.slice(0, 6);
+  const micros = Number(whole) * 1_000_000 + Number(sixDigits);
+  return micros + (Number(fraction[6] ?? "0") >= 5 ? 1 : 0);
 }
 
 export function selectEstimatedWindingRoute<T extends RouteGeometry>(routes: T[], excludedFingerprints: Set<string>) {

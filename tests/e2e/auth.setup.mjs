@@ -19,6 +19,10 @@ const previewSupabaseProjectRef = "lehjmbgfpoemqcwxowbx";
 const baseUrlValue = process.env.MOTOCAST_E2E_BASE_URL?.trim();
 const storageStateValue = process.env.MOTOCAST_E2E_STORAGE_STATE?.trim();
 
+if (process.platform === "win32") {
+  throw new Error("Preview auth setup requires POSIX owner-only file permissions; run it from WSL or Linux");
+}
+
 if (!baseUrlValue || !storageStateValue) {
   throw new Error("Set MOTOCAST_E2E_BASE_URL and MOTOCAST_E2E_STORAGE_STATE before auth setup");
 }

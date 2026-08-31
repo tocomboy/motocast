@@ -154,6 +154,13 @@ insert into tap_results values (
   'route identity preserves distinct interior vertices at six decimal places'
 );
 insert into tap_results values
+  (public.route_geometry_fingerprint(pg_temp.test_route('balanced', 127.0500005)) =
+    public.route_geometry_fingerprint(pg_temp.test_route('balanced', 127.050001)),
+    'route identity rounds an exact six-place tie up to integer microdegrees'),
+  (public.route_geometry_fingerprint(pg_temp.test_route('balanced', 127.05000049)) =
+    public.route_geometry_fingerprint(pg_temp.test_route('balanced', 127.05)),
+    'route identity rounds a below-tie coordinate down to integer microdegrees');
+insert into tap_results values
   ((select count(*) = 0 from public.route_plan_drafts), 'finalize consumes trusted route drafts');
 
 set local role service_role;
@@ -531,11 +538,13 @@ insert into tap_results values (
   public.delete_owned_trip((select id from trip_result)),
   'owner can delete the stored trip aggregate'
 );
+reset role;
 insert into tap_results values
   ((select count(*) = 0 from public.trips where id = (select id from trip_result)), 'owned trip deletion removes the trip'),
   ((select count(*) = 0 from public.trip_waypoints where trip_id = (select id from trip_result)), 'owned trip deletion cascades waypoints'),
   ((select count(*) = 0 from public.route_cache where trip_id = (select id from trip_result)), 'owned trip deletion cascades routes'),
-  ((select count(*) = 0 from public.weather_snapshots where trip_id = (select id from trip_result)), 'owned trip deletion cascades weather');
+  ((select count(*) = 0 from public.weather_snapshots where trip_id = (select id from trip_result)), 'owned trip deletion cascades weather'),
+  ((select count(*) = 0 from public.share_preview_grants where trip_id = (select id from trip_result)), 'owned trip deletion cascades preview capabilities');
 
 set local role anon;
 select set_config('request.jwt.claim.sub', '', true);
