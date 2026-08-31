@@ -36,7 +36,7 @@ describe("normalizeKakaoPlaceDocuments", () => {
           address_name: "경기 남양주시 와부읍 팔당리",
           road_address_name: "경기 남양주시 경강로 2227",
           phone: "031-000-0000",
-          place_url: "https://place.map.kakao.com/123",
+          place_url: "http://place.map.kakao.com/123",
           x: "127.243",
           y: "37.547",
         },
@@ -62,5 +62,20 @@ describe("normalizeKakaoPlaceDocuments", () => {
         { id: "1", place_name: "invalid", address_name: "invalid", x: "139.6", y: "35.6" },
       ]),
     ).toThrow(/PLACE_OUTSIDE_KOREA/);
+  });
+
+  it("rejects a provider detail URL outside the Kakao place host", () => {
+    expect(() =>
+      normalizeKakaoPlaceDocuments([
+        {
+          id: "123",
+          place_name: "팔당역",
+          address_name: "경기 남양주시 와부읍 팔당리",
+          place_url: "http://example.com/123",
+          x: "127.243",
+          y: "37.547",
+        },
+      ]),
+    ).toThrow(/INVALID_PLACE_PROVIDER_RESPONSE/);
   });
 });

@@ -58,7 +58,7 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
           }
           try {
             const markerPath = geometry.points.map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
-            const routePath = (geometry.path.length ? geometry.path : geometry.points).map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
+            const routePath = geometry.path.map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
             const map = new loadedMaps.Map(containerRef.current, { center: markerPath[0], level: 8 });
             const bounds = new loadedMaps.LatLngBounds();
             routePath.forEach((position) => bounds.extend(position));
@@ -66,14 +66,16 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
               bounds.extend(position);
               new loadedMaps.Marker({ map, position, title: geometry.points[index].label });
             });
-            new loadedMaps.Polyline({
-              map,
-              path: routePath,
-              strokeWeight: 5,
-              strokeColor: "#ef6a3a",
-              strokeOpacity: 0.9,
-              strokeStyle: "solid",
-            });
+            if (routePath.length) {
+              new loadedMaps.Polyline({
+                map,
+                path: routePath,
+                strokeWeight: 5,
+                strokeColor: "#ef6a3a",
+                strokeOpacity: 0.9,
+                strokeStyle: "solid",
+              });
+            }
             map.setBounds(bounds);
             window.clearTimeout(timeout);
             setMapState({ status: "ready", geometryKey });

@@ -153,6 +153,11 @@ describe("KakaoMapCanvas", () => {
     expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
     expect(maps.Marker).toHaveBeenCalledTimes(points.length);
     expect(maps.Polyline).toHaveBeenCalledTimes(1);
+    const polylineCalls = maps.Polyline.mock.calls as unknown as Array<[
+      { path: Array<{ getLat: () => number; getLng: () => number }> },
+    ]>;
+    const renderedPath = polylineCalls[0][0].path;
+    expect(renderedPath.map((point) => ({ latitude: point.getLat(), longitude: point.getLng() }))).toEqual(actualPath);
     expect(maps.extend).toHaveBeenCalledTimes(actualPath.length + points.length);
     expect(maps.setBounds).toHaveBeenCalledTimes(1);
     expect(mapCanvas(renderer).props.className).toContain("is-ready");
@@ -160,6 +165,21 @@ describe("KakaoMapCanvas", () => {
     expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(1);
     expect(statusText(renderer)).toContain("실제 경로 지도 준비 완료");
     expect(renderer.root.findByProps({ role: "status" }).props.className).toContain("is-visually-hidden");
+    await act(async () => renderer.unmount());
+  });
+
+  it("does not connect marker points with a synthetic straight line before an actual route exists", async () => {
+    vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "test-public-key");
+    stubBrowser();
+    const maps = installMaps();
+    const renderer = await mountMap();
+    await flush(maps.loadCallbacks);
+
+    expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
+    expect(maps.Marker).toHaveBeenCalledTimes(points.length);
+    expect(maps.Polyline).not.toHaveBeenCalled();
+    expect(maps.extend).toHaveBeenCalledTimes(points.length);
+    expect(statusText(renderer)).toContain("카카오 지도 준비 완료");
     await act(async () => renderer.unmount());
   });
 

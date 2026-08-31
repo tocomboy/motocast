@@ -37,7 +37,9 @@ The JavaScript key and allowed web origin are necessary but do not activate the 
 4. Confirm that the Vercel Preview Config name `NEXT_PUBLIC_KAKAO_MAP_JS_KEY` contains that app's JavaScript key, not its REST API key. Never print the value.
 5. Redeploy or refresh the fixed Preview alias and verify that the SDK request returns JavaScript successfully. A `403 NotAuthorizedError` saying the app disabled `OPEN_MAP_AND_LOCAL` means activation is still incomplete; it is not an application success and must not fall back to demo data.
 
-On 2026-08-31 the fixed Preview alias returned that exact 403 because `MOTOCAST Preview` had Map/Local disabled. The client-side error boundary now has a ten-second timeout and exposes a safe configuration error instead of leaving riders at `카카오 지도 불러오는 중`. Actual place, route, and weather smoke tests remain blocked until the free-only activation check passes.
+On 2026-08-31 the fixed Preview alias initially returned that exact 403 because `MOTOCAST Preview` had Map/Local disabled. After the user confirmed the free-only activation, a key-preserving request from the fixed Preview origin returned `200 text/javascript` and the authenticated browser rendered the Kakao map. The client-side error boundary retains its ten-second timeout and safe configuration error. The first real place search then exposed a separate response-contract defect: Kakao officially returns `http://place.map.kakao.com/...`, while the browser accepts only the HTTPS Kakao host. The server correction validates that exact host and upgrades the URL to HTTPS; do not weaken the browser host check or accept arbitrary provider URLs.
+
+Before an actual route response exists, the connected map may show selected markers but must not connect them with a synthetic straight line. After calculation, the only route polyline source is the ordered Kakao Mobility road `vertexes` returned and validated by `plan-route`.
 
 ## Supabase promotion order
 

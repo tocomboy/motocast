@@ -60,6 +60,32 @@ function optionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function kakaoPlaceUrl(value: unknown) {
+  const rawUrl = optionalString(value);
+  if (!rawUrl) return null;
+  if (rawUrl.length > 500) throw new Error("INVALID_PLACE_PROVIDER_RESPONSE");
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("INVALID_PLACE_PROVIDER_RESPONSE");
+  }
+  if (
+    !["http:", "https:"].includes(parsed.protocol) ||
+    parsed.hostname !== "place.map.kakao.com" ||
+    parsed.port ||
+    parsed.username ||
+    parsed.password
+  ) {
+    throw new Error("INVALID_PLACE_PROVIDER_RESPONSE");
+  }
+  parsed.protocol = "https:";
+  const canonical = parsed.toString();
+  if (canonical.length > 500) throw new Error("INVALID_PLACE_PROVIDER_RESPONSE");
+  return canonical;
+}
+
 function coordinate(value: unknown) {
   if (typeof value !== "string" && typeof value !== "number") {
     throw new Error("INVALID_PLACE_PROVIDER_RESPONSE");
@@ -86,7 +112,7 @@ export function normalizeKakaoPlace(value: unknown): PlaceSearchResult {
     address: requiredString(raw.address_name).slice(0, 300),
     roadAddress: optionalString(raw.road_address_name)?.slice(0, 300) ?? null,
     phone: optionalString(raw.phone)?.slice(0, 40) ?? null,
-    placeUrl: optionalString(raw.place_url)?.slice(0, 500) ?? null,
+    placeUrl: kakaoPlaceUrl(raw.place_url),
     latitude,
     longitude,
   };
