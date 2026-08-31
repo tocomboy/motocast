@@ -137,6 +137,7 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
   return (
     <div className="map-shell" aria-label="선택한 라이딩 경로 지도">
       <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert={!isReady} />
+      <MapStatus state={state} actualRoute={Boolean(path?.length)} />
       {!isReady ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
     </div>
   );
@@ -161,12 +162,18 @@ function SchematicRoute({ state, points, actualRoute }: { state: "loading" | "de
           );
         })}
       </svg> : null}
-      <div className="map-status" role="status" aria-live="polite">
-        <span className={`status-dot ${state}`} />
-        {state === "loading" ? actualRoute ? "실제 경로 지도를 불러오는 중" : "카카오 지도를 불러오는 중" : null}
-        {state === "demo" ? actualRoute ? "카카오 지도 키 미설정 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 키 미설정 · 예시 경로 개요 표시 중" : null}
-        {state === "error" ? actualRoute ? "카카오 지도 로드 실패 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 로드 실패 · 설정 확인 후 새로고침해 주세요" : null}
-      </div>
+    </div>
+  );
+}
+
+function MapStatus({ state, actualRoute }: { state: "loading" | "ready" | "demo" | "error"; actualRoute: boolean }) {
+  return (
+    <div className="map-status" role="status" aria-live="polite">
+      <span className={`status-dot ${state}`} />
+      {state === "loading" ? actualRoute ? "실제 경로 지도를 불러오는 중" : "카카오 지도를 불러오는 중" : null}
+      {state === "ready" ? actualRoute ? "실제 경로 지도 준비 완료" : "카카오 지도 준비 완료" : null}
+      {state === "demo" ? actualRoute ? "카카오 지도 키 미설정 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 키 미설정 · 예시 경로 개요 표시 중" : null}
+      {state === "error" ? actualRoute ? "카카오 지도 로드 실패 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 로드 실패 · 설정 확인 후 새로고침해 주세요" : null}
     </div>
   );
 }

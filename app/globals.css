@@ -877,13 +877,14 @@ button {
   align-items: center;
   background: rgba(255, 253, 248, 0.9);
   border-radius: 8px;
-  bottom: 18px;
   display: flex;
   font-size: 0.7rem;
   gap: 8px;
   left: 22px;
   padding: 8px 11px;
   position: absolute;
+  top: 88px;
+  z-index: 3;
 }
 
 .status-dot {
@@ -895,6 +896,10 @@ button {
 
 .status-dot.error {
   background: var(--danger);
+}
+
+.status-dot.ready {
+  background: #345d47;
 }
 
 .map-topbar {
