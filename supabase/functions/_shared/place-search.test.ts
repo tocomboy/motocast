@@ -67,6 +67,9 @@ describe("normalizeKakaoPlaceDocuments", () => {
   it.each([
     "http:place.map.kakao.com/123",
     "http:\n//place.map.kakao.com/123",
+    " http://place.map.kakao.com/123",
+    "\thttp://place.map.kakao.com/123",
+    "http://place.map.kakao.com/123\n",
     "http://place.map.kakao.com:80/123",
     "http://rider@place.map.kakao.com/123",
     "http://sub.place.map.kakao.com/123",

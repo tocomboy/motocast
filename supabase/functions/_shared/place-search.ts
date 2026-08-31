@@ -61,8 +61,9 @@ function optionalString(value: unknown) {
 }
 
 function kakaoPlaceUrl(value: unknown) {
-  const rawUrl = optionalString(value);
-  if (!rawUrl) return null;
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "string") throw new Error("INVALID_PLACE_PROVIDER_RESPONSE");
+  const rawUrl = value;
   if (rawUrl.length > 500) throw new Error("INVALID_PLACE_PROVIDER_RESPONSE");
   if (
     /[\u0000-\u0020\u007f]/.test(rawUrl) ||
