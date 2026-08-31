@@ -159,6 +159,7 @@ describe("KakaoMapCanvas", () => {
     expect(mapCanvas(renderer).props["aria-hidden"]).toBe(false);
     expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(1);
     expect(statusText(renderer)).toContain("실제 경로 지도 준비 완료");
+    expect(renderer.root.findByProps({ role: "status" }).props.className).toContain("is-visually-hidden");
     await act(async () => renderer.unmount());
   });
 

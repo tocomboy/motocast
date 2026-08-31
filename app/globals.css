@@ -880,11 +880,29 @@ button {
   display: flex;
   font-size: 0.7rem;
   gap: 8px;
-  left: 22px;
+  justify-content: center;
+  left: 50%;
+  line-height: 1.45;
+  max-width: calc(100% - 32px);
   padding: 8px 11px;
   position: absolute;
-  top: 88px;
-  z-index: 3;
+  text-align: center;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: max-content;
+  z-index: 6;
+}
+
+.map-status.is-visually-hidden {
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  white-space: nowrap;
+  width: 1px;
 }
 
 .status-dot {
@@ -896,10 +914,6 @@ button {
 
 .status-dot.error {
   background: var(--danger);
-}
-
-.status-dot.ready {
-  background: #345d47;
 }
 
 .map-topbar {

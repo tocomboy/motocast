@@ -168,7 +168,7 @@ function SchematicRoute({ state, points, actualRoute }: { state: "loading" | "de
 
 function MapStatus({ state, actualRoute }: { state: "loading" | "ready" | "demo" | "error"; actualRoute: boolean }) {
   return (
-    <div className="map-status" role="status" aria-live="polite">
+    <div className={`map-status ${state === "ready" ? "is-visually-hidden" : ""}`} role="status" aria-live="polite">
       <span className={`status-dot ${state}`} />
       {state === "loading" ? actualRoute ? "실제 경로 지도를 불러오는 중" : "카카오 지도를 불러오는 중" : null}
       {state === "ready" ? actualRoute ? "실제 경로 지도 준비 완료" : "카카오 지도 준비 완료" : null}
