@@ -24,8 +24,8 @@ import { PlannerActionGate } from "@/lib/planner/action-gate";
 import { withClientTimeout } from "@/lib/planner/client-timeout";
 import { plannerFunctionErrorCode, windingUnavailableNotice } from "@/lib/planner/function-error";
 import { parseSafeRouteCandidateSet, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
-import { buildTimeline, formatKoreanTime, weatherRiskLabel } from "@/lib/planner/schedule";
-import type { RouteCandidate } from "@/lib/planner/types";
+import { buildTimeline, formatRideTime, weatherRiskLabel } from "@/lib/planner/schedule";
+import type { PlannedSegment, RouteCandidate } from "@/lib/planner/types";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { parseWeatherTimelineResponse, type WeatherTimelineResponse } from "@/lib/weather/provider-contract";
 import { formatPlannerWeatherStatus, weatherFailureLabel } from "@/lib/weather/status";
@@ -143,6 +143,29 @@ function liveRouteCandidate(response: SafeRouteResponse): RouteCandidate {
         issuedAt: leg.arrivalAt,
       },
     })),
+  };
+}
+
+export function buildPlannerDisplayTimeline(input: {
+  live: boolean;
+  draftDepartureAt: string;
+  fallbackDepartureAt: string;
+  includeRest: boolean;
+  segments: PlannedSegment[];
+}) {
+  const departureAt = input.live
+    ? input.segments[0]?.departureAt ?? input.draftDepartureAt
+    : input.fallbackDepartureAt;
+  return {
+    departureAt,
+    timeline: buildTimeline({
+      departureAt,
+      segments: input.segments.map((segment) => (
+        !input.live && segment.to.id === "rest"
+          ? { ...segment, to: { ...segment.to, selected: input.includeRest } }
+          : segment
+      )),
+    }),
   };
 }
 
@@ -279,18 +302,13 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     };
   }, [selectedWeather]);
   const departureAt = `${draft.rideDate}T${draft.departureTime}:00+09:00`;
-  const timeline = useMemo(
-    () =>
-      buildTimeline({
-        departureAt: liveCandidates ? departureAt : demoDepartureAt,
-        segments: selected.segments.map((segment) =>
-          segment.to.id === "rest"
-            ? { ...segment, to: { ...segment.to, selected: draft.includeRest } }
-            : segment,
-        ),
-      }),
-    [departureAt, draft.includeRest, liveCandidates, selected],
-  );
+  const { departureAt: displayedDepartureAt, timeline } = useMemo(() => buildPlannerDisplayTimeline({
+    live: Boolean(liveCandidates),
+    draftDepartureAt: departureAt,
+    fallbackDepartureAt: demoDepartureAt,
+    includeRest: draft.includeRest,
+    segments: selected.segments,
+  }), [departureAt, draft.includeRest, liveCandidates, selected]);
   const selectedMapPoints = liveCandidates
     ? [selected.segments[0].from, ...selected.segments.map((segment) => segment.to)].map((point, index, all) => {
         let role: MapMarkerRole = "waypoint";
@@ -915,7 +933,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
               <div className="summary-metrics">
                 <span><strong>{selected.distanceKm}</strong> km</span>
                 <span><strong>{minutesLabel(timeline.rideMinutes)}</strong> 주행</span>
-                <span><strong>{formatKoreanTime(timeline.returnAt)}</strong> 예상 복귀</span>
+                <span><strong>{formatRideTime(displayedDepartureAt, timeline.returnAt)}</strong> 예상 복귀</span>
               </div>
               <div className="return-status safe">정차 포함 예상 복귀</div>
             </div>
@@ -938,7 +956,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                 >
                   <span className={`candidate-index ${candidateTone[candidate.id]}`}>0{displayedCandidates.indexOf(candidate) + 1}</span>
                   <span className="candidate-copy"><strong>{candidate.label}</strong><small>{candidate.description}</small></span>
-                  <span className="candidate-stats"><b>{candidate.distanceKm} km</b><small>{minutesLabel(candidate.rideMinutes)} 주행</small><small>{formatKoreanTime(candidate.returnAt)} 예상 복귀</small></span>
+                  <span className="candidate-stats"><b>{candidate.distanceKm} km</b><small>{minutesLabel(candidate.rideMinutes)} 주행</small><small>{formatRideTime(displayedDepartureAt, candidate.returnAt)} 예상 복귀</small></span>
                   <span className="select-mark">{selectedId === candidate.id ? "✓" : "→"}</span>
                 </button>
               ))}
@@ -963,7 +981,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                 const risk = weatherRiskLabel(segment);
                 return (
                   <article className="timeline-row" key={segment.id}>
-                    <div className="timeline-time"><strong>{formatKoreanTime(segment.arrivalAt)}</strong><span>{index === timeline.segments.length - 1 ? "예상 복귀" : "통과 예상"}</span></div>
+                    <div className="timeline-time"><strong>{formatRideTime(displayedDepartureAt, segment.arrivalAt)}</strong><span>{index === timeline.segments.length - 1 ? "예상 복귀" : "통과 예상"}</span></div>
                     <div className="timeline-rail"><i className={`risk-dot ${risk.level}`} />{index < timeline.segments.length - 1 ? <span /> : null}</div>
                     <div className="segment-copy"><strong>{segment.from.label} → {segment.to.label}</strong><span>{segment.distanceKm} km · 약 {Math.ceil(segment.rideMinutes)}분</span></div>
                     <div className={`weather-chip ${risk.level}`}>

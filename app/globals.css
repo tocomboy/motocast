@@ -944,13 +944,13 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 7px 10px;
-  left: 18px;
+  right: 18px;
   list-style: none;
   margin: 0;
   max-width: calc(100% - 36px);
   padding: 8px 10px;
   position: absolute;
-  top: 18px;
+  top: 76px;
   z-index: 5;
 }
 
@@ -1649,6 +1649,12 @@ button {
     left: 14px;
     right: 14px;
     top: 14px;
+  }
+
+  .map-marker-legend {
+    left: 14px;
+    right: 14px;
+    top: 124px;
   }
 
   .condition-banner {

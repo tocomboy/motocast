@@ -1,6 +1,6 @@
 import { KakaoMapCanvas, type MapMarkerRole } from "@/components/kakao-map-canvas";
-import { formatElapsedAge, formatKoreanDateTime, formatKoreanTime } from "@/lib/planner/schedule";
-import type { SharedRideSnapshot } from "@/lib/sharing/contracts";
+import { formatElapsedAge, formatKoreanDateTime, formatKoreanTime, formatRideTime } from "@/lib/planner/schedule";
+import type { SharedPlace, SharedRideSnapshot, SharedWaypoint } from "@/lib/sharing/contracts";
 import { weatherFailureLabel } from "@/lib/weather/status";
 
 function minutes(value: number) {
@@ -13,6 +13,42 @@ function modelLabel(model: "ultra" | "short" | undefined) {
 
 function conditionLabel(condition: string | undefined) {
   return ({ clear: "맑음", cloudy: "흐림", rain: "비", snow: "눈", unknown: "미정" } as Record<string, string>)[condition ?? "unknown"] ?? "미정";
+}
+
+function sameSharedPlace(
+  left: { id: string; label: string; longitude: number; latitude: number },
+  right: { id: string; label: string; longitude: number; latitude: number } | null | undefined,
+) {
+  return Boolean(right) && (
+    left.id === right!.id || (
+      left.label === right!.label &&
+      left.longitude === right!.longitude &&
+      left.latitude === right!.latitude
+    )
+  );
+}
+
+export function buildSharedMapPoints(input: {
+  routePoints: SharedPlace[];
+  waypoints: SharedWaypoint[];
+  lunchStop: SharedPlace;
+  dinnerStop: SharedPlace | null;
+}) {
+  const traversedWaypoints = input.waypoints.filter((item) => item.selected);
+  return input.routePoints.map((point, index, all) => {
+    const expectedWaypoint = index > 0 && index < all.length - 1
+      ? traversedWaypoints[index - 1]
+      : undefined;
+    const waypoint = sameSharedPlace(point, expectedWaypoint) ? expectedWaypoint : undefined;
+    let role: MapMarkerRole = "waypoint";
+    if (index === 0) role = "origin";
+    else if (index === all.length - 1) role = "destination";
+    else if (sameSharedPlace(point, input.lunchStop)) role = "lunch";
+    else if (sameSharedPlace(point, input.dinnerStop)) role = "dinner";
+    else if (waypoint?.kind === "optional") role = "rest";
+    else if (waypoint?.winding) role = "winding";
+    return { ...point, role };
+  });
 }
 
 export function SharedRideSnapshotView({
@@ -32,16 +68,11 @@ export function SharedRideSnapshotView({
     }
     return points;
   })));
-  const points = [selected.legs[0].from, ...selected.legs.map((leg) => leg.to)].map((point, index, all) => {
-    const waypoint = snapshot.waypoints.find((item) => item.id === point.id);
-    let role: MapMarkerRole = "waypoint";
-    if (index === 0) role = "origin";
-    else if (index === all.length - 1) role = "destination";
-    else if (point.id === snapshot.trip.lunchStop.id) role = "lunch";
-    else if (point.id === snapshot.trip.dinnerStop?.id) role = "dinner";
-    else if (waypoint?.kind === "optional") role = "rest";
-    else if (waypoint?.winding) role = "winding";
-    return { ...point, role };
+  const points = buildSharedMapPoints({
+    routePoints: [selected.legs[0].from, ...selected.legs.map((leg) => leg.to)],
+    waypoints: snapshot.waypoints,
+    lunchStop: snapshot.trip.lunchStop,
+    dinnerStop: snapshot.trip.dinnerStop,
   });
   const weatherExpired = snapshot.weather
     ? new Date(snapshot.weather.validUntil).getTime() < new Date(referenceTime).getTime()
@@ -65,7 +96,7 @@ export function SharedRideSnapshotView({
               <div><dt>최종 복귀 · 이전 발행본</dt><dd>{snapshot.trip.destination.label} · {formatKoreanTime(snapshot.trip.hardReturnAt)}</dd></div>
             </>
           ) : (
-            <div><dt>예상 복귀</dt><dd>{snapshot.trip.destination.label} · {formatKoreanTime(selected.returnAt)}</dd></div>
+            <div><dt>예상 복귀</dt><dd>{snapshot.trip.destination.label} · {formatRideTime(snapshot.trip.departureAt, selected.returnAt)}</dd></div>
           )}
           <div><dt>점심</dt><dd>{snapshot.trip.lunchStop.label}</dd></div>
           <div><dt>저녁</dt><dd>{snapshot.trip.dinnerStop?.label ?? "없음"}</dd></div>
@@ -106,13 +137,13 @@ export function SharedRideSnapshotView({
             {snapshot.routes.map((route) => (
               <article key={route.candidate.id} className={route.candidate.id === snapshot.trip.selectedProfile ? "selected" : ""}>
                 <strong>{route.candidate.label}{route.candidate.id === snapshot.trip.selectedProfile ? " · 선택 경로" : ""}</strong>
-                <span>{Math.round(route.totalDistanceMeters / 100) / 10} km · {minutes(route.totalDurationSeconds)} · 복귀 {formatKoreanTime(route.returnAt)}</span>
+                <span>{Math.round(route.totalDistanceMeters / 100) / 10} km · {minutes(route.totalDurationSeconds)} · 복귀 {formatRideTime(snapshot.trip.departureAt, route.returnAt)}</span>
                 <small>이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</small>
                 <ol className="shared-legs">
                   {route.legs.map((leg, index) => (
                     <li key={`${route.candidate.id}-${index}`}>
                       <strong>{leg.from.label} → {leg.to.label}</strong>
-                      <span>{formatKoreanTime(leg.departureAt)} 출발 · {formatKoreanTime(leg.arrivalAt)} 도착 · {Math.round(leg.distanceMeters / 100) / 10} km · {minutes(leg.durationSeconds)}{leg.dwellMinutes ? ` · ${leg.dwellMinutes}분 정차` : ""}</span>
+                      <span>{formatRideTime(snapshot.trip.departureAt, leg.departureAt)} 출발 · {formatRideTime(snapshot.trip.departureAt, leg.arrivalAt)} 도착 · {Math.round(leg.distanceMeters / 100) / 10} km · {minutes(leg.durationSeconds)}{leg.dwellMinutes ? ` · ${leg.dwellMinutes}분 정차` : ""}</span>
                     </li>
                   ))}
                 </ol>
@@ -136,7 +167,7 @@ export function SharedRideSnapshotView({
             <ol className="shared-weather-list">
               {snapshot.weather.segments.map((forecast) => (
                 <li key={forecast.id}>
-                  <div><strong>{formatKoreanTime(forecast.eta)} · {forecast.label}</strong><span>{modelLabel(forecast.model)}</span></div>
+                  <div><strong>{formatRideTime(snapshot.trip.departureAt, forecast.eta)} · {forecast.label}</strong><span>{modelLabel(forecast.model)}</span></div>
                   {forecast.status === "outside-window" ? (
                     <p>상세 예보 기간 밖 · 기상청 상세 호출 없음</p>
                   ) : (

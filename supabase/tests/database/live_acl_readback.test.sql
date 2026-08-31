@@ -88,6 +88,7 @@ with denied(function_signature) as (
     ('public.finalize_trip_plan(uuid,uuid)'),
     ('public.select_trip_candidate(uuid,text)'),
     ('public.delete_riding_collection(uuid)'),
+    ('public.delete_owned_trip(uuid)'),
     ('public.preview_trip_share(uuid)'),
     ('public.publish_trip_share(uuid,text)'),
     ('public.revoke_share(uuid)'),

@@ -70,8 +70,8 @@ function snapshot() {
       selectedProfile: "balanced",
     },
     waypoints: [
-      { ...lunch, position: 0, winding: false },
-      { ...pass, position: 1, winding: true },
+      { ...lunch, id: "waypoint-0", position: 0, winding: false },
+      { ...pass, id: "waypoint-1", position: 1, winding: true },
     ],
     routes,
     weather: {
@@ -107,6 +107,7 @@ function snapshot() {
 }
 
 test("renders model, outside-window, and stale states without changing route order", async ({ page }) => {
+  await page.clock.install({ time: new Date("2030-01-05T23:59:50.000Z") });
   expect(() => parseSharedRideSnapshot(snapshot())).not.toThrow();
   await page.route("**/api/shares/resolve", async (request) => {
     await request.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ snapshot: snapshot() }) });
@@ -124,5 +125,8 @@ test("renders model, outside-window, and stale states without changing route ord
   await expect(page.locator(".shared-routes article").nth(0)).toContainText("균형");
   await expect(page.locator(".shared-routes article").nth(1)).toContainText("와인딩 추정");
   await expect(page.locator(".shared-routes article").nth(2)).toContainText("최단");
+  await expect(page.locator(".shared-weather-state")).toContainText("현재 기준 예보 유효기간 안쪽");
+  await page.clock.fastForward(30_000);
+  await expect(page.locator(".shared-weather-state")).toContainText("현재 기준 예보 유효기간 지남");
   await expect.poll(() => page.url()).not.toContain("#");
 });

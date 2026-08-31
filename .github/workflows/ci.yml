@@ -35,3 +35,11 @@ jobs:
       - run: npm test
       - run: npm run test:e2e
       - run: npm run build
+      - name: Upload Playwright failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/motocast-playwright-artifacts
+          if-no-files-found: ignore
+          retention-days: 3

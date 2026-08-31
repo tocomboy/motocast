@@ -148,6 +148,11 @@ insert into tap_results values
   ((select count(*) = 2 from public.trip_waypoints where trip_id = (select id from trip_result)), 'plan save preserves ordered waypoints'),
   ((select count(*) = 3 from public.route_cache where trip_id = (select id from trip_result)), 'plan save atomically stores three safe candidates');
 reset role;
+insert into tap_results values (
+  public.route_geometry_fingerprint(pg_temp.test_route('balanced', 127.050001)) <>
+    public.route_geometry_fingerprint(pg_temp.test_route('balanced', 127.050002)),
+  'route identity preserves distinct interior vertices at six decimal places'
+);
 insert into tap_results values
   ((select count(*) = 0 from public.route_plan_drafts), 'finalize consumes trusted route drafts');
 
@@ -476,7 +481,7 @@ insert into tap_results values
   ((select count(*) = 0 from public.share_links), 'rider B cannot manage rider A share links');
 
 do $$
-declare preview_rejected boolean := false; revoke_rejected boolean := false; route_rejected boolean := false;
+declare preview_rejected boolean := false; revoke_rejected boolean := false; route_rejected boolean := false; delete_rejected boolean := false;
 begin
   begin
     perform public.finalize_trip_plan('73000000-0000-4000-8000-000000000006', null);
@@ -487,10 +492,14 @@ begin
   begin
     perform public.revoke_share((select share_id from reissued_result));
   exception when sqlstate 'P0001' then revoke_rejected := sqlerrm = 'SHARE_NOT_FOUND'; end;
+  begin
+    perform public.delete_owned_trip((select id from trip_result));
+  exception when sqlstate 'P0001' then delete_rejected := sqlerrm = 'TRIP_NOT_FOUND'; end;
   insert into tap_results values
     (route_rejected, 'rider B cannot finalize rider A staged routes'),
     (preview_rejected, 'rider B cannot preview rider A trip'),
-    (revoke_rejected, 'rider B cannot revoke rider A share');
+    (revoke_rejected, 'rider B cannot revoke rider A share'),
+    (delete_rejected, 'rider B cannot delete rider A trip');
 end;
 $$;
 
@@ -514,6 +523,25 @@ select set_config('request.jwt.claim.sub', '', true);
 insert into tap_results values (
   (select public.resolve_share(share_token) -> 'trip' ->> 'selectedProfile' = 'winding' from reissued_result),
   'anonymous reader receives only the published snapshot through the resolver'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+insert into tap_results values (
+  public.delete_owned_trip((select id from trip_result)),
+  'owner can delete the stored trip aggregate'
+);
+insert into tap_results values
+  ((select count(*) = 0 from public.trips where id = (select id from trip_result)), 'owned trip deletion removes the trip'),
+  ((select count(*) = 0 from public.trip_waypoints where trip_id = (select id from trip_result)), 'owned trip deletion cascades waypoints'),
+  ((select count(*) = 0 from public.route_cache where trip_id = (select id from trip_result)), 'owned trip deletion cascades routes'),
+  ((select count(*) = 0 from public.weather_snapshots where trip_id = (select id from trip_result)), 'owned trip deletion cascades weather');
+
+set local role anon;
+select set_config('request.jwt.claim.sub', '', true);
+insert into tap_results values (
+  (select public.resolve_share(share_token) -> 'trip' ->> 'selectedProfile' = 'winding' from reissued_result),
+  'deleting the source trip does not mutate its issued share snapshot'
 );
 
 reset role;

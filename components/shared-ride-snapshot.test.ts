@@ -1,0 +1,24 @@
+import { describe, expect, it } from "vitest";
+
+import { buildSharedMapPoints } from "./shared-ride-snapshot";
+
+const origin = { id: "route-origin", label: "출발", longitude: 127, latitude: 37 };
+const lunch = { id: "route-lunch", label: "점심", longitude: 127.1, latitude: 37.1 };
+const rest = { id: "route-rest", label: "휴식", longitude: 127.2, latitude: 37.2 };
+const winding = { id: "route-winding", label: "와인딩", longitude: 127.3, latitude: 37.3 };
+const destination = { id: "route-destination", label: "복귀", longitude: 127.4, latitude: 37.4 };
+
+describe("buildSharedMapPoints", () => {
+  it("correlates DB snapshot waypoint IDs to provider route points by ordered place identity", () => {
+    expect(buildSharedMapPoints({
+      routePoints: [origin, lunch, rest, winding, destination],
+      lunchStop: { ...lunch, id: "trip-lunch" },
+      dinnerStop: null,
+      waypoints: [
+        { ...lunch, id: "waypoint-0", position: 0, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+        { ...rest, id: "waypoint-1", position: 1, kind: "optional", dwellMinutes: 30, selected: true, winding: false },
+        { ...winding, id: "waypoint-2", position: 2, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
+      ],
+    }).map((point) => point.role)).toEqual(["origin", "lunch", "rest", "winding", "destination"]);
+  });
+});

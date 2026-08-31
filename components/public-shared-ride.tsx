@@ -58,6 +58,16 @@ export function PublicSharedRide() {
     return () => { mountedRef.current = false; };
   }, []);
 
+  useEffect(() => {
+    if (state.status !== "found") return;
+    const timer = window.setInterval(() => {
+      setState((current) => current.status === "found"
+        ? { ...current, referenceTime: new Date().toISOString() }
+        : current);
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [state.status]);
+
   return (
     <main className="shared-ride-shell">
       <header className="shared-ride-header">

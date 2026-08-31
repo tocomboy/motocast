@@ -191,4 +191,20 @@ describe("parseSafeRouteCandidateSet", () => {
     short.candidate = { id: "short", label: "최단", estimatedWinding: false };
     expect(() => parseSafeRouteCandidateSet([balanced, winding, short])).toThrow("DUPLICATE_ROUTE_CANDIDATES");
   });
+
+  it("retains identity differences at unsampled interior vertices", () => {
+    const balanced = response();
+    const dense = Array.from({ length: 52 }, (_, index) => (
+      index % 2 === 0 ? 127.1 + index / 1000 : 37.5 + index / 1000
+    ));
+    balanced.legs[0].sections[0].roads[0].vertexes = dense;
+    const winding = structuredClone(balanced);
+    winding.candidate = { id: "winding", label: "와인딩 추정", estimatedWinding: true };
+    winding.legs[0].sections[0].roads[0].vertexes[2] += 0.0005;
+    const short = structuredClone(balanced);
+    short.candidate = { id: "short", label: "최단", estimatedWinding: false };
+    short.legs[0].sections[0].roads[0].vertexes[6] += 0.0005;
+
+    expect(parseSafeRouteCandidateSet([balanced, winding, short])).toHaveLength(3);
+  });
 });

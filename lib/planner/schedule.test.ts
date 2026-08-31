@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildTimeline, formatElapsedAge, formatKoreanDateTime, weatherRiskLabel } from "./schedule";
+import { buildTimeline, formatElapsedAge, formatKoreanDateTime, formatRideTime, weatherRiskLabel } from "./schedule";
 import type { PlannedSegment, RoutePoint } from "./types";
 
 const issuedAt = "2026-08-30T00:00:00.000Z";
@@ -106,5 +106,15 @@ describe("weather snapshot age labels", () => {
   it("reports elapsed age without hiding multi-day staleness", () => {
     expect(formatElapsedAge("2026-08-29T00:00:00.000Z", "2026-08-31T03:30:00.000Z")).toBe("2일 3시간 전");
     expect(formatElapsedAge("2026-08-31T02:00:00.000Z", "2026-08-31T03:30:00.000Z")).toBe("1시간 30분 전");
+  });
+});
+
+describe("ride-relative time labels", () => {
+  it("makes a next-day return explicit without hiding its clock time", () => {
+    expect(formatRideTime("2026-08-31T14:30:00.000Z", "2026-08-31T16:00:00.000Z")).toBe("다음 날 01:00");
+  });
+
+  it("keeps same-day times compact", () => {
+    expect(formatRideTime("2026-08-31T00:00:00.000Z", "2026-08-31T04:00:00.000Z")).toBe("13:00");
   });
 });

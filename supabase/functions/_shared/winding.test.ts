@@ -31,6 +31,17 @@ describe("winding heuristic", () => {
     expect(selectEstimatedWindingRoute([curved], excluded)).toBeNull();
   });
 
+  it("keeps interior vertices when routes differ outside a coarse sample", () => {
+    const baseline = route(Array.from({ length: 52 }, (_, index) => (
+      index % 2 === 0 ? 127 + index / 1000 : 37 + index / 1000
+    )));
+    const alternativeVertexes = baseline.sections![0].roads![0].vertexes.slice();
+    alternativeVertexes[2] += 0.0005;
+    const alternative = route(alternativeVertexes);
+
+    expect(routeFingerprint(alternative)).not.toBe(routeFingerprint(baseline));
+  });
+
   it("is deterministic for duplicate points and incomplete geometry", () => {
     expect(curvatureScore(route([127, 37, 127, 37, 127.1, 37]))).toBe(0);
     expect(curvatureScore({ summary: { distance: 1, duration: 1 } })).toBe(0);

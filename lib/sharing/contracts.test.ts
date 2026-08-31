@@ -66,11 +66,58 @@ describe("parseSharedRideSnapshot", () => {
         desiredReturnAt: "2026-08-31T08:00:00.000Z",
         hardReturnAt: "2026-08-31T09:00:00.000Z",
       },
+      waypoints: [{ position: 0, label: "점심", longitude: 127.1, latitude: 37.1, kind: "stop", dwellMinutes: 60, selected: true, winding: false }],
+      weather: {
+        source: "kma",
+        issuedAt: "2026-08-30T23:30:00.000Z",
+        retrievedAt: "2026-08-30T23:35:00.000Z",
+        candidateProfile: "balanced",
+        segments: [{
+          id: "balanced-0",
+          label: "복귀",
+          longitude: 127.2,
+          latitude: 37.2,
+          eta: "2026-08-31T00:10:00.000Z",
+          status: "forecast",
+          model: "ultra",
+          issuedAt: "2026-08-30T23:30:00.000Z",
+          condition: "clear",
+          temperatureC: 22,
+          precipitationProbability: 0,
+          windSpeedMps: 1.2,
+        }],
+      },
     };
     expect(parseSharedRideSnapshot(legacy)).toMatchObject({
       schemaVersion: 1,
       trip: { desiredReturnAt: "2026-08-31T08:00:00.000Z" },
+      waypoints: [{ id: "waypoint-0" }],
+      weather: {
+        retrievedAt: "2026-08-30T23:35:00.000Z",
+        validUntil: "2026-08-30T23:35:00.000Z",
+        stale: false,
+        failureKind: null,
+      },
     });
+  });
+
+  it("keeps a version 1 snapshot without weather readable", () => {
+    expect(parseSharedRideSnapshot({
+      ...snapshot,
+      schemaVersion: 1,
+      trip: {
+        ...snapshot.trip,
+        desiredReturnAt: "2026-08-31T08:00:00.000Z",
+        hardReturnAt: "2026-08-31T09:00:00.000Z",
+      },
+      waypoints: [{ position: 0, label: "점심", longitude: 127.1, latitude: 37.1, kind: "stop", dwellMinutes: 60, selected: true, winding: false }],
+      weather: null,
+    })).toMatchObject({ schemaVersion: 1, weather: null, waypoints: [{ id: "waypoint-0" }] });
+  });
+
+  it("rejects string-coerced schema versions", () => {
+    expect(() => parseSharedRideSnapshot({ ...snapshot, schemaVersion: "1" })).toThrow("INVALID_SHARE_SNAPSHOT");
+    expect(() => parseSharedRideSnapshot({ ...snapshot, schemaVersion: "2" })).toThrow("INVALID_SHARE_SNAPSHOT");
   });
 
   it("rejects internal place verification material from a public snapshot", () => {

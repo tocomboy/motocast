@@ -280,10 +280,8 @@ export function routeResponseFingerprint(response: SafeRouteResponse) {
       if (!previous || previous.longitude !== point.longitude || previous.latitude !== point.latitude) points.push(point);
     }
   }
-  const step = Math.max(1, Math.floor(points.length / 12));
   return points
-    .filter((_, index) => index === 0 || index === points.length - 1 || index % step === 0)
-    .map((point) => `${point.longitude.toFixed(4)},${point.latitude.toFixed(4)}`)
+    .map((point) => `${point.longitude.toFixed(6)},${point.latitude.toFixed(6)}`)
     .join("|");
 }
 

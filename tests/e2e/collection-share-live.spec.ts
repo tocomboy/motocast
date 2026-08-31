@@ -34,11 +34,13 @@ async function removeCreatedCollection(page: Page, title: string) {
   }
 }
 
-test("calculates, stores, publishes, revokes, and cleans up test-owned resources", async ({ page }) => {
+test("calculates, stores, publishes, revokes, and cleans up test-owned resources", async ({ page, context }) => {
+  test.setTimeout(240_000);
   test.skip(!liveMutationsEnabled || !hasLiveQueries, "Requires explicit live mutation opt-in and five private place queries");
   const title = `MOTOCAST E2E ${Date.now()}`;
   let collectionCreated = false;
   let sharePublished = false;
+  let tripId: string | null = null;
   let browserErrorCount = 0;
   page.on("pageerror", () => { browserErrorCount += 1; });
   page.on("console", (message) => { if (message.type() === "error") browserErrorCount += 1; });
@@ -54,7 +56,15 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await page.getByRole("button", { name: /커스텀 와인딩 경유지 추가/ }).click();
     await selectFirstPlace(page, "와인딩 경유지", liveQueries.winding!);
 
+    const finalizedTrip = page.waitForResponse((response) => (
+      response.url().includes("/rest/v1/rpc/finalize_trip_plan") && response.request().method() === "POST"
+    ));
     await page.getByRole("button", { name: "선택 경로 다시 계산" }).click();
+    const finalizedResponse = await finalizedTrip;
+    if (finalizedResponse.ok()) {
+      const finalizedBody: unknown = await finalizedResponse.json();
+      if (typeof finalizedBody === "string" && /^[0-9a-f-]{36}$/i.test(finalizedBody)) tripId = finalizedBody;
+    }
     await expect(page.locator(".live-data-badge")).toHaveText("실제 경로", { timeout: 90_000 });
     await expect(page.locator(".candidate-card")).toHaveCount(3);
     await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/출발/);
@@ -77,9 +87,9 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await page.getByRole("button", { name: "이 전체 내용 그대로 불변 링크 발행" }).click();
     const issuedInput = page.getByLabel(/이번에 발행한 링크/);
     await expect(issuedInput).toBeVisible();
-    const issuedUrl = await issuedInput.inputValue();
-    expect(issuedUrl).toMatch(/^https:\/\/[^/]+\/share#[A-Za-z0-9_-]{43}$/);
     sharePublished = true;
+    const issuedUrl = await issuedInput.inputValue();
+    expect(/^https:\/\/[^/]+\/share#[A-Za-z0-9_-]{43}$/.test(issuedUrl)).toBe(true);
 
     await page.getByRole("button", { name: "링크 회수" }).first().click();
     await expect(page.getByRole("status").filter({ hasText: "공유 링크를 회수했습니다." })).toBeVisible();
@@ -88,10 +98,10 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await page.getByRole("button", { name: "전체 공유 미리보기" }).click();
     await page.getByRole("button", { name: "이 전체 내용 그대로 불변 링크 발행" }).click();
     await expect(issuedInput).toBeVisible();
-    const reissuedUrl = await issuedInput.inputValue();
-    expect(reissuedUrl).toMatch(/^https:\/\/[^/]+\/share#[A-Za-z0-9_-]{43}$/);
-    expect(reissuedUrl).not.toBe(issuedUrl);
     sharePublished = true;
+    const reissuedUrl = await issuedInput.inputValue();
+    expect(/^https:\/\/[^/]+\/share#[A-Za-z0-9_-]{43}$/.test(reissuedUrl)).toBe(true);
+    expect(reissuedUrl !== issuedUrl).toBe(true);
     await page.getByRole("button", { name: "링크 회수" }).first().click();
     await expect(page.getByRole("status").filter({ hasText: "공유 링크를 회수했습니다." })).toBeVisible();
     sharePublished = false;
@@ -105,14 +115,60 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await page.goto(reissuedUrl);
     await expect(page.getByRole("heading", { name: "공유 링크가 없거나 회수되었습니다." })).toBeVisible();
     await expect.poll(() => page.url()).not.toContain("#");
+    if (!tripId) throw new Error("Live trip cleanup identity was not captured");
+    const deleted = await page.evaluate(async (ownedTripId) => {
+      const response = await fetch(`/api/trips/${ownedTripId}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      const body = await response.json().catch(() => null) as { deleted?: unknown } | null;
+      return response.ok && body?.deleted === true;
+    }, tripId);
+    expect(deleted).toBe(true);
+    tripId = null;
     expect(browserErrorCount).toBe(0);
   } finally {
-    if (page.isClosed()) return;
+    const cleanupFailures: string[] = [];
+    const cleanupPage = page.isClosed() ? await context.newPage() : page;
     if (sharePublished) {
-      await page.goto("/").catch(() => undefined);
-      const revoke = page.getByRole("button", { name: "링크 회수" }).first();
-      if (await revoke.count()) await revoke.click().catch(() => undefined);
+      try {
+        await cleanupPage.goto("/");
+        const revoke = cleanupPage.getByRole("button", { name: "링크 회수" }).first();
+        if (await revoke.count() !== 1) throw new Error("active share not found");
+        await revoke.click();
+        await expect(cleanupPage.getByRole("status").filter({ hasText: "공유 링크를 회수했습니다." })).toBeVisible();
+        sharePublished = false;
+      } catch {
+        cleanupFailures.push("share revoke");
+      }
     }
-    if (collectionCreated) await removeCreatedCollection(page, title).catch(() => undefined);
+    if (collectionCreated) {
+      try {
+        await removeCreatedCollection(cleanupPage, title);
+        collectionCreated = false;
+      } catch {
+        cleanupFailures.push("collection delete");
+      }
+    }
+    if (tripId) {
+      try {
+        const deleted = await cleanupPage.evaluate(async (ownedTripId) => {
+          const response = await fetch(`/api/trips/${ownedTripId}`, {
+            method: "DELETE",
+            headers: { "content-type": "application/json" },
+            body: "{}",
+          });
+          const body = await response.json().catch(() => null) as { deleted?: unknown } | null;
+          return response.ok && body?.deleted === true;
+        }, tripId);
+        if (!deleted) throw new Error("trip cleanup rejected");
+        tripId = null;
+      } catch {
+        cleanupFailures.push("trip delete");
+      }
+    }
+    if (cleanupPage !== page) await cleanupPage.close();
+    if (cleanupFailures.length) throw new Error(`Live cleanup failed: ${cleanupFailures.join(", ")}`);
   }
 });

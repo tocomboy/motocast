@@ -37,9 +37,11 @@ insert into tap_results values
   (not has_function_privilege('anon', 'public.claim_invite(text)', 'EXECUTE'), 'anon cannot execute claim_invite'),
   (not has_function_privilege('anon', 'public.create_invite(interval)', 'EXECUTE'), 'anon cannot execute create_invite'),
   (not has_function_privilege('anon', 'public.consume_daily_api_budget(text,text,integer)', 'EXECUTE'), 'anon cannot execute budget RPC'),
+  (not has_function_privilege('anon', 'public.delete_owned_trip(uuid)', 'EXECUTE'), 'anon cannot execute owned trip deletion'),
   (has_function_privilege('authenticated', 'public.claim_invite(text)', 'EXECUTE'), 'authenticated can execute claim_invite'),
   (has_function_privilege('authenticated', 'public.create_invite(interval)', 'EXECUTE'), 'authenticated can execute create_invite'),
   (not has_function_privilege('authenticated', 'public.consume_daily_api_budget(text,text,integer)', 'EXECUTE'), 'authenticated cannot supply a budget limit directly'),
+  (has_function_privilege('authenticated', 'public.delete_owned_trip(uuid)', 'EXECUTE'), 'authenticated can request exact-owner trip deletion'),
   (has_function_privilege('service_role', 'public.consume_daily_api_budget_internal(text,text,integer,uuid)', 'EXECUTE'), 'trusted Edge role can execute the fixed-input budget RPC');
 
 set local role authenticated;
@@ -59,6 +61,15 @@ insert into tap_results values ((select count(*) from public.trips) = 0, 'anonym
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000004', true);
 insert into tap_results values ((select count(*) from public.trips) = 0, 'revoked rider reads no trips');
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.delete_owned_trip((select id from public.trips limit 1));
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'MEMBERSHIP_REQUIRED'; end;
+  insert into tap_results values (rejected, 'revoked rider cannot delete a trip aggregate');
+end;
+$$;
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
 insert into tap_results values ((select count(*) from public.memberships) = 4, 'admin reads all memberships');

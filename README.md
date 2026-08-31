@@ -47,7 +47,7 @@ npm run test:e2e
 npm run build
 ```
 
-Playwright는 Chromium을 headless, worker 1개로 실행합니다. 기본 `npm run test:e2e`는 외부 API를 쓰지 않는 결정적 로컬 브라우저 검증이며, 실패할 때만 screenshot/trace/video를 `/tmp` 아래에 남깁니다. 실제 Preview 테스트는 저장소 밖 로그인 상태 파일과 명시적인 HTTPS URL을 사용하는 `npm run test:e2e:preview`로 별도 실행하고, 최초 Kakao 로그인만 `npm run test:e2e:auth`의 headed 브라우저를 사용합니다. cookie, token, 로그인 상태 파일과 실제 개인 일정은 저장소에 넣지 않습니다.
+Playwright는 Chromium을 headless, worker 1개, 재시도 0회로 실행합니다. 기본 `npm run test:e2e`는 외부 API 키를 비운 프로덕션 빌드(`next start`)를 새 포트 서버로 띄워 PWA/service worker까지 확인하며, 기존 서버를 재사용하지 않습니다. 인증이 없는 로컬 실패 증거만 `/tmp` 아래에 남고 CI에서는 3일 동안 보존됩니다. `npm run test:e2e:preview`와 `npm run test:e2e:auth`는 정확한 develop Preview origin과 Preview Supabase project ref에만 결속되며, 다른 HTTPS 주소나 Production 주소를 거부합니다. 로그인 상태는 저장소 밖의 전용 `0700` 디렉터리와 `0600` 일반 파일에 원자적으로 저장하고 origin/project metadata와 함께 검증합니다. 인증된 Preview 실행은 cookie·token 유출을 막기 위해 screenshot/trace/video를 저장하지 않습니다.
 
 DB migration과 RLS/RPC는 실제 프로젝트와 분리된 로컬 Supabase PostgreSQL 17에서 검증합니다.
 로컬 DB 초기화는 `127.0.0.1:54322`의 폐기 가능한 테스트 데이터만 삭제하므로, 대상을 확인하고 명시적으로 승인한 경우에만 수행합니다.

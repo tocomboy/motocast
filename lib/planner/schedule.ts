@@ -78,6 +78,29 @@ export function formatKoreanTime(value: string): string {
   }).format(asValidDate(value, "value"));
 }
 
+function seoulDateKey(value: string): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(asValidDate(value, "value")).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+export function formatRideTime(departureAt: string, value: string): string {
+  const departureDate = seoulDateKey(departureAt);
+  const valueDate = seoulDateKey(value);
+  if (valueDate === departureDate) return formatKoreanTime(value);
+
+  const nextDay = new Date(`${departureDate}T00:00:00+09:00`);
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+  if (valueDate === seoulDateKey(nextDay.toISOString())) {
+    return `다음 날 ${formatKoreanTime(value)}`;
+  }
+  return formatKoreanDateTime(value);
+}
+
 export function formatKoreanDateTime(value: string): string {
   return new Intl.DateTimeFormat("ko-KR", {
     timeZone: "Asia/Seoul",
