@@ -55,7 +55,7 @@ On 2026-08-31 the fixed Preview alias returned that exact 403 because `MOTOCAST 
 7. Use disposable Preview identities to execute the complete Preview gate. The first Kakao identity has been registered as the sole Preview administrator; use a separate invited identity for rider-isolation checks.
 8. Resolve `OPS-008`, back up the chosen empty/pre-cutover Production database, and repeat the reviewed migration/function sequence for Production.
 
-Public share links use `/share#<token>`. The fragment is not sent in the initial HTTP request; the client validates it and sends it in the JSON body of `POST /api/shares/resolve`. Do not reintroduce a dynamic `/share/<token>` page or `/api/shares/<token>` resolver because hosting request-path logs can then contain the bearer token.
+Public share links use `/share#<token>`. The fragment is not sent in the initial HTTP request; the client copies it to component-local memory, synchronously removes it from browser history, and only then sends it in the JSON body of `POST /api/shares/resolve`. If history cleanup fails, resolution stops before any third-party map script can run. Do not reintroduce a dynamic `/share/<token>` page or `/api/shares/<token>` resolver because hosting request-path logs can then contain the bearer token.
 
 Invitation links use `/invite#<token>` for the same reason. The fixed client removes the fragment from browser history and posts it to same-origin `application/json` `POST /api/invites/accept`, which sets the short-lived HttpOnly claim cookie. The endpoint rejects missing/mismatched Origin, cross-site Fetch Metadata, and non-JSON content before parsing or setting a cookie. Do not reintroduce `/invite/<token>` or log the accept request body.
 

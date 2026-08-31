@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { SharedRideSnapshotView } from "@/components/shared-ride-snapshot";
 import { parseSharedRideSnapshot, type SharedRideSnapshot } from "@/lib/sharing/contracts";
@@ -13,34 +13,49 @@ type LoadState =
 
 export function PublicSharedRide() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const mountedRef = useRef(false);
+  const resolutionRef = useRef<Promise<void> | null>(null);
+  const tokenRef = useRef<string | null>(null);
 
   useEffect(() => {
-    let active = true;
-    void Promise.resolve().then(async () => {
-      const token = window.location.hash.slice(1);
-      if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
-        if (active) setState({ status: "invalid-link" });
-        return;
+    mountedRef.current = true;
+    if (!resolutionRef.current) {
+      tokenRef.current ??= window.location.hash.slice(1);
+      const token = tokenRef.current;
+      try {
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+      } catch {
+        resolutionRef.current = Promise.resolve().then(() => {
+          if (mountedRef.current) setState({ status: "unavailable" });
+        });
+        return () => { mountedRef.current = false; };
       }
-      const response = await fetch("/api/shares/resolve", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token }),
-        cache: "no-store",
-      });
-      if (!active) return;
-      if (response.status === 404) setState({ status: "not-found" });
-      else if (!response.ok) setState({ status: "unavailable" });
-      else {
-        const body = await response.json() as { snapshot?: unknown };
-        if (active) {
-          setState({ status: "found", snapshot: parseSharedRideSnapshot(body.snapshot), referenceTime: new Date().toISOString() });
+
+      resolutionRef.current = (async () => {
+        if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
+          if (mountedRef.current) setState({ status: "invalid-link" });
+          return;
         }
-      }
-    }).catch(() => {
-      if (active) setState({ status: "unavailable" });
-    });
-    return () => { active = false; };
+        const response = await fetch("/api/shares/resolve", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token }),
+          cache: "no-store",
+        });
+        if (!mountedRef.current) return;
+        if (response.status === 404) setState({ status: "not-found" });
+        else if (!response.ok) setState({ status: "unavailable" });
+        else {
+          const body = await response.json() as { snapshot?: unknown };
+          if (mountedRef.current) {
+            setState({ status: "found", snapshot: parseSharedRideSnapshot(body.snapshot), referenceTime: new Date().toISOString() });
+          }
+        }
+      })().catch(() => {
+        if (mountedRef.current) setState({ status: "unavailable" });
+      });
+    }
+    return () => { mountedRef.current = false; };
   }, []);
 
   return (

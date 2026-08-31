@@ -10,6 +10,7 @@ describe("public share token transport", () => {
   it("keeps bearer tokens in the URL fragment and posts them to a fixed resolver path", () => {
     expect(shareManagerSource).toContain("/share#${token}");
     expect(publicShareSource).toContain("window.location.hash.slice(1)");
+    expect(publicShareSource).toContain("window.history.replaceState");
     expect(publicShareSource).toContain('fetch("/api/shares/resolve"');
     expect(publicShareSource).toContain("body: JSON.stringify({ token })");
     expect(fixedResolverSource).toContain("export async function POST");

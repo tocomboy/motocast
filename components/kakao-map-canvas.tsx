@@ -9,25 +9,32 @@ const KAKAO_MAP_LOAD_TIMEOUT_MS = 10_000;
 export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: PathPoint[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appKey = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY;
-  const [state, setState] = useState<"loading" | "ready" | "demo" | "error">(
-    appKey ? "loading" : "demo",
-  );
+  const geometryKey = JSON.stringify({ points, path: path ?? [] });
+  const [mapState, setMapState] = useState<{ status: "loading" | "ready" | "error"; geometryKey: string }>({
+    status: "loading",
+    geometryKey,
+  });
+  const state = appKey
+    ? mapState.geometryKey === geometryKey ? mapState.status : "loading"
+    : "demo";
+  const isReady = state === "ready";
 
   useEffect(() => {
     if (!appKey) return;
+    const geometry = JSON.parse(geometryKey) as { points: MapPoint[]; path: PathPoint[] };
 
     let active = true;
     let script: HTMLScriptElement | null = null;
     let onLoad: (() => void) | null = null;
     let onError: (() => void) | null = null;
     const timeout = window.setTimeout(() => {
-      if (active) setState("error");
+      if (active) setMapState({ status: "error", geometryKey });
     }, KAKAO_MAP_LOAD_TIMEOUT_MS);
 
     const fail = () => {
       if (!active) return;
       window.clearTimeout(timeout);
-      setState("error");
+      setMapState({ status: "error", geometryKey });
     };
 
     const renderMap = () => {
@@ -37,73 +44,85 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
         fail();
         return;
       }
-      maps.load(() => {
-        if (!active || !containerRef.current) return;
-        const loadedMaps = window.kakao?.maps;
-        if (!loadedMaps) {
-          fail();
-          return;
-        }
-        try {
-          const markerPath = points.map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
-          const routePath = (path?.length ? path : points).map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
-          const map = new loadedMaps.Map(containerRef.current, { center: markerPath[0], level: 8 });
-          const bounds = new loadedMaps.LatLngBounds();
-          routePath.forEach((position) => bounds.extend(position));
-          markerPath.forEach((position, index) => {
-            bounds.extend(position);
-            new loadedMaps.Marker({ map, position, title: points[index].label });
-          });
-          new loadedMaps.Polyline({
-            map,
-            path: routePath,
-            strokeWeight: 5,
-            strokeColor: "#ef6a3a",
-            strokeOpacity: 0.9,
-            strokeStyle: "solid",
-          });
-          map.setBounds(bounds);
-          window.clearTimeout(timeout);
-          setState("ready");
-        } catch {
-          fail();
-        }
-      });
+      if (typeof maps.load !== "function") {
+        fail();
+        return;
+      }
+      try {
+        maps.load(() => {
+          if (!active || !containerRef.current) return;
+          const loadedMaps = window.kakao?.maps;
+          if (!loadedMaps) {
+            fail();
+            return;
+          }
+          try {
+            const markerPath = geometry.points.map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
+            const routePath = (geometry.path.length ? geometry.path : geometry.points).map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
+            const map = new loadedMaps.Map(containerRef.current, { center: markerPath[0], level: 8 });
+            const bounds = new loadedMaps.LatLngBounds();
+            routePath.forEach((position) => bounds.extend(position));
+            markerPath.forEach((position, index) => {
+              bounds.extend(position);
+              new loadedMaps.Marker({ map, position, title: geometry.points[index].label });
+            });
+            new loadedMaps.Polyline({
+              map,
+              path: routePath,
+              strokeWeight: 5,
+              strokeColor: "#ef6a3a",
+              strokeOpacity: 0.9,
+              strokeStyle: "solid",
+            });
+            map.setBounds(bounds);
+            window.clearTimeout(timeout);
+            setMapState({ status: "ready", geometryKey });
+          } catch {
+            fail();
+          }
+        });
+      } catch {
+        fail();
+      }
     };
 
     if (window.kakao?.maps) {
       renderMap();
     } else {
-      script = document.querySelector<HTMLScriptElement>("script[data-motocast-kakao-map]");
-      if (!script) {
-        script = document.createElement("script");
-        script.dataset.motocastKakaoMap = "true";
-        script.dataset.motocastKakaoMapStatus = "loading";
-        script.async = true;
-        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false`;
-        document.head.appendChild(script);
-      }
-
-      onLoad = () => {
-        if (!script) return;
-        if (!window.kakao?.maps) {
-          script.dataset.motocastKakaoMapStatus = "error";
-          fail();
-          return;
+      try {
+        script = document.querySelector<HTMLScriptElement>("script[data-motocast-kakao-map]");
+        if (!script) {
+          script = document.createElement("script");
+          script.dataset.motocastKakaoMap = "true";
+          script.dataset.motocastKakaoMapStatus = "loading";
+          script.async = true;
+          script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false`;
+          document.head.appendChild(script);
         }
-        script.dataset.motocastKakaoMapStatus = "ready";
-        renderMap();
-      };
-      onError = () => {
-        if (script) script.dataset.motocastKakaoMapStatus = "error";
-        fail();
-      };
 
-      if (script.dataset.motocastKakaoMapStatus === "ready") onLoad();
-      else if (script.dataset.motocastKakaoMapStatus === "error") onError();
-      else {
-        script.addEventListener("load", onLoad, { once: true });
-        script.addEventListener("error", onError, { once: true });
+        onLoad = () => {
+          if (!script) return;
+          if (!window.kakao?.maps) {
+            script.dataset.motocastKakaoMapStatus = "error";
+            fail();
+            return;
+          }
+          script.dataset.motocastKakaoMapStatus = "ready";
+          renderMap();
+        };
+        onError = () => {
+          if (script) script.dataset.motocastKakaoMapStatus = "error";
+          fail();
+        };
+
+        if (script.dataset.motocastKakaoMapStatus === "ready") onLoad();
+        else if (script.dataset.motocastKakaoMapStatus === "error") onError();
+        else {
+          script.addEventListener("load", onLoad, { once: true });
+          script.addEventListener("error", onError, { once: true });
+        }
+      } catch {
+        fail();
       }
     }
 
@@ -113,12 +132,12 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
       if (script && onLoad) script.removeEventListener("load", onLoad);
       if (script && onError) script.removeEventListener("error", onError);
     };
-  }, [appKey, path, points]);
+  }, [appKey, geometryKey]);
 
   return (
     <div className="map-shell" aria-label="선택한 라이딩 경로 지도">
-      <div ref={containerRef} className={`map-canvas ${state === "ready" ? "is-ready" : ""}`} />
-      {state !== "ready" ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
+      <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert={!isReady} />
+      {!isReady ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
     </div>
   );
 }
@@ -127,7 +146,7 @@ function SchematicRoute({ state, points, actualRoute }: { state: "loading" | "de
   return (
     <div className="schematic-map">
       <div className="map-grid" aria-hidden="true" />
-      {!actualRoute ? <svg className="route-sketch" viewBox="0 0 720 430" role="img" aria-label="데모 경로 개요">
+      {state === "demo" && !actualRoute ? <svg className="route-sketch" viewBox="0 0 720 430" role="img" aria-label="데모 경로 개요">
         <path className="route-shadow" d="M62 332 C148 270 131 170 245 194 S365 90 455 129 S546 305 662 213" />
         <path className="route-line" d="M62 332 C148 270 131 170 245 194 S365 90 455 129 S546 305 662 213" />
         {["62,332", "245,194", "455,129", "662,213"].map((coordinates, index) => {

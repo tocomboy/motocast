@@ -800,12 +800,16 @@ button {
 
 .map-canvas {
   opacity: 0;
+  pointer-events: none;
   transition: opacity 240ms ease;
+  visibility: hidden;
   z-index: 2;
 }
 
 .map-canvas.is-ready {
   opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
 }
 
 .schematic-map {
