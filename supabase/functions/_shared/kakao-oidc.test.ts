@@ -21,31 +21,43 @@ const origin = "https://motocast.example";
 const bindingHash = "c".repeat(64);
 
 describe("email-free Kakao OIDC Edge boundary", () => {
-it("uses the trusted Supabase URL for the provider callback instead of an internal HTTP request URL", () => {
-  const internalRequest = new Request("http://project.supabase.co/functions/v1/kakao-oidc/start");
-  const provider = kakaoOidcProviderConfiguration({
-    clientId: "client-id",
-    clientSecret: "client-secret",
-    supabaseUrl: "https://project.supabase.co",
+  it("uses the trusted Supabase URL for the provider callback", () => {
+    const provider = kakaoOidcProviderConfiguration({
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      supabaseUrl: "https://project.supabase.co",
+    });
+
+    expect(provider.callbackUri).toBe("https://project.supabase.co/functions/v1/kakao-oidc/callback");
   });
 
-  expect(new URL(internalRequest.url).protocol).toBe("http:");
-  expect(provider.callbackUri).toBe("https://project.supabase.co/functions/v1/kakao-oidc/callback");
-});
+  it("accepts only exact secure provider roots or explicit loopback HTTP", () => {
+    for (const supabaseUrl of [
+      "http://127.0.0.1:54321",
+      "http://localhost:54321",
+      "http://[::1]:54321",
+    ]) {
+      expect(kakaoOidcProviderConfiguration({
+        clientId: "client-id",
+        clientSecret: "client-secret",
+        supabaseUrl,
+      }).callbackUri).toBe(`${supabaseUrl}/functions/v1/kakao-oidc/callback`);
+    }
 
-it("rejects unsafe or malformed provider callback configuration", () => {
-  for (const input of [
-    { clientId: undefined, clientSecret: "client-secret", supabaseUrl: "https://project.supabase.co" },
-    { clientId: "client-id", clientSecret: undefined, supabaseUrl: "https://project.supabase.co" },
-    { clientId: "client-id", clientSecret: "client-secret", supabaseUrl: undefined },
-    { clientId: "client-id", clientSecret: "client-secret", supabaseUrl: "http://project.supabase.co" },
-    { clientId: "client-id", clientSecret: "client-secret", supabaseUrl: "https://user:password@project.supabase.co" },
-    { clientId: "client-id", clientSecret: "client-secret", supabaseUrl: "https://project.supabase.co/path" },
-    { clientId: "client-id", clientSecret: "client-secret", supabaseUrl: "https://project.supabase.co/?redirect=attacker" },
-  ]) {
-    expect(() => kakaoOidcProviderConfiguration(input)).toThrow("OIDC_PROVIDER_NOT_CONFIGURED");
-  }
-});
+    for (const input of [
+      { clientId: undefined, clientSecret: "client-secret", supabaseUrl: "https://project.supabase.co" },
+      { clientId: "client-id", clientSecret: undefined, supabaseUrl: "https://project.supabase.co" },
+      { clientId: "client-id", clientSecret: "client-secret", supabaseUrl: undefined },
+      { clientId: "client-id", clientSecret: "client-secret", supabaseUrl: "http://project.supabase.co" },
+      { clientId: "client-id", clientSecret: "client-secret", supabaseUrl: "https://user:password@project.supabase.co" },
+      { clientId: "client-id", clientSecret: "client-secret", supabaseUrl: "https://project.supabase.co/path" },
+      { clientId: "client-id", clientSecret: "client-secret", supabaseUrl: "https://project.supabase.co/?redirect=attacker" },
+      { clientId: "client-id", clientSecret: "client-secret", supabaseUrl: "https://project.supabase.co/?" },
+      { clientId: "client-id", clientSecret: "client-secret", supabaseUrl: "https://project.supabase.co/#" },
+    ]) {
+      expect(() => kakaoOidcProviderConfiguration(input)).toThrow("OIDC_PROVIDER_NOT_CONFIGURED");
+    }
+  });
 
 it("builds an email-free and nonce-bound authorize request", async () => {
   const returnTo = validatedReturnTo(`${origin}/auth/kakao/callback`, [origin]);
@@ -124,10 +136,10 @@ it("authenticates encrypted handoff ciphertext and expiry", async () => {
   const decrypted = await decryptKakaoTokenPayload(encrypted, secret, now + 1_000);
   expect(decrypted).toEqual(payload);
 
-  const replacement = encrypted.endsWith("A") ? "B" : "A";
+  const replacement = encrypted.startsWith("A") ? "B" : "A";
   let tamperRejected = false;
   try {
-    await decryptKakaoTokenPayload(`${encrypted.slice(0, -1)}${replacement}`, secret, now + 1_000);
+    await decryptKakaoTokenPayload(`${replacement}${encrypted.slice(1)}`, secret, now + 1_000);
   } catch {
     tamperRejected = true;
   }

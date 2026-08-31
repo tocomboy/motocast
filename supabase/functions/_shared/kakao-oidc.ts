@@ -32,14 +32,12 @@ export function kakaoOidcProviderConfiguration(input: {
   } catch {
     throw new Error("OIDC_PROVIDER_NOT_CONFIGURED");
   }
-  const loopback = base.protocol === "http:" && ["127.0.0.1", "localhost", "::1"].includes(base.hostname);
+  const loopback = base.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(base.hostname);
   if (
     (base.protocol !== "https:" && !loopback) ||
     base.username ||
     base.password ||
-    base.pathname !== "/" ||
-    base.search ||
-    base.hash
+    base.href !== `${base.origin}/`
   ) {
     throw new Error("OIDC_PROVIDER_NOT_CONFIGURED");
   }
