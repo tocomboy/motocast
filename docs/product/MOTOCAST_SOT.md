@@ -288,12 +288,13 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### OPS-003 — Git and CD topology
 
 - Status: `CONFIRMED`
-- Decision: `develop` is the default development branch and deploys Preview. `main` is Production and accepts only a same-repository `develop -> main` PR. Required checks are `verify` and `develop-only`; administrator enforcement, conversation resolution, no force push, and no deletion remain enabled. Human approvals remain zero until a real reviewer is designated. Other branches do not auto-deploy.
+- Decision: `develop` is the default development branch and deploys Preview. `main` is Production and accepts only a same-repository `develop -> main` PR. Required checks are `verify` and `develop-only`; the `verify` workflow runs the repository baseline and Deno-checks all five deployed Edge Function entrypoints, including the public `kakao-oidc` authentication boundary. Administrator enforcement, conversation resolution, no force push, and no deletion remain enabled. Human approvals remain zero until a real reviewer is designated. Other branches do not auto-deploy.
 - Rationale: Separate continuous development from explicit production promotion.
 - User impact: Production changes only after a visible promotion gate.
 - Affected: GitHub settings/workflows, Vercel Git integration, `vercel.json`.
 - Verification: GitHub API readback, disposable wrong-source probe when routing changes, matching Preview/Production SHA.
 - Confirmed: 2026-08-30.
+- Interview update: On 2026-08-31 live CI readback showed that `verify` omitted `kakao-oidc` while the verification SoT required all five Edge Function entrypoints. The user selected the recommended strict option: add `kakao-oidc` to CI and require a fresh push/CI/Preview readback rather than relying only on the local Deno result.
 
 #### OPS-004 — Vercel runtime and secrets
 
