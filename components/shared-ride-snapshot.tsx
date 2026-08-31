@@ -33,12 +33,16 @@ export function buildSharedMapPoints(input: {
   waypoints: SharedWaypoint[];
   lunchStop: SharedPlace;
   dinnerStop: SharedPlace | null;
+  selectedProfile: "balanced" | "winding" | "short";
 }) {
   const traversedWaypoints = input.waypoints.filter((item) => item.selected);
+  const candidateWaypoints = input.selectedProfile === "winding"
+    ? traversedWaypoints
+    : traversedWaypoints.filter((waypoint) => !waypoint.winding);
   const matchedWaypoints = new Set<SharedWaypoint>();
   const routePoints = input.routePoints.map((point, index, all) => {
     const matchingWaypoints = index > 0 && index < all.length - 1
-      ? traversedWaypoints.filter((waypoint) => sameSharedPlace(point, waypoint))
+      ? candidateWaypoints.filter((waypoint) => sameSharedPlace(point, waypoint))
       : [];
     matchingWaypoints.forEach((waypoint) => matchedWaypoints.add(waypoint));
     let role: MapMarkerRole = "waypoint";
@@ -54,10 +58,10 @@ export function buildSharedMapPoints(input: {
     .filter((waypoint) => !matchedWaypoints.has(waypoint))
     .map((waypoint) => {
       let role: MapMarkerRole = "waypoint";
-      if (sameSharedPlace(waypoint, input.lunchStop)) role = "lunch";
-      else if (sameSharedPlace(waypoint, input.dinnerStop)) role = "dinner";
-      else if (waypoint.kind === "optional") role = "rest";
+      if (waypoint.kind === "optional") role = "rest";
       else if (waypoint.winding) role = "winding";
+      else if (sameSharedPlace(waypoint, input.lunchStop)) role = "lunch";
+      else if (sameSharedPlace(waypoint, input.dinnerStop)) role = "dinner";
       return { ...waypoint, label: `${waypoint.label} · 선택 경로 미통과`, role };
     });
   return [...routePoints, ...omittedWaypoints];
@@ -85,6 +89,7 @@ export function SharedRideSnapshotView({
     waypoints: snapshot.waypoints,
     lunchStop: snapshot.trip.lunchStop,
     dinnerStop: snapshot.trip.dinnerStop,
+    selectedProfile: snapshot.trip.selectedProfile,
   });
   const weatherExpired = snapshot.weather
     ? new Date(snapshot.weather.validUntil).getTime() < new Date(referenceTime).getTime()

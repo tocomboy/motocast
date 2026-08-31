@@ -11,6 +11,17 @@ const liveQueries = {
 const hasLiveQueries = Object.values(liveQueries).every(Boolean);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+type LiveCleanupState = {
+  collectionMutationStarted: boolean;
+  collectionId: string | null;
+  shareMutationStarted: boolean;
+  activeShareId: string | null;
+  tripMutationStarted: boolean;
+  tripId: string | null;
+};
+
+let pendingCleanup: LiveCleanupState | null = null;
+
 // Share URLs are bearer credentials. Disable browser artifacts for this file so
 // a failure cannot persist a published token in a trace, screenshot, or video.
 test.use({ screenshot: "off", trace: "off", video: "off" });
@@ -56,22 +67,94 @@ async function verifyRevokedShare(page: Page, revokedUrl: string) {
   await expect.poll(() => !page.url().includes("#")).toBe(true);
 }
 
-test("calculates, stores, publishes, revokes, and cleans up test-owned resources", async ({ page, context }) => {
+async function deleteOwnedTrip(page: Page, tripId: string) {
+  return page.evaluate(async (ownedTripId) => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 20_000);
+    try {
+      const response = await fetch(`/api/trips/${ownedTripId}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+        signal: controller.signal,
+      });
+      const body = await response.json().catch(() => null) as { deleted?: unknown } | null;
+      return response.ok && body?.deleted === true;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }, tripId);
+}
+
+test.afterEach(async ({ context }, testInfo) => {
+  testInfo.setTimeout(180_000);
+  const cleanup = pendingCleanup;
+  pendingCleanup = null;
+  if (!cleanup) return;
+  if (!cleanup.shareMutationStarted && !cleanup.collectionMutationStarted && !cleanup.tripMutationStarted) return;
+
+  const cleanupFailures: string[] = [];
+  const cleanupPage = await context.newPage();
+  cleanupPage.setDefaultTimeout(20_000);
+  cleanupPage.setDefaultNavigationTimeout(20_000);
+  try {
+    if (cleanup.shareMutationStarted) {
+      try {
+        if (!cleanup.activeShareId) throw new Error("active share identity unavailable");
+        await cleanupPage.goto("/");
+        await startShareRevocation(cleanupPage, cleanup.activeShareId);
+        cleanup.activeShareId = null;
+        cleanup.shareMutationStarted = false;
+      } catch {
+        cleanupFailures.push("share revoke");
+      }
+    }
+    if (cleanup.collectionMutationStarted) {
+      try {
+        if (!cleanup.collectionId) throw new Error("collection identity unavailable");
+        await startCollectionDeletion(cleanupPage, cleanup.collectionId);
+        cleanup.collectionId = null;
+        cleanup.collectionMutationStarted = false;
+      } catch {
+        cleanupFailures.push("collection delete");
+      }
+    }
+    if (cleanup.tripMutationStarted) {
+      try {
+        if (!cleanup.tripId) throw new Error("trip identity unavailable");
+        await cleanupPage.goto("/");
+        const deleted = await deleteOwnedTrip(cleanupPage, cleanup.tripId);
+        if (!deleted) throw new Error("trip cleanup rejected");
+        cleanup.tripId = null;
+        cleanup.tripMutationStarted = false;
+      } catch {
+        cleanupFailures.push("trip delete");
+      }
+    }
+  } finally {
+    await cleanupPage.close();
+  }
+  if (cleanupFailures.length) throw new Error(`Live cleanup failed: ${cleanupFailures.join(", ")}`);
+});
+
+test("calculates, stores, publishes, revokes, and cleans up test-owned resources", async ({ page }) => {
   test.setTimeout(240_000);
   test.skip(!liveMutationsEnabled || !hasLiveQueries, "Requires explicit live mutation opt-in and five private place queries");
   const title = `MOTOCAST E2E ${Date.now()}`;
-  let collectionMutationStarted = false;
-  let collectionId: string | null = null;
-  let shareMutationStarted = false;
-  let activeShareId: string | null = null;
-  let tripMutationStarted = false;
-  let tripId: string | null = null;
+  const cleanup: LiveCleanupState = {
+    collectionMutationStarted: false,
+    collectionId: null,
+    shareMutationStarted: false,
+    activeShareId: null,
+    tripMutationStarted: false,
+    tripId: null,
+  };
+  pendingCleanup = cleanup;
   let browserErrorCount = 0;
   page.on("pageerror", () => { browserErrorCount += 1; });
   page.on("console", (message) => { if (message.type() === "error") browserErrorCount += 1; });
 
-  try {
-    await page.goto("/");
+  await page.goto("/");
     await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
     await selectFirstPlace(page, "출발지", liveQueries.origin!);
     await selectFirstPlace(page, "복귀지", liveQueries.destination!);
@@ -84,16 +167,16 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const finalizedTrip = page.waitForResponse((response) => (
       response.url().includes("/rest/v1/rpc/finalize_trip_plan") && response.request().method() === "POST"
     ), { timeout: 120_000 });
-    tripMutationStarted = true;
+    cleanup.tripMutationStarted = true;
     await page.getByRole("button", { name: "선택 경로 다시 계산" }).click();
     const finalizedResponse = await finalizedTrip;
     if (!finalizedResponse.ok()) {
-      tripMutationStarted = false;
+      cleanup.tripMutationStarted = false;
       throw new Error("Live trip finalization rejected");
     }
     const finalizedBody: unknown = await finalizedResponse.json();
     if (typeof finalizedBody !== "string" || !uuidPattern.test(finalizedBody)) throw new Error("Live trip cleanup identity was not returned");
-    tripId = finalizedBody;
+    cleanup.tripId = finalizedBody;
     await expect(page.locator(".live-data-badge")).toHaveText("실제 경로", { timeout: 90_000 });
     await expect(page.locator(".candidate-card")).toHaveCount(3);
     await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/출발/);
@@ -107,11 +190,11 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const savedCollection = page.waitForResponse((response) => (
       response.url().includes("/functions/v1/save-collection") && response.request().method() === "POST"
     ), { timeout: 30_000 });
-    collectionMutationStarted = true;
+    cleanup.collectionMutationStarted = true;
     await page.getByRole("button", { name: /현재 경유지로 새 컬렉션 저장/ }).click();
     const savedCollectionResponse = await savedCollection;
     if (!savedCollectionResponse.ok()) {
-      collectionMutationStarted = false;
+      cleanup.collectionMutationStarted = false;
       throw new Error("Live collection persistence rejected");
     }
     const savedCollectionBody: unknown = await savedCollectionResponse.json();
@@ -119,7 +202,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
       ? (savedCollectionBody as { collectionId?: unknown }).collectionId
       : null;
     if (typeof savedCollectionId !== "string" || !uuidPattern.test(savedCollectionId)) throw new Error("Live collection cleanup identity was not returned");
-    collectionId = savedCollectionId;
+    cleanup.collectionId = savedCollectionId;
     await expect(page.getByRole("status").filter({ hasText: `${title} 컬렉션의 1번째 불변 버전` })).toBeVisible();
 
     await page.getByRole("button", { name: "전체 공유 미리보기" }).click();
@@ -130,11 +213,11 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const publishedShare = page.waitForResponse((response) => (
       response.url().includes("/rest/v1/rpc/publish_trip_share") && response.request().method() === "POST"
     ), { timeout: 30_000 });
-    shareMutationStarted = true;
+    cleanup.shareMutationStarted = true;
     await page.getByRole("button", { name: "이 전체 내용 그대로 불변 링크 발행" }).click();
     const publishedShareResponse = await publishedShare;
     if (!publishedShareResponse.ok()) {
-      shareMutationStarted = false;
+      cleanup.shareMutationStarted = false;
       throw new Error("Live share publication rejected");
     }
     const publishedShareBody: unknown = await publishedShareResponse.json();
@@ -142,26 +225,26 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
       ? (publishedShareBody[0] as { share_id?: unknown }).share_id
       : null;
     if (typeof publishedShareId !== "string" || !uuidPattern.test(publishedShareId)) throw new Error("Live share cleanup identity was not returned");
-    activeShareId = publishedShareId;
+    cleanup.activeShareId = publishedShareId;
     const issuedInput = page.getByLabel(/이번에 발행한 링크/);
     await expect(issuedInput).toBeVisible();
     const issuedUrl = await issuedInput.inputValue();
     expect(/^https:\/\/[^/]+\/share#[A-Za-z0-9_-]{43}$/.test(issuedUrl)).toBe(true);
 
-    await startShareRevocation(page, activeShareId);
-    activeShareId = null;
-    shareMutationStarted = false;
+    await startShareRevocation(page, cleanup.activeShareId);
+    cleanup.activeShareId = null;
+    cleanup.shareMutationStarted = false;
     await expect(page.getByRole("status").filter({ hasText: "공유 링크를 회수했습니다." })).toBeVisible();
 
     await page.getByRole("button", { name: "전체 공유 미리보기" }).click();
     const republishedShare = page.waitForResponse((response) => (
       response.url().includes("/rest/v1/rpc/publish_trip_share") && response.request().method() === "POST"
     ), { timeout: 30_000 });
-    shareMutationStarted = true;
+    cleanup.shareMutationStarted = true;
     await page.getByRole("button", { name: "이 전체 내용 그대로 불변 링크 발행" }).click();
     const republishedShareResponse = await republishedShare;
     if (!republishedShareResponse.ok()) {
-      shareMutationStarted = false;
+      cleanup.shareMutationStarted = false;
       throw new Error("Live share republication rejected");
     }
     const republishedShareBody: unknown = await republishedShareResponse.json();
@@ -169,82 +252,28 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
       ? (republishedShareBody[0] as { share_id?: unknown }).share_id
       : null;
     if (typeof republishedShareId !== "string" || !uuidPattern.test(republishedShareId)) throw new Error("Live reissued share cleanup identity was not returned");
-    activeShareId = republishedShareId;
+    cleanup.activeShareId = republishedShareId;
     await expect(issuedInput).toBeVisible();
     const reissuedUrl = await issuedInput.inputValue();
     expect(/^https:\/\/[^/]+\/share#[A-Za-z0-9_-]{43}$/.test(reissuedUrl)).toBe(true);
     expect(reissuedUrl !== issuedUrl).toBe(true);
-    await startShareRevocation(page, activeShareId);
-    activeShareId = null;
-    shareMutationStarted = false;
+    await startShareRevocation(page, cleanup.activeShareId);
+    cleanup.activeShareId = null;
+    cleanup.shareMutationStarted = false;
     await expect(page.getByRole("status").filter({ hasText: "공유 링크를 회수했습니다." })).toBeVisible();
 
-    const collectionItem = await startCollectionDeletion(page, collectionId);
-    collectionId = null;
-    collectionMutationStarted = false;
+    if (!cleanup.collectionId) throw new Error("Live collection cleanup identity was not captured");
+    const collectionItem = await startCollectionDeletion(page, cleanup.collectionId);
+    cleanup.collectionId = null;
+    cleanup.collectionMutationStarted = false;
     await expect(collectionItem).toHaveCount(0);
 
     await verifyRevokedShare(page, issuedUrl);
     await verifyRevokedShare(page, reissuedUrl);
-    if (!tripId) throw new Error("Live trip cleanup identity was not captured");
-    const deleted = await page.evaluate(async (ownedTripId) => {
-      const response = await fetch(`/api/trips/${ownedTripId}`, {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      });
-      const body = await response.json().catch(() => null) as { deleted?: unknown } | null;
-      return response.ok && body?.deleted === true;
-    }, tripId);
+    if (!cleanup.tripId) throw new Error("Live trip cleanup identity was not captured");
+    const deleted = await deleteOwnedTrip(page, cleanup.tripId);
     expect(deleted).toBe(true);
-    tripId = null;
-    tripMutationStarted = false;
+    cleanup.tripId = null;
+    cleanup.tripMutationStarted = false;
     expect(browserErrorCount).toBe(0);
-  } finally {
-    const cleanupFailures: string[] = [];
-    const cleanupPage = page.isClosed() ? await context.newPage() : page;
-    if (shareMutationStarted) {
-      try {
-        if (!activeShareId) throw new Error("active share identity unavailable");
-        await cleanupPage.goto("/");
-        await startShareRevocation(cleanupPage, activeShareId);
-        activeShareId = null;
-        shareMutationStarted = false;
-      } catch {
-        cleanupFailures.push("share revoke");
-      }
-    }
-    if (collectionMutationStarted) {
-      try {
-        if (!collectionId) throw new Error("collection identity unavailable");
-        await startCollectionDeletion(cleanupPage, collectionId);
-        collectionId = null;
-        collectionMutationStarted = false;
-      } catch {
-        cleanupFailures.push("collection delete");
-      }
-    }
-    if (tripMutationStarted) {
-      try {
-        if (!tripId) throw new Error("trip identity unavailable");
-        await cleanupPage.goto("/");
-        const deleted = await cleanupPage.evaluate(async (ownedTripId) => {
-          const response = await fetch(`/api/trips/${ownedTripId}`, {
-            method: "DELETE",
-            headers: { "content-type": "application/json" },
-            body: "{}",
-          });
-          const body = await response.json().catch(() => null) as { deleted?: unknown } | null;
-          return response.ok && body?.deleted === true;
-        }, tripId);
-        if (!deleted) throw new Error("trip cleanup rejected");
-        tripId = null;
-        tripMutationStarted = false;
-      } catch {
-        cleanupFailures.push("trip delete");
-      }
-    }
-    if (cleanupPage !== page) await cleanupPage.close();
-    if (cleanupFailures.length) throw new Error(`Live cleanup failed: ${cleanupFailures.join(", ")}`);
-  }
 });

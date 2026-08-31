@@ -14,6 +14,7 @@ describe("buildSharedMapPoints", () => {
       routePoints: [origin, lunch, rest, winding, destination],
       lunchStop: { ...lunch, id: "trip-lunch" },
       dinnerStop: null,
+      selectedProfile: "winding",
       waypoints: [
         { ...lunch, id: "waypoint-0", position: 0, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
         { ...rest, id: "waypoint-1", position: 1, kind: "optional", dwellMinutes: 30, selected: true, winding: false },
@@ -27,6 +28,7 @@ describe("buildSharedMapPoints", () => {
       routePoints: [origin, lunch, rest, destination],
       lunchStop: { ...lunch, id: "trip-lunch" },
       dinnerStop: null,
+      selectedProfile: "balanced",
       waypoints: [
         { ...winding, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
         { ...lunch, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
@@ -38,6 +40,24 @@ describe("buildSharedMapPoints", () => {
       { role: "rest" },
       { role: "destination" },
       { role: "winding", label: "와인딩 · 선택 경로 미통과" },
+    ]);
+  });
+
+  it("keeps a same-place winding-only marker omitted from a balanced candidate", () => {
+    expect(buildSharedMapPoints({
+      routePoints: [origin, lunch, destination],
+      lunchStop: { ...lunch, id: "trip-lunch" },
+      dinnerStop: null,
+      selectedProfile: "balanced",
+      waypoints: [
+        { ...lunch, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
+        { ...lunch, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+      ],
+    })).toMatchObject([
+      { role: "origin" },
+      { role: "lunch" },
+      { role: "destination" },
+      { role: "winding", label: "점심 · 선택 경로 미통과" },
     ]);
   });
 });

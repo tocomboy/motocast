@@ -194,42 +194,52 @@ insert into tap_results values
   ((select count(*) = 3 from public.route_cache r join public.trips t on t.id = r.trip_id where t.user_id = '75000000-0000-0000-0000-000000000001'), 'failed replacement restores all original routes'),
   ((select count(*) = 3 from public.route_plan_drafts where owner_id = '75000000-0000-0000-0000-000000000001' and planning_id = '76000000-0000-4000-8000-000000000002'), 'failed replacement preserves the retryable route drafts');
 
--- Simulate the migration's table-lock boundary. A route writer must remain
--- blocked until the fingerprint replacement/backfill transaction releases it.
-create or replace function public.test_route_fingerprint_migration_lock()
-returns integer
-language plpgsql
-set search_path = public, pg_temp
-as $$
-declare affected integer;
+-- Simulate drafts staged across a fingerprint-function deployment. The stored
+-- cache can be stale or corrupt; finalization must re-hash the locked route JSON.
+update public.route_plan_drafts
+set geometry_fingerprint = repeat('f', 64)
+where owner_id = '75000000-0000-0000-0000-000000000001'
+  and planning_id = '76000000-0000-4000-8000-000000000002';
+insert into tap_results values (
+  (select count(distinct geometry_fingerprint) = 1 from public.route_plan_drafts
+   where owner_id = '75000000-0000-0000-0000-000000000001'
+     and planning_id = '76000000-0000-4000-8000-000000000002'),
+  'deployment-crossing fixture stores one stale cached fingerprint'
+);
+set role authenticated;
+select set_config('request.jwt.claim.sub', '75000000-0000-0000-0000-000000000001', false);
+do $$
+declare
+  target_trip uuid := (select id from public.trips where user_id = auth.uid());
+  replacement uuid;
 begin
-  lock table public.route_plan_drafts in share row exclusive mode;
-  perform pg_sleep(1);
-  update public.route_plan_drafts
-  set geometry_fingerprint = public.route_geometry_fingerprint(route);
-  get diagnostics affected = row_count;
-  return affected;
+  replacement := public.finalize_trip_plan('76000000-0000-4000-8000-000000000002', target_trip);
+  insert into tap_results values (
+    replacement = target_trip,
+    'finalization accepts distinct route JSON despite stale cached fingerprints'
+  );
 end;
 $$;
-select dblink_exec('route_c1', 'reset role');
-select dblink_exec('route_c2', 'reset role');
-select dblink_send_query('route_c1', 'select public.test_route_fingerprint_migration_lock()');
-select pg_sleep(0.2);
-select dblink_send_query('route_c2', $$
-  update public.route_plan_drafts
-  set created_at = created_at
-  where owner_id = '75000000-0000-0000-0000-000000000001'
-    and planning_id = '76000000-0000-4000-8000-000000000002'
-  returning 1
-$$);
-select pg_sleep(0.2);
+reset role;
+
+-- The inverse must also fail closed: distinct cached strings cannot make three
+-- copies of one road geometry pass the current finalization boundary.
+insert into public.route_plan_drafts(owner_id, planning_id, candidate_profile, plan, route, geometry_fingerprint)
+select
+  '75000000-0000-0000-0000-000000000001',
+  '76000000-0000-4000-8000-000000000003',
+  profile,
+  (select plan from route_fixture),
+  pg_temp.test_route(profile, 127.05),
+  repeat(md5(profile), 2)
+from unnest(array['balanced', 'winding', 'short']) as profile;
+set role authenticated;
+select set_config('request.jwt.claim.sub', '75000000-0000-0000-0000-000000000001', false);
 insert into tap_results values (
-  dblink_is_busy('route_c2') = 1,
-  'fingerprint migration lock serializes a concurrent route-draft writer'
+  public.test_finalize_route('76000000-0000-4000-8000-000000000003', null) = 'ROUTE_PLAN_NOT_READY',
+  'finalization rejects duplicate route JSON despite distinct cached fingerprints'
 );
-select affected from dblink_get_result('route_c1') as response(affected integer);
-select affected from dblink_get_result('route_c2') as response(affected integer);
-drop function public.test_route_fingerprint_migration_lock();
+reset role;
 
 select dblink_disconnect('route_c1');
 select dblink_disconnect('route_c2');
