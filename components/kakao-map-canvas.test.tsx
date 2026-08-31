@@ -2,7 +2,9 @@ import { StrictMode } from "react";
 import { act, create, type ReactTestRenderer, type TestRendererOptions } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { sharedRideSnapshotWithOmissions } from "../tests/fixtures/shared-ride-snapshot";
 import { KakaoMapCanvas, MapOmissionList, type MapMarkerRole, type MapPoint } from "./kakao-map-canvas";
+import { SharedRideSnapshotView } from "./shared-ride-snapshot";
 
 type Listener = () => void;
 
@@ -252,19 +254,16 @@ describe("KakaoMapCanvas", () => {
     await act(async () => renderer.unmount());
   });
 
-  it("keeps omitted points visible outside map readiness and error state", async () => {
+  it("keeps all omitted points wired outside the real shared map during an SDK error", async () => {
     vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "test-public-key");
     const scripts = stubBrowser();
-    const omittedPoints: MapPoint[] = [
-      { label: "유명산 · 선택 경로 미통과", latitude: 37.59, longitude: 127.49, role: "winding", nonTraversed: true },
-    ];
     let renderer!: ReactTestRenderer;
     await act(async () => {
       renderer = create(
-        <StrictMode>
-          <KakaoMapCanvas points={omittedPoints} />
-          <MapOmissionList points={omittedPoints} />
-        </StrictMode>,
+        <StrictMode><SharedRideSnapshotView
+          snapshot={sharedRideSnapshotWithOmissions(20)}
+          referenceTime="2030-01-01T00:00:00.000Z"
+        /></StrictMode>,
         rendererOptions,
       );
     });
@@ -272,8 +271,12 @@ describe("KakaoMapCanvas", () => {
 
     expect(statusText(renderer)).toContain("카카오 지도 로드 실패");
     const notice = renderer.root.findByProps({ "aria-labelledby": "map-omissions-heading" });
-    expect(notice.findAllByType("li")).toHaveLength(1);
-    expect(notice.findByType("li").findAllByType("span")[1].children.join("")).toContain("와인딩 · 유명산 · 선택 경로 미통과");
+    const sharedMap = renderer.root.findByProps({ "aria-label": "공유된 라이딩 경로" });
+    expect(notice.findAllByType("li")).toHaveLength(20);
+    expect(notice.findAllByType("li").at(-1)?.findAllByType("span")[1].children.join(""))
+      .toContain("와인딩 경유지 20 · 선택 경로 미통과");
+    expect(sharedMap.findAllByProps({ "aria-labelledby": "map-omissions-heading" })).toHaveLength(0);
+    expect(notice.parent?.parent).toBe(sharedMap.parent);
     await act(async () => renderer.unmount());
   });
 

@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { rawSharedRideSnapshotWithOmissions } from "../fixtures/shared-ride-snapshot";
+
 async function expectMapChromeNotToOverlap(page: import("@playwright/test").Page) {
   await page.locator(".map-shell").evaluate((shell) => {
     const legend = document.createElement("ul");
@@ -14,35 +16,6 @@ async function expectMapChromeNotToOverlap(page: import("@playwright/test").Page
     return topbar.left < legend.right && topbar.right > legend.left && topbar.top < legend.bottom && topbar.bottom > legend.top;
   });
   expect(overlap).toBe(false);
-}
-
-async function injectMaximumOmissionList(page: import("@playwright/test").Page) {
-  await page.locator("body").evaluate((body) => {
-    const fixture = document.createElement("div");
-    fixture.className = "shared-snapshot omission-layout-fixture";
-    const map = document.createElement("section");
-    map.className = "shared-map";
-    map.setAttribute("aria-label", "테스트 공유 지도");
-    const notice = document.createElement("section");
-    notice.className = "map-omissions";
-    notice.setAttribute("aria-labelledby", "test-map-omissions-heading");
-    const heading = document.createElement("div");
-    heading.innerHTML = '<p class="eyebrow">ROUTE NOTICE</p><h2 id="test-map-omissions-heading">선택 경로에서 지나지 않는 지점</h2>';
-    const list = document.createElement("ul");
-    for (let index = 1; index <= 20; index += 1) {
-      const item = document.createElement("li");
-      const symbol = document.createElement("span");
-      symbol.className = "map-marker-symbol is-omitted";
-      symbol.textContent = "와×";
-      const label = document.createElement("span");
-      label.textContent = `와인딩 · 테스트 경유지 ${index} · 선택 경로 미통과`;
-      item.append(symbol, label);
-      list.appendChild(item);
-    }
-    notice.append(heading, list);
-    fixture.append(map, notice);
-    body.appendChild(fixture);
-  });
 }
 
 test.describe("planner responsive shell", () => {
@@ -106,28 +79,39 @@ test.describe("planner responsive shell", () => {
   ]) {
     test(`${viewport.name} keeps twenty omitted route points in normal document flow`, async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto("/");
-      await injectMaximumOmissionList(page);
+      await page.route("**/api/shares/resolve", async (request) => {
+        await request.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ snapshot: rawSharedRideSnapshotWithOmissions(20) }),
+        });
+      });
+      await page.goto(`/share#${"a".repeat(43)}`);
 
-      const notice = page.locator(".omission-layout-fixture > .map-omissions");
+      const notice = page.locator(".shared-snapshot > .map-omissions");
       const items = notice.getByRole("listitem");
       await expect(items).toHaveCount(20);
-      await items.last().scrollIntoViewIfNeeded();
-      await expect(items.last()).toBeVisible();
-      const layout = await page.evaluate(() => {
-        const fixture = document.querySelector(".omission-layout-fixture")!;
-        const map = fixture.querySelector(".shared-map")!;
-        const notice = fixture.querySelector(".map-omissions")!;
-        const last = notice.querySelector("li:last-child")!;
-        const noticeRect = notice.getBoundingClientRect();
-        const lastRect = last.getBoundingClientRect();
+      const layout = await notice.evaluate((element) => {
+        const list = element.querySelector("ul")!;
+        const map = element.previousElementSibling!;
         return {
-          noticeOutsideMap: !map.contains(notice),
-          allItemsContained: lastRect.bottom <= noticeRect.bottom + 1,
+          parentIsSnapshot: element.parentElement?.classList.contains("shared-snapshot") ?? false,
+          previousSiblingIsMap: map.classList.contains("shared-map"),
+          noticeOutsideMap: !map.contains(element),
+          noticeHasNoInternalOverflow: element.scrollHeight <= element.clientHeight,
+          listHasNoInternalOverflow: list.scrollHeight <= list.clientHeight,
           horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
         };
       });
-      expect(layout).toEqual({ noticeOutsideMap: true, allItemsContained: true, horizontalOverflow: false });
+      expect(layout).toEqual({
+        parentIsSnapshot: true,
+        previousSiblingIsMap: true,
+        noticeOutsideMap: true,
+        noticeHasNoInternalOverflow: true,
+        listHasNoInternalOverflow: true,
+        horizontalOverflow: false,
+      });
+      await expect(items.last()).toBeVisible();
     });
   }
 
