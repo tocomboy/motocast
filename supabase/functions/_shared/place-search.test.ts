@@ -64,14 +64,21 @@ describe("normalizeKakaoPlaceDocuments", () => {
     ).toThrow(/PLACE_OUTSIDE_KOREA/);
   });
 
-  it("rejects a provider detail URL outside the Kakao place host", () => {
+  it.each([
+    "http:place.map.kakao.com/123",
+    "http:\n//place.map.kakao.com/123",
+    "http://place.map.kakao.com:80/123",
+    "http://rider@place.map.kakao.com/123",
+    "http://sub.place.map.kakao.com/123",
+    "http://example.com/123",
+  ])("rejects a malformed or non-Kakao provider detail URL: %s", (placeUrl) => {
     expect(() =>
       normalizeKakaoPlaceDocuments([
         {
           id: "123",
           place_name: "팔당역",
           address_name: "경기 남양주시 와부읍 팔당리",
-          place_url: "http://example.com/123",
+          place_url: placeUrl,
           x: "127.243",
           y: "37.547",
         },

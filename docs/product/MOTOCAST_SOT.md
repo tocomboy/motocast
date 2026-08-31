@@ -396,7 +396,7 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 - Fixed-SHA review and Preview redeployment of the Kakao place URL normalization and road-geometry-only map correction.
 - Connected browser verification of invitation login and revoked-member denial; direct OIDC and first-admin bootstrap are complete.
 - AUTH-003 migrations and sensitive RPC ACLs are live and independently approved; full OAuth and A/B/admin/revoked connected tests remain pending.
-- Free-only activation of the Preview Kakao Map/Local product, followed by actual Kakao route and KMA response smoke tests; provider-backed candidate distinctness remains unverified.
+- Actual Kakao route and KMA response smoke tests; provider-backed candidate distinctness remains unverified. Preview Map/Local free-only activation and map rendering are complete.
 - Authenticated connected smoke testing for route ETA weather, collection CRUD/version/apply, and immutable share preview/publish/resolver/revoke/reissue.
 - Resolving `OPS-008` for the Production Supabase region before real rider data is accepted.
 - Hosted RLS/provider/browser/Preview tests and all Production tests. The full local fresh-migration, RLS/RPC, and concurrency suites are GREEN.

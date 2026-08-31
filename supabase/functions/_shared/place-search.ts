@@ -64,6 +64,12 @@ function kakaoPlaceUrl(value: unknown) {
   const rawUrl = optionalString(value);
   if (!rawUrl) return null;
   if (rawUrl.length > 500) throw new Error("INVALID_PLACE_PROVIDER_RESPONSE");
+  if (
+    /[\u0000-\u0020\u007f]/.test(rawUrl) ||
+    !/^https?:\/\/place\.map\.kakao\.com(?:[/?#]|$)/.test(rawUrl)
+  ) {
+    throw new Error("INVALID_PLACE_PROVIDER_RESPONSE");
+  }
 
   let parsed: URL;
   try {
