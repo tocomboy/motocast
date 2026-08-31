@@ -2,7 +2,7 @@
 
 지인 라이더를 위한 국내 당일 오토바이 경로·시간대별 날씨 계획 PWA입니다. 출발/복귀 시각과 식사 정차, 선택 휴식을 반영해 세 가지 경로 후보를 비교하고, 각 구간의 예상 통과 시각에 맞춘 기상청 예보를 보여주는 것을 목표로 합니다.
 
-> 현재 상태: Preview 게이트를 진행 중입니다. 실제 장소·서로 다른 안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 신뢰된 경로 결과만 저장하는 계획 확정, 검증된 장소만 저장하는 사용자별 컬렉션 버전, 전체 공유 미리보기/불변 발행/회수/재발행 UI가 구현되어 있습니다. 공유와 초대 bearer token은 서버 요청 경로 대신 URL fragment에 두고 고정 API 경로의 POST 본문으로 전달합니다. 이메일 없는 Kakao OIDC 직접 연동(`AUTH-004`)의 초기 고정 SHA `601c1a3`은 로컬 앱 `223/223`, DB `233/233`와 5축 독립 리뷰 finding 0을 통과했고 Preview에 배포됐습니다. 첫 실제 Kakao 로그인에서 Supabase Edge 내부 `request.url`의 `http` 스킴이 provider callback에 잘못 사용되는 배포 환경 결함이 확인됐습니다. 첫 HTTPS 수정 SHA `9c66cc5`는 실제 배포 handler를 실행하지 않는 테스트 공백 때문에 리뷰에서 거절됐습니다. 현재 수정은 production request handler를 직접 실행해 인가 URL과 token POST body가 같은 `SUPABASE_URL` 기반 HTTPS callback을 쓰는지 검증하며, 새 고정 SHA 리뷰와 Preview 재배포 전까지 실제 로그인은 완료되지 않았고 Production은 변경하지 않았습니다.
+> 현재 상태: Preview 게이트를 진행 중입니다. 실제 장소·서로 다른 안전 경로 후보 3개·지도 형상·구간 ETA 날씨, 신뢰된 경로 결과만 저장하는 계획 확정, 검증된 장소만 저장하는 사용자별 컬렉션 버전, 전체 공유 미리보기/불변 발행/회수/재발행 UI가 구현되어 있습니다. 공유와 초대 bearer token은 서버 요청 경로 대신 URL fragment에 두고 고정 API 경로의 POST 본문으로 전달합니다. 이메일 없는 Kakao OIDC 직접 연동(`AUTH-004`)의 초기 고정 SHA `601c1a3`은 로컬 앱 `223/223`, DB `233/233`와 5축 독립 리뷰 finding 0을 통과했고 Preview에 배포됐습니다. 첫 실제 Kakao 로그인에서 Supabase Edge 내부 `request.url`의 `http` 스킴이 provider callback에 잘못 사용되는 배포 환경 결함이 확인됐습니다. 첫 HTTPS 수정 SHA `9c66cc5`는 실제 배포 handler를 실행하지 않는 테스트 공백 때문에 리뷰에서 거절됐고, correction SHA `51b6a07`이 production request handler를 직접 실행해 인가 URL과 token POST body가 같은 `SUPABASE_URL` 기반 HTTPS callback을 쓰는지 검증합니다. 이 SHA는 작성자 전체 검증과 5축 독립 리뷰 finding 0을 통과했으며 push·Preview 재배포 전까지 실제 로그인은 완료되지 않았고 Production은 변경하지 않았습니다.
 
 ## 고정된 제품 원칙
 
