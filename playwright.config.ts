@@ -8,6 +8,26 @@ const configuredBaseUrl = process.env.MOTOCAST_E2E_BASE_URL?.trim();
 const baseURL = configuredBaseUrl || "http://127.0.0.1:3100";
 const storageStateValue = process.env.MOTOCAST_E2E_STORAGE_STATE?.trim();
 const storageState = storageStateValue ? path.resolve(storageStateValue) : undefined;
+const nextAgentDetectionVariables = new Set([
+  "AI_AGENT",
+  "ANTIGRAVITY_AGENT",
+  "AUGMENT_AGENT",
+  "CLAUDECODE",
+  "CLAUDE_CODE",
+  "CLAUDE_CODE_IS_COWORK",
+  "CODEX_CI",
+  "CODEX_SANDBOX",
+  "CODEX_THREAD_ID",
+  "COPILOT_ALLOW_ALL",
+  "COPILOT_GITHUB_TOKEN",
+  "COPILOT_MODEL",
+  "CURSOR_AGENT",
+  "CURSOR_EXTENSION_HOST_ROLE",
+  "CURSOR_TRACE_ID",
+  "GEMINI_CLI",
+  "OPENCODE_CLIENT",
+  "REPL_ID",
+]);
 
 function isInsideRepository(candidate: string) {
   const relative = path.relative(repositoryRoot, candidate);
@@ -16,7 +36,9 @@ function isInsideRepository(candidate: string) {
 
 function inheritedEnvironment(): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    Object.entries(process.env).filter((entry): entry is [string, string] => (
+      typeof entry[1] === "string" && !nextAgentDetectionVariables.has(entry[0])
+    )),
   );
 }
 
@@ -69,6 +91,7 @@ export default defineConfig({
         timeout: 120_000,
         env: {
           ...inheritedEnvironment(),
+          ...Object.fromEntries(Array.from(nextAgentDetectionVariables, (name) => [name, ""])),
           NEXT_PUBLIC_SUPABASE_URL: "",
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
           NEXT_PUBLIC_KAKAO_MAP_JS_KEY: "",
