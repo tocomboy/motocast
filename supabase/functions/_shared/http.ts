@@ -58,7 +58,12 @@ export function safeErrorCode(error: unknown) {
   if (["PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE", "PROVIDER_REQUEST_REJECTED"].includes(error.message)) {
     return "ROUTE_PROVIDER_TEMPORARY";
   }
-  if (error.message.startsWith("INVALID_") || error.message === "UNVERIFIED_PLACE" || error.message === "PAST_DEPARTURE") {
+  if (
+    error.message.startsWith("INVALID_") ||
+    error.message === "UNVERIFIED_PLACE" ||
+    error.message === "PAST_DEPARTURE" ||
+    error.message === "CLIENT_ROUTE_POLICY_FORBIDDEN"
+  ) {
     return "ROUTE_INPUT_INVALID";
   }
   return "ROUTE_REQUEST_FAILED";

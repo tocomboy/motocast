@@ -19,6 +19,7 @@ describe("safe provider errors", () => {
     expect(safeErrorStatus(error)).toBe(400);
     expect(safeErrorMessage(error)).toContain("경로 설정");
     expect(safeErrorMessage(error)).not.toContain("공급자");
+    expect(safeErrorCode(error)).toBe("ROUTE_INPUT_INVALID");
   });
 
   it("uses an unprocessable response for the 24-hour service limit", () => {

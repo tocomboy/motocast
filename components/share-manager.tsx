@@ -56,7 +56,9 @@ export function ShareManager({ tripId, previewRequest = 0, disabled = false }: {
     const { data, error } = await supabase.rpc("preview_trip_share", { target_trip_id: tripId });
     setBusy(false);
     if (error) {
-      setStatus("공유 미리보기를 만들지 못했습니다. 저장 상태와 권한을 확인해 주세요.");
+      setStatus(error.message.includes("SHARE_WEATHER_NOT_FRESH")
+        ? "아직 유효한 최신 날씨가 없어 공유 미리보기를 만들 수 없습니다. 날씨를 다시 조회해 주세요."
+        : "공유 미리보기를 만들지 못했습니다. 저장 상태와 권한을 확인해 주세요.");
       return;
     }
     if (!Array.isArray(data) || data.length !== 1) {
@@ -110,6 +112,9 @@ export function ShareManager({ tripId, previewRequest = 0, disabled = false }: {
       if (error?.message.includes("SHARE_PREVIEW")) {
         setPreviewToken(null);
         setStatus("미리보기가 만료됐거나 원본이 바뀌었습니다. 공유 요약 미리보기를 다시 만들어 주세요.");
+      } else if (error?.message.includes("SHARE_WEATHER_NOT_FRESH")) {
+        setPreviewToken(null);
+        setStatus("날씨가 오래됐거나 만료되어 발행하지 않았습니다. 날씨를 다시 조회하고 새 미리보기를 확인해 주세요.");
       } else {
         setStatus("공유 링크를 발행하지 못했습니다.");
       }

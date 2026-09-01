@@ -97,6 +97,7 @@ with denied(function_signature) as (
     ('public.revoke_share(uuid)'),
     ('public.resolve_share(text)'),
     ('public.build_trip_share_snapshot(uuid,uuid)'),
+    ('public.build_trip_share_snapshot_unchecked(uuid,uuid)'),
     ('public.share_place(jsonb)'),
     ('public.share_route_point(jsonb)'),
     ('public.share_route(jsonb)'),

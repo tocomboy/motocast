@@ -74,6 +74,17 @@ export function parseCollectionPoint(value: unknown): CollectionPoint {
   };
 }
 
+function validateCollectionCoursePoints(points: CollectionPoint[]) {
+  const ids = new Set(points.map((point) => point.id));
+  const countRole = (role: CollectionPoint["stopRole"]) => points.filter((point) => point.stopRole === role).length;
+  if (
+    points.length > 30 || ids.size !== points.length ||
+    countRole("lunch") > 1 || countRole("dinner") > 1 || countRole("rest") > 5 ||
+    points.filter((point) => point.winding).length > 20
+  ) throw new Error("INVALID_COLLECTION_VERSION");
+  return points;
+}
+
 export function parseCollectionRows(value: unknown): RidingCollection[] {
   if (!Array.isArray(value)) throw new Error("INVALID_COLLECTION_RESPONSE");
   return value.map((item) => {
@@ -103,7 +114,7 @@ export function parseCollectionRows(value: unknown): RidingCollection[] {
         course: {
           origin: parseSelectedPlace(parsed.origin),
           destination: parseSelectedPlace(parsed.destination),
-          points: parsed.points.map(parseCollectionPoint),
+          points: validateCollectionCoursePoints(parsed.points.map(parseCollectionPoint)),
         },
       };
     }).sort((left, right) => right.number - left.number);

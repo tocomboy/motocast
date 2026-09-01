@@ -187,6 +187,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
   pendingCleanup = cleanup;
   let browserErrorCount = 0;
   let planRouteRequestCount = 0;
+  let finalizeRequestCount = 0;
   let weatherRequestCount = 0;
   let previewRequestCount = 0;
   let publishRequestCount = 0;
@@ -195,6 +196,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
   page.on("request", (request) => {
     if (request.method() !== "POST") return;
     if (request.url().includes("/functions/v1/plan-route")) planRouteRequestCount += 1;
+    if (request.url().includes("/rest/v1/rpc/finalize_trip_plan")) finalizeRequestCount += 1;
     if (request.url().includes("/functions/v1/weather-timeline")) weatherRequestCount += 1;
     if (request.url().includes("/rest/v1/rpc/preview_trip_share")) previewRequestCount += 1;
     if (request.url().includes("/rest/v1/rpc/publish_trip_share")) publishRequestCount += 1;
@@ -275,7 +277,12 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     cleanup.collectionId = savedCollectionId;
     await expect(page.getByRole("status").filter({ hasText: `${title} 컬렉션의 1번째 불변 버전` })).toBeVisible();
 
+    const restDwell = page.getByLabel("머무는 시간 · 분").first();
+    await restDwell.fill("45");
+    await expect(restDwell).toHaveValue("45");
+
     const routeCountBeforePreparation = planRouteRequestCount;
+    const finalizeCountBeforePreparation = finalizeRequestCount;
     const weatherCountBeforePreparation = weatherRequestCount;
     const previewCountBeforePreparation = previewRequestCount;
     const publishCountBeforePreparation = publishRequestCount;
@@ -284,7 +291,10 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const manualPreviewButton = page.getByRole("button", { name: "공유 요약 미리보기" });
     await expect(manualPreviewButton).toBeDisabled();
     await expect(page.locator(".share-preview")).toHaveCount(0);
+    await expect(restDwell).toHaveValue("30");
+    await expect(page.getByRole("list", { name: "적용된 컬렉션 경유지 순서" })).toContainText("30분");
     expect(planRouteRequestCount).toBe(routeCountBeforePreparation);
+    expect(finalizeRequestCount).toBe(finalizeCountBeforePreparation);
     expect(weatherRequestCount).toBe(weatherCountBeforePreparation);
     expect(previewRequestCount).toBe(previewCountBeforePreparation);
     expect(publishRequestCount).toBe(publishCountBeforePreparation);
@@ -307,6 +317,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const preparedTripId: unknown = await preparedResponses[1].json();
     if (preparedTripId !== cleanup.tripId) throw new Error("Collection share preparation replaced the owned trip identity");
     expect(planRouteRequestCount).toBe(routeCountBeforePreparation + 1);
+    expect(finalizeRequestCount).toBe(finalizeCountBeforePreparation + 1);
     expect(weatherRequestCount).toBe(weatherCountBeforePreparation + 1);
     expect(previewRequestCount).toBe(previewCountBeforePreparation + 1);
     expect(publishRequestCount).toBe(publishCountBeforePreparation);
@@ -316,6 +327,27 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(page.locator(".share-preview")).not.toContainText("희망 복귀");
     await expect(page.locator(".share-preview")).not.toContainText("최종 복귀");
     await expect(page.locator(".share-preview")).not.toContainText("선택 경로 미통과");
+
+    for (const viewport of [
+      { width: 320, height: 800 },
+      { width: 390, height: 844 },
+      { width: 820, height: 1180 },
+      { width: 1440, height: 900 },
+    ]) {
+      await page.setViewportSize(viewport);
+      if (viewport.width <= 820) {
+        const dialog = page.getByRole("dialog", { name: "라이딩 계획 편집" });
+        if (await dialog.isVisible()) await page.keyboard.press("Escape");
+      }
+      await page.locator(".management-grid").scrollIntoViewIfNeeded();
+      await expect(page.getByRole("heading", { name: "라이딩 컬렉션" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "라이딩 공유" })).toBeVisible();
+      await expect(collectionItem).toBeVisible();
+      await expect(page.locator(".share-preview")).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+    }
+
+    await page.setViewportSize({ width: 1440, height: 900 });
     const sharePublishStarted = page.waitForRequest((request) => (
       request.url().includes("/rest/v1/rpc/publish_trip_share") && request.method() === "POST"
     ), { timeout: 30_000 });
@@ -373,6 +405,32 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     cleanup.activeShareId = null;
     cleanup.shareMutationStarted = false;
     await expect(page.getByRole("status").filter({ hasText: "공유 링크를 회수했습니다." })).toBeVisible();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "계획 수정" }).click();
+    const plannerDialog = page.getByRole("dialog", { name: "라이딩 계획 편집" });
+    await expect(plannerDialog).toBeVisible();
+    const addRest = plannerDialog.getByRole("button", { name: /^\+ 휴식지 추가/ });
+    for (let index = 0; index < 4; index += 1) await addRest.click();
+    await expect(addRest).toContainText("5/5");
+    await expect(addRest).toBeDisabled();
+    const dwellInputs = plannerDialog.getByLabel("머무는 시간 · 분");
+    await dwellInputs.first().fill("45");
+    await expect(dwellInputs.first()).toHaveValue("45");
+    await plannerDialog.getByRole("button", { name: "2번째 휴식 위로 이동" }).click();
+    await plannerDialog.getByRole("button", { name: "추천 경로 다시 계산" }).click();
+    const errorNotice = plannerDialog.getByRole("alert");
+    await expect(errorNotice).toBeFocused();
+    await expect(errorNotice).toContainText("추가한 모든 휴식지에서 검색 결과 장소를 선택해 주세요.");
+    expect(await errorNotice.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return box.left >= 0 && box.right <= window.innerWidth && element.scrollWidth <= element.clientWidth;
+    })).toBe(true);
+    for (let remaining = 5; remaining > 0; remaining -= 1) {
+      await plannerDialog.getByRole("button", { name: /휴식 제거/ }).first().click();
+    }
+    await expect(addRest).toContainText("0/5");
+    await expect(addRest).toBeEnabled();
 
     if (!cleanup.collectionId) throw new Error("Live collection cleanup identity was not captured");
     const deletedCollectionItem = await startCollectionDeletion(page, cleanup.collectionId);

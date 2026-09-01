@@ -108,6 +108,25 @@ begin
 end;
 $$;
 
+create or replace function pg_temp.optional_weather_segments(route jsonb, issued_at timestamptz)
+returns jsonb language sql stable as $$
+  select jsonb_agg(jsonb_build_object(
+    'id', 'recommended-' || (position - 1)::text,
+    'label', leg -> 'to' ->> 'label',
+    'longitude', leg -> 'to' -> 'longitude',
+    'latitude', leg -> 'to' -> 'latitude',
+    'eta', leg ->> 'arrivalAt',
+    'status', 'forecast',
+    'model', 'ultra',
+    'issuedAt', issued_at,
+    'condition', 'clear',
+    'temperatureC', 22,
+    'precipitationProbability', 0,
+    'windSpeedMps', 1.2
+  ) order by position)
+  from jsonb_array_elements(route -> 'legs') with ordinality as route_leg(leg, position);
+$$;
+
 create temp table direct_fixture on commit drop as select * from pg_temp.optional_meal_fixture(0);
 create temp table five_rest_fixture on commit drop as select * from pg_temp.optional_meal_fixture(5);
 create temp table six_rest_fixture on commit drop as select * from pg_temp.optional_meal_fixture(6);
@@ -145,8 +164,24 @@ create temp table saved_trips(kind text primary key, id uuid not null) on commit
 insert into saved_trips values
   ('direct', public.finalize_trip_plan('76200000-0000-4000-8000-000000000001', null)),
   ('five-rest', public.finalize_trip_plan('76200000-0000-4000-8000-000000000002', null));
-grant select on saved_trips to authenticated;
+grant select on saved_trips to authenticated, service_role;
 
+reset role;
+set local role service_role;
+select public.insert_weather_snapshot_internal(
+  '75200000-0000-0000-0000-000000000001',
+  (select id from saved_trips where kind = 'direct'),
+  'recommended', now() - interval '5 minutes', now() + interval '2 hours',
+  pg_temp.optional_weather_segments((select route from direct_fixture), now() - interval '5 minutes'),
+  repeat('a', 64), clock_timestamp()
+);
+select public.insert_weather_snapshot_internal(
+  '75200000-0000-0000-0000-000000000001',
+  (select id from saved_trips where kind = 'five-rest'),
+  'recommended', now() - interval '5 minutes', now() + interval '2 hours',
+  pg_temp.optional_weather_segments((select route from five_rest_fixture), now() - interval '5 minutes'),
+  repeat('b', 64), clock_timestamp()
+);
 reset role;
 insert into tap_results values
   ((select lunch_stop is null from public.trips where id = (select id from saved_trips where kind = 'direct')),

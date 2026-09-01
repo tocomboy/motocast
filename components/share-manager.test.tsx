@@ -34,7 +34,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function renderShareManager(disabled = false) {
+async function renderShareManager(disabled = false, currentTripId: string | null = tripId) {
   let renderer!: ReactTestRenderer;
   const options: TestRendererOptions & { unstable_strictMode: boolean } = {
     createNodeMock: () => ({}),
@@ -42,7 +42,7 @@ async function renderShareManager(disabled = false) {
   };
   await act(async () => {
     renderer = create(
-      <StrictMode><ShareManager tripId={tripId} previewRequest={1} disabled={disabled} /></StrictMode>,
+      <StrictMode><ShareManager tripId={currentTripId} previewRequest={1} disabled={disabled} /></StrictMode>,
       options,
     );
   });
@@ -64,6 +64,14 @@ describe("ShareManager collection preview request", () => {
       renderer.update(<StrictMode><ShareManager tripId={tripId} previewRequest={1} disabled={false} /></StrictMode>);
     });
     expect(browserMocks.rpc).toHaveBeenCalledTimes(1);
+    await act(async () => renderer.unmount());
+  });
+
+  it("does not preview when the parent withholds a trip lacking fresh weather", async () => {
+    const renderer = await renderShareManager(false, null);
+    expect(browserMocks.rpc).not.toHaveBeenCalled();
+    const previewButton = renderer.root.findAllByType("button")[0];
+    expect(previewButton.props.disabled).toBe(true);
     await act(async () => renderer.unmount());
   });
 });

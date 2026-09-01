@@ -32,8 +32,8 @@ create or replace function pg_temp.recommended_point(
     'address', '테스트 주소', 'roadAddress', null,
     'longitude', point_lon, 'latitude', point_lat,
     'kind', point_kind, 'dwellMinutes', dwell, 'selected', true,
-    'winding', winding, 'stopRole', stop_role
-  );
+    'winding', winding
+  ) || case when stop_role is null then '{}'::jsonb else jsonb_build_object('stopRole', stop_role) end;
 $$;
 
 create or replace function pg_temp.recommended_leg(

@@ -44,8 +44,10 @@ as $$
         or jsonb_typeof(item -> 'winding') is distinct from 'boolean'
         or (
           item ? 'stopRole'
-          and item -> 'stopRole' <> 'null'::jsonb
-          and coalesce(item ->> 'stopRole', '') not in ('lunch', 'dinner', 'rest')
+          and (
+            jsonb_typeof(item -> 'stopRole') is distinct from 'string'
+            or coalesce(item ->> 'stopRole', '') not in ('lunch', 'dinner', 'rest')
+          )
         )
     ),
     false
@@ -546,6 +548,45 @@ as $$
   ) end;
 $$;
 
+-- Preview and publish must both rebuild through a fresh, route-bound weather
+-- snapshot. Preserve the reviewed projector behind a private wrapper so a
+-- stale, expired, missing, or mismatched weather row can never mint a preview
+-- capability or immutable public share.
+do $rename_unchecked_share_builder$
+begin
+  if to_regprocedure('public.build_trip_share_snapshot_unchecked(uuid,uuid)') is null then
+    alter function public.build_trip_share_snapshot(uuid, uuid)
+      rename to build_trip_share_snapshot_unchecked;
+  end if;
+end;
+$rename_unchecked_share_builder$;
+
+create or replace function public.build_trip_share_snapshot(target_trip_id uuid, target_owner_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  snapshot jsonb;
+  snapshot_weather jsonb;
+begin
+  snapshot := public.build_trip_share_snapshot_unchecked(target_trip_id, target_owner_id);
+  snapshot_weather := snapshot -> 'weather';
+  if snapshot_weather is null
+     or snapshot_weather = 'null'::jsonb
+     or coalesce((snapshot_weather ->> 'stale')::boolean, true)
+     or (snapshot_weather ->> 'validUntil')::timestamptz <= now() then
+    raise exception 'SHARE_WEATHER_NOT_FRESH';
+  end if;
+  return snapshot;
+exception
+  when invalid_text_representation or datetime_field_overflow then
+    raise exception 'SHARE_WEATHER_NOT_FRESH';
+end;
+$$;
+
 drop function if exists public.save_collection_version_internal(uuid, uuid, text, text, jsonb);
 
 create or replace function public.save_collection_version_internal(
@@ -651,5 +692,7 @@ revoke all on function public.recommended_route_matches_plan_with_required_point
 revoke all on function public.recommended_route_matches_plan(jsonb, jsonb) from public, anon, authenticated, service_role;
 revoke all on function public.save_trip_plan_with_required_lunch(jsonb, jsonb) from public, anon, authenticated, service_role;
 revoke all on function public.save_trip_plan(jsonb, jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.build_trip_share_snapshot_unchecked(uuid, uuid) from public, anon, authenticated, service_role;
+revoke all on function public.build_trip_share_snapshot(uuid, uuid) from public, anon, authenticated, service_role;
 revoke all on function public.save_collection_version_internal(uuid, uuid, uuid, text, text, jsonb) from public, anon, authenticated;
 grant execute on function public.save_collection_version_internal(uuid, uuid, uuid, text, text, jsonb) to service_role;

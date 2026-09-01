@@ -27,6 +27,34 @@ const endpoint = {
   latitude: 37.5,
 };
 
+function collectionRow(points: unknown[]) {
+  return {
+    id: "collection-1",
+    title: "북한강",
+    description: "",
+    updated_at: "2026-08-31T00:00:00.000Z",
+    collection_versions: [{
+      id: "v1",
+      version_number: 1,
+      created_at: "2026-08-31T00:00:00.000Z",
+      origin: endpoint,
+      destination: { ...endpoint, kakaoPlaceId: "destination" },
+      points,
+    }],
+  };
+}
+
+function stopPoint(id: string, stopRole: "lunch" | "dinner" | "rest") {
+  return {
+    ...point,
+    id,
+    kind: stopRole === "rest" ? "optional" : "stop",
+    dwellMinutes: 30,
+    winding: false,
+    stopRole,
+  };
+}
+
 describe("parseCollectionRows", () => {
   it("selects the latest immutable version", () => {
     const parsed = parseCollectionRows([{
@@ -74,6 +102,7 @@ describe("parseCollectionRows", () => {
     { kind: "pass-through", dwellMinutes: 30, winding: false },
     { kind: "optional", dwellMinutes: 30, winding: false },
     { kind: "stop", dwellMinutes: 60, winding: false },
+    { stopRole: null },
   ])("rejects a persisted occurrence with route-incompatible semantics %#", (overrides) => {
     expect(() => parseCollectionRows([{
       id: "collection-1",
@@ -89,6 +118,17 @@ describe("parseCollectionRows", () => {
         points: [{ ...point, ...overrides }],
       }],
     }])).toThrow("INVALID_COLLECTION_POINT");
+  });
+
+  it.each([
+    ["duplicate occurrence IDs", [{ ...point, id: "same" }, { ...point, id: "same" }]],
+    ["multiple lunch stops", [stopPoint("lunch-1", "lunch"), stopPoint("lunch-2", "lunch")]],
+    ["multiple dinner stops", [stopPoint("dinner-1", "dinner"), stopPoint("dinner-2", "dinner")]],
+    ["more than five rest stops", Array.from({ length: 6 }, (_, index) => stopPoint(`rest-${index}`, "rest"))],
+    ["more than twenty winding points", Array.from({ length: 21 }, (_, index) => ({ ...point, id: `winding-${index}` }))],
+    ["more than thirty total points", Array.from({ length: 31 }, (_, index) => ({ ...point, id: `point-${index}`, winding: false }))],
+  ])("rejects a collection version with %s", (_label, points) => {
+    expect(() => parseCollectionRows([collectionRow(points)])).toThrow("INVALID_COLLECTION_VERSION");
   });
 
   it("keeps repeated physical places as distinct ordered occurrences", () => {

@@ -149,6 +149,32 @@ select
   now() + interval '1 hour'
 from (values ('balanced', 127.05), ('winding', 127.1), ('short', 127.15)) as candidates(profile, middle_longitude);
 
+set role service_role;
+select public.insert_weather_snapshot_internal(
+  '74000000-0000-0000-0000-000000000001',
+  '74000000-0000-4000-8000-000000000011',
+  'balanced',
+  now() - interval '5 minutes',
+  now() + interval '2 hours',
+  jsonb_build_array(jsonb_build_object(
+    'id', 'balanced-0',
+    'label', '복귀',
+    'longitude', 127.2,
+    'latitude', 37.2,
+    'eta', '2026-08-31T00:10:00.000Z',
+    'status', 'forecast',
+    'model', 'ultra',
+    'issuedAt', now() - interval '5 minutes',
+    'condition', 'clear',
+    'temperatureC', 22,
+    'precipitationProbability', 0,
+    'windSpeedMps', 1.2
+  )),
+  repeat('a', 64),
+  clock_timestamp()
+);
+reset role;
+
 set role authenticated;
 select set_config('request.jwt.claim.sub', '74000000-0000-0000-0000-000000000001', false);
 create temp table share_fixture on commit preserve rows as

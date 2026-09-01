@@ -42,7 +42,8 @@ describe("planner persistence lock policy", () => {
     expect(source).toContain("actionGateRef.current.canApplyCollection()");
     expect(source).toContain('className="planner-fields" disabled={calculating}');
     expect(source).toContain("onShare={prepareCollectionShare}");
-    expect(source).toContain('tripId={!liveResultStale && shareIntentGeneration === null ? liveTripId : null}');
+    expect(source).toContain("isFreshWeatherForSharing(selectedWeather, weatherClock ?? currentReferenceTime())");
+    expect(source).toContain('tripId={!liveResultStale && shareIntentGeneration === null && shareWeatherReady ? liveTripId : null}');
     expect(source).toContain("previewRequest={sharePreviewRequest}");
     expect(source).toContain("disabled={calculating}");
     expect(source).not.toContain("select_trip_candidate");
@@ -58,6 +59,7 @@ describe("planner persistence lock policy", () => {
     expect(shareIntentRelease).toBeGreaterThan(shareWeatherRefresh);
     expect(previewOpen).toBeGreaterThan(shareIntentRelease);
     expect(normalWeatherRefresh).toBeGreaterThan(previewOpen);
+    expect(source.indexOf("shareWeatherReady ? liveTripId : null")).toBeGreaterThan(normalWeatherRefresh);
     expect(source).toContain("withClientTimeout(");
   });
 
@@ -66,6 +68,17 @@ describe("planner persistence lock policy", () => {
     const weatherUpdate = source.indexOf("setWeather(response)", requestGuard);
     expect(requestGuard).toBeGreaterThan(-1);
     expect(weatherUpdate).toBeGreaterThan(requestGuard);
+  });
+
+  it("clears the visible weather loading state when applying a collection invalidates the request", () => {
+    const application = source.indexOf("function applyCollection");
+    const invalidation = source.indexOf("weatherRequestRef.current += 1", application);
+    const clear = source.indexOf("setWeatherLoading(null)", invalidation);
+    const applyPoints = source.indexOf("setAppliedCollectionPoints", clear);
+    expect(application).toBeGreaterThan(-1);
+    expect(invalidation).toBeGreaterThan(application);
+    expect(clear).toBeGreaterThan(invalidation);
+    expect(applyPoints).toBeGreaterThan(clear);
   });
 
   it("consumes each collection-triggered share preview request once", () => {

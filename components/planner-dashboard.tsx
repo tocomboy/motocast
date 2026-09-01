@@ -311,6 +311,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const selectedWeatherStatus = selectedWeather
     ? formatPlannerWeatherStatus(selectedWeather, weatherClock ?? selectedWeather.staleObservedAt ?? selectedWeather.generatedAt)
     : null;
+  const shareWeatherReady = selectedWeather
+    ? isFreshWeatherForSharing(selectedWeather, weatherClock ?? currentReferenceTime())
+    : false;
   const selectedWeatherAnnouncement = weatherLoading === selected.id
     ? `${selected.label} 날씨 조회 중`
     : selectedWeather && selectedWeatherStatus
@@ -565,6 +568,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     const application = prepareCollectionApplication(course);
     const collectionGeneration = ++routeGenerationRef.current;
     weatherRequestRef.current += 1;
+    setWeatherLoading(null);
     setAppliedCollectionPoints(application.orderedPoints.map(asAppliedPoint));
     setWindingPoints(application.selectedWindingPoints);
     setPlaces({
@@ -1080,8 +1084,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
             <div className="management-grid">
               <CollectionManager currentCourse={currentCourse} onApply={applyCollection} onShare={prepareCollectionShare} disabled={calculating} />
               <ShareManager
-                key={`share-${liveTripId ?? "none"}-${liveResultStale || shareIntentGeneration !== null ? "stale" : "fresh"}`}
-                tripId={!liveResultStale && shareIntentGeneration === null ? liveTripId : null}
+                key={`share-${liveTripId ?? "none"}-${!liveResultStale && shareIntentGeneration === null && shareWeatherReady ? "ready" : "blocked"}`}
+                tripId={!liveResultStale && shareIntentGeneration === null && shareWeatherReady ? liveTripId : null}
                 previewRequest={sharePreviewRequest}
                 disabled={calculating}
               />

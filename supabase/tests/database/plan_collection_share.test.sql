@@ -28,8 +28,28 @@ create or replace function pg_temp.test_point(
     'address', '테스트 주소', 'roadAddress', null,
     'longitude', point_lon, 'latitude', point_lat,
     'kind', point_kind, 'dwellMinutes', dwell, 'selected', true,
-    'winding', winding, 'stopRole', stop_role
-  );
+    'winding', winding
+  ) || case when stop_role is null then '{}'::jsonb else jsonb_build_object('stopRole', stop_role) end;
+$$;
+
+create or replace function pg_temp.test_weather_segments(
+  route jsonb, profile text, issued_at timestamptz
+) returns jsonb language sql immutable as $$
+  select jsonb_agg(jsonb_build_object(
+    'id', profile || '-' || (position - 1)::text,
+    'label', leg -> 'to' ->> 'label',
+    'longitude', leg -> 'to' -> 'longitude',
+    'latitude', leg -> 'to' -> 'latitude',
+    'eta', leg ->> 'arrivalAt',
+    'status', 'forecast',
+    'model', 'ultra',
+    'issuedAt', issued_at,
+    'condition', 'clear',
+    'temperatureC', 22,
+    'precipitationProbability', 0,
+    'windSpeedMps', 1.2
+  ) order by position)
+  from jsonb_array_elements(route -> 'legs') with ordinality as route_leg(leg, position);
 $$;
 
 create or replace function pg_temp.test_route(profile text, middle_lon numeric)
@@ -282,6 +302,7 @@ declare
   unselected_rejected boolean := false;
   dwell_rejected boolean := false;
   missing_role_rejected boolean := false;
+  null_role_rejected boolean := false;
 begin
   begin
     perform public.save_collection_version_internal(
@@ -301,10 +322,17 @@ begin
       '역할 누락', '', (select jsonb_set(course, '{points}', (course -> 'points') #- '{1,stopRole}') from fixture)
     );
   exception when sqlstate 'P0001' then missing_role_rejected := sqlerrm = 'INVALID_COLLECTION'; end;
+  begin
+    perform public.save_collection_version_internal(
+      '71000000-0000-0000-0000-000000000001', '71000000-0000-4000-8000-000000001010', null,
+      '명시적 null 역할', '', jsonb_set((select course from fixture), '{points,0,stopRole}', 'null'::jsonb, true)
+    );
+  exception when sqlstate 'P0001' then null_role_rejected := sqlerrm = 'INVALID_COLLECTION'; end;
   insert into tap_results values
     (unselected_rejected, 'complete collection rejects an unselected persisted occurrence'),
     (dwell_rejected, 'complete collection rejects dwell on a pass-through occurrence'),
-    (missing_role_rejected, 'complete collection rejects a stop without a route role');
+    (missing_role_rejected, 'complete collection rejects a stop without a route role'),
+    (null_role_rejected, 'complete collection rejects explicit null stopRole instead of storing an unreadable point');
 end;
 $$;
 
@@ -469,17 +497,15 @@ select public.insert_weather_snapshot_internal(
   '71000000-0000-0000-0000-000000000001',
   (select id from trip_result),
   'balanced',
-  '2026-08-30T23:30:00.000Z',
-  '2026-08-31T02:00:00.000Z',
-  jsonb_build_array(jsonb_build_object(
-    'id', 'balanced-0', 'label', '복귀', 'longitude', 127.2, 'latitude', 37.2,
-    'eta', '2026-08-31T00:10:00.000Z', 'status', 'forecast', 'model', 'ultra',
-    'issuedAt', '2026-08-30T23:30:00.000Z', 'condition', 'clear',
-    'temperatureC', 22, 'precipitationProbability', 0, 'windSpeedMps', 1.2,
-    'verificationToken', 'must-never-be-public'
-  )),
+  now() - interval '5 minutes',
+  now() + interval '2 hours',
+  pg_temp.test_weather_segments(
+    pg_temp.test_route('balanced', 127.05),
+    'balanced',
+    now() - interval '5 minutes'
+  ),
   repeat('b', 64),
-  '2026-08-30T23:35:00.000Z'
+  clock_timestamp()
 );
 grant select on weather_result to authenticated, service_role;
 select public.mark_weather_snapshot_stale_internal(
@@ -553,6 +579,111 @@ $$;
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.preview_trip_share((select id from trip_result));
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'SHARE_WEATHER_NOT_FRESH'; end;
+  insert into tap_results values (rejected, 'stale weather cannot mint a share preview capability');
+end;
+$$;
+
+reset role;
+set local role service_role;
+create temp table expiry_boundary_weather_result on commit drop as
+select public.insert_weather_snapshot_internal(
+  '71000000-0000-0000-0000-000000000001',
+  (select id from trip_result),
+  'balanced',
+  now() - interval '2 hours',
+  now(),
+  pg_temp.test_weather_segments(
+    pg_temp.test_route('balanced', 127.05),
+    'balanced',
+    now() - interval '2 hours'
+  ),
+  repeat('d', 64),
+  clock_timestamp()
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.preview_trip_share((select id from trip_result));
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'SHARE_WEATHER_NOT_FRESH'; end;
+  insert into tap_results values (rejected, 'weather expiring exactly now cannot mint a share preview capability');
+end;
+$$;
+
+reset role;
+set local role service_role;
+create temp table stale_after_preview_weather_result on commit drop as
+select public.insert_weather_snapshot_internal(
+  '71000000-0000-0000-0000-000000000001',
+  (select id from trip_result),
+  'balanced',
+  now() - interval '5 minutes',
+  now() + interval '2 hours',
+  pg_temp.test_weather_segments(
+    pg_temp.test_route('balanced', 127.05),
+    'balanced',
+    now() - interval '5 minutes'
+  ),
+  repeat('e', 64),
+  clock_timestamp()
+) as id;
+grant select on stale_after_preview_weather_result to authenticated, service_role;
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+
+create temp table stale_publish_preview on commit drop as
+select * from public.preview_trip_share((select id from trip_result));
+grant select on stale_publish_preview to authenticated, service_role;
+reset role;
+set local role service_role;
+select public.mark_weather_snapshot_stale_internal(
+  '71000000-0000-0000-0000-000000000001',
+  (select id from stale_after_preview_weather_result),
+  'KMA_REQUEST_FAILED',
+  'provider'
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.publish_trip_share(
+      (select id from trip_result),
+      (select preview_token from stale_publish_preview)
+    );
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'SHARE_WEATHER_NOT_FRESH'; end;
+  insert into tap_results values (rejected, 'weather that becomes stale after preview cannot publish');
+end;
+$$;
+
+reset role;
+set local role service_role;
+select public.insert_weather_snapshot_internal(
+  '71000000-0000-0000-0000-000000000001',
+  (select id from trip_result),
+  'balanced',
+  now() - interval '5 minutes',
+  now() + interval '2 hours',
+  pg_temp.test_weather_segments(
+    pg_temp.test_route('balanced', 127.05),
+    'balanced',
+    now() - interval '5 minutes'
+  ),
+  repeat('1', 64),
+  clock_timestamp()
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
 
 create temp table preview_result on commit drop as
 select * from public.preview_trip_share((select id from trip_result));
@@ -574,9 +705,9 @@ insert into tap_results values
   ((select preview_snapshot -> 'weather' -> 'segments' -> 0 ->> 'id' = 'recommended-0' from preview_result), 'schema 3 normalizes legacy weather segment identity to recommended'),
   ((select preview_snapshot -> 'waypoints' -> 0 ->> 'id' = 'waypoint-0' from preview_result), 'share uses snapshot-local waypoint ids instead of owner table ids'),
   ((select preview_snapshot -> 'weather' ? 'validUntil' from preview_result), 'share exposes weather validity for freshness display'),
-  ((select preview_snapshot -> 'weather' ->> 'stale' = 'true' from preview_result), 'share persists a provider-failure stale observation'),
-  ((select preview_snapshot -> 'weather' ->> 'staleReason' = 'KMA_REQUEST_FAILED' from preview_result), 'share exposes only the safe stale reason'),
-  ((select preview_snapshot -> 'weather' ->> 'failureKind' = 'provider' from preview_result), 'share exposes the safe structured stale failure kind'),
+  ((select preview_snapshot -> 'weather' ->> 'stale' = 'false' from preview_result), 'share contains only fresh route-bound weather'),
+  ((select preview_snapshot -> 'weather' -> 'staleReason' = 'null'::jsonb from preview_result), 'fresh share contains no stale reason'),
+  ((select preview_snapshot -> 'weather' -> 'failureKind' = 'null'::jsonb from preview_result), 'fresh share contains no stale failure kind'),
   ((select char_length(share_token) = 43 from published_result), 'share token contains 32 random base64url bytes'),
   ((select token_hash <> share_token and char_length(token_hash) = 64 from public.share_links cross join published_result), 'database stores only the share token hash'),
   ((select published_snapshot::text not like '%verificationToken%' from published_result), 'public snapshot recursively excludes internal place verification proofs');
@@ -729,6 +860,24 @@ select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001
 create temp table recommended_trip_result on commit drop as
 select public.finalize_trip_plan('73000000-0000-4000-8000-000000000007', null) as id;
 grant select on recommended_trip_result to authenticated, service_role;
+reset role;
+set local role service_role;
+select public.insert_weather_snapshot_internal(
+  '71000000-0000-0000-0000-000000000001',
+  (select id from recommended_trip_result),
+  'recommended',
+  now() - interval '5 minutes',
+  now() + interval '2 hours',
+  pg_temp.test_weather_segments(
+    pg_temp.test_recommended_route(),
+    'recommended',
+    now() - interval '5 minutes'
+  ),
+  repeat('f', 64),
+  clock_timestamp()
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
 create temp table recommended_preview on commit drop as
 select * from public.preview_trip_share((select id from recommended_trip_result));
 grant select on recommended_preview to authenticated;
