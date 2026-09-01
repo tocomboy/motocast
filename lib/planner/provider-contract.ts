@@ -21,7 +21,7 @@ export type SafeRouteLeg = {
 
 export type SafeRouteResponse = {
   candidate: {
-    id: "balanced" | "winding" | "short";
+    id: "recommended" | "balanced" | "winding" | "short";
     label: string;
     estimatedWinding: boolean;
   };
@@ -34,6 +34,10 @@ export type SafeRouteResponse = {
   totalDurationSeconds: number;
   returnAt: string;
   legs: SafeRouteLeg[];
+};
+
+export type LegacySafeRouteResponse = SafeRouteResponse & {
+  candidate: SafeRouteResponse["candidate"] & { id: "balanced" | "winding" | "short" };
 };
 
 export class ProviderContractError extends Error {
@@ -72,6 +76,7 @@ function timestamp(value: unknown): string {
 
 function routePoint(value: unknown): RoutePoint {
   const raw = record(value);
+  const stopRole = raw.stopRole;
   if (
     typeof raw.id !== "string" || raw.id.length < 1 || raw.id.length > 100 ||
     typeof raw.label !== "string" || raw.label.trim().length < 1 || raw.label.length > 160 ||
@@ -79,7 +84,14 @@ function routePoint(value: unknown): RoutePoint {
     typeof raw.longitude !== "number" || !Number.isFinite(raw.longitude) ||
     !["pass-through", "stop", "optional"].includes(String(raw.kind)) ||
     !Number.isInteger(raw.dwellMinutes) || Number(raw.dwellMinutes) < 0 || Number(raw.dwellMinutes) > 1440 ||
-    typeof raw.selected !== "boolean"
+    typeof raw.selected !== "boolean" ||
+    (raw.winding !== undefined && typeof raw.winding !== "boolean") ||
+    (stopRole !== undefined && !["lunch", "dinner", "rest"].includes(String(stopRole))) ||
+    (stopRole === "lunch" && raw.kind !== "stop") ||
+    (stopRole === "dinner" && raw.kind !== "stop") ||
+    (stopRole === "rest" && raw.kind !== "optional") ||
+    (stopRole !== undefined && Number(raw.dwellMinutes) <= 0) ||
+    (raw.winding === true && stopRole !== undefined)
   ) {
     throw new ProviderContractError("INVALID_ROUTE_POINT");
   }
@@ -95,6 +107,7 @@ function routePoint(value: unknown): RoutePoint {
     dwellMinutes: Number(raw.dwellMinutes),
     selected: raw.selected,
     winding: typeof raw.winding === "boolean" ? raw.winding : undefined,
+    stopRole: stopRole as RoutePoint["stopRole"],
   };
 }
 
@@ -184,6 +197,7 @@ function leg(value: unknown): SafeRouteLeg {
   const sectionDuration = parsed.sections.reduce((total, item) => total + item.duration, 0);
   if (
     elapsedSeconds !== parsed.durationSeconds ||
+    parsed.to.dwellMinutes !== parsed.dwellMinutes ||
     sectionDistance !== parsed.distanceMeters ||
     sectionDuration !== parsed.durationSeconds
   ) {
@@ -196,9 +210,10 @@ export function parseSafeRouteResponse(value: unknown): SafeRouteResponse {
   const raw = record(value);
   const candidate = record(raw.candidate, "INVALID_ROUTE_CANDIDATE");
   if (
-    !["balanced", "winding", "short"].includes(String(candidate.id)) ||
+    !["recommended", "balanced", "winding", "short"].includes(String(candidate.id)) ||
     typeof candidate.label !== "string" || candidate.label.length < 1 || candidate.label.length > 80 ||
     typeof candidate.estimatedWinding !== "boolean" ||
+    (candidate.id === "recommended" && (candidate.label !== "추천 경로" || candidate.estimatedWinding !== false)) ||
     (candidate.estimatedWinding && (candidate.id !== "winding" || candidate.label !== "와인딩 추정"))
   ) throw new ProviderContractError("INVALID_ROUTE_CANDIDATE");
   const safety = record(raw.safety, "UNSAFE_ROUTE_RESPONSE");
@@ -292,7 +307,7 @@ function coordinateMicros(value: number) {
   return micros + (Number(fraction[6] ?? "0") >= 5 ? 1 : 0);
 }
 
-export function parseSafeRouteCandidateSet(values: unknown[]): SafeRouteResponse[] {
+export function parseSafeRouteCandidateSet(values: unknown[]): LegacySafeRouteResponse[] {
   const expected = ["balanced", "winding", "short"] as const;
   if (values.length !== expected.length) throw new ProviderContractError("INVALID_ROUTE_CANDIDATE_SET");
   const parsed = values.map((value, index) => {
@@ -307,5 +322,13 @@ export function parseSafeRouteCandidateSet(values: unknown[]): SafeRouteResponse
   }
   const fingerprints = new Set(parsed.map(routeResponseFingerprint));
   if (fingerprints.size !== expected.length) throw new ProviderContractError("DUPLICATE_ROUTE_CANDIDATES");
+  return parsed as LegacySafeRouteResponse[];
+}
+
+export function parseSafeRecommendedRoute(value: unknown): SafeRouteResponse {
+  const parsed = parseSafeRouteResponse(value);
+  if (parsed.candidate.id !== "recommended") {
+    throw new ProviderContractError("INVALID_RECOMMENDED_ROUTE_RESPONSE");
+  }
   return parsed;
 }

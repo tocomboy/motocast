@@ -14,7 +14,6 @@ describe("buildSharedMapPoints", () => {
       routePoints: [origin, lunch, rest, winding, destination],
       lunchStop: { ...lunch, id: "trip-lunch" },
       dinnerStop: null,
-      selectedProfile: "winding",
       waypoints: [
         { ...lunch, id: "waypoint-0", position: 0, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
         { ...rest, id: "waypoint-1", position: 1, kind: "optional", dwellMinutes: 30, selected: true, winding: false },
@@ -23,12 +22,26 @@ describe("buildSharedMapPoints", () => {
     }).map((point) => point.role)).toEqual(["origin", "lunch", "rest", "winding", "destination"]);
   });
 
+  it("does not mark a winding point omitted when a balanced route traverses it", () => {
+    const points = buildSharedMapPoints({
+      routePoints: [origin, winding, lunch, destination],
+      lunchStop: { ...lunch, id: "trip-lunch" },
+      dinnerStop: null,
+      waypoints: [
+        { ...winding, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
+        { ...lunch, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+      ],
+    });
+
+    expect(points.map((point) => point.role)).toEqual(["origin", "winding", "lunch", "destination"]);
+    expect(points.some((point) => "nonTraversed" in point && point.nonTraversed)).toBe(false);
+  });
+
   it("keeps later stop roles when the selected route omits an earlier winding waypoint", () => {
     expect(buildSharedMapPoints({
       routePoints: [origin, lunch, rest, destination],
       lunchStop: { ...lunch, id: "trip-lunch" },
       dinnerStop: null,
-      selectedProfile: "balanced",
       waypoints: [
         { ...winding, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
         { ...lunch, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
@@ -48,7 +61,6 @@ describe("buildSharedMapPoints", () => {
       routePoints: [origin, lunch, destination],
       lunchStop: { ...lunch, id: "trip-lunch" },
       dinnerStop: null,
-      selectedProfile: "balanced",
       waypoints: [
         { ...lunch, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
         { ...lunch, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
@@ -61,16 +73,68 @@ describe("buildSharedMapPoints", () => {
     ]);
   });
 
+  it("keeps a same-place winding-only marker omitted after a legacy route becomes schema 3 recommended", () => {
+    expect(buildSharedMapPoints({
+      routePoints: [origin, lunch, destination],
+      lunchStop: { ...lunch, id: "trip-lunch" },
+      dinnerStop: null,
+      waypoints: [
+        { ...lunch, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
+        { ...lunch, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+      ],
+    })).toMatchObject([
+      { role: "origin" },
+      { role: "lunch" },
+      { role: "destination" },
+      { role: "winding", nonTraversed: true },
+    ]);
+  });
+
   it("matches same-place winding and lunch route points one-to-one for the winding candidate", () => {
     expect(buildSharedMapPoints({
       routePoints: [origin, lunch, lunch, destination],
       lunchStop: { ...lunch, id: "trip-lunch" },
       dinnerStop: null,
-      selectedProfile: "winding",
       waypoints: [
         { ...lunch, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
         { ...lunch, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
       ],
     }).map((point) => point.role)).toEqual(["origin", "winding", "lunch", "destination"]);
+  });
+
+  it("keeps same-place plain, lunch and dinner occurrences distinct", () => {
+    const same = { id: "same", label: "같은 장소", longitude: 127.1, latitude: 37.1 };
+    expect(buildSharedMapPoints({
+      routePoints: [origin, same, same, same, destination],
+      lunchStop: { ...same, id: "trip-lunch" },
+      dinnerStop: { ...same, id: "trip-dinner" },
+      waypoints: [
+        { ...same, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: false },
+        { ...same, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+        { ...same, id: "waypoint-2", position: 2, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+      ],
+    }).map((point) => point.role)).toEqual([
+      "origin", "waypoint", "lunch", "dinner", "destination",
+    ]);
+  });
+
+  it("uses immutable route stop roles for new snapshots", () => {
+    const same = { id: "same", label: "같은 장소", longitude: 127.1, latitude: 37.1 };
+    expect(buildSharedMapPoints({
+      routePoints: [
+        origin,
+        { ...same, kind: "stop", stopRole: "dinner" },
+        { ...same, kind: "stop", stopRole: "lunch" },
+        destination,
+      ],
+      lunchStop: { ...same, id: "trip-lunch" },
+      dinnerStop: { ...same, id: "trip-dinner" },
+      waypoints: [
+        { ...same, id: "waypoint-0", position: 0, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+        { ...same, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+      ],
+    }).map((point) => point.role)).toEqual([
+      "origin", "dinner", "lunch", "destination",
+    ]);
   });
 });

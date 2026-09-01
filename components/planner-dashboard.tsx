@@ -23,7 +23,7 @@ import {
 import { PlannerActionGate } from "@/lib/planner/action-gate";
 import { withClientTimeout } from "@/lib/planner/client-timeout";
 import { plannerFunctionErrorCode, windingUnavailableNotice } from "@/lib/planner/function-error";
-import { parseSafeRouteCandidateSet, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
+import { parseSafeRouteCandidateSet, ProviderContractError, type LegacySafeRouteResponse } from "@/lib/planner/provider-contract";
 import { buildTimeline, formatRideTime, weatherRiskLabel } from "@/lib/planner/schedule";
 import type { PlannedSegment, RouteCandidate } from "@/lib/planner/types";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
@@ -99,7 +99,7 @@ function isUuid(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-function liveRouteCandidate(response: SafeRouteResponse): RouteCandidate {
+function liveRouteCandidate(response: LegacySafeRouteResponse): RouteCandidate {
   const stopMinutes = response.legs.reduce((total, leg) => total + leg.dwellMinutes, 0);
   const rideMinutes = Math.ceil(response.legs.reduce((total, leg) => total + leg.durationSeconds, 0) / 60);
   const descriptions: Record<RouteCandidate["id"], string> = {

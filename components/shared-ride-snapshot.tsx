@@ -1,6 +1,6 @@
 import { KakaoMapCanvas, MapOmissionList, type MapMarkerRole } from "@/components/kakao-map-canvas";
 import { formatElapsedAge, formatKoreanDateTime, formatKoreanTime, formatRideTime } from "@/lib/planner/schedule";
-import type { SharedPlace, SharedRideSnapshot, SharedWaypoint } from "@/lib/sharing/contracts";
+import { sharedSnapshotRoute, type SharedPlace, type SharedRideSnapshot, type SharedWaypoint } from "@/lib/sharing/contracts";
 import { weatherFailureLabel } from "@/lib/weather/status";
 
 function minutes(value: number) {
@@ -29,39 +29,65 @@ function sameSharedPlace(
 }
 
 export function buildSharedMapPoints(input: {
-  routePoints: SharedPlace[];
+  routePoints: Array<SharedPlace & {
+    kind?: "pass-through" | "stop" | "optional";
+    winding?: boolean;
+    stopRole?: "lunch" | "dinner" | "rest";
+  }>;
   waypoints: SharedWaypoint[];
   lunchStop: SharedPlace;
   dinnerStop: SharedPlace | null;
-  selectedProfile: "balanced" | "winding" | "short";
 }) {
   const traversedWaypoints = input.waypoints.filter((item) => item.selected);
-  const candidateWaypoints = input.selectedProfile === "winding"
-    ? traversedWaypoints
-    : traversedWaypoints.filter((waypoint) => !waypoint.winding);
   const matchedWaypoints = new Set<SharedWaypoint>();
+  const assignedStops = { lunch: false, dinner: false };
+  const occurrenceRole = (
+    point: SharedPlace & {
+      kind?: "pass-through" | "stop" | "optional";
+      winding?: boolean;
+      stopRole?: "lunch" | "dinner" | "rest";
+    },
+    waypoint?: SharedWaypoint,
+  ): MapMarkerRole => {
+    if (point.stopRole) {
+      if (point.stopRole !== "rest") assignedStops[point.stopRole] = true;
+      return point.stopRole;
+    }
+    if (point.winding || waypoint?.winding) return "winding";
+    if (point.kind === "optional" || waypoint?.kind === "optional") return "rest";
+    if (point.kind === "pass-through" || waypoint?.kind === "pass-through") return "waypoint";
+    const isLunch = sameSharedPlace(point, input.lunchStop);
+    const isDinner = sameSharedPlace(point, input.dinnerStop);
+    if (isLunch && !assignedStops.lunch) {
+      assignedStops.lunch = true;
+      return "lunch";
+    }
+    if (isDinner && !assignedStops.dinner) {
+      assignedStops.dinner = true;
+      return "dinner";
+    }
+    return "waypoint";
+  };
   const routePoints = input.routePoints.map((point, index, all) => {
-    const matchingWaypoint = index > 0 && index < all.length - 1
-      ? candidateWaypoints.find((waypoint) => !matchedWaypoints.has(waypoint) && sameSharedPlace(point, waypoint))
-      : undefined;
+    const samePlaceWaypoints = index > 0 && index < all.length - 1
+      ? traversedWaypoints.filter((waypoint) => !matchedWaypoints.has(waypoint) && sameSharedPlace(point, waypoint))
+      : [];
+    const remainingRouteOccurrences = all.slice(index, -1)
+      .filter((routePoint) => sameSharedPlace(routePoint, point)).length;
+    const matchingWaypoint = remainingRouteOccurrences < samePlaceWaypoints.length
+      ? samePlaceWaypoints.find((waypoint) => !waypoint.winding) ?? samePlaceWaypoints[0]
+      : samePlaceWaypoints[0];
     if (matchingWaypoint) matchedWaypoints.add(matchingWaypoint);
     let role: MapMarkerRole = "waypoint";
     if (index === 0) role = "origin";
     else if (index === all.length - 1) role = "destination";
-    else if (matchingWaypoint?.kind === "optional") role = "rest";
-    else if (matchingWaypoint?.winding) role = "winding";
-    else if (sameSharedPlace(point, input.lunchStop)) role = "lunch";
-    else if (sameSharedPlace(point, input.dinnerStop)) role = "dinner";
+    else role = occurrenceRole(point, matchingWaypoint);
     return { ...point, role };
   });
   const omittedWaypoints = traversedWaypoints
     .filter((waypoint) => !matchedWaypoints.has(waypoint))
     .map((waypoint) => {
-      let role: MapMarkerRole = "waypoint";
-      if (waypoint.kind === "optional") role = "rest";
-      else if (waypoint.winding) role = "winding";
-      else if (sameSharedPlace(waypoint, input.lunchStop)) role = "lunch";
-      else if (sameSharedPlace(waypoint, input.dinnerStop)) role = "dinner";
+      const role = occurrenceRole(waypoint, waypoint);
       return { ...waypoint, label: `${waypoint.label} · 선택 경로 미통과`, role, nonTraversed: true };
     });
   return [...routePoints, ...omittedWaypoints];
@@ -76,7 +102,8 @@ export function SharedRideSnapshotView({
   referenceTime: string;
   preview?: boolean;
 }) {
-  const selected = snapshot.routes.find((route) => route.candidate.id === snapshot.trip.selectedProfile)!;
+  const selected = sharedSnapshotRoute(snapshot);
+  const displayedRoutes = snapshot.schemaVersion === 3 ? [snapshot.route] : snapshot.routes;
   const path = selected.legs.flatMap((leg) => leg.sections.flatMap((section) => section.roads.flatMap((road) => {
     const points = [];
     for (let index = 0; index < road.vertexes.length; index += 2) {
@@ -89,7 +116,6 @@ export function SharedRideSnapshotView({
     waypoints: snapshot.waypoints,
     lunchStop: snapshot.trip.lunchStop,
     dinnerStop: snapshot.trip.dinnerStop,
-    selectedProfile: snapshot.trip.selectedProfile,
   });
   const weatherExpired = snapshot.weather
     ? new Date(snapshot.weather.validUntil).getTime() < new Date(referenceTime).getTime()
@@ -102,7 +128,7 @@ export function SharedRideSnapshotView({
         <div>
           <p className="eyebrow">{preview ? "APPROVAL PREVIEW" : "SHARED RIDE SNAPSHOT"}</p>
           <h1>{snapshot.trip.title}</h1>
-          <p>{preview ? "아래에 표시된 장소·시각·세 경로·날씨 전체가 그대로 발행됩니다." : "원본 계획을 수정해도 이 발행본은 바뀌지 않습니다."}</p>
+          <p>{preview ? "아래에 표시된 장소·시각·추천 경로·날씨 전체가 그대로 발행됩니다." : "원본 계획을 수정해도 이 발행본은 바뀌지 않습니다."}</p>
         </div>
         <dl>
           <div><dt>라이딩 날짜</dt><dd>{snapshot.trip.serviceDate}</dd></div>
@@ -117,7 +143,7 @@ export function SharedRideSnapshotView({
           )}
           <div><dt>점심</dt><dd>{snapshot.trip.lunchStop.label}</dd></div>
           <div><dt>저녁</dt><dd>{snapshot.trip.dinnerStop?.label ?? "없음"}</dd></div>
-          <div><dt>선택 경로</dt><dd>{selected.candidate.label}</dd></div>
+          <div><dt>추천 경로</dt><dd>{snapshot.schemaVersion === 3 ? "Kakao 추천" : selected.candidate.label}</dd></div>
         </dl>
       </section>
 
@@ -150,11 +176,11 @@ export function SharedRideSnapshotView({
           </ol>
         </section>
         <section>
-          <p className="eyebrow">ROUTE OPTIONS</p><h2>발행되는 후보 3개</h2>
+          <p className="eyebrow">ROUTE</p><h2>{snapshot.schemaVersion === 3 ? "발행되는 추천 경로" : "이전 발행본의 경로 후보"}</h2>
           <div className="shared-routes">
-            {snapshot.routes.map((route) => (
-              <article key={route.candidate.id} className={route.candidate.id === snapshot.trip.selectedProfile ? "selected" : ""}>
-                <strong>{route.candidate.label}{route.candidate.id === snapshot.trip.selectedProfile ? " · 선택 경로" : ""}</strong>
+            {displayedRoutes.map((route) => (
+              <article key={route.candidate.id} className={route.candidate.id === selected.candidate.id ? "selected" : ""}>
+                <strong>{snapshot.schemaVersion === 3 ? "추천 경로" : route.candidate.label}{route.candidate.id === selected.candidate.id ? " · 표시 경로" : ""}</strong>
                 <span>{Math.round(route.totalDistanceMeters / 100) / 10} km · {minutes(route.totalDurationSeconds)} · 복귀 {formatRideTime(snapshot.trip.departureAt, route.returnAt)}</span>
                 <small>이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</small>
                 <ol className="shared-legs">
