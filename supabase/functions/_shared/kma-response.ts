@@ -1,5 +1,12 @@
 import type { KmaItem } from "./weather-forecast.ts";
 
+export type KmaResponseIdentity = {
+  baseDate: string;
+  baseTime: string;
+  nx: number;
+  ny: number;
+};
+
 function sanitizedProviderCode(value: unknown) {
   return typeof value === "string" && /^[A-Za-z0-9_-]{1,16}$/.test(value)
     ? value
@@ -19,20 +26,35 @@ function validKmaTime(value: unknown): value is string {
   return typeof value === "string" && /^(?:[01]\d|2[0-3])[0-5]\d$/.test(value);
 }
 
-function validKmaItem(value: unknown): value is KmaItem {
+function validNumericValue(value: string, minimum: number, maximum: number, integer = false) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= minimum && numeric <= maximum && (!integer || Number.isInteger(numeric));
+}
+
+function validForecastValue(category: string, value: unknown) {
+  if (typeof value !== "string" || value !== value.trim() || value.length === 0 || value.length > 64) return false;
+  if (category === "T1H" || category === "TMP") return validNumericValue(value, -100, 100);
+  if (category === "POP") return validNumericValue(value, 0, 100, true);
+  if (category === "WSD") return validNumericValue(value, 0, 200);
+  if (category === "SKY") return [1, 3, 4].includes(Number(value)) && validNumericValue(value, 1, 4, true);
+  if (category === "PTY") return validNumericValue(value, 0, 7, true);
+  return true;
+}
+
+function validKmaItem(value: unknown, expected: KmaResponseIdentity): value is KmaItem {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
-  return validKmaDate(item.baseDate) &&
-    validKmaTime(item.baseTime) &&
+  return item.baseDate === expected.baseDate && validKmaDate(item.baseDate) &&
+    item.baseTime === expected.baseTime && validKmaTime(item.baseTime) &&
     typeof item.category === "string" && /^[A-Z0-9]{1,8}$/.test(item.category) &&
     validKmaDate(item.fcstDate) &&
     validKmaTime(item.fcstTime) &&
-    typeof item.fcstValue === "string" && item.fcstValue.length > 0 && item.fcstValue.length <= 64 &&
-    typeof item.nx === "number" && Number.isInteger(item.nx) && item.nx > 0 && item.nx <= 1_000 &&
-    typeof item.ny === "number" && Number.isInteger(item.ny) && item.ny > 0 && item.ny <= 1_000;
+    validForecastValue(item.category, item.fcstValue) &&
+    item.nx === expected.nx &&
+    item.ny === expected.ny;
 }
 
-export async function parseKmaItems(response: Response): Promise<KmaItem[]> {
+export async function parseKmaItems(response: Response, expected: KmaResponseIdentity): Promise<KmaItem[]> {
   if (!response.ok) throw new Error(`KMA_HTTP_STATUS_${response.status}`);
   let data: unknown;
   try {
@@ -53,6 +75,8 @@ export async function parseKmaItems(response: Response): Promise<KmaItem[]> {
   }
   const items = providerResponse?.body?.items?.item;
   if (!Array.isArray(items) || items.length === 0) throw new Error("KMA_FORECAST_NOT_FOUND");
-  if (!items.every(validKmaItem)) throw new Error("KMA_INVALID_RESPONSE");
+  if (!items.every((item) => validKmaItem(item, expected))) throw new Error("KMA_INVALID_RESPONSE");
+  const identities = new Set(items.map((item) => `${item.fcstDate}:${item.fcstTime}:${item.category}`));
+  if (identities.size !== items.length) throw new Error("KMA_INVALID_RESPONSE");
   return items;
 }

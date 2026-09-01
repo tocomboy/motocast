@@ -1,6 +1,5 @@
 import { consumeBudget, requireMember, serviceClient } from "../_shared/auth.ts";
 import {
-  closestForecast,
   conditionFrom,
   forecastTarget,
   forecastWindow,
@@ -8,6 +7,7 @@ import {
   issuedAtIso,
   latestForecastBase,
   type ForecastModel,
+  validatedForecastValues,
 } from "../_shared/weather-forecast.ts";
 import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
 import { parseWeatherRequest, type WeatherPoint, type WeatherRequest } from "../_shared/weather-request.ts";
@@ -126,8 +126,13 @@ async function fetchForecast(input: {
   } catch {
     throw new Error("KMA_REQUEST_FAILED");
   }
-  const items = await parseKmaItems(response);
-  return { values: closestForecast(items, input.target), base };
+  const items = await parseKmaItems(response, {
+    baseDate: base.date,
+    baseTime: base.time,
+    nx: input.nx,
+    ny: input.ny,
+  });
+  return { values: validatedForecastValues(items, input.target, input.model), base };
 }
 
 async function fetchTimeline(memberId: string, points: WeatherPoint[], apiKey: string | null): Promise<TimelineForecast[]> {

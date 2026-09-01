@@ -7,6 +7,7 @@ import {
   gridFromCoordinates,
   issuedAtIso,
   latestForecastBase,
+  validatedForecastValues,
 } from "./weather-forecast";
 
 describe("weather forecast boundaries", () => {
@@ -36,5 +37,35 @@ describe("weather forecast boundaries", () => {
   it("derives a non-color weather condition", () => {
     expect(conditionFrom({ PTY: "1", SKY: "1" })).toBe("rain");
     expect(conditionFrom({ PTY: "0", SKY: "4" })).toBe("cloudy");
+  });
+
+  it("requires every displayed value in the selected forecast time", () => {
+    const base = {
+      baseDate: "20260831",
+      baseTime: "1100",
+      fcstDate: "20260831",
+      fcstTime: "1200",
+      nx: 60,
+      ny: 127,
+    };
+    const items = [
+      { ...base, category: "TMP", fcstValue: "22" },
+      { ...base, category: "POP", fcstValue: "30" },
+      { ...base, category: "WSD", fcstValue: "2.5" },
+      { ...base, category: "SKY", fcstValue: "3" },
+      { ...base, category: "PTY", fcstValue: "0" },
+    ];
+    expect(validatedForecastValues(items, { date: "20260831", time: "1200" }, "short")).toMatchObject({
+      TMP: "22",
+      POP: "30",
+      WSD: "2.5",
+      SKY: "3",
+      PTY: "0",
+    });
+    expect(() => validatedForecastValues(
+      items.filter((item) => item.category !== "WSD"),
+      { date: "20260831", time: "1200" },
+      "short",
+    )).toThrow("KMA_INVALID_RESPONSE");
   });
 });

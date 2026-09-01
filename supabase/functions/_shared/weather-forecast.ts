@@ -137,3 +137,18 @@ export function closestForecast(items: KmaItem[], target: { date: string; time: 
   const selected = groups.get(closestKey) ?? [];
   return Object.fromEntries(selected.map((item) => [item.category, item.fcstValue]));
 }
+
+export function validatedForecastValues(
+  items: KmaItem[],
+  target: { date: string; time: string },
+  model: ForecastModel,
+) {
+  const values = closestForecast(items, target);
+  const required = model === "ultra"
+    ? ["T1H", "WSD", "SKY", "PTY"]
+    : ["TMP", "POP", "WSD", "SKY", "PTY"];
+  if (!required.every((category) => Object.hasOwn(values, category))) {
+    throw new Error("KMA_INVALID_RESPONSE");
+  }
+  return values;
+}
