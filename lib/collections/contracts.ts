@@ -11,6 +11,12 @@ export type CollectionPoint = SelectedPlace & {
   stopRole?: "lunch" | "dinner" | "rest";
 };
 
+export type CollectionCourse = {
+  origin: SelectedPlace;
+  destination: SelectedPlace;
+  points: CollectionPoint[];
+};
+
 export type RidingCollection = {
   id: string;
   title: string;
@@ -20,7 +26,7 @@ export type RidingCollection = {
     id: string;
     number: number;
     createdAt: string;
-    points: CollectionPoint[];
+    course: CollectionCourse;
   };
 };
 
@@ -71,7 +77,12 @@ export function parseCollectionRows(value: unknown): RidingCollection[] {
       typeof raw.description !== "string" || raw.description.length > 2000 ||
       !Array.isArray(raw.collection_versions) || raw.collection_versions.length === 0
     ) throw new Error("INVALID_COLLECTION_RESPONSE");
-    const versions = raw.collection_versions.map((version) => {
+    const completeVersions = raw.collection_versions.filter((version) => {
+      if (!version || typeof version !== "object" || Array.isArray(version)) return false;
+      const candidate = version as Record<string, unknown>;
+      return candidate.origin != null && candidate.destination != null;
+    });
+    const versions = completeVersions.map((version) => {
       const parsed = record(version, "INVALID_COLLECTION_VERSION");
       if (
         typeof parsed.id !== "string" ||
@@ -82,9 +93,14 @@ export function parseCollectionRows(value: unknown): RidingCollection[] {
         id: parsed.id,
         number: Number(parsed.version_number),
         createdAt: timestamp(parsed.created_at, "INVALID_COLLECTION_VERSION"),
-        points: parsed.points.map(parseCollectionPoint),
+        course: {
+          origin: parseSelectedPlace(parsed.origin),
+          destination: parseSelectedPlace(parsed.destination),
+          points: parsed.points.map(parseCollectionPoint),
+        },
       };
     }).sort((left, right) => right.number - left.number);
+    if (versions.length === 0) return null;
     return {
       id: raw.id,
       title: raw.title.trim(),
@@ -92,5 +108,5 @@ export function parseCollectionRows(value: unknown): RidingCollection[] {
       updatedAt: timestamp(raw.updated_at, "INVALID_COLLECTION_RESPONSE"),
       latestVersion: versions[0],
     };
-  });
+  }).filter((collection): collection is RidingCollection => collection !== null);
 }

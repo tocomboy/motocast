@@ -54,6 +54,9 @@ test.describe("planner responsive shell", () => {
 
     await expect(page.getByRole("heading", { name: "라이딩 계획" })).toBeVisible();
     await expect(page.getByText("복귀는 자동 계산", { exact: true })).toBeVisible();
+    const lunch = page.getByLabel("점심 · 선택", { exact: true });
+    await expect(lunch).toHaveValue("");
+    expect(await lunch.evaluate((input: HTMLInputElement) => input.required)).toBe(false);
     await expect(page.locator(".ride-summary h2")).toHaveText("추천 경로");
     await expectRouteSummaryVisibleInsideMap(page);
     await expect(page.getByRole("button", { name: "계획 수정" })).toBeHidden();
@@ -82,6 +85,7 @@ test.describe("planner responsive shell", () => {
     const dialog = page.getByRole("dialog", { name: "라이딩 계획 편집" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByLabel("출발", { exact: true })).toBeVisible();
+    expect(await dialog.getByLabel("점심 · 선택", { exact: true }).evaluate((input: HTMLInputElement) => input.required)).toBe(false);
     await expect(dialog.getByText("복귀는 자동 계산", { exact: true })).toBeVisible();
     const focusable = dialog.locator("input:not(:disabled), button:not(:disabled), [href], [tabindex]:not([tabindex='-1'])");
     const first = focusable.first();

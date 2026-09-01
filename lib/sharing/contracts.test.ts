@@ -73,6 +73,15 @@ describe("parseSharedRideSnapshot", () => {
       schemaVersion: 3,
       route: { candidate: { id: "recommended", label: "추천 경로" } },
     });
+    expect(parseSharedRideSnapshot({
+      ...current,
+      trip: { ...current.trip, lunchStop: null },
+      waypoints: [],
+    })).toMatchObject({ schemaVersion: 3, trip: { lunchStop: null } });
+    expect(() => parseSharedRideSnapshot({
+      ...snapshot,
+      trip: { ...snapshot.trip, lunchStop: null },
+    })).toThrow("INVALID_SHARE_SNAPSHOT");
     expect(() => parseSharedRideSnapshot({ ...current, routes: snapshot.routes })).toThrow("INVALID_SHARE_SNAPSHOT");
     expect(() => parseSharedRideSnapshot({ ...current, route: route("balanced", 127.1) })).toThrow("INVALID_RECOMMENDED_ROUTE_RESPONSE");
 

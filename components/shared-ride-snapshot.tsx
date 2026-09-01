@@ -35,7 +35,7 @@ export function buildSharedMapPoints(input: {
     stopRole?: "lunch" | "dinner" | "rest";
   }>;
   waypoints: SharedWaypoint[];
-  lunchStop: SharedPlace;
+  lunchStop: SharedPlace | null;
   dinnerStop: SharedPlace | null;
 }) {
   const traversedWaypoints = input.waypoints.filter((item) => item.selected);
@@ -103,7 +103,6 @@ export function SharedRideSnapshotView({
   preview?: boolean;
 }) {
   const selected = sharedSnapshotRoute(snapshot);
-  const displayedRoutes = snapshot.schemaVersion === 3 ? [snapshot.route] : snapshot.routes;
   const path = selected.legs.flatMap((leg) => leg.sections.flatMap((section) => section.roads.flatMap((road) => {
     const points = [];
     for (let index = 0; index < road.vertexes.length; index += 2) {
@@ -126,9 +125,9 @@ export function SharedRideSnapshotView({
     <div className={`shared-snapshot ${preview ? "is-preview" : ""}`}>
       <section className="shared-hero">
         <div>
-          <p className="eyebrow">{preview ? "APPROVAL PREVIEW" : "SHARED RIDE SNAPSHOT"}</p>
+          <p className="eyebrow">{preview ? "ROUTE & WEATHER PREVIEW" : "SHARED RIDE"}</p>
           <h1>{snapshot.trip.title}</h1>
-          <p>{preview ? "아래에 표시된 장소·시각·추천 경로·날씨 전체가 그대로 발행됩니다." : "원본 계획을 수정해도 이 발행본은 바뀌지 않습니다."}</p>
+          <p>{preview ? "공유될 여행 루트와 날씨 요약입니다." : "발행 당시의 여행 루트와 날씨 요약입니다."}</p>
         </div>
         <dl>
           <div><dt>라이딩 날짜</dt><dd>{snapshot.trip.serviceDate}</dd></div>
@@ -141,9 +140,6 @@ export function SharedRideSnapshotView({
           ) : (
             <div><dt>예상 복귀</dt><dd>{snapshot.trip.destination.label} · {formatRideTime(snapshot.trip.departureAt, selected.returnAt)}</dd></div>
           )}
-          <div><dt>점심</dt><dd>{snapshot.trip.lunchStop.label}</dd></div>
-          <div><dt>저녁</dt><dd>{snapshot.trip.dinnerStop?.label ?? "없음"}</dd></div>
-          <div><dt>추천 경로</dt><dd>{snapshot.schemaVersion === 3 ? "Kakao 추천" : selected.candidate.label}</dd></div>
         </dl>
       </section>
 
@@ -156,46 +152,25 @@ export function SharedRideSnapshotView({
       </section>
       <MapOmissionList points={points} />
 
-      <div className="shared-grid">
-        <section>
-          <p className="eyebrow">STOPS</p><h2>경유와 정차 전체</h2>
-          <ol className="shared-stops">
-            {snapshot.waypoints.map((point) => (
-              <li key={point.id}>
-                <span>{String(point.position + 1).padStart(2, "0")}</span>
-                <div>
-                  <strong>{point.label}</strong>
-                  <small>
-                    {point.kind} · {point.dwellMinutes ? `${point.dwellMinutes}분 정차` : "통과"}
-                    {point.winding ? " · 커스텀 와인딩" : ""} · {point.selected ? "선택됨" : "선택 안 됨"}
-                  </small>
-                  <small>{point.latitude.toFixed(5)}, {point.longitude.toFixed(5)}</small>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </section>
-        <section>
-          <p className="eyebrow">ROUTE</p><h2>{snapshot.schemaVersion === 3 ? "발행되는 추천 경로" : "이전 발행본의 경로 후보"}</h2>
-          <div className="shared-routes">
-            {displayedRoutes.map((route) => (
-              <article key={route.candidate.id} className={route.candidate.id === selected.candidate.id ? "selected" : ""}>
-                <strong>{snapshot.schemaVersion === 3 ? "추천 경로" : route.candidate.label}{route.candidate.id === selected.candidate.id ? " · 표시 경로" : ""}</strong>
-                <span>{Math.round(route.totalDistanceMeters / 100) / 10} km · {minutes(route.totalDurationSeconds)} · 복귀 {formatRideTime(snapshot.trip.departureAt, route.returnAt)}</span>
-                <small>이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</small>
-                <ol className="shared-legs">
-                  {route.legs.map((leg, index) => (
-                    <li key={`${route.candidate.id}-${index}`}>
-                      <strong>{leg.from.label} → {leg.to.label}</strong>
-                      <span>{formatRideTime(snapshot.trip.departureAt, leg.departureAt)} 출발 · {formatRideTime(snapshot.trip.departureAt, leg.arrivalAt)} 도착 · {Math.round(leg.distanceMeters / 100) / 10} km · {minutes(leg.durationSeconds)}{leg.dwellMinutes ? ` · ${leg.dwellMinutes}분 정차` : ""}</span>
-                    </li>
-                  ))}
-                </ol>
-              </article>
-            ))}
-          </div>
-        </section>
-      </div>
+      <section className="shared-route-summary" aria-labelledby={`shared-route-${preview ? "preview" : "public"}`}>
+        <p className="eyebrow">ROUTE</p>
+        <h2 id={`shared-route-${preview ? "preview" : "public"}`}>여행 루트</h2>
+        <div className="shared-routes">
+          <article className="selected">
+            <strong>{snapshot.schemaVersion === 3 ? "추천 경로" : selected.candidate.label}</strong>
+            <span>{Math.round(selected.totalDistanceMeters / 100) / 10} km · {minutes(selected.totalDurationSeconds)} · 복귀 {formatRideTime(snapshot.trip.departureAt, selected.returnAt)}</span>
+            <small>이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</small>
+            <ol className="shared-legs">
+              {selected.legs.map((leg, index) => (
+                <li key={`${selected.candidate.id}-${index}`}>
+                  <strong>{String(index + 1).padStart(2, "0")} · {leg.to.label}</strong>
+                  <span>{formatRideTime(snapshot.trip.departureAt, leg.arrivalAt)} 도착{leg.dwellMinutes ? ` · ${leg.dwellMinutes}분 정차` : " · 통과"}</span>
+                </li>
+              ))}
+            </ol>
+          </article>
+        </div>
+      </section>
 
       <section className="shared-weather" aria-labelledby={`shared-weather-${preview ? "preview" : "public"}`}>
         <p className="eyebrow">WEATHER BY ARRIVAL</p>
@@ -215,7 +190,7 @@ export function SharedRideSnapshotView({
                   {forecast.status === "outside-window" ? (
                     <p>상세 예보 기간 밖 · 기상청 상세 호출 없음</p>
                   ) : (
-                    <p>{conditionLabel(forecast.condition)} · {forecast.temperatureC ?? "–"}°C · 강수 {forecast.precipitationProbability ?? "–"}% · 바람 {forecast.windSpeedMps ?? "–"}m/s</p>
+                    <p><span className="shared-weather-condition" data-condition={forecast.condition ?? "unknown"}>{conditionLabel(forecast.condition)}</span> · {forecast.temperatureC ?? "–"}°C · 강수 {forecast.precipitationProbability ?? "–"}% · 바람 {forecast.windSpeedMps ?? "–"}m/s</p>
                   )}
                 </li>
               ))}

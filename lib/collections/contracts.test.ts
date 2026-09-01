@@ -17,6 +17,15 @@ const point = {
   selected: true,
   winding: true,
 };
+const endpoint = {
+  kakaoPlaceId: "endpoint",
+  verificationToken: "b".repeat(43),
+  name: "팔당역",
+  address: "경기 남양주시",
+  roadAddress: null,
+  longitude: 127.2,
+  latitude: 37.5,
+};
 
 describe("parseCollectionRows", () => {
   it("selects the latest immutable version", () => {
@@ -26,8 +35,8 @@ describe("parseCollectionRows", () => {
       description: "아침 코스",
       updated_at: "2026-08-31T00:00:00.000Z",
       collection_versions: [
-        { id: "v1", version_number: 1, created_at: "2026-08-30T00:00:00.000Z", points: [point] },
-        { id: "v2", version_number: 2, created_at: "2026-08-31T00:00:00.000Z", points: [{ ...point, label: "유명산 입구" }] },
+        { id: "v1", version_number: 1, created_at: "2026-08-30T00:00:00.000Z", origin: endpoint, destination: { ...endpoint, kakaoPlaceId: "destination" }, points: [point] },
+        { id: "v2", version_number: 2, created_at: "2026-08-31T00:00:00.000Z", origin: endpoint, destination: { ...endpoint, kakaoPlaceId: "destination" }, points: [{ ...point, label: "유명산 입구" }] },
       ],
     }]);
     expect(parsed[0].latestVersion).toMatchObject({ number: 2 });
@@ -39,7 +48,7 @@ describe("parseCollectionRows", () => {
       title: "북한강",
       description: "",
       updated_at: "2026-08-31T00:00:00.000Z",
-      collection_versions: [{ id: "v1", version_number: 1, created_at: "2026-08-31T00:00:00.000Z", points: [{ ...point, verificationToken: "short" }] }],
+      collection_versions: [{ id: "v1", version_number: 1, created_at: "2026-08-31T00:00:00.000Z", origin: endpoint, destination: { ...endpoint, kakaoPlaceId: "destination" }, points: [{ ...point, verificationToken: "short" }] }],
     }])).toThrow();
   });
 
@@ -53,8 +62,20 @@ describe("parseCollectionRows", () => {
         id: "v1",
         version_number: 1,
         created_at: "2026-08-31T00:00:00.000Z",
+        origin: endpoint,
+        destination: { ...endpoint, kakaoPlaceId: "destination" },
         points: [{ ...point, kind: "stop", dwellMinutes: 60, stopRole: "lunch" }],
       }],
     }])).toThrow("INVALID_COLLECTION_POINT");
+  });
+
+  it("ignores Preview-era waypoint-only versions without pretending they are complete courses", () => {
+    expect(parseCollectionRows([{
+      id: "legacy",
+      title: "경유지만 있던 컬렉션",
+      description: "",
+      updated_at: "2026-08-31T00:00:00.000Z",
+      collection_versions: [{ id: "v1", version_number: 1, created_at: "2026-08-31T00:00:00.000Z", points: [point] }],
+    }])).toEqual([]);
   });
 });

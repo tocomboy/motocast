@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { PlannerActionGate } from "./action-gate";
 
 const source = readFileSync(new URL("../../components/planner-dashboard.tsx", import.meta.url), "utf8");
+const shareSource = readFileSync(new URL("../../components/share-manager.tsx", import.meta.url), "utf8");
 
 describe("planner persistence lock policy", () => {
   it("blocks every conflicting action until a delayed finalization releases its lease", async () => {
@@ -40,15 +41,17 @@ describe("planner persistence lock policy", () => {
     expect(source).toContain("actionGateRef.current.beginPlanning()");
     expect(source).toContain("actionGateRef.current.canApplyCollection()");
     expect(source).toContain('className="planner-fields" disabled={calculating}');
-    expect(source).toContain("<ShareManager tripId={liveTripId} disabled={calculating} />");
+    expect(source).toContain("<ShareManager tripId={liveTripId} previewRequest={sharePreviewRequest} disabled={calculating} />");
     expect(source).not.toContain("select_trip_candidate");
   });
 
-  it("starts weather refresh only after the single route is finalized", () => {
+  it("starts weather refresh only after the single route is finalized and waits before direct sharing", () => {
     const finalization = source.indexOf('supabase.rpc("finalize_trip_plan"');
-    const weatherRefresh = source.indexOf("void loadWeather(candidate, savedTripId, calculationGeneration)", finalization);
-    expect(weatherRefresh).toBeGreaterThan(finalization);
-    expect(source.slice(finalization, weatherRefresh)).not.toContain("await loadWeather");
+    const shareWeatherRefresh = source.indexOf("const weatherReady = await loadWeather(candidate, savedTripId, calculationGeneration)", finalization);
+    const normalWeatherRefresh = source.indexOf("void loadWeather(candidate, savedTripId, calculationGeneration)", shareWeatherRefresh);
+    expect(shareWeatherRefresh).toBeGreaterThan(finalization);
+    expect(normalWeatherRefresh).toBeGreaterThan(shareWeatherRefresh);
+    expect(source.indexOf("setSharePreviewRequest", shareWeatherRefresh)).toBeGreaterThan(shareWeatherRefresh);
     expect(source).toContain("withClientTimeout(");
   });
 
@@ -57,6 +60,17 @@ describe("planner persistence lock policy", () => {
     const weatherUpdate = source.indexOf("setWeather(response)", requestGuard);
     expect(requestGuard).toBeGreaterThan(-1);
     expect(weatherUpdate).toBeGreaterThan(requestGuard);
+  });
+
+  it("consumes each collection-triggered share preview request once", () => {
+    const guard = shareSource.indexOf("previewRequest <= handledPreviewRequestRef.current");
+    const consume = shareSource.indexOf("handledPreviewRequestRef.current = previewRequest", guard);
+    const start = shareSource.indexOf("void createPreview()", consume);
+    expect(guard).toBeGreaterThan(-1);
+    expect(consume).toBeGreaterThan(guard);
+    expect(start).toBeGreaterThan(consume);
+    expect(shareSource.slice(guard, start)).toContain("disabled || busy");
+    expect(shareSource.slice(consume, start)).not.toContain("setTimeout");
   });
 
   it("renders the validated full stale age and expiry status", () => {

@@ -31,6 +31,15 @@ describe("safe provider errors", () => {
     expect(safeErrorCode(new Error("secret internal detail"))).toBe("ROUTE_REQUEST_FAILED");
   });
 
+  it("exposes only bounded actionable route categories", () => {
+    expect(safeErrorCode(new Error("PAST_DEPARTURE"))).toBe("ROUTE_INPUT_INVALID");
+    expect(safeErrorCode(new Error("SAFE_ROUTE_NOT_FOUND"))).toBe("SAFE_ROUTE_NOT_FOUND");
+    expect(safeErrorCode(new Error("PROVIDER_UNAVAILABLE"))).toBe("ROUTE_PROVIDER_TEMPORARY");
+    expect(safeErrorCode(new Error("API_DAILY_BUDGET_EXHAUSTED"))).toBe("ROUTE_BUDGET_OR_CONFIG");
+    expect(safeErrorCode(new Error("ROUTE_PERSIST_FAILED"))).toBe("ROUTE_SAVE_FAILED");
+    expect(safeErrorCode(new Error("INVALID_ROUTE_PROVIDER_RESPONSE"))).toBe("ROUTE_RESPONSE_INVALID");
+  });
+
   it("does not mislabel provider authentication, rate, or outage failures as no safe route", () => {
     for (const code of ["PROVIDER_AUTH_FAILED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE"]) {
       expect(safeErrorStatus(new Error(code))).toBe(503);

@@ -30,7 +30,7 @@ export type TripInput = {
   departureAt: string;
   origin: SelectedPlace;
   destination: SelectedPlace;
-  lunch: TripWaypointInput;
+  lunch: TripWaypointInput | null;
   dinner: TripWaypointInput | null;
   waypoints: TripWaypointInput[];
 };
@@ -170,8 +170,8 @@ export function parseTripInput(value: unknown): TripInput {
     throw new PlannerInputError("INVALID_WAYPOINT_COUNT");
   }
 
-  const lunch = parseTripWaypoint(raw.lunch);
-  if (lunch.kind !== "stop" || !lunch.selected || lunch.dwellMinutes <= 0) {
+  const lunch = raw.lunch === null || raw.lunch === undefined ? null : parseTripWaypoint(raw.lunch);
+  if (lunch && (lunch.kind !== "stop" || !lunch.selected || lunch.dwellMinutes <= 0)) {
     throw new PlannerInputError("INVALID_LUNCH_STOP");
   }
 

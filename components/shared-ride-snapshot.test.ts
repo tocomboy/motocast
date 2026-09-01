@@ -9,6 +9,15 @@ const winding = { id: "route-winding", label: "와인딩", longitude: 127.3, lat
 const destination = { id: "route-destination", label: "복귀", longitude: 127.4, latitude: 37.4 };
 
 describe("buildSharedMapPoints", () => {
+  it("renders an endpoint-only route when lunch is omitted", () => {
+    expect(buildSharedMapPoints({
+      routePoints: [origin, destination],
+      lunchStop: null,
+      dinnerStop: null,
+      waypoints: [],
+    }).map((point) => point.role)).toEqual(["origin", "destination"]);
+  });
+
   it("correlates DB snapshot waypoint IDs to provider route points by ordered place identity", () => {
     expect(buildSharedMapPoints({
       routePoints: [origin, lunch, rest, winding, destination],

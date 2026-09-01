@@ -199,9 +199,9 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await page.getByLabel("출발", { exact: true }).fill(departure.time);
     await selectFirstPlace(page, "출발지", liveQueries.origin!);
     await selectFirstPlace(page, "복귀지", liveQueries.destination!);
-    await selectFirstPlace(page, "점심", liveQueries.lunch!);
-    await page.getByRole("checkbox", { name: /휴식 일정에 포함/ }).check();
-    await selectFirstPlace(page, "휴식 장소", liveQueries.rest!);
+    await selectFirstPlace(page, "점심 · 선택", liveQueries.lunch!);
+    await page.getByRole("button", { name: "+ 휴식지 추가" }).click();
+    await selectFirstPlace(page, "1번째 휴식 장소", liveQueries.rest!);
     await page.getByRole("button", { name: /커스텀 와인딩 경유지 추가/ }).click();
     await expect(page.getByLabel(/^와인딩 경유지$/)).toBeFocused();
     await selectFirstPlace(
@@ -264,7 +264,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     cleanup.collectionId = savedCollectionId;
     await expect(page.getByRole("status").filter({ hasText: `${title} 컬렉션의 1번째 불변 버전` })).toBeVisible();
 
-    await page.getByRole("button", { name: "전체 공유 미리보기" }).click();
+    await page.getByRole("button", { name: "공유 요약 미리보기" }).click();
     await expect(page.getByText("아직 공개되지 않았습니다.", { exact: true })).toBeVisible();
     await expect(page.locator(".share-preview")).toContainText("예상 복귀");
     await expect(page.locator(".share-preview")).not.toContainText("희망 복귀");
@@ -276,7 +276,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const publishedShare = page.waitForResponse((response) => (
       response.url().includes("/rest/v1/rpc/publish_trip_share") && response.request().method() === "POST"
     ), { timeout: 30_000 });
-    await page.getByRole("button", { name: "이 전체 내용 그대로 불변 링크 발행" }).click();
+    await page.getByRole("button", { name: "이 요약으로 불변 링크 발행" }).click();
     await sharePublishStarted;
     cleanup.shareMutationStarted = true;
     const publishedShareResponse = await publishedShare;
@@ -299,14 +299,14 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     cleanup.shareMutationStarted = false;
     await expect(page.getByRole("status").filter({ hasText: "공유 링크를 회수했습니다." })).toBeVisible();
 
-    await page.getByRole("button", { name: "전체 공유 미리보기" }).click();
+    await page.getByRole("button", { name: "공유 요약 미리보기" }).click();
     const shareRepublishStarted = page.waitForRequest((request) => (
       request.url().includes("/rest/v1/rpc/publish_trip_share") && request.method() === "POST"
     ), { timeout: 30_000 });
     const republishedShare = page.waitForResponse((response) => (
       response.url().includes("/rest/v1/rpc/publish_trip_share") && response.request().method() === "POST"
     ), { timeout: 30_000 });
-    await page.getByRole("button", { name: "이 전체 내용 그대로 불변 링크 발행" }).click();
+    await page.getByRole("button", { name: "이 요약으로 불변 링크 발행" }).click();
     await shareRepublishStarted;
     cleanup.shareMutationStarted = true;
     const republishedShareResponse = await republishedShare;

@@ -59,7 +59,7 @@ function canonicalPoint(point: RoutePointRequest, endpoint = false): RoutePointR
   const passThrough = endpoint || point.kind === "pass-through";
   return {
     ...point,
-    id: point.kakaoPlaceId,
+    id: endpoint ? point.kakaoPlaceId : point.id,
     label: point.name,
     kind: endpoint ? "pass-through" : point.kind,
     dwellMinutes: passThrough ? 0 : point.dwellMinutes,
@@ -69,7 +69,11 @@ function canonicalPoint(point: RoutePointRequest, endpoint = false): RoutePointR
   };
 }
 
-export async function parseRouteRequest(value: unknown, verificationSecret: string): Promise<RouteRequest> {
+export async function parseRouteRequest(
+  value: unknown,
+  verificationSecret: string,
+  now: () => Date = () => new Date(),
+): Promise<RouteRequest> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_REQUEST");
   const body = value as Partial<RouteRequest>;
   if (!validPoint(body.origin) || !validPoint(body.destination)) throw new Error("INVALID_POINT");
@@ -82,6 +86,7 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
     !isStrictCalendarDate(body.serviceDate) ||
     seoulCalendarDate(departure) !== body.serviceDate
   ) throw new Error("INVALID_ROUTE_TIME");
+  if (departure.getTime() < now().getTime()) throw new Error("PAST_DEPARTURE");
   const policyFields = value as Record<string, unknown>;
   if (["candidate", "priority", "alternatives", "car_type", "avoid", "roadevent", "summary"].some((key) => key in policyFields)) {
     throw new Error("CLIENT_ROUTE_POLICY_FORBIDDEN");
@@ -94,6 +99,9 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
   )) throw new Error("INVALID_TRIP_ID");
 
   const selectedWaypoints = body.waypoints.filter((point) => point.selected);
+  if (new Set(selectedWaypoints.map((point) => point.id)).size !== selectedWaypoints.length) {
+    throw new Error("INVALID_WAYPOINTS");
+  }
   if (selectedWaypoints.some((point) => (
     (point.kind === "stop" || point.kind === "optional") && point.dwellMinutes <= 0
   ))) throw new Error("INVALID_WAYPOINTS");
@@ -102,9 +110,9 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
   const rests = selectedWaypoints.filter((point) => point.stopRole === "rest");
   const windingPoints = selectedWaypoints.filter((point) => point.winding === true);
   if (
-    lunches.length !== 1 || lunches[0].kind !== "stop" ||
+    lunches.length > 1 || lunches.some((point) => point.kind !== "stop") ||
     dinners.length > 1 || dinners.some((point) => point.kind !== "stop") ||
-    rests.length > 1 || rests.some((point) => point.kind !== "optional") ||
+    rests.length > 5 || rests.some((point) => point.kind !== "optional") ||
     windingPoints.length > 20 ||
     selectedWaypoints.some((point) => point.kind !== "pass-through" && point.stopRole === undefined)
   ) throw new Error("INVALID_WAYPOINTS");

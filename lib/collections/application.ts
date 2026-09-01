@@ -1,4 +1,5 @@
-import type { CollectionPoint } from "./contracts";
+import type { CollectionCourse, CollectionPoint } from "./contracts";
+import type { SelectedPlace } from "../planner/input";
 import type { PlaceSearchResult } from "../places/search";
 
 type StopRole = "lunch" | "dinner" | "rest";
@@ -8,7 +9,7 @@ export function appliedWindingActionLabel(position: number, name: string, action
   return `${position}번째 ${name} ${action}`;
 }
 
-export function collectionPointToPlace(point: CollectionPoint): PlaceSearchResult {
+export function selectedPlaceToPlace(point: SelectedPlace): PlaceSearchResult {
   return {
     kakaoPlaceId: point.kakaoPlaceId,
     verificationToken: point.verificationToken,
@@ -23,16 +24,26 @@ export function collectionPointToPlace(point: CollectionPoint): PlaceSearchResul
   };
 }
 
-export function prepareCollectionApplication(points: CollectionPoint[]) {
+export function collectionPointToPlace(point: CollectionPoint): PlaceSearchResult {
+  return selectedPlaceToPlace(point);
+}
+
+export function prepareCollectionApplication(course: CollectionCourse) {
+  const points = course.points;
   const lunch = points.find((point) => point.stopRole === "lunch" && point.selected) ?? null;
   const dinner = points.find((point) => point.stopRole === "dinner" && point.selected) ?? null;
-  const rest = points.find((point) => point.stopRole === "rest") ?? null;
+  const rests = points.filter((point) => point.stopRole === "rest" && point.selected);
   return {
+    origin: selectedPlaceToPlace(course.origin),
+    destination: selectedPlaceToPlace(course.destination),
     orderedPoints: [...points],
     lunch: lunch ? collectionPointToPlace(lunch) : null,
     dinner: dinner ? collectionPointToPlace(dinner) : null,
-    rest: rest ? collectionPointToPlace(rest) : null,
-    includeRest: rest?.selected === true,
+    rests: rests.map((point) => ({
+      id: point.id,
+      place: collectionPointToPlace(point),
+      dwellMinutes: point.dwellMinutes,
+    })),
     selectedWindingPoints: points
       .filter((point) => point.selected && point.winding)
       .map(collectionPointToPlace),
@@ -61,8 +72,36 @@ export function replaceCollectionStop<T extends CollectionPoint>(
   });
 }
 
-export function setCollectionRestSelected<T extends CollectionPoint>(points: T[], selected: boolean): T[] {
-  return points.map((point) => point.stopRole === "rest" ? { ...point, selected } as T : point);
+export function insertCollectionRest<T extends CollectionPoint>(points: T[], rest: T): T[] {
+  const restIndexes = points.flatMap((point, index) => point.stopRole === "rest" ? [index] : []);
+  const lunchIndex = points.findIndex((point) => point.stopRole === "lunch");
+  const dinnerIndex = points.findIndex((point) => point.stopRole === "dinner");
+  const insertionIndex = restIndexes.length
+    ? restIndexes.at(-1)! + 1
+    : lunchIndex >= 0
+      ? lunchIndex + 1
+      : dinnerIndex >= 0 ? dinnerIndex : points.length;
+  return [...points.slice(0, insertionIndex), rest, ...points.slice(insertionIndex)];
+}
+
+export function replaceCollectionOccurrence<T extends CollectionPoint>(points: T[], id: string, replacement: T): T[] {
+  return points.map((point) => point.id === id ? replacement : point);
+}
+
+export function removeCollectionOccurrence<T extends CollectionPoint>(points: T[], id: string): T[] {
+  return points.filter((point) => point.id !== id);
+}
+
+export function moveCollectionRest<T extends CollectionPoint>(points: T[], id: string, direction: -1 | 1): T[] {
+  const restIndexes = points.flatMap((point, index) => point.stopRole === "rest" ? [index] : []);
+  const currentRestIndex = restIndexes.findIndex((index) => points[index].id === id);
+  const targetRestIndex = currentRestIndex + direction;
+  if (currentRestIndex < 0 || targetRestIndex < 0 || targetRestIndex >= restIndexes.length) return points;
+  const reordered = [...points];
+  const left = restIndexes[currentRestIndex];
+  const right = restIndexes[targetRestIndex];
+  [reordered[left], reordered[right]] = [reordered[right], reordered[left]];
+  return reordered;
 }
 
 export function insertCollectionWinding<T extends CollectionPoint>(points: T[], windingPoint: T): T[] {

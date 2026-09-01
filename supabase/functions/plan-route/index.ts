@@ -68,7 +68,7 @@ Deno.serve(async (request) => {
       candidate: { id: "recommended", label: "추천 경로", estimatedWinding: false },
       ...journey,
     });
-    const lunchStop = input.waypoints.find((point) => point.stopRole === "lunch")!;
+    const lunchStop = input.waypoints.find((point) => point.stopRole === "lunch") ?? null;
     const dinnerStop = input.waypoints.find((point) => point.stopRole === "dinner") ?? null;
     const legacyBoundary = legacyScheduleBoundary(input.departureAt);
     const stagedPlan = {
@@ -83,7 +83,7 @@ Deno.serve(async (request) => {
       targetUpdatedAt: targetRevision,
       origin: storagePoint(input.origin),
       destination: storagePoint(input.destination),
-      lunchStop: storagePoint(lunchStop),
+      lunchStop: lunchStop ? storagePoint(lunchStop) : null,
       dinnerStop: dinnerStop ? storagePoint(dinnerStop) : null,
       waypoints: input.waypoints.map(storagePoint),
       selectedProfile: "recommended",

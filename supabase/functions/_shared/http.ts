@@ -31,6 +31,7 @@ export function safeErrorMessage(error: unknown) {
   if (error.message === "KAKAO_PLACE_SEARCH_FAILED") return "장소 검색에 실패했습니다. 잠시 후 다시 시도해 주세요.";
   if (error.message === "PLACE_VERIFICATION_NOT_CONFIGURED") return "장소 검증 설정이 완료되지 않았습니다.";
   if (error.message === "UNVERIFIED_PLACE") return "검색 결과에서 장소를 다시 선택해 주세요.";
+  if (error.message === "PAST_DEPARTURE") return "지난 출발 시각은 사용할 수 없습니다. 현재 이후 시각을 선택해 주세요.";
   if (error.message === "SAFE_ROUTE_NOT_FOUND") return "오토바이 안전 조건을 만족하는 경로를 찾지 못했습니다.";
   if (error.message === "ROUTE_EXCEEDS_24_HOURS") return "출발 후 24시간 안에 끝나는 경로를 찾지 못했습니다.";
   if (error.message === "CLIENT_ROUTE_POLICY_FORBIDDEN") return "지원하지 않는 경로 설정입니다. 화면을 새로고침한 뒤 다시 시도해 주세요.";
@@ -42,7 +43,22 @@ export function safeErrorMessage(error: unknown) {
 }
 
 export function safeErrorCode(error: unknown) {
-  void error;
+  if (!(error instanceof Error)) return "ROUTE_REQUEST_FAILED";
+  if (error.message === "SAFE_ROUTE_NOT_FOUND") return "SAFE_ROUTE_NOT_FOUND";
+  if (error.message === "ROUTE_EXCEEDS_24_HOURS") return "ROUTE_LIMIT_EXCEEDED";
+  if (error.message === "ROUTE_PERSIST_FAILED" || error.message === "INVALID_TRIP_TARGET") return "ROUTE_SAVE_FAILED";
+  if (error.message === "INVALID_ROUTE_PROVIDER_RESPONSE") return "ROUTE_RESPONSE_INVALID";
+  if (
+    error.message.includes("API_DAILY_BUDGET_EXHAUSTED") ||
+    error.message.includes("API_BUDGET") ||
+    error.message.includes("NOT_CONFIGURED")
+  ) return "ROUTE_BUDGET_OR_CONFIG";
+  if (["PROVIDER_AUTH_FAILED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE", "PROVIDER_REQUEST_REJECTED"].includes(error.message)) {
+    return "ROUTE_PROVIDER_TEMPORARY";
+  }
+  if (error.message.startsWith("INVALID_") || error.message === "UNVERIFIED_PLACE" || error.message === "PAST_DEPARTURE") {
+    return "ROUTE_INPUT_INVALID";
+  }
   return "ROUTE_REQUEST_FAILED";
 }
 
@@ -65,6 +81,6 @@ export function safeErrorStatus(error: unknown) {
   ) return 502;
   if (["PROVIDER_AUTH_FAILED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE"].includes(error.message)) return 503;
   if (error.message === "PROVIDER_REQUEST_REJECTED") return 502;
-  if (error.message.startsWith("INVALID_") || error.message === "UNVERIFIED_PLACE") return 400;
+  if (error.message.startsWith("INVALID_") || error.message === "UNVERIFIED_PLACE" || error.message === "PAST_DEPARTURE") return 400;
   return 502;
 }

@@ -18,7 +18,11 @@ Deno.serve(async (request) => {
       target_collection_id: input.collectionId,
       collection_title: input.title,
       collection_description: input.description,
-      collection_points: input.points,
+      collection_points: {
+        origin: input.origin,
+        destination: input.destination,
+        points: input.points,
+      },
     });
     if (error || !Array.isArray(data) || data.length !== 1) throw new Error("COLLECTION_PERSIST_FAILED");
     const row = data[0] as { collection_id?: unknown; version_id?: unknown; version_number?: unknown };

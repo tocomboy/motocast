@@ -2,16 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { parseCollectionRows, type CollectionPoint, type RidingCollection } from "@/lib/collections/contracts";
+import { parseCollectionRows, type CollectionCourse, type RidingCollection } from "@/lib/collections/contracts";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 type CollectionManagerProps = {
-  currentPoints: CollectionPoint[];
-  onApply: (points: CollectionPoint[], title: string) => void;
+  currentCourse: CollectionCourse | null;
+  onApply: (course: CollectionCourse, title: string) => void;
+  onShare: (course: CollectionCourse, title: string) => void;
   disabled?: boolean;
 };
 
-export function CollectionManager({ currentPoints, onApply, disabled = false }: CollectionManagerProps) {
+export function CollectionManager({ currentCourse, onApply, onShare, disabled = false }: CollectionManagerProps) {
   const [collections, setCollections] = useState<RidingCollection[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -23,7 +24,7 @@ export function CollectionManager({ currentPoints, onApply, disabled = false }: 
     if (!supabase) return;
     const { data, error } = await supabase
       .from("riding_collections")
-      .select("id,title,description,updated_at,collection_versions(id,version_number,points,created_at)")
+      .select("id,title,description,updated_at,collection_versions(id,version_number,origin,destination,points,created_at)")
       .order("updated_at", { ascending: false });
     if (error) {
       setStatus("컬렉션을 불러오지 못했습니다. 이용 권한과 연결 상태를 확인해 주세요.");
@@ -47,8 +48,8 @@ export function CollectionManager({ currentPoints, onApply, disabled = false }: 
     if (disabled) return;
     const collectionTitle = collection?.title ?? title.trim();
     const collectionDescription = collection?.description ?? description;
-    if (!collectionTitle || currentPoints.length === 0) {
-      setStatus("컬렉션 이름과 현재 계획의 경유지가 필요합니다.");
+    if (!collectionTitle || !currentCourse) {
+      setStatus("컬렉션 이름과 선택된 출발지·복귀지가 필요합니다.");
       return;
     }
     const supabase = getBrowserSupabase();
@@ -60,7 +61,9 @@ export function CollectionManager({ currentPoints, onApply, disabled = false }: 
         collectionId: collection?.id ?? null,
         title: collectionTitle,
         description: collectionDescription,
-        points: currentPoints,
+        origin: currentCourse.origin,
+        destination: currentCourse.destination,
+        points: currentCourse.points,
       },
     });
     setBusyId(null);
@@ -105,8 +108,8 @@ export function CollectionManager({ currentPoints, onApply, disabled = false }: 
       <div className="collection-create">
         <label><span>새 컬렉션 이름</span><input disabled={disabled} maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="예: 북한강 아침 코스" /></label>
         <label><span>설명 · 선택</span><textarea disabled={disabled} maxLength={2000} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="도로 특징이나 주의점을 기록하세요." /></label>
-        <button className="secondary-button" type="button" disabled={disabled || busyId !== null || currentPoints.length === 0} onClick={() => void saveVersion(null)}>
-          {busyId === "new" ? "저장 중…" : `현재 경유지로 새 컬렉션 저장 · ${currentPoints.length}개`}
+        <button className="secondary-button" type="button" disabled={disabled || busyId !== null || !currentCourse} onClick={() => void saveVersion(null)}>
+          {busyId === "new" ? "저장 중…" : `현재 전체 코스로 새 컬렉션 저장 · ${currentCourse?.points.length ?? 0}개 경유지`}
         </button>
       </div>
 
@@ -116,12 +119,13 @@ export function CollectionManager({ currentPoints, onApply, disabled = false }: 
             <li key={collection.id} data-collection-id={collection.id}>
               <div>
                 <strong>{collection.title}</strong>
-                <span>v{collection.latestVersion.number} · 경유지 {collection.latestVersion.points.length}개</span>
+                <span>v{collection.latestVersion.number} · {collection.latestVersion.course.origin.name} → {collection.latestVersion.course.destination.name} · 경유지 {collection.latestVersion.course.points.length}개</span>
                 {collection.description ? <small>{collection.description}</small> : null}
               </div>
               <div className="collection-actions">
-                <button type="button" disabled={disabled} onClick={() => onApply(collection.latestVersion.points, collection.title)}>계획에 적용</button>
-                <button type="button" disabled={disabled || busyId !== null || currentPoints.length === 0} onClick={() => void saveVersion(collection)}>새 버전</button>
+                <button type="button" disabled={disabled} onClick={() => onApply(collection.latestVersion.course, collection.title)}>계획에 적용</button>
+                <button type="button" disabled={disabled} onClick={() => onShare(collection.latestVersion.course, collection.title)}>공유 준비</button>
+                <button type="button" disabled={disabled || busyId !== null || !currentCourse} onClick={() => void saveVersion(collection)}>새 버전</button>
                 <button className="danger-text" type="button" disabled={disabled || busyId !== null} onClick={() => void deleteCollection(collection)}>삭제</button>
               </div>
             </li>

@@ -122,9 +122,10 @@ test("renders model, outside-window, and stale states without changing route ord
   await expect(page.locator(".shared-weather-list")).toContainText("초단기예보");
   await expect(page.locator(".shared-weather-list")).toContainText("단기예보");
   await expect(page.locator(".shared-weather-list")).toContainText("상세 예보 기간 밖 · 기상청 상세 호출 없음");
-  await expect(page.locator(".shared-routes article").nth(0)).toContainText("균형");
-  await expect(page.locator(".shared-routes article").nth(1)).toContainText("와인딩 추정");
-  await expect(page.locator(".shared-routes article").nth(2)).toContainText("최단");
+  await expect(page.locator(".shared-routes article")).toHaveCount(1);
+  await expect(page.locator(".shared-routes article")).toContainText("균형");
+  await expect(page.locator(".shared-snapshot")).not.toContainText("와인딩 추정");
+  await expect(page.locator(".shared-snapshot")).not.toContainText("최단");
   await expect(page.locator(".shared-weather-state")).toContainText("현재 기준 예보 유효기간 안쪽");
   await page.clock.fastForward(30_000);
   await expect(page.locator(".shared-weather-state")).toContainText("현재 기준 예보 유효기간 지남");
@@ -158,9 +159,10 @@ test("renders a schema version 3 share with one recommended route and no candida
   });
 
   await page.goto(`/share#${"b".repeat(43)}`);
-  await expect(page.getByRole("heading", { name: "발행되는 추천 경로" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "여행 루트" })).toBeVisible();
   await expect(page.locator(".shared-routes article")).toHaveCount(1);
   await expect(page.locator(".shared-routes article")).toContainText("추천 경로");
+  await expect(page.locator(".shared-snapshot")).not.toContainText("경유와 정차 전체");
   await expect(page.locator(".shared-snapshot")).not.toContainText("와인딩 추정");
   await expect(page.locator(".shared-snapshot")).not.toContainText("최단");
 });
@@ -183,7 +185,7 @@ test("renders an immutable schema version 1 share with its historical return fie
   await page.goto(`/share#${"c".repeat(43)}`);
   await expect(page.getByText("희망 복귀 · 이전 발행본", { exact: true })).toBeVisible();
   await expect(page.getByText("최종 복귀 · 이전 발행본", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "이전 발행본의 경로 후보" })).toBeVisible();
-  await expect(page.locator(".shared-routes article")).toHaveCount(3);
+  await expect(page.getByRole("heading", { name: "여행 루트" })).toBeVisible();
+  await expect(page.locator(".shared-routes article")).toHaveCount(1);
   await expect(page.getByRole("heading", { name: "구간 통과 시각별 날씨" })).toBeVisible();
 });

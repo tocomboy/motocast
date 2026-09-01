@@ -2168,6 +2168,176 @@ textarea:focus-visible {
   margin: 0;
 }
 
+.shared-route-summary {
+  padding: 32px 0 0;
+}
+
+.shared-weather-condition {
+  font-size: inherit;
+  font-weight: 850;
+}
+
+.shared-weather-condition[data-condition="clear"]::before { content: "○ "; }
+.shared-weather-condition[data-condition="cloudy"]::before { content: "◐ "; }
+.shared-weather-condition[data-condition="rain"]::before { content: "/// "; }
+.shared-weather-condition[data-condition="snow"]::before { content: "✳ "; }
+.shared-weather-condition[data-condition="unknown"]::before { content: "? "; }
+
+/* Planner readability follow-up: preserve the established layout and palette,
+   but keep actionable and weather text at a comfortably readable scale. */
+.planner-form label > span,
+.place-field > label > span,
+.section-label,
+.place-search-button,
+.selected-place strong,
+.selected-place small,
+.place-status,
+.place-results strong,
+.place-results span,
+.place-results small,
+.time-estimate-note strong,
+.time-estimate-note small,
+.ordered-waypoint strong,
+.ordered-waypoint small,
+.text-button,
+.manager-status,
+.collection-list strong,
+.collection-list span,
+.collection-list small,
+.collection-actions button,
+.share-link-list button,
+.share-preview-warning,
+.share-preview dt,
+.share-preview dd,
+.share-preview li,
+.share-preview li span,
+.shared-routes span,
+.shared-routes small,
+.shared-legs li,
+.shared-weather-state,
+.shared-weather-list li,
+.shared-weather-list p,
+.shared-weather-list span {
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.map-status,
+.map-marker-legend li,
+.condition-banner,
+.example-data-badge,
+.live-data-badge,
+.forecast-issued,
+.timeline-time span,
+.segment-copy span,
+.risk-label,
+.stale-notice {
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.weather-word {
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+.weather-chip {
+  border: 1px solid rgba(24, 34, 29, 0.16);
+  grid-template-columns: minmax(54px, auto) auto minmax(150px, 1fr);
+}
+
+.weather-chip small {
+  font-size: 0.875rem;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.weather-chip[data-condition="clear"] .weather-word::before { content: "○ "; }
+.weather-chip[data-condition="cloudy"] .weather-word::before { content: "◐ "; }
+.weather-chip[data-condition="rain"] .weather-word::before { content: "/// "; }
+.weather-chip[data-condition="snow"] .weather-word::before { content: "✳ "; }
+.weather-chip[data-condition="unknown"] .weather-word::before { content: "? "; }
+
+.rest-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rest-list > li {
+  background: #fbf4eb;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.rest-heading,
+.rest-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.rest-heading strong,
+.rest-heading span,
+.rest-actions button {
+  font-size: 0.875rem;
+}
+
+.rest-heading span { color: var(--ink-soft); }
+
+.rest-actions button {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  min-height: 40px;
+  padding: 8px 10px;
+}
+
+.action-notice {
+  align-items: start;
+  border: 1px solid #ccdcd2;
+  border-left: 5px solid #46705b;
+  border-radius: 10px;
+  display: grid;
+  font-size: 0.9375rem;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  margin-top: 16px;
+  padding: 13px 14px;
+}
+
+.action-notice.warning {
+  background: #fff6df;
+  border-color: #d49b3e;
+}
+
+.action-notice.error {
+  background: #fff0e8;
+  border-color: var(--danger);
+}
+
+.action-notice:focus-visible { outline: 3px solid rgba(239, 106, 58, 0.42); }
+.action-notice p { display: grid; gap: 3px; margin: 0; }
+.action-notice p > span { line-height: 1.55; }
+.notice-symbol {
+  align-items: center;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  display: inline-flex;
+  font-weight: 850;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
 .shared-unavailable {
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -2250,5 +2420,26 @@ textarea:focus-visible {
 
   .shared-map {
     min-height: 390px;
+  }
+
+  .weather-chip {
+    grid-template-columns: minmax(54px, auto) minmax(0, 1fr);
+  }
+
+  .weather-chip small {
+    grid-column: 1 / -1;
+  }
+
+  .rest-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 360px) {
+  .map-topbar .example-data-badge,
+  .map-topbar .live-data-badge {
+    left: 0;
+    position: absolute;
+    top: 70px;
   }
 }

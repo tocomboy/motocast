@@ -7,12 +7,13 @@
 ## 고정된 제품 원칙
 
 - 한국 내 출발 후 24시간 미만 라이딩만 지원하며, 추천 경로가 자정을 넘어 복귀해도 표시합니다. 숙박 일정은 지원하지 않습니다.
-- 사용자는 출발 시각만 입력하고, 복귀는 실제 추천 경로 주행시간과 정차를 합산한 예상 시각으로 확인합니다.
+- 사용자는 출발 시각만 입력하고, 복귀는 실제 추천 경로 주행시간과 정차를 합산한 예상 시각으로 확인합니다. 이미 지난 출발 시각은 외부 API나 비용 한도를 사용하기 전에 서버의 신뢰 시각으로 거부합니다.
 - 경로 요청은 이륜차(`car_type=7`)와 자동차전용도로 회피(`avoid=motorway`)를 항상 함께 사용합니다. 안전 조건을 완화하거나 자동차 경로로 대체하지 않습니다.
 - 커스텀 와인딩은 자동 추천 속성이 아니라 사용자가 정한 필수 통과점입니다. Kakao 대안 경로를 탐색하지 않으며 안전 추천 경로를 만들 수 없으면 명시적으로 실패합니다.
-- 점심 정차는 필수, 저녁은 선택입니다. 휴식은 사용자가 선택한 경우에만 기본 30분으로 계산합니다.
+- 점심과 저녁 정차는 각각 선택입니다. 휴식은 0~5개를 순서대로 추가·이동·삭제할 수 있고 각각 기본 30분의 정차 시간을 독립적으로 조정합니다. 같은 장소를 여러 번 넣어도 서로 다른 정차로 유지합니다.
 - 날씨는 경로 순위를 바꾸지 않고 구간별 참고 정보로 표시합니다.
-- 공유는 사용자가 명시적으로 만든 불변 스냅샷만 허용하며, 기본값은 비공개입니다.
+- 컬렉션은 출발지·도착지와 순서가 있는 모든 정차를 포함한 완전한 코스를 버전으로 저장합니다. 경유지만 저장한 기존 Preview 컬렉션은 완전한 코스로 표시하지 않습니다.
+- 공유는 사용자가 명시적으로 만든 불변 스냅샷만 허용하며, 기본값은 비공개입니다. 컬렉션의 `공유 준비`는 완전한 코스를 적용한 뒤 새 안전 경로와 날씨가 저장되어야 간결한 여행 루트·날씨 미리보기를 열며 자동 게시하지 않습니다.
 - 유료 API 사용은 켜지 않습니다. 내부 일일 한도를 소진하면 새 외부 계산을 거부하고 저장된 계획만 읽습니다.
 
 ## 구성
@@ -60,6 +61,7 @@ PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v 
 PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/route_finalization_concurrency.test.sql
 PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/recommended_route_concurrency.test.sql
 PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/kakao_oidc_handoff.test.sql
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/optional_meal_route.test.sql
 ```
 
 ## Supabase 설정

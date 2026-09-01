@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SharedRideSnapshotView } from "@/components/shared-ride-snapshot";
 import { parseSharedRideSnapshot, type SharedRideSnapshot } from "@/lib/sharing/contracts";
@@ -8,7 +8,7 @@ import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 type ShareLinkRow = { id: string; createdAt: string; revokedAt: string | null };
 
-export function ShareManager({ tripId, disabled = false }: { tripId: string | null; disabled?: boolean }) {
+export function ShareManager({ tripId, previewRequest = 0, disabled = false }: { tripId: string | null; previewRequest?: number; disabled?: boolean }) {
   const [links, setLinks] = useState<ShareLinkRow[]>([]);
   const [preview, setPreview] = useState<SharedRideSnapshot | null>(null);
   const [previewRaw, setPreviewRaw] = useState<unknown>(null);
@@ -16,8 +16,9 @@ export function ShareManager({ tripId, disabled = false }: { tripId: string | nu
   const [previewToken, setPreviewToken] = useState<string | null>(null);
   const [previewReferenceTime, setPreviewReferenceTime] = useState<string>(new Date(0).toISOString());
   const [issued, setIssued] = useState<{ tripId: string; shareId: string; url: string } | null>(null);
-  const [status, setStatus] = useState("공유는 미리보기 후에만 발행됩니다.");
+  const [status, setStatus] = useState("여행 루트와 날씨 요약을 확인한 뒤에만 발행됩니다.");
   const [busy, setBusy] = useState(false);
+  const handledPreviewRequestRef = useRef(0);
 
   const loadLinks = useCallback(async () => {
     const supabase = getBrowserSupabase();
@@ -43,15 +44,7 @@ export function ShareManager({ tripId, disabled = false }: { tripId: string | nu
     setLinks(parsed);
   }, []);
 
-  useEffect(() => {
-    const task = window.setTimeout(() => void loadLinks(), 0);
-    return () => window.clearTimeout(task);
-  }, [loadLinks]);
-
-  const activePreview = previewTripId === tripId ? preview : null;
-  const issuedUrl = issued?.tripId === tripId ? issued.url : null;
-
-  async function createPreview() {
+  const createPreview = useCallback(async () => {
     if (disabled) return;
     if (!tripId) {
       setStatus("실제 경로를 계산해 계획을 저장한 뒤 공유할 수 있습니다.");
@@ -82,11 +75,25 @@ export function ShareManager({ tripId, disabled = false }: { tripId: string | nu
       setPreviewTripId(tripId);
       setPreviewReferenceTime(new Date().toISOString());
       setIssued(null);
-      setStatus("아래 전체 내용을 확인한 뒤에만 링크를 발행하세요.");
+      setStatus("아래 여행 루트와 날씨 요약을 확인한 뒤 링크를 발행하세요.");
     } catch {
       setStatus("공유 미리보기 응답을 안전하게 확인하지 못했습니다.");
     }
-  }
+  }, [disabled, tripId]);
+
+  useEffect(() => {
+    const task = window.setTimeout(() => void loadLinks(), 0);
+    return () => window.clearTimeout(task);
+  }, [loadLinks]);
+
+  useEffect(() => {
+    if (previewRequest <= handledPreviewRequestRef.current || !tripId || disabled || busy) return;
+    handledPreviewRequestRef.current = previewRequest;
+    void createPreview();
+  }, [previewRequest, tripId, disabled, busy, createPreview]);
+
+  const activePreview = previewTripId === tripId ? preview : null;
+  const issuedUrl = issued?.tripId === tripId ? issued.url : null;
 
   async function publish() {
     if (disabled) return;
@@ -102,7 +109,7 @@ export function ShareManager({ tripId, disabled = false }: { tripId: string | nu
       setBusy(false);
       if (error?.message.includes("SHARE_PREVIEW")) {
         setPreviewToken(null);
-        setStatus("미리보기가 만료됐거나 원본이 바뀌었습니다. 전체 공유 미리보기를 다시 만들어 주세요.");
+        setStatus("미리보기가 만료됐거나 원본이 바뀌었습니다. 공유 요약 미리보기를 다시 만들어 주세요.");
       } else {
         setStatus("공유 링크를 발행하지 못했습니다.");
       }
@@ -154,15 +161,15 @@ export function ShareManager({ tripId, disabled = false }: { tripId: string | nu
       <div className="collection-heading-row">
         <div><p className="eyebrow">EXPLICIT SHARING</p><h2 id="share-heading">라이딩 공유</h2></div>
         <button className="secondary-button" type="button" disabled={disabled || busy || !tripId} onClick={() => void createPreview()}>
-          {busy ? "처리 중…" : "전체 공유 미리보기"}
+          {busy ? "처리 중…" : "공유 요약 미리보기"}
         </button>
       </div>
 
       {activePreview ? (
         <div className="share-preview">
-          <div className="share-preview-warning"><strong>아직 공개되지 않았습니다.</strong><span>장소·시각·경로·날씨를 모두 확인하세요.</span></div>
+          <div className="share-preview-warning"><strong>아직 공개되지 않았습니다.</strong><span>여행 루트와 구간별 날씨를 확인하세요.</span></div>
           <SharedRideSnapshotView snapshot={activePreview} referenceTime={previewReferenceTime} preview />
-          <button className="primary-button" type="button" disabled={disabled || busy || !previewToken} onClick={() => void publish()}>이 전체 내용 그대로 불변 링크 발행</button>
+          <button className="primary-button" type="button" disabled={disabled || busy || !previewToken} onClick={() => void publish()}>이 요약으로 불변 링크 발행</button>
         </div>
       ) : null}
 

@@ -52,10 +52,11 @@ describe("parseTripInput", () => {
     const parsed = parseTripInput(validTrip());
     expect(parsed.departureAt).toBe("2026-08-30T22:30:00.000Z");
     expect(parsed.dinner).toBeNull();
-    expect(parsed.lunch.dwellMinutes).toBe(60);
+    expect(parsed.lunch?.dwellMinutes).toBe(60);
   });
 
-  it("rejects a missing or non-stopping lunch", () => {
+  it("allows a missing lunch and rejects a malformed selected lunch", () => {
+    expect(parseTripInput({ ...validTrip(), lunch: null }).lunch).toBeNull();
     const input = validTrip();
     input.lunch.kind = "pass-through";
     expect(() => parseTripInput(input)).toThrowError(new PlannerInputError("INVALID_LUNCH_STOP"));

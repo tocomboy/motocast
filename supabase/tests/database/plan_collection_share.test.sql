@@ -117,6 +117,14 @@ select
     pg_temp.test_point('winding', '와인딩', 127.05, 37.05, 'pass-through', 0, true),
     pg_temp.test_point('lunch', '점심', 127.1, 37.1, 'stop', 60, false, 'lunch')
   ) as points,
+  jsonb_build_object(
+    'origin', pg_temp.test_point('origin', '출발', 127, 37, 'pass-through', 0, false),
+    'destination', pg_temp.test_point('destination', '복귀', 127.2, 37.2, 'pass-through', 0, false),
+    'points', jsonb_build_array(
+      pg_temp.test_point('winding', '와인딩', 127.05, 37.05, 'pass-through', 0, true),
+      pg_temp.test_point('lunch', '점심', 127.1, 37.1, 'stop', 60, false, 'lunch')
+    )
+  ) as course,
   jsonb_build_array(
     pg_temp.test_route('balanced', 127.05),
     pg_temp.test_route('winding', 127.1),
@@ -138,17 +146,20 @@ set local role service_role;
 
 create temp table collection_result on commit drop as
 select * from public.save_collection_version_internal(
-  '71000000-0000-0000-0000-000000000001', null, '북한강', '테스트 코스', (select points from fixture)
+  '71000000-0000-0000-0000-000000000001', null, '북한강', '테스트 코스', (select course from fixture)
 );
 grant select on collection_result to authenticated, service_role;
 insert into tap_results values
   ((select version_number = 1 from collection_result), 'new collection starts at immutable version 1'),
-  ((select count(*) = 1 from public.riding_collections), 'rider sees the owned collection only');
+  ((select count(*) = 1 from public.riding_collections), 'rider sees the owned collection only'),
+  ((select origin ->> 'kakaoPlaceId' = 'origin' and destination ->> 'kakaoPlaceId' = 'destination'
+    from public.collection_versions where id = (select version_id from collection_result)),
+   'immutable collection version stores the complete course endpoints');
 
 create temp table collection_result_2 on commit drop as
 select * from public.save_collection_version_internal(
   '71000000-0000-0000-0000-000000000001',
-  (select collection_id from collection_result), '북한강', '수정 설명', (select points from fixture)
+  (select collection_id from collection_result), '북한강', '수정 설명', (select course from fixture)
 );
 grant select on collection_result_2 to authenticated;
 set local role authenticated;
@@ -322,10 +333,72 @@ begin
       '71000000-0000-0000-0000-000000000001', null,
       '누락 플래그',
       '',
-      (select points #- '{0,selected}' from fixture)
+      (select jsonb_set(course, '{points}', (course -> 'points') #- '{0,selected}') from fixture)
     );
   exception when sqlstate 'P0001' then rejected := sqlerrm = 'INVALID_COLLECTION'; end;
   insert into tap_results values (rejected, 'collection rejects a waypoint missing the selected flag');
+end;
+$$;
+
+do $$
+declare
+  five_rest_course jsonb := (select course from fixture);
+  six_rest_course jsonb;
+  duplicate_id_course jsonb;
+  accepted_version integer;
+  rejected_six boolean := false;
+  rejected_duplicate boolean := false;
+begin
+  for rest_number in 1..5 loop
+    five_rest_course := jsonb_set(
+      five_rest_course,
+      '{points}',
+      five_rest_course -> 'points' || jsonb_build_array(
+        jsonb_set(
+          pg_temp.test_point('rest-' || rest_number, '같은 휴식지', 127.15, 37.15, 'optional', 30, false, 'rest'),
+          '{kakaoPlaceId}',
+          '"same-rest-place"'::jsonb,
+          false
+        )
+      ),
+      false
+    );
+  end loop;
+  select version_number into accepted_version
+  from public.save_collection_version_internal(
+    '71000000-0000-0000-0000-000000000001', null, '다섯 휴식', '', five_rest_course
+  );
+
+  six_rest_course := jsonb_set(
+    five_rest_course,
+    '{points}',
+    five_rest_course -> 'points' || jsonb_build_array(
+      pg_temp.test_point('rest-6', '여섯째 휴식', 127.16, 37.16, 'optional', 30, false, 'rest')
+    ),
+    false
+  );
+  begin
+    perform public.save_collection_version_internal(
+      '71000000-0000-0000-0000-000000000001', null, '여섯 휴식', '', six_rest_course
+    );
+  exception when sqlstate 'P0001' then rejected_six := sqlerrm = 'INVALID_COLLECTION'; end;
+
+  duplicate_id_course := jsonb_set(
+    five_rest_course,
+    '{points,2,id}',
+    five_rest_course #> '{points,1,id}',
+    false
+  );
+  begin
+    perform public.save_collection_version_internal(
+      '71000000-0000-0000-0000-000000000001', null, '중복 순번', '', duplicate_id_course
+    );
+  exception when sqlstate 'P0001' then rejected_duplicate := sqlerrm = 'INVALID_COLLECTION'; end;
+
+  insert into tap_results values
+    (accepted_version = 1, 'complete collection accepts five ordered rest occurrences at the boundary'),
+    (rejected_six, 'complete collection rejects a sixth rest occurrence'),
+    (rejected_duplicate, 'complete collection rejects duplicate occurrence ids');
 end;
 $$;
 
@@ -571,7 +644,7 @@ begin
     perform public.save_collection_version_internal(
       '72000000-0000-0000-0000-000000000002',
       (select collection_id from collection_result),
-      '탈취', '', (select points from fixture)
+      '탈취', '', (select course from fixture)
     );
   exception when sqlstate 'P0001' then collection_rejected := sqlerrm = 'COLLECTION_NOT_FOUND'; end;
   insert into tap_results values (collection_rejected, 'trusted save still enforces rider B ownership of rider A collection');

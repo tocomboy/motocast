@@ -46,14 +46,14 @@ select dblink_send_query('collection_c1', $query$
   select version_number from public.save_collection_version_internal(
     '73000000-0000-0000-0000-000000000003',
     '73000000-0000-0000-0000-000000000013', '동시 버전', '',
-    '[{"id":"point","label":"지점","kakaoPlaceId":"point","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"지점","address":"테스트 주소","roadAddress":null,"longitude":127.1,"latitude":37.1,"kind":"pass-through","dwellMinutes":0,"selected":true,"winding":true}]'::jsonb
+    '{"origin":{"kakaoPlaceId":"origin","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"출발","address":"테스트 주소","roadAddress":null,"longitude":127.0,"latitude":37.0},"destination":{"kakaoPlaceId":"destination","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"복귀","address":"테스트 주소","roadAddress":null,"longitude":127.2,"latitude":37.2},"points":[{"id":"lunch","label":"점심","kakaoPlaceId":"lunch","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"점심","address":"테스트 주소","roadAddress":null,"longitude":127.1,"latitude":37.1,"kind":"stop","dwellMinutes":60,"selected":true,"winding":false,"stopRole":"lunch"}]}'::jsonb
   )
 $query$);
 select dblink_send_query('collection_c2', $query$
   select version_number from public.save_collection_version_internal(
     '73000000-0000-0000-0000-000000000003',
     '73000000-0000-0000-0000-000000000013', '동시 버전', '',
-    '[{"id":"point","label":"지점","kakaoPlaceId":"point","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"지점","address":"테스트 주소","roadAddress":null,"longitude":127.1,"latitude":37.1,"kind":"pass-through","dwellMinutes":0,"selected":true,"winding":true}]'::jsonb
+    '{"origin":{"kakaoPlaceId":"origin","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"출발","address":"테스트 주소","roadAddress":null,"longitude":127.0,"latitude":37.0},"destination":{"kakaoPlaceId":"destination","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"복귀","address":"테스트 주소","roadAddress":null,"longitude":127.2,"latitude":37.2},"points":[{"id":"lunch","label":"점심","kakaoPlaceId":"lunch","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"점심","address":"테스트 주소","roadAddress":null,"longitude":127.1,"latitude":37.1,"kind":"stop","dwellMinutes":60,"selected":true,"winding":false,"stopRole":"lunch"}]}'::jsonb
   )
 $query$);
 
