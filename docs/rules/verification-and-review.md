@@ -147,7 +147,7 @@ Rules:
 
 For the exact `develop` SHA:
 
-- Before any hosted Preview mutation, push the reviewed SHA only to a slash-free `review-*` branch that is explicitly disabled in `vercel.json`, open a CI-only PR to `develop`, and prove after webhook settlement that the exact SHA has zero GitHub Deployments and zero Vercel checks. A branch name containing `/`, a canceled deployment, or an unverified assumption about glob precedence does not satisfy this gate.
+- Before any hosted Preview mutation, push the reviewed SHA only to a slash-free `review-*` branch that is explicitly disabled in `vercel.json`, open a CI-only PR to `develop`, and prove after webhook settlement that the exact SHA has zero GitHub Deployments and zero Vercel checks. The PR workflow must explicitly check out the PR head SHA, fail when `git rev-parse HEAD` differs, and read back the completed run's `head_sha`; GitHub's synthetic merge ref does not prove the reviewed release commit. A branch name containing `/`, a canceled deployment, or an unverified assumption about glob precedence does not satisfy this gate.
 - Keep the CI-only PR unmerged while applying the Preview database migration and exact-SHA Edge Functions. Immediately before Web release, require `origin/develop` to remain the reviewed PR base, then fast-forward it to the exact reviewed SHA. A merge, squash, or rebase commit is a different SHA and requires its own verification/review unless exact commit and tree equivalence are independently established and recorded.
 - Vercel deployment is `Ready` and identified as Preview from `develop`.
 - Build has no errors; HTTP/security headers are verified.
