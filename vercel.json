@@ -3,6 +3,8 @@
   "framework": "nextjs",
   "git": {
     "deploymentEnabled": {
+      "review-*": false,
+      "rollback-*": false,
       "*": false,
       "develop": true,
       "main": true
