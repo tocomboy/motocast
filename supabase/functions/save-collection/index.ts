@@ -1,6 +1,4 @@
-import { requireMember, serviceClient } from "../_shared/auth.ts";
-import { parseCollectionSaveRequest } from "../_shared/collection-request.ts";
-import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
+import { corsHeaders, jsonResponse } from "../_shared/http.ts";
 
 Deno.serve(async (request) => {
   const cors = corsHeaders(request);
@@ -8,30 +6,7 @@ Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   if (request.method !== "POST") return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405, cors);
 
-  try {
-    const { user } = await requireMember(request);
-    const verificationSecret = Deno.env.get("PLACE_VERIFICATION_SECRET");
-    if (!verificationSecret) throw new Error("PLACE_VERIFICATION_NOT_CONFIGURED");
-    const input = await parseCollectionSaveRequest(await request.json(), verificationSecret);
-    const { data, error } = await serviceClient().rpc("save_collection_version_internal", {
-      member_id: user.id,
-      target_collection_id: input.collectionId,
-      collection_title: input.title,
-      collection_description: input.description,
-      collection_points: input.points,
-    });
-    if (error || !Array.isArray(data) || data.length !== 1) throw new Error("COLLECTION_PERSIST_FAILED");
-    const row = data[0] as { collection_id?: unknown; version_id?: unknown; version_number?: unknown };
-    if (typeof row.collection_id !== "string" || typeof row.version_id !== "string" || !Number.isInteger(row.version_number)) {
-      throw new Error("COLLECTION_PERSIST_FAILED");
-    }
-    return jsonResponse({
-      collectionId: row.collection_id,
-      versionId: row.version_id,
-      versionNumber: row.version_number,
-    }, 200, cors);
-  } catch (error) {
-    console.error("save-collection failed", error instanceof Error ? error.message : "unknown error");
-    return jsonResponse({ error: safeErrorMessage(error) }, safeErrorStatus(error), cors);
-  }
+  return jsonResponse({
+    error: "롤백 안전 모드에서는 컬렉션 변경을 일시적으로 사용할 수 없습니다.",
+  }, 503, cors);
 });

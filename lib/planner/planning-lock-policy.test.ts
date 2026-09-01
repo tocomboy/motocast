@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { PlannerActionGate } from "./action-gate";
 
 const source = readFileSync(new URL("../../components/planner-dashboard.tsx", import.meta.url), "utf8");
+const rollbackCollectionFunction = readFileSync(new URL("../../supabase/functions/save-collection/index.ts", import.meta.url), "utf8");
 
 describe("planner persistence lock policy", () => {
   it("blocks every conflicting action until a delayed finalization releases its lease", async () => {
@@ -35,17 +36,26 @@ describe("planner persistence lock policy", () => {
     selection!.release();
   });
 
-  it("wires the execution gate to candidate, collection, and planning mutations", () => {
+  it("wires the execution gate to candidate and planning mutations while collection UI stays closed", () => {
     const finalization = source.indexOf('supabase.rpc("finalize_trip_plan"');
     const release = source.indexOf("planningLease.release()", finalization);
     expect(finalization).toBeGreaterThan(-1);
     expect(release).toBeGreaterThan(finalization);
     expect(source).toContain("actionGateRef.current.beginPlanning()");
     expect(source).toContain("actionGateRef.current.beginSelection()");
-    expect(source).toContain("actionGateRef.current.canApplyCollection()");
+    expect(source).toContain("<RollbackCollectionNotice pointCount={collectionPoints.length} />");
+    expect(source).not.toContain("<CollectionManager");
     expect(source).toContain("disabled={calculating || selectionPending}");
     expect(source).toContain('className="planner-fields" disabled={calculating || selectionPending}');
     expect(source).toContain("<ShareManager tripId={liveTripId} disabled={calculating || selectionPending} />");
+  });
+
+  it("makes the rollback save-collection function a mutation-free maintenance response", () => {
+    expect(rollbackCollectionFunction).toContain("}, 503, cors)");
+    expect(rollbackCollectionFunction).toContain("롤백 안전 모드");
+    expect(rollbackCollectionFunction).not.toContain("serviceClient");
+    expect(rollbackCollectionFunction).not.toContain("request.json()");
+    expect(rollbackCollectionFunction).not.toContain(".rpc(");
   });
 
   it("releases the selection lease before starting the non-blocking weather refresh", () => {

@@ -3,13 +3,11 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
-import { CollectionManager } from "@/components/collection-manager";
 import { KakaoMapCanvas, type MapMarkerRole } from "@/components/kakao-map-canvas";
 import { PlaceSearchField } from "@/components/place-search-field";
 import { ShareManager } from "@/components/share-manager";
 import {
   insertCollectionWinding,
-  prepareCollectionApplication,
   replaceCollectionStop,
   setCollectionRestSelected,
 } from "@/lib/collections/application";
@@ -93,6 +91,19 @@ function weatherModelLabel(status: string | undefined, model: string | undefined
   if (model === "ultra") return "초단기예보";
   if (model === "short") return "단기예보";
   return "날씨 미조회";
+}
+
+export function RollbackCollectionNotice({ pointCount }: { pointCount: number }) {
+  return (
+    <section className="collection-manager" aria-labelledby="rollback-collection-heading">
+      <div className="collection-heading-row">
+        <div><p className="eyebrow">ROLLBACK SAFETY</p><h2 id="rollback-collection-heading">라이딩 컬렉션</h2></div>
+      </div>
+      <p className="manager-status" role="status">
+        롤백 안전 모드에서는 컬렉션 저장·새 버전·적용을 일시 중지합니다. 현재 계획의 {pointCount}개 경유지는 경로 계산에만 사용됩니다.
+      </p>
+    </section>
+  );
 }
 
 function isUuid(value: unknown): value is string {
@@ -454,34 +465,6 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       winding,
       stopRole,
     };
-  }
-
-  function applyCollection(points: CollectionPoint[], title: string) {
-    if (!actionGateRef.current.canApplyCollection()) {
-      setNotice("현재 계획 상태 저장이 끝난 뒤 컬렉션을 적용해 주세요.");
-      return;
-    }
-    const application = prepareCollectionApplication(points);
-    routeGenerationRef.current += 1;
-    const orderedPoints = application.lunch || !places.lunch
-      ? application.orderedPoints
-      : replaceCollectionStop(
-          application.orderedPoints,
-          "lunch",
-          routePoint(places.lunch, "stop", 60, false, "lunch"),
-        );
-    setAppliedCollectionPoints(orderedPoints);
-    setWindingPoints(application.selectedWindingPoints);
-    setPlaces((current) => ({
-      ...current,
-      lunch: application.lunch ?? current.lunch,
-      dinner: application.dinner,
-      rest: application.rest,
-    }));
-    setDraft((current) => ({ ...current, includeRest: application.includeRest }));
-    if (liveCandidates) setLiveResultStale(true);
-    setWaypointStatus(`${title} 컬렉션의 최신 불변 버전을 계획에 적용했습니다.`);
-    setNotice("컬렉션을 적용했습니다. 변경된 장소로 안전 경로를 다시 계산해 주세요.");
   }
 
   async function loadWeather(candidate: RouteCandidate, tripId: string, generation = routeGenerationRef.current) {
@@ -1004,7 +987,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
           {connected ? (
             <div className="management-grid">
-              <CollectionManager currentPoints={collectionPoints} onApply={applyCollection} disabled={calculating || selectionPending} />
+              <RollbackCollectionNotice pointCount={collectionPoints.length} />
               <ShareManager tripId={liveTripId} disabled={calculating || selectionPending} />
             </div>
           ) : null}
