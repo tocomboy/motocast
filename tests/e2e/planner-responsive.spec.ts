@@ -65,6 +65,12 @@ test.describe("planner responsive shell", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(openButton).toBeFocused();
+    await expect(page.locator(".ride-summary h2")).toHaveText("추천 경로");
+    await expect(page.locator(".summary-metrics")).toContainText("주행");
+    await expect(page.locator(".summary-metrics")).toContainText("정차");
+    await expect(page.locator(".summary-metrics")).toContainText("예상 복귀");
+    await expect(page.getByRole("heading", { name: "시간에 따른 구간 날씨" })).toBeVisible();
+    await expect(page.locator(".candidate-card")).toHaveCount(0);
 
     const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(hasHorizontalOverflow).toBe(false);

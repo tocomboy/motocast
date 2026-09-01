@@ -34,11 +34,11 @@ export function prepareCollectionApplication(points: CollectionPoint[]) {
   };
 }
 
-export function replaceCollectionStop(
-  points: CollectionPoint[],
+export function replaceCollectionStop<T extends CollectionPoint>(
+  points: T[],
   stopRole: StopRole,
-  replacement: CollectionPoint | null,
-) {
+  replacement: T | null,
+): T[] {
   const firstIndex = points.findIndex((point) => point.stopRole === stopRole);
   if (!replacement) return points.filter((point) => point.stopRole !== stopRole);
   if (firstIndex < 0) return [...points, replacement];
@@ -48,18 +48,18 @@ export function replaceCollectionStop(
   });
 }
 
-export function setCollectionRestSelected(points: CollectionPoint[], selected: boolean) {
-  return points.map((point) => point.stopRole === "rest" ? { ...point, selected } : point);
+export function setCollectionRestSelected<T extends CollectionPoint>(points: T[], selected: boolean): T[] {
+  return points.map((point) => point.stopRole === "rest" ? { ...point, selected } as T : point);
 }
 
-export function insertCollectionWinding(points: CollectionPoint[], windingPoint: CollectionPoint) {
+export function insertCollectionWinding<T extends CollectionPoint>(points: T[], windingPoint: T): T[] {
   const lastWinding = points.findLastIndex((point) => point.winding);
   const lunchIndex = points.findIndex((point) => point.stopRole === "lunch");
   const insertionIndex = lastWinding >= 0 ? lastWinding + 1 : lunchIndex >= 0 ? lunchIndex : points.length;
   return [...points.slice(0, insertionIndex), windingPoint, ...points.slice(insertionIndex)];
 }
 
-export function moveCollectionWinding(points: CollectionPoint[], index: number, direction: -1 | 1) {
+export function moveCollectionWinding<T extends CollectionPoint>(points: T[], index: number, direction: -1 | 1): T[] {
   const target = points[index];
   const nextIndex = index + direction;
   if (!target?.winding || nextIndex < 0 || nextIndex >= points.length) return points;
@@ -68,6 +68,6 @@ export function moveCollectionWinding(points: CollectionPoint[], index: number, 
   return reordered;
 }
 
-export function removeCollectionWinding(points: CollectionPoint[], kakaoPlaceId: string) {
+export function removeCollectionWinding<T extends CollectionPoint>(points: T[], kakaoPlaceId: string): T[] {
   return points.filter((point) => !point.winding || point.kakaoPlaceId !== kakaoPlaceId);
 }

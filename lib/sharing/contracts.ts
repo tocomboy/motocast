@@ -178,6 +178,16 @@ export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
 
   const waypoints = raw.waypoints.map((item) => waypoint(item, schemaVersion === 1 ? 1 : 2)).sort((left, right) => left.position - right.position);
   if (waypoints.some((item, index) => item.position !== index)) throw new Error("INVALID_SHARE_SNAPSHOT");
+  if (schemaVersion === 3 && weather) {
+    const legs = recommendedRoute!.legs;
+    if (weather.segments.length !== legs.length || weather.segments.some((segment, index) => {
+      const leg = legs[index];
+      return segment.id !== `recommended-${index}` ||
+        segment.longitude !== leg.to.longitude ||
+        segment.latitude !== leg.to.latitude ||
+        segment.eta !== leg.arrivalAt;
+    })) throw new Error("INVALID_SHARE_SNAPSHOT");
+  }
   if (schemaVersion < 3 && weather && "candidateProfile" in weather && weather.candidateProfile !== selectedProfile) {
     throw new Error("INVALID_SHARE_SNAPSHOT");
   }

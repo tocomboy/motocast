@@ -164,3 +164,26 @@ test("renders a schema version 3 share with one recommended route and no candida
   await expect(page.locator(".shared-snapshot")).not.toContainText("와인딩 추정");
   await expect(page.locator(".shared-snapshot")).not.toContainText("최단");
 });
+
+test("renders an immutable schema version 1 share with its historical return fields", async ({ page }) => {
+  const legacy = {
+    ...snapshot(),
+    schemaVersion: 1,
+    trip: {
+      ...snapshot().trip,
+      desiredReturnAt: "2030-01-01T05:00:00.000Z",
+      hardReturnAt: "2030-01-01T06:00:00.000Z",
+    },
+  };
+  expect(() => parseSharedRideSnapshot(legacy)).not.toThrow();
+  await page.route("**/api/shares/resolve", async (request) => {
+    await request.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ snapshot: legacy }) });
+  });
+
+  await page.goto(`/share#${"c".repeat(43)}`);
+  await expect(page.getByText("희망 복귀 · 이전 발행본", { exact: true })).toBeVisible();
+  await expect(page.getByText("최종 복귀 · 이전 발행본", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "이전 발행본의 경로 후보" })).toBeVisible();
+  await expect(page.locator(".shared-routes article")).toHaveCount(3);
+  await expect(page.getByRole("heading", { name: "구간 통과 시각별 날씨" })).toBeVisible();
+});

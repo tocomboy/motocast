@@ -33,7 +33,6 @@ export function buildSharedMapPoints(input: {
   waypoints: SharedWaypoint[];
   lunchStop: SharedPlace;
   dinnerStop: SharedPlace | null;
-  selectedProfile: "recommended" | "balanced" | "winding" | "short";
 }) {
   const traversedWaypoints = input.waypoints.filter((item) => item.selected);
   const matchedWaypoints = new Set<SharedWaypoint>();
@@ -43,8 +42,7 @@ export function buildSharedMapPoints(input: {
       : [];
     const remainingRouteOccurrences = all.slice(index, -1)
       .filter((routePoint) => sameSharedPlace(routePoint, point)).length;
-    const legacyOmissionProfile = input.selectedProfile === "balanced" || input.selectedProfile === "short";
-    const matchingWaypoint = legacyOmissionProfile && remainingRouteOccurrences < samePlaceWaypoints.length
+    const matchingWaypoint = remainingRouteOccurrences < samePlaceWaypoints.length
       ? samePlaceWaypoints.find((waypoint) => !waypoint.winding) ?? samePlaceWaypoints[0]
       : samePlaceWaypoints[0];
     if (matchingWaypoint) matchedWaypoints.add(matchingWaypoint);
@@ -93,7 +91,6 @@ export function SharedRideSnapshotView({
     waypoints: snapshot.waypoints,
     lunchStop: snapshot.trip.lunchStop,
     dinnerStop: snapshot.trip.dinnerStop,
-    selectedProfile: snapshot.schemaVersion === 3 ? "recommended" : snapshot.trip.selectedProfile,
   });
   const weatherExpired = snapshot.weather
     ? new Date(snapshot.weather.validUntil).getTime() < new Date(referenceTime).getTime()

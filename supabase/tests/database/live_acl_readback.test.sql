@@ -42,6 +42,7 @@ with protected_tables(table_name) as (
     ('share_links'),
     ('api_usage_daily'),
     ('route_plan_drafts'),
+    ('route_plan_runs'),
     ('share_preview_grants'),
     ('kakao_oidc_handoffs')
 ), dml(privilege_name) as (
@@ -56,6 +57,7 @@ order by table_name, privilege_name;
 
 insert into acl_results(ok, description) values
   (not has_table_privilege('service_role', 'public.route_plan_drafts', 'SELECT'), 'service role cannot read staged route internals directly'),
+  (not has_table_privilege('service_role', 'public.route_plan_runs', 'SELECT'), 'service role cannot read planning lifecycle tombstones directly'),
   (not has_table_privilege('service_role', 'public.share_preview_grants', 'SELECT'), 'service role cannot read preview capability hashes'),
   (not has_table_privilege('service_role', 'public.kakao_oidc_handoffs', 'SELECT'), 'service role cannot read encrypted OIDC handoffs directly'),
   (not has_table_privilege('service_role', 'public.trips', 'TRUNCATE'), 'service role cannot truncate trip aggregates'),
@@ -97,7 +99,8 @@ with denied(function_signature) as (
     ('public.share_place(jsonb)'),
     ('public.share_route_point(jsonb)'),
     ('public.share_route(jsonb)'),
-    ('public.share_weather_segments(jsonb)')
+    ('public.share_weather_segments(jsonb)'),
+    ('public.recommended_route_matches_plan(jsonb,jsonb)')
 )
 insert into acl_results(ok, description)
 select

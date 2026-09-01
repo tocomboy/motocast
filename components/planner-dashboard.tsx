@@ -49,6 +49,8 @@ type PlannerPlaces = {
   rest: PlaceSearchResult | null;
 };
 
+type AppliedCollectionPoint = CollectionPoint & { uiKey: string };
+
 function seoulToday() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
     timeZone: "Asia/Seoul",
@@ -169,7 +171,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     rest: null,
   });
   const [windingPoints, setWindingPoints] = useState<PlaceSearchResult[]>([]);
-  const [appliedCollectionPoints, setAppliedCollectionPoints] = useState<CollectionPoint[] | null>(null);
+  const [appliedCollectionPoints, setAppliedCollectionPoints] = useState<AppliedCollectionPoint[] | null>(null);
   const [addingWinding, setAddingWinding] = useState(false);
   const [liveRoute, setLiveRoute] = useState<RouteCandidate | null>(null);
   const [liveTripId, setLiveTripId] = useState<string | null>(null);
@@ -189,10 +191,16 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const plannerPanelRef = useRef<HTMLElement>(null);
   const mobilePlanButtonRef = useRef<HTMLButtonElement>(null);
   const addWindingButtonRef = useRef<HTMLButtonElement>(null);
+  const appliedPointKeySequenceRef = useRef(0);
   const routeGenerationRef = useRef(0);
   const liveTripIdRef = useRef<string | null>(null);
   const weatherRequestRef = useRef(0);
   const actionGateRef = useRef(new PlannerActionGate());
+
+  function asAppliedPoint(point: CollectionPoint): AppliedCollectionPoint {
+    appliedPointKeySequenceRef.current += 1;
+    return { ...point, uiKey: `applied-point-${appliedPointKeySequenceRef.current}` };
+  }
 
   useEffect(() => {
     const currentKey = "motocast-planner-draft-v2";
@@ -268,12 +276,12 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     ? formatPlannerWeatherStatus(selectedWeather, weatherClock ?? selectedWeather.staleObservedAt ?? selectedWeather.generatedAt)
     : null;
   const selectedWeatherAnnouncement = weatherLoading === selected.id
-    ? `${selected.label} 경로 날씨 조회 중`
+    ? `${selected.label} 날씨 조회 중`
     : selectedWeather && selectedWeatherStatus
       ? selectedWeather.stale
-        ? `${selected.label} 경로 날씨: ${weatherFailureLabel(selectedWeather.failureKind)}로 저장본 표시${selectedWeatherStatus.expired ? ", 유효기간 만료" : ""}`
-        : `${selected.label} 경로 날씨: ${selectedWeather.source === "cache" ? "최근 저장 예보" : "실시간 조회 예보"}${selectedWeatherStatus.expired ? ", 유효기간 만료" : ""}`
-      : `${selected.label} 경로 날씨 미조회`;
+        ? `${selected.label} 날씨: ${weatherFailureLabel(selectedWeather.failureKind)}로 저장본 표시${selectedWeatherStatus.expired ? ", 유효기간 만료" : ""}`
+        : `${selected.label} 날씨: ${selectedWeather.source === "cache" ? "최근 저장 예보" : "실시간 조회 예보"}${selectedWeatherStatus.expired ? ", 유효기간 만료" : ""}`
+      : `${selected.label} 날씨 미조회`;
 
   useEffect(() => {
     if (!selectedWeather) return;
@@ -343,7 +351,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       setAppliedCollectionPoints((current) => {
         if (!current) return null;
         const replacement = place
-          ? routePoint(place, stop.kind, stop.dwellMinutes, false, stop.stopRole)
+          ? asAppliedPoint(routePoint(place, stop.kind, stop.dwellMinutes, false, stop.stopRole))
           : null;
         return replaceCollectionStop(current, stop.stopRole, replacement);
       });
@@ -371,7 +379,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     setWindingPoints((current) => [...current, place]);
     setAppliedCollectionPoints((current) => {
       if (!current) return null;
-      const point = routePoint(place, "pass-through", 0, true);
+      const point = asAppliedPoint(routePoint(place, "pass-through", 0, true));
       return insertCollectionWinding(current, point);
     });
     setAddingWinding(false);
@@ -472,7 +480,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
           "lunch",
           routePoint(places.lunch, "stop", 60, false, "lunch"),
         );
-    setAppliedCollectionPoints(orderedPoints);
+    setAppliedCollectionPoints(orderedPoints.map(asAppliedPoint));
     setWindingPoints(application.selectedWindingPoints);
     setPlaces((current) => ({
       ...current,
@@ -735,7 +743,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
               {connected && appliedCollectionPoints ? (
                 <ol className="ordered-waypoints" aria-label="적용된 컬렉션 경유지 순서">
                   {appliedCollectionPoints.map((point, index) => (
-                    <li className="ordered-waypoint" key={`${point.kakaoPlaceId}-${index}`}>
+                    <li className="ordered-waypoint" key={point.uiKey}>
                       <span>{String(index + 1).padStart(2, "0")}</span>
                       <div>
                         <strong>{point.name}</strong>

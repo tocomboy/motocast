@@ -67,6 +67,50 @@ returns jsonb language sql immutable as $$
   );
 $$;
 
+create or replace function pg_temp.test_recommended_route()
+returns jsonb language sql immutable as $$
+  with points as (
+    select
+      pg_temp.test_point('origin', '출발', 127, 37, 'pass-through', 0, false) as origin,
+      pg_temp.test_point('winding', '와인딩', 127.05, 37.05, 'pass-through', 0, true) as winding,
+      pg_temp.test_point('lunch', '점심', 127.1, 37.1, 'stop', 60, false, 'lunch') as lunch,
+      pg_temp.test_point('destination', '복귀', 127.2, 37.2, 'pass-through', 0, false) as destination
+  ), legs as (
+    select jsonb_build_array(
+      jsonb_build_object(
+        'from', origin, 'to', winding, 'via', '[]'::jsonb,
+        'departureAt', '2026-08-31T00:00:00.000Z', 'arrivalAt', '2026-08-31T00:10:00.000Z',
+        'dwellMinutes', 0, 'distanceMeters', 10000, 'durationSeconds', 600, 'forecastTraffic', false,
+        'sections', jsonb_build_array(jsonb_build_object('distance', 10000, 'duration', 600,
+          'roads', jsonb_build_array(jsonb_build_object('name', '도로 1', 'distance', 10000, 'duration', 600,
+            'vertexes', jsonb_build_array(127, 37, 127.025, 37.025, 127.05, 37.05)))))
+      ),
+      jsonb_build_object(
+        'from', winding, 'to', lunch, 'via', '[]'::jsonb,
+        'departureAt', '2026-08-31T00:10:00.000Z', 'arrivalAt', '2026-08-31T00:20:00.000Z',
+        'dwellMinutes', 60, 'distanceMeters', 10000, 'durationSeconds', 600, 'forecastTraffic', false,
+        'sections', jsonb_build_array(jsonb_build_object('distance', 10000, 'duration', 600,
+          'roads', jsonb_build_array(jsonb_build_object('name', '도로 2', 'distance', 10000, 'duration', 600,
+            'vertexes', jsonb_build_array(127.05, 37.05, 127.075, 37.075, 127.1, 37.1)))))
+      ),
+      jsonb_build_object(
+        'from', lunch, 'to', destination, 'via', '[]'::jsonb,
+        'departureAt', '2026-08-31T01:20:00.000Z', 'arrivalAt', '2026-08-31T01:30:00.000Z',
+        'dwellMinutes', 0, 'distanceMeters', 10000, 'durationSeconds', 600, 'forecastTraffic', false,
+        'sections', jsonb_build_array(jsonb_build_object('distance', 10000, 'duration', 600,
+          'roads', jsonb_build_array(jsonb_build_object('name', '도로 3', 'distance', 10000, 'duration', 600,
+            'vertexes', jsonb_build_array(127.1, 37.1, 127.15, 37.15, 127.2, 37.2)))))
+      )
+    ) as value from points
+  )
+  select jsonb_build_object(
+    'candidate', jsonb_build_object('id', 'recommended', 'label', '추천 경로', 'estimatedWinding', false),
+    'safety', jsonb_build_object('vehicle', 'motorcycle', 'motorwayExcluded', true, 'fallbackUsed', false),
+    'totalDistanceMeters', 30000, 'totalDurationSeconds', 5400,
+    'returnAt', '2026-08-31T01:30:00.000Z', 'legs', legs.value
+  ) from legs;
+$$;
+
 create temp table fixture on commit drop as
 select
   jsonb_build_array(
@@ -175,13 +219,25 @@ where route -> 'candidate' ->> 'id' <> 'short';
 select public.stage_route_candidate_internal(
   '71000000-0000-0000-0000-000000000001',
   '73000000-0000-4000-8000-000000000004',
-  case when route -> 'candidate' ->> 'id' = 'short'
-    then jsonb_set((select plan from plan_fixture), '{title}', '"다른 계획"'::jsonb, false)
-    else (select plan from plan_fixture)
-  end,
-  route
+  (select plan from plan_fixture), route
 )
-from jsonb_array_elements((select routes from fixture)) as staged(route);
+from jsonb_array_elements((select routes from fixture)) as staged(route)
+where route -> 'candidate' ->> 'id' <> 'short';
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.stage_route_candidate_internal(
+      '71000000-0000-0000-0000-000000000001',
+      '73000000-0000-4000-8000-000000000004',
+      jsonb_set((select plan from plan_fixture), '{title}', '"다른 계획"'::jsonb, false),
+      (select route from jsonb_array_elements((select routes from fixture)) staged(route)
+       where route -> 'candidate' ->> 'id' = 'short')
+    );
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'PLANNING_ID_REUSED'; end;
+  insert into tap_results values (rejected, 'staging rejects a second plan payload for one planning id');
+end;
+$$;
 
 select public.stage_route_candidate_internal(
   '71000000-0000-0000-0000-000000000001',
@@ -381,6 +437,7 @@ insert into tap_results values
   ((select preview_snapshot -> 'route' ? 'returnAt' from preview_result), 'new shares retain the computed route return time'),
   ((select preview_snapshot -> 'route' -> 'candidate' ->> 'id' = 'recommended' from preview_result), 'new shares expose one recommended route identity'),
   ((select preview_snapshot -> 'weather' is not null from preview_result), 'share includes weather only when it matches the selected stored route'),
+  ((select preview_snapshot -> 'weather' -> 'segments' -> 0 ->> 'id' = 'recommended-0' from preview_result), 'schema 3 normalizes legacy weather segment identity to recommended'),
   ((select preview_snapshot -> 'waypoints' -> 0 ->> 'id' = 'waypoint-0' from preview_result), 'share uses snapshot-local waypoint ids instead of owner table ids'),
   ((select preview_snapshot -> 'weather' ? 'validUntil' from preview_result), 'share exposes weather validity for freshness display'),
   ((select preview_snapshot -> 'weather' ->> 'stale' = 'true' from preview_result), 'share persists a provider-failure stale observation'),
@@ -529,7 +586,7 @@ select public.stage_route_candidate_internal(
   '71000000-0000-0000-0000-000000000001',
   '73000000-0000-4000-8000-000000000007',
   (select plan from recommended_plan_fixture),
-  pg_temp.test_route('recommended', 127.08)
+  pg_temp.test_recommended_route()
 );
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
@@ -551,7 +608,7 @@ select public.stage_route_candidate_internal(
   '71000000-0000-0000-0000-000000000001',
   '73000000-0000-4000-8000-000000000008',
   (select plan from recommended_plan_fixture),
-  pg_temp.test_route('recommended', 127.08)
+  pg_temp.test_recommended_route()
 );
 select public.stage_route_candidate_internal(
   '71000000-0000-0000-0000-000000000001',

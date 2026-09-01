@@ -55,6 +55,24 @@ The initial `trips` table still has non-null `desired_return_at` and `hard_retur
 
 ## Supabase promotion order
 
+The single-route browser and `plan-route` function are a coupled contract
+change: the new browser omits `candidate`, the old function requires it, and
+the new function rejects the old browser's candidate policy. Use a communicated
+Preview maintenance window. Apply the database migration, deploy the reviewed
+Edge Functions, then deploy the exact reviewed Vercel SHA; route calculation
+stays closed until the migration head, deployed function version/JWT setting,
+and Vercel SHA/Ready readbacks agree. Never describe a mixed-version interval
+as available.
+
+Rollback is coupled as well. Before Production, prepare and independently
+review a reader-compatible rollback artifact that understands immutable
+schemaVersion 3 shares even if the route writer is rolled back. A Production
+rollout without that artifact or an explicitly approved maintenance/rollback
+plan is forbidden. In Preview, revoke and read back every test-owned
+schemaVersion 3 link before rollback, then roll back Vercel and Edge together;
+never rewrite an issued snapshot. Production remains blocked by `OPS-008` and
+this rollback gate.
+
 1. After confirming the exact target and receiving approval, reset only the disposable local PostgreSQL 17 instance at `127.0.0.1:54322`; then apply all migrations from an empty database and run the explicit database tests. Never use this reset against either hosted project.
 2. Obtain fixed-SHA independent data-integrity and security approval.
 3. Dry-run Preview migration application:
@@ -63,8 +81,8 @@ The initial `trips` table still has non-null `desired_return_at` and `hard_retur
    npx --yes supabase@2.116.0 db push --project-ref lehjmbgfpoemqcwxowbx --include-all --skip-vault --dry-run
    ```
 
-4. Apply to Preview only, then read back migration versions, RLS, function ACLs, and Edge Function versions.
-5. Deploy `search-places`, `plan-route`, `weather-timeline`, `save-collection`, and `kakao-oidc` from the reviewed fixed SHA. The first four retain JWT verification; only `kakao-oidc` is intentionally public with `verify_jwt=false` under `AUTH-004`.
+4. Apply to Preview only, then read back migration versions, RLS and function ACLs.
+5. During the Preview maintenance window, deploy `search-places`, `plan-route`, `weather-timeline`, `save-collection`, and `kakao-oidc` from the reviewed fixed SHA, then deploy/read back that exact Vercel SHA. The first four retain JWT verification; only `kakao-oidc` is intentionally public with `verify_jwt=false` under `AUTH-004`. Read back each deployed Edge Function version and JWT setting after deployment.
 6. Register Preview-only Auth provider redirects and server secrets through the Supabase Dashboard or masked input. Never put values in command arguments or shell history. Preview name-only readback confirms all ten application secret names, including `KAKAO_LOGIN_CLIENT_SECRET` and `KAKAO_OIDC_STATE_SECRET`; values are never read or printed. The authorize request must use the HTTPS callback derived from `SUPABASE_URL`, not an internal Edge `request.url`.
 7. Use disposable Preview identities to execute the complete Preview gate. The first Kakao identity has been registered as the sole Preview administrator; use a separate invited identity for rider-isolation checks.
 8. Resolve `OPS-008`, back up the chosen empty/pre-cutover Production database, and repeat the reviewed migration/function sequence for Production.

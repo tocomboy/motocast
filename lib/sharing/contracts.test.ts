@@ -75,6 +75,33 @@ describe("parseSharedRideSnapshot", () => {
     });
     expect(() => parseSharedRideSnapshot({ ...current, routes: snapshot.routes })).toThrow("INVALID_SHARE_SNAPSHOT");
     expect(() => parseSharedRideSnapshot({ ...current, route: route("balanced", 127.1) })).toThrow("INVALID_RECOMMENDED_ROUTE_RESPONSE");
+
+    const matchingWeather = {
+      source: "kma",
+      issuedAt: "2026-08-30T23:30:00.000Z",
+      retrievedAt: "2026-08-30T23:35:00.000Z",
+      validUntil: "2026-08-31T02:00:00.000Z",
+      stale: false,
+      staleObservedAt: null,
+      staleReason: null,
+      failureKind: null,
+      segments: [{
+        id: "recommended-0", label: destination.label,
+        longitude: destination.longitude, latitude: destination.latitude,
+        eta: "2026-08-31T00:10:00.000Z", status: "forecast", model: "ultra",
+        issuedAt: "2026-08-30T23:30:00.000Z", condition: "clear",
+        temperatureC: 20, precipitationProbability: 0, windSpeedMps: 1,
+      }],
+    };
+    expect(() => parseSharedRideSnapshot({ ...current, weather: matchingWeather })).not.toThrow();
+    expect(() => parseSharedRideSnapshot({
+      ...current,
+      weather: { ...matchingWeather, segments: [{ ...matchingWeather.segments[0], id: "balanced-0" }] },
+    })).toThrow("INVALID_SHARE_SNAPSHOT");
+    expect(() => parseSharedRideSnapshot({
+      ...current,
+      weather: { ...matchingWeather, segments: [{ ...matchingWeather.segments[0], longitude: 128 }] },
+    })).toThrow("INVALID_SHARE_SNAPSHOT");
   });
 
   it("accepts a complete immutable snapshot with three safe routes", () => {
