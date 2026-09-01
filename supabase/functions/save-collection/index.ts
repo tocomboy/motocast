@@ -15,6 +15,7 @@ Deno.serve(async (request) => {
     const input = await parseCollectionSaveRequest(await request.json(), verificationSecret);
     const { data, error } = await serviceClient().rpc("save_collection_version_internal", {
       member_id: user.id,
+      save_operation_id: input.saveOperationId,
       target_collection_id: input.collectionId,
       collection_title: input.title,
       collection_description: input.description,

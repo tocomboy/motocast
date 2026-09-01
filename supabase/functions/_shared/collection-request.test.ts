@@ -29,6 +29,7 @@ async function requestPoint(overrides: Record<string, unknown> = {}) {
 
 async function requestBody(points?: Awaited<ReturnType<typeof requestPoint>>[]) {
   return {
+    saveOperationId: "123e4567-e89b-42d3-a456-426614174000",
     collectionId: null,
     title: "  북한강  ",
     description: "테스트",
@@ -106,6 +107,16 @@ describe("parseCollectionSaveRequest", () => {
       stopRole: "lunch",
     })));
     await expect(parseCollectionSaveRequest(await requestBody(lunches), secret))
+      .rejects.toThrow("INVALID_COLLECTION");
+  });
+
+  it.each([
+    { kind: "stop", dwellMinutes: 60 },
+    { kind: "stop", dwellMinutes: 0, stopRole: "lunch" },
+    { kind: "pass-through", dwellMinutes: 30 },
+  ])("rejects route-incompatible immutable stop semantics %#", async (overrides) => {
+    const point = await requestPoint({ id: "invalid-semantics", ...overrides });
+    await expect(parseCollectionSaveRequest(await requestBody([point]), secret))
       .rejects.toThrow("INVALID_COLLECTION");
   });
 });

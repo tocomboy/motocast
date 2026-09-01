@@ -41,17 +41,23 @@ describe("planner persistence lock policy", () => {
     expect(source).toContain("actionGateRef.current.beginPlanning()");
     expect(source).toContain("actionGateRef.current.canApplyCollection()");
     expect(source).toContain('className="planner-fields" disabled={calculating}');
-    expect(source).toContain("<ShareManager tripId={liveTripId} previewRequest={sharePreviewRequest} disabled={calculating} />");
+    expect(source).toContain("onShare={prepareCollectionShare}");
+    expect(source).toContain('tripId={!liveResultStale && shareIntentGeneration === null ? liveTripId : null}');
+    expect(source).toContain("previewRequest={sharePreviewRequest}");
+    expect(source).toContain("disabled={calculating}");
     expect(source).not.toContain("select_trip_candidate");
   });
 
   it("starts weather refresh only after the single route is finalized and waits before direct sharing", () => {
     const finalization = source.indexOf('supabase.rpc("finalize_trip_plan"');
-    const shareWeatherRefresh = source.indexOf("const weatherReady = await loadWeather(candidate, savedTripId, calculationGeneration)", finalization);
-    const normalWeatherRefresh = source.indexOf("void loadWeather(candidate, savedTripId, calculationGeneration)", shareWeatherRefresh);
+    const shareWeatherRefresh = source.indexOf("await loadWeather(candidate, savedTripId, calculationGeneration, true)", finalization);
+    const shareIntentRelease = source.indexOf("setShareIntentGeneration(null)", shareWeatherRefresh);
+    const previewOpen = source.indexOf("setSharePreviewRequest", shareIntentRelease);
+    const normalWeatherRefresh = source.indexOf("void loadWeather(candidate, savedTripId, calculationGeneration)", previewOpen);
     expect(shareWeatherRefresh).toBeGreaterThan(finalization);
-    expect(normalWeatherRefresh).toBeGreaterThan(shareWeatherRefresh);
-    expect(source.indexOf("setSharePreviewRequest", shareWeatherRefresh)).toBeGreaterThan(shareWeatherRefresh);
+    expect(shareIntentRelease).toBeGreaterThan(shareWeatherRefresh);
+    expect(previewOpen).toBeGreaterThan(shareIntentRelease);
+    expect(normalWeatherRefresh).toBeGreaterThan(previewOpen);
     expect(source).toContain("withClientTimeout(");
   });
 

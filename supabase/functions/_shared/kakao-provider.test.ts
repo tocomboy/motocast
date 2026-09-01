@@ -110,6 +110,12 @@ describe("requestKakaoRoute", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("classifies transport failures as temporary provider unavailability", async () => {
+    const fetchImpl = vi.fn(async () => { throw new TypeError("network detail must stay private"); });
+    await expect(requestKakaoRoute(request(), fetchImpl)).rejects.toThrow("PROVIDER_UNAVAILABLE");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     [401, "PROVIDER_AUTH_FAILED"],
     [403, "PROVIDER_AUTH_FAILED"],
@@ -126,6 +132,14 @@ describe("requestKakaoRoute", () => {
 
   it("rejects malformed successful responses as provider contract failures", async () => {
     const fetchImpl = vi.fn(async () => Response.json({ routes: [{ broken: true }] }));
+    await expect(requestKakaoRoute(request(), fetchImpl)).rejects.toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+  });
+
+  it("classifies malformed JSON as an invalid provider response", async () => {
+    const fetchImpl = vi.fn(async () => new Response("not-json", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
     await expect(requestKakaoRoute(request(), fetchImpl)).rejects.toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
   });
 });

@@ -18,6 +18,10 @@ export function weatherFailureLabel(kind: WeatherFailureKind | undefined) {
   }[kind ?? "request"];
 }
 
+export function isFreshWeatherForSharing(response: WeatherTimelineResponse, referenceTime: string) {
+  return !response.stale && new Date(response.validUntil).getTime() > new Date(referenceTime).getTime();
+}
+
 export function formatPlannerWeatherStatus(
   response: WeatherTimelineResponse,
   referenceTime: string,

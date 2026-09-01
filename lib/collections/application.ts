@@ -37,8 +37,8 @@ export function prepareCollectionApplication(course: CollectionCourse) {
     origin: selectedPlaceToPlace(course.origin),
     destination: selectedPlaceToPlace(course.destination),
     orderedPoints: [...points],
-    lunch: lunch ? collectionPointToPlace(lunch) : null,
-    dinner: dinner ? collectionPointToPlace(dinner) : null,
+    lunch: lunch ? { id: lunch.id, place: collectionPointToPlace(lunch) } : null,
+    dinner: dinner ? { id: dinner.id, place: collectionPointToPlace(dinner) } : null,
     rests: rests.map((point) => ({
       id: point.id,
       place: collectionPointToPlace(point),
@@ -46,16 +46,12 @@ export function prepareCollectionApplication(course: CollectionCourse) {
     })),
     selectedWindingPoints: points
       .filter((point) => point.selected && point.winding)
-      .map(collectionPointToPlace),
+      .map((point) => ({ id: point.id, place: collectionPointToPlace(point) })),
   };
 }
 
 export function selectedWindingCount(points: CollectionPoint[]) {
   return points.filter((point) => point.selected && point.winding).length;
-}
-
-export function hasSelectedWindingPlace(points: CollectionPoint[], kakaoPlaceId: string) {
-  return points.some((point) => point.selected && point.winding && point.kakaoPlaceId === kakaoPlaceId);
 }
 
 export function replaceCollectionStop<T extends CollectionPoint>(

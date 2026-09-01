@@ -40,11 +40,19 @@ describe("safe provider errors", () => {
     expect(safeErrorCode(new Error("INVALID_ROUTE_PROVIDER_RESPONSE"))).toBe("ROUTE_RESPONSE_INVALID");
   });
 
-  it("does not mislabel provider authentication, rate, or outage failures as no safe route", () => {
-    for (const code of ["PROVIDER_AUTH_FAILED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE"]) {
+  it("does not mislabel provider rate or outage failures as no safe route", () => {
+    for (const code of ["PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE"]) {
       expect(safeErrorStatus(new Error(code))).toBe(503);
       expect(safeErrorMessage(new Error(code))).toContain("공급자");
     }
+  });
+
+  it("classifies provider authentication as configuration rather than a temporary outage", () => {
+    const error = new Error("PROVIDER_AUTH_FAILED");
+    expect(safeErrorCode(error)).toBe("ROUTE_BUDGET_OR_CONFIG");
+    expect(safeErrorStatus(error)).toBe(503);
+    expect(safeErrorMessage(error)).toContain("인증 설정");
+    expect(safeErrorMessage(error)).not.toContain("일시적인 문제");
   });
 
   it("keeps rejected provider requests distinct from temporary outages", () => {

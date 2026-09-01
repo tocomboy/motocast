@@ -35,6 +35,7 @@ with protected_tables(table_name) as (
     ('invitations'),
     ('riding_collections'),
     ('collection_versions'),
+    ('collection_save_operations'),
     ('trips'),
     ('trip_waypoints'),
     ('route_cache'),
@@ -67,7 +68,7 @@ insert into acl_results(ok, description) values
 with allowed(function_signature) as (
   values
     ('public.consume_daily_api_budget_internal(text,text,integer,uuid)'),
-    ('public.save_collection_version_internal(uuid,uuid,text,text,jsonb)'),
+    ('public.save_collection_version_internal(uuid,uuid,uuid,text,text,jsonb)'),
     ('public.stage_route_candidate_internal(uuid,uuid,jsonb,jsonb)'),
     ('public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)'),
     ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)'),
@@ -112,7 +113,7 @@ from denied;
 with allowed(function_oid) as (
   values
     ('public.consume_daily_api_budget_internal(text,text,integer,uuid)'::regprocedure::oid),
-    ('public.save_collection_version_internal(uuid,uuid,text,text,jsonb)'::regprocedure::oid),
+    ('public.save_collection_version_internal(uuid,uuid,uuid,text,text,jsonb)'::regprocedure::oid),
     ('public.stage_route_candidate_internal(uuid,uuid,jsonb,jsonb)'::regprocedure::oid),
     ('public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)'::regprocedure::oid),
     ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)'::regprocedure::oid),

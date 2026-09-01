@@ -10,6 +10,24 @@ alter table public.collection_versions
 -- no meal stop directly instead of manufacturing a compatibility placeholder.
 alter table public.trips alter column lunch_stop drop not null;
 
+create table if not exists public.collection_save_operations (
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  operation_id uuid not null,
+  payload_hash text not null check (payload_hash ~ '^[0-9a-f]{64}$'),
+  collection_id uuid,
+  version_id uuid,
+  version_number integer check (version_number is null or version_number > 0),
+  created_at timestamptz not null default now(),
+  primary key (owner_id, operation_id),
+  check (
+    (collection_id is null and version_id is null and version_number is null)
+    or (collection_id is not null and version_id is not null and version_number is not null)
+  )
+);
+
+alter table public.collection_save_operations enable row level security;
+revoke all on table public.collection_save_operations from public, anon, authenticated, service_role;
+
 create or replace function public.is_valid_collection_points(points jsonb)
 returns boolean
 language sql
@@ -106,12 +124,17 @@ as $$
     )
     and not exists (
       select 1 from jsonb_array_elements(course -> 'points') item
-      where coalesce((item ->> 'winding')::boolean, false)
-        and (
-          item ->> 'kind' <> 'pass-through'
-          or (item ->> 'dwellMinutes')::integer <> 0
+      where case
+        when item ->> 'kind' = 'pass-through' then
+          (item ->> 'dwellMinutes')::integer <> 0
           or (item ? 'stopRole' and item -> 'stopRole' <> 'null'::jsonb)
-        )
+        when item ->> 'stopRole' = 'rest' then
+          item ->> 'kind' <> 'optional' or (item ->> 'dwellMinutes')::integer <= 0
+        when item ->> 'stopRole' in ('lunch', 'dinner') then
+          item ->> 'kind' <> 'stop' or (item ->> 'dwellMinutes')::integer <= 0
+        else true
+      end
+      or (coalesce((item ->> 'winding')::boolean, false) and item ->> 'kind' <> 'pass-through')
     )
     and (
       select count(*) <= 1
@@ -523,8 +546,11 @@ as $$
   ) end;
 $$;
 
+drop function if exists public.save_collection_version_internal(uuid, uuid, text, text, jsonb);
+
 create or replace function public.save_collection_version_internal(
   member_id uuid,
+  save_operation_id uuid,
   target_collection_id uuid,
   collection_title text,
   collection_description text,
@@ -539,16 +565,42 @@ declare
   owned_collection public.riding_collections%rowtype;
   next_version integer;
   created_version_id uuid;
+  request_hash text;
+  stored_operation public.collection_save_operations%rowtype;
 begin
   if member_id is null or not exists (
     select 1 from public.memberships where user_id = member_id and revoked_at is null
   ) then
     raise exception 'MEMBERSHIP_REQUIRED';
   end if;
-  if collection_title is null or char_length(btrim(collection_title)) not between 1 and 120
+  if save_operation_id is null
+     or collection_title is null or char_length(btrim(collection_title)) not between 1 and 120
      or collection_description is null or char_length(collection_description) > 2000
      or not public.is_valid_verified_collection_course(collection_points) then
     raise exception 'INVALID_COLLECTION';
+  end if;
+
+  request_hash := encode(extensions.digest(jsonb_build_object(
+    'collectionId', target_collection_id,
+    'title', btrim(collection_title),
+    'description', collection_description,
+    'course', collection_points
+  )::text, 'sha256'), 'hex');
+
+  insert into public.collection_save_operations(owner_id, operation_id, payload_hash)
+  values (member_id, save_operation_id, request_hash)
+  on conflict (owner_id, operation_id) do nothing;
+
+  select * into stored_operation
+  from public.collection_save_operations
+  where owner_id = member_id and operation_id = save_operation_id
+  for update;
+  if not found or stored_operation.payload_hash is distinct from request_hash then
+    raise exception 'COLLECTION_OPERATION_REUSED';
+  end if;
+  if stored_operation.collection_id is not null then
+    return query select stored_operation.collection_id, stored_operation.version_id, stored_operation.version_number;
+    return;
   end if;
 
   if target_collection_id is null then
@@ -579,6 +631,12 @@ begin
   ) returning id into created_version_id;
 
   if created_version_id is null then raise exception 'COLLECTION_WRITE_DROPPED'; end if;
+  update public.collection_save_operations
+  set collection_id = owned_collection.id,
+      version_id = created_version_id,
+      version_number = next_version
+  where owner_id = member_id and operation_id = save_operation_id;
+  if not found then raise exception 'COLLECTION_WRITE_DROPPED'; end if;
   return query select owned_collection.id, created_version_id, next_version;
 exception
   when raise_exception then raise;
@@ -593,5 +651,5 @@ revoke all on function public.recommended_route_matches_plan_with_required_point
 revoke all on function public.recommended_route_matches_plan(jsonb, jsonb) from public, anon, authenticated, service_role;
 revoke all on function public.save_trip_plan_with_required_lunch(jsonb, jsonb) from public, anon, authenticated, service_role;
 revoke all on function public.save_trip_plan(jsonb, jsonb) from public, anon, authenticated, service_role;
-revoke all on function public.save_collection_version_internal(uuid, uuid, text, text, jsonb) from public, anon, authenticated;
-grant execute on function public.save_collection_version_internal(uuid, uuid, text, text, jsonb) to service_role;
+revoke all on function public.save_collection_version_internal(uuid, uuid, uuid, text, text, jsonb) from public, anon, authenticated;
+grant execute on function public.save_collection_version_internal(uuid, uuid, uuid, text, text, jsonb) to service_role;

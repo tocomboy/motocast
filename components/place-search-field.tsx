@@ -21,7 +21,6 @@ export function PlaceSearchField({ label, placeholder, required = false, autoFoc
   const [results, setResults] = useState<PlaceSearchResult[]>([]);
   const [status, setStatus] = useState(selected ? "장소가 선택되었습니다." : "검색어를 입력해 주세요.");
   const [searching, setSearching] = useState(false);
-
   function changeQuery(value: string) {
     setQuery(value);
     setResults([]);

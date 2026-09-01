@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { WeatherTimelineResponse } from "./provider-contract";
-import { formatPlannerWeatherStatus } from "./status";
+import { formatPlannerWeatherStatus, isFreshWeatherForSharing } from "./status";
 
 const staleResponse: WeatherTimelineResponse = {
   generatedAt: "2026-08-29T00:00:00.000Z",
@@ -50,5 +50,14 @@ describe("formatPlannerWeatherStatus", () => {
     expect(formatPlannerWeatherStatus({ ...staleResponse, failureKind: "budget" }, staleResponse.staleObservedAt!).notice).toContain("무료 API 한도 소진");
     expect(formatPlannerWeatherStatus({ ...staleResponse, failureKind: "configuration" }, staleResponse.staleObservedAt!).notice).toContain("날씨 설정 오류");
     expect(formatPlannerWeatherStatus({ ...staleResponse, failureKind: "persistence" }, staleResponse.staleObservedAt!).notice).toContain("날씨 저장 처리 오류");
+  });
+});
+
+describe("isFreshWeatherForSharing", () => {
+  it("accepts only a non-stale snapshot whose validity is strictly in the future", () => {
+    expect(isFreshWeatherForSharing({ ...staleResponse, stale: false }, "2026-08-29T03:59:59.999Z")).toBe(true);
+    expect(isFreshWeatherForSharing({ ...staleResponse, stale: false }, staleResponse.validUntil)).toBe(false);
+    expect(isFreshWeatherForSharing({ ...staleResponse, stale: false }, "2026-08-29T04:00:00.001Z")).toBe(false);
+    expect(isFreshWeatherForSharing(staleResponse, "2026-08-29T03:00:00.000Z")).toBe(false);
   });
 });

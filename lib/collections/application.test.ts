@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   appliedWindingActionLabel,
-  hasSelectedWindingPlace,
   insertCollectionRest,
   insertCollectionWinding,
   moveCollectionRest,
@@ -44,35 +43,29 @@ function course(points: CollectionPoint[]) {
 }
 
 describe("prepareCollectionApplication", () => {
-  it("counts and de-duplicates only winding occurrences selected for the active route", () => {
-    const inactive = Array.from({ length: 20 }, (_, index) => point(`inactive-${index}`, {
-      kakaoPlaceId: `inactive-${index}`,
-      winding: true,
-      selected: false,
-    }));
-    expect(selectedWindingCount(inactive)).toBe(0);
-    expect(hasSelectedWindingPlace(inactive, "inactive-0")).toBe(false);
-
-    const active = point("active", { kakaoPlaceId: "active", winding: true, selected: true });
-    expect(selectedWindingCount([...inactive, active])).toBe(1);
-    expect(hasSelectedWindingPlace([...inactive, active], "active")).toBe(true);
+  it("counts every selected winding occurrence without de-duplicating a repeated place", () => {
+    const repeated = [
+      point("first", { kakaoPlaceId: "same-place", winding: true }),
+      point("second", { kakaoPlaceId: "same-place", winding: true }),
+    ];
+    expect(selectedWindingCount(repeated)).toBe(2);
   });
 
-  it("preserves the full ordered template while activating only selected winding/rest points", () => {
+  it("preserves the complete ordered course while restoring every occurrence id", () => {
     const points = [
       point("plain"),
-      point("winding-off", { winding: true, selected: false }),
       point("lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" }),
-      point("rest-off", { kind: "optional", dwellMinutes: 30, stopRole: "rest", selected: false }),
-      point("winding-on", { winding: true }),
+      point("rest", { kind: "optional", dwellMinutes: 30, stopRole: "rest" }),
+      point("winding", { winding: true }),
     ];
     const result = prepareCollectionApplication(course(points));
     expect(result.orderedPoints.map((item) => item.id)).toEqual([
-      "plain", "winding-off", "lunch", "rest-off", "winding-on",
+      "plain", "lunch", "rest", "winding",
     ]);
-    expect(result.selectedWindingPoints.map((item) => item.kakaoPlaceId)).toEqual(["winding-on"]);
-    expect(result.rests).toEqual([]);
-    expect(result.lunch?.kakaoPlaceId).toBe("lunch");
+    expect(result.selectedWindingPoints.map((item) => [item.id, item.place.kakaoPlaceId])).toEqual([["winding", "winding"]]);
+    expect(result.rests.map((item) => item.id)).toEqual(["rest"]);
+    expect(result.lunch?.id).toBe("lunch");
+    expect(result.lunch?.place.kakaoPlaceId).toBe("lunch");
     expect(result.origin.kakaoPlaceId).toBe("origin");
     expect(result.destination.kakaoPlaceId).toBe("destination");
   });
@@ -125,16 +118,6 @@ describe("prepareCollectionApplication", () => {
     expect(removeCollectionOccurrence(moved, "rest-a").map((item) => item.id)).toEqual(["lunch", "rest-b", "dinner"]);
   });
 
-  it("does not activate an unselected meal from an immutable template", () => {
-    const result = prepareCollectionApplication(course([
-      point("lunch-off", { kind: "stop", dwellMinutes: 60, stopRole: "lunch", selected: false }),
-      point("dinner-off", { kind: "stop", dwellMinutes: 60, stopRole: "dinner", selected: false }),
-    ]));
-    expect(result.lunch).toBeNull();
-    expect(result.dinner).toBeNull();
-    expect(result.orderedPoints).toHaveLength(2);
-  });
-
   it("lets an applied winding point move across stops without reordering other points", () => {
     const points = [
       point("winding-a", { winding: true }),
@@ -175,10 +158,10 @@ describe("prepareCollectionApplication", () => {
     expect(appliedWindingActionLabel(3, "같은 고개", "제거")).toBe("3번째 같은 고개 제거");
   });
 
-  it("replaces an unselected lunch in its original ordered slot", () => {
+  it("replaces an existing lunch in its original ordered slot", () => {
     const points = [
       point("before"),
-      point("lunch-off", { kind: "stop", dwellMinutes: 60, stopRole: "lunch", selected: false }),
+      point("lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" }),
       point("after"),
     ];
     const replacement = point("current-lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" });

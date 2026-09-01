@@ -186,8 +186,19 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
   };
   pendingCleanup = cleanup;
   let browserErrorCount = 0;
+  let planRouteRequestCount = 0;
+  let weatherRequestCount = 0;
+  let previewRequestCount = 0;
+  let publishRequestCount = 0;
   page.on("pageerror", () => { browserErrorCount += 1; });
   page.on("console", (message) => { if (message.type() === "error") browserErrorCount += 1; });
+  page.on("request", (request) => {
+    if (request.method() !== "POST") return;
+    if (request.url().includes("/functions/v1/plan-route")) planRouteRequestCount += 1;
+    if (request.url().includes("/functions/v1/weather-timeline")) weatherRequestCount += 1;
+    if (request.url().includes("/rest/v1/rpc/preview_trip_share")) previewRequestCount += 1;
+    if (request.url().includes("/rest/v1/rpc/publish_trip_share")) publishRequestCount += 1;
+  });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
@@ -249,7 +260,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const savedCollection = page.waitForResponse((response) => (
       response.url().includes("/functions/v1/save-collection") && response.request().method() === "POST"
     ), { timeout: 30_000 });
-    await page.getByRole("button", { name: /현재 경유지로 새 컬렉션 저장/ }).click();
+    await page.getByRole("button", { name: /현재 전체 코스로 새 컬렉션 저장/ }).click();
     await collectionSaveStarted;
     cleanup.collectionMutationStarted = true;
     const savedCollectionResponse = await savedCollection;
@@ -264,7 +275,42 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     cleanup.collectionId = savedCollectionId;
     await expect(page.getByRole("status").filter({ hasText: `${title} 컬렉션의 1번째 불변 버전` })).toBeVisible();
 
-    await page.getByRole("button", { name: "공유 요약 미리보기" }).click();
+    const routeCountBeforePreparation = planRouteRequestCount;
+    const weatherCountBeforePreparation = weatherRequestCount;
+    const previewCountBeforePreparation = previewRequestCount;
+    const publishCountBeforePreparation = publishRequestCount;
+    const collectionItem = page.locator(`[data-collection-id="${cleanup.collectionId}"]`);
+    await collectionItem.getByRole("button", { name: `${title} 공유 준비` }).click();
+    const manualPreviewButton = page.getByRole("button", { name: "공유 요약 미리보기" });
+    await expect(manualPreviewButton).toBeDisabled();
+    await expect(page.locator(".share-preview")).toHaveCount(0);
+    expect(planRouteRequestCount).toBe(routeCountBeforePreparation);
+    expect(weatherRequestCount).toBe(weatherCountBeforePreparation);
+    expect(previewRequestCount).toBe(previewCountBeforePreparation);
+    expect(publishRequestCount).toBe(publishCountBeforePreparation);
+
+    const preparedRoute = page.waitForResponse((response) => (
+      response.url().includes("/functions/v1/plan-route") && response.request().method() === "POST"
+    ), { timeout: 120_000 });
+    const preparedFinalization = page.waitForResponse((response) => (
+      response.url().includes("/rest/v1/rpc/finalize_trip_plan") && response.request().method() === "POST"
+    ), { timeout: 120_000 });
+    const preparedWeather = page.waitForResponse((response) => (
+      response.url().includes("/functions/v1/weather-timeline") && response.request().method() === "POST"
+    ), { timeout: 120_000 });
+    const preparedPreview = page.waitForResponse((response) => (
+      response.url().includes("/rest/v1/rpc/preview_trip_share") && response.request().method() === "POST"
+    ), { timeout: 120_000 });
+    await page.getByRole("button", { name: "추천 경로 다시 계산" }).click();
+    const preparedResponses = await Promise.all([preparedRoute, preparedFinalization, preparedWeather, preparedPreview]);
+    if (preparedResponses.some((response) => !response.ok())) throw new Error("Collection share preparation rejected");
+    const preparedTripId: unknown = await preparedResponses[1].json();
+    if (preparedTripId !== cleanup.tripId) throw new Error("Collection share preparation replaced the owned trip identity");
+    expect(planRouteRequestCount).toBe(routeCountBeforePreparation + 1);
+    expect(weatherRequestCount).toBe(weatherCountBeforePreparation + 1);
+    expect(previewRequestCount).toBe(previewCountBeforePreparation + 1);
+    expect(publishRequestCount).toBe(publishCountBeforePreparation);
+
     await expect(page.getByText("아직 공개되지 않았습니다.", { exact: true })).toBeVisible();
     await expect(page.locator(".share-preview")).toContainText("예상 복귀");
     await expect(page.locator(".share-preview")).not.toContainText("희망 복귀");
@@ -329,10 +375,10 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(page.getByRole("status").filter({ hasText: "공유 링크를 회수했습니다." })).toBeVisible();
 
     if (!cleanup.collectionId) throw new Error("Live collection cleanup identity was not captured");
-    const collectionItem = await startCollectionDeletion(page, cleanup.collectionId);
+    const deletedCollectionItem = await startCollectionDeletion(page, cleanup.collectionId);
     cleanup.collectionId = null;
     cleanup.collectionMutationStarted = false;
-    await expect(collectionItem).toHaveCount(0);
+    await expect(deletedCollectionItem).toHaveCount(0);
 
     await verifyRevokedShare(page, issuedUrl);
     await verifyRevokedShare(page, reissuedUrl);

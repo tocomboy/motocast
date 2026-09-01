@@ -135,7 +135,7 @@ grant select on fixture to authenticated, service_role;
 insert into tap_results values
   (not has_function_privilege('anon', 'public.save_collection_version(uuid,text,text,jsonb)', 'EXECUTE'), 'anon cannot save collection versions'),
   (not has_function_privilege('authenticated', 'public.save_collection_version(uuid,text,text,jsonb)', 'EXECUTE'), 'browser cannot save unverified collection JSON directly'),
-  (has_function_privilege('service_role', 'public.save_collection_version_internal(uuid,uuid,text,text,jsonb)', 'EXECUTE'), 'trusted Edge role can save verified collection versions'),
+  (has_function_privilege('service_role', 'public.save_collection_version_internal(uuid,uuid,uuid,text,text,jsonb)', 'EXECUTE'), 'trusted Edge role can save verified collection versions'),
   (not has_function_privilege('authenticated', 'public.save_trip_plan(jsonb,jsonb)', 'EXECUTE'), 'browser cannot persist untrusted route JSON directly'),
   (not has_function_privilege('anon', 'public.publish_trip_share(uuid,text)', 'EXECUTE'), 'anon cannot publish shares'),
   (has_function_privilege('service_role', 'public.stage_route_candidate_internal(uuid,uuid,jsonb,jsonb)', 'EXECUTE'), 'trusted Edge role can stage provider candidates'),
@@ -146,7 +146,8 @@ set local role service_role;
 
 create temp table collection_result on commit drop as
 select * from public.save_collection_version_internal(
-  '71000000-0000-0000-0000-000000000001', null, '북한강', '테스트 코스', (select course from fixture)
+  '71000000-0000-0000-0000-000000000001', '71000000-0000-4000-8000-000000001001', null,
+  '북한강', '테스트 코스', (select course from fixture)
 );
 grant select on collection_result to authenticated, service_role;
 insert into tap_results values
@@ -156,9 +157,35 @@ insert into tap_results values
     from public.collection_versions where id = (select version_id from collection_result)),
    'immutable collection version stores the complete course endpoints');
 
+create temp table collection_retry_result on commit drop as
+select * from public.save_collection_version_internal(
+  '71000000-0000-0000-0000-000000000001', '71000000-0000-4000-8000-000000001001', null,
+  '북한강', '테스트 코스', (select course from fixture)
+);
+insert into tap_results values
+  ((select row(collection_id, version_id, version_number) from collection_retry_result) =
+   (select row(collection_id, version_id, version_number) from collection_result),
+   'an exact save-operation retry returns the original immutable result'),
+  ((select count(*) = 1 from public.collection_versions),
+   'an exact save-operation retry does not append a duplicate version');
+
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.save_collection_version_internal(
+      '71000000-0000-0000-0000-000000000001', '71000000-0000-4000-8000-000000001001', null,
+      '북한강', '바뀐 요청', (select course from fixture)
+    );
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'COLLECTION_OPERATION_REUSED'; end;
+  insert into tap_results values (rejected, 'a save operation id cannot be reused for a different payload');
+end;
+$$;
+
 create temp table collection_result_2 on commit drop as
 select * from public.save_collection_version_internal(
   '71000000-0000-0000-0000-000000000001',
+  '71000000-0000-4000-8000-000000001002',
   (select collection_id from collection_result), '북한강', '수정 설명', (select course from fixture)
 );
 grant select on collection_result_2 to authenticated;
@@ -250,6 +277,37 @@ begin
 end;
 $$;
 
+do $$
+declare
+  unselected_rejected boolean := false;
+  dwell_rejected boolean := false;
+  missing_role_rejected boolean := false;
+begin
+  begin
+    perform public.save_collection_version_internal(
+      '71000000-0000-0000-0000-000000000001', '71000000-0000-4000-8000-000000001007', null,
+      '선택 해제', '', jsonb_set((select course from fixture), '{points,0,selected}', 'false'::jsonb, false)
+    );
+  exception when sqlstate 'P0001' then unselected_rejected := sqlerrm = 'INVALID_COLLECTION'; end;
+  begin
+    perform public.save_collection_version_internal(
+      '71000000-0000-0000-0000-000000000001', '71000000-0000-4000-8000-000000001008', null,
+      '통과 대기', '', jsonb_set((select course from fixture), '{points,0,dwellMinutes}', '30'::jsonb, false)
+    );
+  exception when sqlstate 'P0001' then dwell_rejected := sqlerrm = 'INVALID_COLLECTION'; end;
+  begin
+    perform public.save_collection_version_internal(
+      '71000000-0000-0000-0000-000000000001', '71000000-0000-4000-8000-000000001009', null,
+      '역할 누락', '', (select jsonb_set(course, '{points}', (course -> 'points') #- '{1,stopRole}') from fixture)
+    );
+  exception when sqlstate 'P0001' then missing_role_rejected := sqlerrm = 'INVALID_COLLECTION'; end;
+  insert into tap_results values
+    (unselected_rejected, 'complete collection rejects an unselected persisted occurrence'),
+    (dwell_rejected, 'complete collection rejects dwell on a pass-through occurrence'),
+    (missing_role_rejected, 'complete collection rejects a stop without a route role');
+end;
+$$;
+
 select public.stage_route_candidate_internal(
   '71000000-0000-0000-0000-000000000001',
   '73000000-0000-4000-8000-000000000005',
@@ -330,7 +388,7 @@ declare rejected boolean := false;
 begin
   begin
     perform public.save_collection_version_internal(
-      '71000000-0000-0000-0000-000000000001', null,
+      '71000000-0000-0000-0000-000000000001', '71000000-0000-4000-8000-000000001003', null,
       '누락 플래그',
       '',
       (select jsonb_set(course, '{points}', (course -> 'points') #- '{0,selected}') from fixture)
@@ -366,7 +424,8 @@ begin
   end loop;
   select version_number into accepted_version
   from public.save_collection_version_internal(
-    '71000000-0000-0000-0000-000000000001', null, '다섯 휴식', '', five_rest_course
+    '71000000-0000-0000-0000-000000000001', '71000000-0000-4000-8000-000000001004', null,
+    '다섯 휴식', '', five_rest_course
   );
 
   six_rest_course := jsonb_set(
@@ -379,7 +438,8 @@ begin
   );
   begin
     perform public.save_collection_version_internal(
-      '71000000-0000-0000-0000-000000000001', null, '여섯 휴식', '', six_rest_course
+      '71000000-0000-0000-0000-000000000001', '71000000-0000-4000-8000-000000001005', null,
+      '여섯 휴식', '', six_rest_course
     );
   exception when sqlstate 'P0001' then rejected_six := sqlerrm = 'INVALID_COLLECTION'; end;
 
@@ -391,7 +451,8 @@ begin
   );
   begin
     perform public.save_collection_version_internal(
-      '71000000-0000-0000-0000-000000000001', null, '중복 순번', '', duplicate_id_course
+      '71000000-0000-0000-0000-000000000001', '71000000-0000-4000-8000-000000001006', null,
+      '중복 순번', '', duplicate_id_course
     );
   exception when sqlstate 'P0001' then rejected_duplicate := sqlerrm = 'INVALID_COLLECTION'; end;
 
@@ -643,6 +704,7 @@ begin
   begin
     perform public.save_collection_version_internal(
       '72000000-0000-0000-0000-000000000002',
+      '72000000-0000-4000-8000-000000001001',
       (select collection_id from collection_result),
       '탈취', '', (select course from fixture)
     );

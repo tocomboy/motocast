@@ -36,7 +36,8 @@ export function safeErrorMessage(error: unknown) {
   if (error.message === "ROUTE_EXCEEDS_24_HOURS") return "출발 후 24시간 안에 끝나는 경로를 찾지 못했습니다.";
   if (error.message === "CLIENT_ROUTE_POLICY_FORBIDDEN") return "지원하지 않는 경로 설정입니다. 화면을 새로고침한 뒤 다시 시도해 주세요.";
   if (error.message === "PROVIDER_NOT_CONFIGURED") return "경로 공급자 설정이 완료되지 않았습니다.";
-  if (["PROVIDER_AUTH_FAILED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE", "PROVIDER_REQUEST_REJECTED"].includes(error.message)) {
+  if (error.message === "PROVIDER_AUTH_FAILED") return "경로 공급자 인증 설정을 확인해 주세요. 기존 저장 계획은 유지됩니다.";
+  if (["PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE", "PROVIDER_REQUEST_REJECTED"].includes(error.message)) {
     return "경로 공급자에 일시적인 문제가 있습니다. 기존 저장 계획은 유지됩니다.";
   }
   return "외부 서비스 요청에 실패했습니다. 기존 저장 계획은 유지됩니다.";
@@ -51,9 +52,10 @@ export function safeErrorCode(error: unknown) {
   if (
     error.message.includes("API_DAILY_BUDGET_EXHAUSTED") ||
     error.message.includes("API_BUDGET") ||
-    error.message.includes("NOT_CONFIGURED")
+    error.message.includes("NOT_CONFIGURED") ||
+    error.message === "PROVIDER_AUTH_FAILED"
   ) return "ROUTE_BUDGET_OR_CONFIG";
-  if (["PROVIDER_AUTH_FAILED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE", "PROVIDER_REQUEST_REJECTED"].includes(error.message)) {
+  if (["PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE", "PROVIDER_REQUEST_REJECTED"].includes(error.message)) {
     return "ROUTE_PROVIDER_TEMPORARY";
   }
   if (error.message.startsWith("INVALID_") || error.message === "UNVERIFIED_PLACE" || error.message === "PAST_DEPARTURE") {

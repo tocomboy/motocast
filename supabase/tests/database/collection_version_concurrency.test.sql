@@ -45,6 +45,7 @@ select dblink_exec('collection_c2', 'set role service_role');
 select dblink_send_query('collection_c1', $query$
   select version_number from public.save_collection_version_internal(
     '73000000-0000-0000-0000-000000000003',
+    '73000000-0000-4000-8000-000000000021',
     '73000000-0000-0000-0000-000000000013', '동시 버전', '',
     '{"origin":{"kakaoPlaceId":"origin","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"출발","address":"테스트 주소","roadAddress":null,"longitude":127.0,"latitude":37.0},"destination":{"kakaoPlaceId":"destination","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"복귀","address":"테스트 주소","roadAddress":null,"longitude":127.2,"latitude":37.2},"points":[{"id":"lunch","label":"점심","kakaoPlaceId":"lunch","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"점심","address":"테스트 주소","roadAddress":null,"longitude":127.1,"latitude":37.1,"kind":"stop","dwellMinutes":60,"selected":true,"winding":false,"stopRole":"lunch"}]}'::jsonb
   )
@@ -52,6 +53,7 @@ $query$);
 select dblink_send_query('collection_c2', $query$
   select version_number from public.save_collection_version_internal(
     '73000000-0000-0000-0000-000000000003',
+    '73000000-0000-4000-8000-000000000022',
     '73000000-0000-0000-0000-000000000013', '동시 버전', '',
     '{"origin":{"kakaoPlaceId":"origin","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"출발","address":"테스트 주소","roadAddress":null,"longitude":127.0,"latitude":37.0},"destination":{"kakaoPlaceId":"destination","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"복귀","address":"테스트 주소","roadAddress":null,"longitude":127.2,"latitude":37.2},"points":[{"id":"lunch","label":"점심","kakaoPlaceId":"lunch","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"점심","address":"테스트 주소","roadAddress":null,"longitude":127.1,"latitude":37.1,"kind":"stop","dwellMinutes":60,"selected":true,"winding":false,"stopRole":"lunch"}]}'::jsonb
   )
@@ -60,12 +62,42 @@ $query$);
 create temp table concurrent_versions(version_number integer);
 insert into concurrent_versions select version_number from dblink_get_result('collection_c1') as result(version_number integer);
 insert into concurrent_versions select version_number from dblink_get_result('collection_c2') as result(version_number integer);
+select * from dblink_get_result('collection_c1') as result(version_number integer);
+select * from dblink_get_result('collection_c2') as result(version_number integer);
+
+select dblink_send_query('collection_c1', $query$
+  select version_number from public.save_collection_version_internal(
+    '73000000-0000-0000-0000-000000000003',
+    '73000000-0000-4000-8000-000000000023',
+    '73000000-0000-0000-0000-000000000013', '동시 버전', '',
+    '{"origin":{"kakaoPlaceId":"origin","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"출발","address":"테스트 주소","roadAddress":null,"longitude":127.0,"latitude":37.0},"destination":{"kakaoPlaceId":"destination","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"복귀","address":"테스트 주소","roadAddress":null,"longitude":127.2,"latitude":37.2},"points":[{"id":"lunch","label":"점심","kakaoPlaceId":"lunch","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"점심","address":"테스트 주소","roadAddress":null,"longitude":127.1,"latitude":37.1,"kind":"stop","dwellMinutes":60,"selected":true,"winding":false,"stopRole":"lunch"}]}'::jsonb
+  )
+$query$);
+select dblink_send_query('collection_c2', $query$
+  select version_number from public.save_collection_version_internal(
+    '73000000-0000-0000-0000-000000000003',
+    '73000000-0000-4000-8000-000000000023',
+    '73000000-0000-0000-0000-000000000013', '동시 버전', '',
+    '{"origin":{"kakaoPlaceId":"origin","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"출발","address":"테스트 주소","roadAddress":null,"longitude":127.0,"latitude":37.0},"destination":{"kakaoPlaceId":"destination","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"복귀","address":"테스트 주소","roadAddress":null,"longitude":127.2,"latitude":37.2},"points":[{"id":"lunch","label":"점심","kakaoPlaceId":"lunch","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"점심","address":"테스트 주소","roadAddress":null,"longitude":127.1,"latitude":37.1,"kind":"stop","dwellMinutes":60,"selected":true,"winding":false,"stopRole":"lunch"}]}'::jsonb
+  )
+$query$);
+
+create temp table concurrent_retry_versions(version_number integer);
+insert into concurrent_retry_versions select version_number from dblink_get_result('collection_c1') as result(version_number integer);
+insert into concurrent_retry_versions select version_number from dblink_get_result('collection_c2') as result(version_number integer);
+select * from dblink_get_result('collection_c1') as result(version_number integer);
+select * from dblink_get_result('collection_c2') as result(version_number integer);
 
 create temp table tap_results(ok boolean not null, description text not null);
 insert into tap_results values
   ((select array_agg(version_number order by version_number) = array[2, 3] from concurrent_versions), 'concurrent writers receive distinct sequential versions'),
-  ((select count(*) = 3 from public.collection_versions where collection_id = '73000000-0000-0000-0000-000000000013'), 'concurrent writes preserve all immutable versions'),
-  ((select count(distinct version_number) = 3 from public.collection_versions where collection_id = '73000000-0000-0000-0000-000000000013'), 'collection version numbers remain unique');
+  ((select count(*) = 3 from public.collection_versions where collection_id = '73000000-0000-0000-0000-000000000013' and version_number <= 3), 'concurrent distinct writes preserve the first three immutable versions'),
+  ((select count(distinct version_number) = 4 from public.collection_versions where collection_id = '73000000-0000-0000-0000-000000000013'), 'collection version numbers remain unique after distinct writes and one retried write'),
+  ((select array_agg(version_number order by version_number) = array[4, 4] from concurrent_retry_versions), 'concurrent retries of one save operation return the same version'),
+  ((select count(*) = 4 from public.collection_versions where collection_id = '73000000-0000-0000-0000-000000000013'), 'concurrent retries append exactly one immutable version'),
+  ((select count(*) = 1 from public.collection_save_operations
+    where owner_id = '73000000-0000-0000-0000-000000000003'
+      and operation_id = '73000000-0000-4000-8000-000000000023'), 'concurrent retries share one durable save-operation result');
 
 select dblink_disconnect('collection_c1');
 select dblink_disconnect('collection_c2');

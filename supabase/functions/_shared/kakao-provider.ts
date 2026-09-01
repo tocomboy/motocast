@@ -41,10 +41,15 @@ export async function requestKakaoRoute(input: KakaoRouteRequest, fetchImpl: Fet
   if (input.isFuture) url.searchParams.set("departure_time", futureTime(input.departureAt));
   applyMotorcycleRoutePolicy(url);
 
-  const response = await fetchImpl(url, {
-    headers: { Authorization: `KakaoAK ${input.apiKey}` },
-    signal: AbortSignal.timeout(8_000),
-  });
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      headers: { Authorization: `KakaoAK ${input.apiKey}` },
+      signal: AbortSignal.timeout(8_000),
+    });
+  } catch {
+    throw new Error("PROVIDER_UNAVAILABLE");
+  }
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) throw new Error("PROVIDER_AUTH_FAILED");
     if (response.status === 429) throw new Error("PROVIDER_RATE_LIMITED");
@@ -52,7 +57,13 @@ export async function requestKakaoRoute(input: KakaoRouteRequest, fetchImpl: Fet
     throw new Error("PROVIDER_REQUEST_REJECTED");
   }
 
-  const routes = normalizeKakaoRoutesPayload(await response.json());
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
+  }
+  const routes = normalizeKakaoRoutesPayload(payload);
   const requestedPoints = [input.origin, ...input.waypoints, input.destination];
   routes.forEach((route) => assertKakaoRouteMatchesPoints(route, requestedPoints));
   const route = routes[0];

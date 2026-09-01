@@ -76,6 +76,7 @@ describe("CollectionManager direct course", () => {
     await act(async () => saveButton?.props.onClick());
     expect(browserMocks.invoke).toHaveBeenCalledWith("save-collection", {
       body: {
+        saveOperationId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
         collectionId: null,
         title: "직접 코스",
         description: "",
@@ -84,6 +85,23 @@ describe("CollectionManager direct course", () => {
         points: [],
       },
     });
+    await act(async () => renderer.unmount());
+  });
+
+  it("reuses one operation id after an unknown response outcome", async () => {
+    browserMocks.invoke
+      .mockResolvedValueOnce({ data: null, error: { message: "response lost" } })
+      .mockResolvedValueOnce({ data: { versionNumber: 1 }, error: null });
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<CollectionManager currentCourse={directCourse} onApply={vi.fn()} onShare={vi.fn()} />);
+    });
+    await act(async () => renderer.root.findByType("input").props.onChange({ target: { value: "재시도 코스" } }));
+    const saveButton = buttonWithText(renderer.root, "현재 전체 코스로 새 컬렉션 저장");
+    await act(async () => saveButton?.props.onClick());
+    await act(async () => saveButton?.props.onClick());
+    const firstId = browserMocks.invoke.mock.calls[0][1].body.saveOperationId;
+    expect(browserMocks.invoke.mock.calls[1][1].body.saveOperationId).toBe(firstId);
     await act(async () => renderer.unmount());
   });
 });

@@ -13,6 +13,7 @@ export type CollectionSavePoint = VerifiablePlace & {
 };
 
 export type CollectionSaveRequest = {
+  saveOperationId: string;
   collectionId: string | null;
   title: string;
   description: string;
@@ -56,12 +57,19 @@ function parsePoint(value: unknown): CollectionSavePoint {
     typeof point.selected !== "boolean" || typeof point.winding !== "boolean" ||
     (point.stopRole !== undefined && !["lunch", "dinner", "rest"].includes(point.stopRole))
   ) throw new Error("INVALID_COLLECTION");
-  if (point.winding && !isWindingOnlyWaypoint({
+  const semanticPoint = point.kind === "pass-through"
+    ? Number(point.dwellMinutes) === 0 && point.stopRole === undefined
+    : point.stopRole === "rest"
+      ? point.kind === "optional" && Number(point.dwellMinutes) > 0
+      : (point.stopRole === "lunch" || point.stopRole === "dinner")
+        ? point.kind === "stop" && Number(point.dwellMinutes) > 0
+        : false;
+  if (point.selected !== true || !semanticPoint || (point.winding && !isWindingOnlyWaypoint({
     kind: point.kind as CollectionSavePoint["kind"],
     dwellMinutes: Number(point.dwellMinutes),
     winding: point.winding,
     stopRole: point.stopRole,
-  })) throw new Error("INVALID_COLLECTION");
+  }))) throw new Error("INVALID_COLLECTION");
   return {
     ...place,
     id: point.id.trim(),
@@ -76,9 +84,10 @@ function parsePoint(value: unknown): CollectionSavePoint {
 
 export async function parseCollectionSaveRequest(value: unknown, verificationSecret: string): Promise<CollectionSaveRequest> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_COLLECTION");
-  const raw = value as { collectionId?: unknown; title?: unknown; description?: unknown; origin?: unknown; destination?: unknown; points?: unknown };
+  const raw = value as { saveOperationId?: unknown; collectionId?: unknown; title?: unknown; description?: unknown; origin?: unknown; destination?: unknown; points?: unknown };
   const title = typeof raw.title === "string" ? raw.title.trim() : "";
   if (
+    typeof raw.saveOperationId !== "string" || !uuidPattern.test(raw.saveOperationId) ||
     !(raw.collectionId === null || raw.collectionId === undefined || (typeof raw.collectionId === "string" && uuidPattern.test(raw.collectionId))) ||
     title.length < 1 || title.length > 120 || typeof raw.description !== "string" || raw.description.length > 2000 ||
     !Array.isArray(raw.points) || raw.points.length > 30
@@ -102,6 +111,7 @@ export async function parseCollectionSaveRequest(value: unknown, verificationSec
   )));
   if (verified.some((result) => !result)) throw new Error("UNVERIFIED_PLACE");
   return {
+    saveOperationId: raw.saveOperationId,
     collectionId: typeof raw.collectionId === "string" ? raw.collectionId : null,
     title,
     description: raw.description,

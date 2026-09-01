@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { parseCollectionRows, type CollectionCourse, type RidingCollection } from "@/lib/collections/contracts";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
@@ -18,6 +18,7 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("컬렉션을 불러오는 중입니다.");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const saveAttemptRef = useRef<{ payloadKey: string; operationId: string } | null>(null);
 
   const loadCollections = useCallback(async () => {
     const supabase = getBrowserSupabase();
@@ -54,16 +55,24 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
     }
     const supabase = getBrowserSupabase();
     if (!supabase) return;
+    const payload = {
+      collectionId: collection?.id ?? null,
+      title: collectionTitle,
+      description: collectionDescription,
+      origin: currentCourse.origin,
+      destination: currentCourse.destination,
+      points: currentCourse.points,
+    };
+    const payloadKey = JSON.stringify(payload);
+    if (!saveAttemptRef.current || saveAttemptRef.current.payloadKey !== payloadKey) {
+      saveAttemptRef.current = { payloadKey, operationId: crypto.randomUUID() };
+    }
     const targetId = collection?.id ?? "new";
     setBusyId(targetId);
     const { data, error } = await supabase.functions.invoke("save-collection", {
       body: {
-        collectionId: collection?.id ?? null,
-        title: collectionTitle,
-        description: collectionDescription,
-        origin: currentCourse.origin,
-        destination: currentCourse.destination,
-        points: currentCourse.points,
+        saveOperationId: saveAttemptRef.current.operationId,
+        ...payload,
       },
     });
     setBusyId(null);
@@ -73,6 +82,7 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
     }
     setTitle("");
     setDescription("");
+    saveAttemptRef.current = null;
     setStatus(`${collectionTitle} 컬렉션의 ${(data as { versionNumber: number }).versionNumber}번째 불변 버전을 저장했습니다.`);
     await loadCollections();
   }
@@ -123,10 +133,10 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
                 {collection.description ? <small>{collection.description}</small> : null}
               </div>
               <div className="collection-actions">
-                <button type="button" disabled={disabled} onClick={() => onApply(collection.latestVersion.course, collection.title)}>계획에 적용</button>
-                <button type="button" disabled={disabled} onClick={() => onShare(collection.latestVersion.course, collection.title)}>공유 준비</button>
-                <button type="button" disabled={disabled || busyId !== null || !currentCourse} onClick={() => void saveVersion(collection)}>새 버전</button>
-                <button className="danger-text" type="button" disabled={disabled || busyId !== null} onClick={() => void deleteCollection(collection)}>삭제</button>
+                <button type="button" aria-label={`${collection.title} 계획에 적용`} disabled={disabled} onClick={() => onApply(collection.latestVersion.course, collection.title)}>계획에 적용</button>
+                <button type="button" aria-label={`${collection.title} 공유 준비`} disabled={disabled} onClick={() => onShare(collection.latestVersion.course, collection.title)}>공유 준비</button>
+                <button type="button" aria-label={`${collection.title} 새 버전 저장`} disabled={disabled || busyId !== null || !currentCourse} onClick={() => void saveVersion(collection)}>새 버전</button>
+                <button className="danger-text" type="button" aria-label={`${collection.title} 삭제`} disabled={disabled || busyId !== null} onClick={() => void deleteCollection(collection)}>삭제</button>
               </div>
             </li>
           ))}
