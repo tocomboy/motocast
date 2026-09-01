@@ -21,7 +21,6 @@ export type RouteRequest = {
   waypoints: RoutePointRequest[];
   serviceDate: string;
   departureAt: string;
-  candidate: "balanced" | "winding" | "short";
 };
 
 export function isWindingOnlyWaypoint(point: Pick<RoutePointRequest, "kind" | "dwellMinutes" | "winding" | "stopRole">) {
@@ -80,8 +79,9 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
     !isStrictCalendarDate(body.serviceDate) ||
     seoulCalendarDate(departure) !== body.serviceDate
   ) throw new Error("INVALID_ROUTE_TIME");
-  if (!body.candidate || !["balanced", "winding", "short"].includes(body.candidate)) {
-    throw new Error("INVALID_CANDIDATE");
+  const policyFields = value as Record<string, unknown>;
+  if (["candidate", "priority", "alternatives", "car_type", "avoid", "roadevent"].some((key) => key in policyFields)) {
+    throw new Error("CLIENT_ROUTE_POLICY_FORBIDDEN");
   }
   if (typeof body.planningId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.planningId)) {
     throw new Error("INVALID_PLANNING_ID");
@@ -114,6 +114,5 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
     waypoints: selectedWaypoints.map((point) => canonicalPoint(point)),
     serviceDate: body.serviceDate,
     departureAt: departure.toISOString(),
-    candidate: body.candidate,
   };
 }

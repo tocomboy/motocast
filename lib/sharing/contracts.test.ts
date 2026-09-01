@@ -5,9 +5,9 @@ import { parseSharedRideSnapshot } from "./contracts";
 const origin = { id: "origin", label: "출발", longitude: 127, latitude: 37, kind: "pass-through", dwellMinutes: 0, selected: true };
 const destination = { id: "destination", label: "복귀", longitude: 127.2, latitude: 37.2, kind: "pass-through", dwellMinutes: 0, selected: true };
 
-function route(id: "balanced" | "winding" | "short", middle: number) {
+function route(id: "recommended" | "balanced" | "winding" | "short", middle: number) {
   return {
-    candidate: { id, label: id === "winding" ? "와인딩" : id, estimatedWinding: false },
+    candidate: { id, label: id === "recommended" ? "추천 경로" : id === "winding" ? "와인딩" : id, estimatedWinding: false },
     safety: { vehicle: "motorcycle", motorwayExcluded: true, fallbackUsed: false },
     totalDistanceMeters: 10000,
     totalDurationSeconds: 600,
@@ -53,6 +53,30 @@ const snapshot = {
 };
 
 describe("parseSharedRideSnapshot", () => {
+  it("accepts a schema version 3 snapshot with exactly one recommended route", () => {
+    const current = {
+      schemaVersion: 3,
+      trip: {
+        title: snapshot.trip.title,
+        serviceDate: snapshot.trip.serviceDate,
+        departureAt: snapshot.trip.departureAt,
+        origin: snapshot.trip.origin,
+        destination: snapshot.trip.destination,
+        lunchStop: snapshot.trip.lunchStop,
+        dinnerStop: null,
+      },
+      waypoints: snapshot.waypoints,
+      route: route("recommended", 127.1),
+      weather: null,
+    };
+    expect(parseSharedRideSnapshot(current)).toMatchObject({
+      schemaVersion: 3,
+      route: { candidate: { id: "recommended", label: "추천 경로" } },
+    });
+    expect(() => parseSharedRideSnapshot({ ...current, routes: snapshot.routes })).toThrow("INVALID_SHARE_SNAPSHOT");
+    expect(() => parseSharedRideSnapshot({ ...current, route: route("balanced", 127.1) })).toThrow("INVALID_RECOMMENDED_ROUTE_RESPONSE");
+  });
+
   it("accepts a complete immutable snapshot with three safe routes", () => {
     expect(parseSharedRideSnapshot(snapshot)).toMatchObject({ schemaVersion: 2, weather: null });
   });

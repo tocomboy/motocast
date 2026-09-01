@@ -1,7 +1,6 @@
 import { assertKakaoRouteMatchesPoints, normalizeKakaoRoutesPayload } from "./kakao-route.ts";
-import { applyMotorcycleRoutePolicy, type KakaoRoutePriority } from "./kakao-safety.ts";
+import { applyMotorcycleRoutePolicy } from "./kakao-safety.ts";
 import type { RoutePointRequest } from "./route-request.ts";
-import { selectEstimatedWindingRoute } from "./winding.ts";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -11,9 +10,6 @@ export type KakaoRouteRequest = {
   waypoints: RoutePointRequest[];
   departureAt: Date;
   isFuture: boolean;
-  priority: KakaoRoutePriority;
-  requestAlternatives: boolean;
-  excludedFingerprints?: Set<string>;
   apiKey: string;
 };
 
@@ -36,14 +32,14 @@ function futureTime(date: Date) {
   return `${parts.year}${parts.month}${parts.day}${parts.hour}${parts.minute}`;
 }
 
-export async function requestKakaoRoutes(input: KakaoRouteRequest, fetchImpl: FetchLike = fetch) {
+export async function requestKakaoRoute(input: KakaoRouteRequest, fetchImpl: FetchLike = fetch) {
   const endpoint = input.isFuture ? "future/directions" : "directions";
   const url = new URL(`https://apis-navi.kakaomobility.com/v1/${endpoint}`);
   url.searchParams.set("origin", pointParam(input.origin));
   url.searchParams.set("destination", pointParam(input.destination));
   if (input.waypoints.length) url.searchParams.set("waypoints", input.waypoints.map(pointParam).join("|"));
   if (input.isFuture) url.searchParams.set("departure_time", futureTime(input.departureAt));
-  applyMotorcycleRoutePolicy(url, input.priority, input.requestAlternatives);
+  applyMotorcycleRoutePolicy(url);
 
   const response = await fetchImpl(url, {
     headers: { Authorization: `KakaoAK ${input.apiKey}` },
@@ -59,14 +55,7 @@ export async function requestKakaoRoutes(input: KakaoRouteRequest, fetchImpl: Fe
   const routes = normalizeKakaoRoutesPayload(await response.json());
   const requestedPoints = [input.origin, ...input.waypoints, input.destination];
   routes.forEach((route) => assertKakaoRouteMatchesPoints(route, requestedPoints));
-  return routes;
-}
-
-export async function requestKakaoRoute(input: KakaoRouteRequest, fetchImpl: FetchLike = fetch) {
-  const routes = await requestKakaoRoutes(input, fetchImpl);
-  const route = input.requestAlternatives
-    ? selectEstimatedWindingRoute(routes, input.excludedFingerprints ?? new Set())
-    : routes[0];
+  const route = routes[0];
   if (!route) throw new Error("SAFE_ROUTE_NOT_FOUND");
   return route;
 }

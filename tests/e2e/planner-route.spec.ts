@@ -1,19 +1,16 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("route comparison", () => {
-  test("shows three honest candidates with an expected return for each", async ({ page }) => {
+test.describe("single recommended route", () => {
+  test("shows one route summary without candidate selection UI", async ({ page }) => {
     await page.goto("/");
 
-    const candidates = page.locator(".candidate-card");
-    await expect(candidates).toHaveCount(3);
-    for (const candidate of await candidates.all()) {
-      await expect(candidate).toContainText("예상 복귀");
-    }
-
-    await candidates.nth(1).click();
-    await expect(page.locator(".ride-summary h2")).toContainText("와인딩");
+    await expect(page.locator(".candidate-card")).toHaveCount(0);
+    await expect(page.locator(".candidate-strip")).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText("와인딩 추정");
+    await expect(page.locator("body")).not.toContainText("최단 경로");
+    await expect(page.locator(".ride-summary h2")).toHaveText("추천 경로");
     await expect(page.locator(".ride-summary")).toContainText("예상 복귀");
-    await expect(page.getByText("날씨는 순위에 반영하지 않고 구간 정보로만 표시합니다.")).toBeVisible();
+    await expect(page.locator(".ride-summary")).toContainText("정차");
   });
 
   test("never presents the connected live badge in deterministic demo mode", async ({ page }) => {

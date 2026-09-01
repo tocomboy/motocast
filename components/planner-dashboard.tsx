@@ -9,21 +9,22 @@ import { PlaceSearchField } from "@/components/place-search-field";
 import { ShareManager } from "@/components/share-manager";
 import {
   insertCollectionWinding,
+  moveCollectionWinding,
   prepareCollectionApplication,
+  removeCollectionWinding,
   replaceCollectionStop,
   setCollectionRestSelected,
 } from "@/lib/collections/application";
 import type { CollectionPoint } from "@/lib/collections/contracts";
 import type { PlaceSearchResult } from "@/lib/places/search";
 import {
-  demoCandidates,
+  demoRoute,
   demoDepartureAt,
   demoMapPoints,
 } from "@/lib/planner/demo";
 import { PlannerActionGate } from "@/lib/planner/action-gate";
 import { withClientTimeout } from "@/lib/planner/client-timeout";
-import { plannerFunctionErrorCode, windingUnavailableNotice } from "@/lib/planner/function-error";
-import { parseSafeRouteCandidateSet, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
+import { parseSafeRecommendedRoute, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
 import { buildTimeline, formatRideTime, weatherRiskLabel } from "@/lib/planner/schedule";
 import type { PlannedSegment, RouteCandidate } from "@/lib/planner/types";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
@@ -68,12 +69,6 @@ const defaultDraft: PlannerDraft = {
   includeRest: false,
 };
 
-const candidateTone: Record<RouteCandidate["id"], string> = {
-  balanced: "mint",
-  winding: "orange",
-  short: "blue",
-};
-
 function minutesLabel(value: number) {
   const hours = Math.floor(value / 60);
   const minutes = value % 60;
@@ -102,11 +97,6 @@ function isUuid(value: unknown): value is string {
 function liveRouteCandidate(response: SafeRouteResponse): RouteCandidate {
   const stopMinutes = response.legs.reduce((total, leg) => total + leg.dwellMinutes, 0);
   const rideMinutes = Math.ceil(response.legs.reduce((total, leg) => total + leg.durationSeconds, 0) / 60);
-  const descriptions: Record<RouteCandidate["id"], string> = {
-    balanced: "주행 시간과 경로의 균형",
-    winding: response.candidate.estimatedWinding ? "대안 경로 곡률 기반 추정" : "커스텀 와인딩 경유지 필수 통과",
-    short: "총 거리를 우선한 경로",
-  };
   const path = response.legs.flatMap((leg) => (
     leg.sections.flatMap((section) => section.roads.flatMap((road) => {
       const points = [];
@@ -119,9 +109,9 @@ function liveRouteCandidate(response: SafeRouteResponse): RouteCandidate {
     index === 0 || point.longitude !== points[index - 1].longitude || point.latitude !== points[index - 1].latitude
   ));
   return {
-    id: response.candidate.id,
+    id: "recommended",
     label: response.candidate.label,
-    description: descriptions[response.candidate.id],
+    description: "입력한 모든 필수 지점을 지나는 오토바이 안전 추천 경로",
     distanceKm: Math.round(response.totalDistanceMeters / 100) / 10,
     rideMinutes,
     stopMinutes,
@@ -181,10 +171,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const [windingPoints, setWindingPoints] = useState<PlaceSearchResult[]>([]);
   const [appliedCollectionPoints, setAppliedCollectionPoints] = useState<CollectionPoint[] | null>(null);
   const [addingWinding, setAddingWinding] = useState(false);
-  const [selectedId, setSelectedId] = useState<RouteCandidate["id"]>("balanced");
-  const [liveCandidates, setLiveCandidates] = useState<RouteCandidate[] | null>(null);
+  const [liveRoute, setLiveRoute] = useState<RouteCandidate | null>(null);
   const [liveTripId, setLiveTripId] = useState<string | null>(null);
-  const [weatherByCandidate, setWeatherByCandidate] = useState<Partial<Record<RouteCandidate["id"], WeatherTimelineResponse>>>({});
+  const [weather, setWeather] = useState<WeatherTimelineResponse | null>(null);
   const [weatherLoading, setWeatherLoading] = useState<RouteCandidate["id"] | null>(null);
   const [weatherClock, setWeatherClock] = useState<string | null>(null);
   const [liveResultStale, setLiveResultStale] = useState(false);
@@ -193,19 +182,15 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const [plannerOpen, setPlannerOpen] = useState(false);
   const [notice, setNotice] = useState(
     connected
-      ? "저장된 데모 계획입니다. 장소를 확인한 뒤 선택 경로를 다시 계산하세요."
+      ? "저장된 데모 계획입니다. 장소를 확인한 뒤 추천 경로를 다시 계산하세요."
       : "환경변수가 없어 데모 모드로 실행 중입니다. 실제 외부 API는 호출하지 않습니다.",
   );
   const [calculating, setCalculating] = useState(false);
-  const [selectionPending, setSelectionPending] = useState(false);
   const plannerPanelRef = useRef<HTMLElement>(null);
   const mobilePlanButtonRef = useRef<HTMLButtonElement>(null);
   const addWindingButtonRef = useRef<HTMLButtonElement>(null);
   const routeGenerationRef = useRef(0);
   const liveTripIdRef = useRef<string | null>(null);
-  const selectionIntentRef = useRef(0);
-  const persistedSelectedRef = useRef<RouteCandidate["id"]>("balanced");
-  const selectionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const weatherRequestRef = useRef(0);
   const actionGateRef = useRef(new PlannerActionGate());
 
@@ -277,13 +262,12 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [isCompact, plannerOpen]);
 
-  const displayedCandidates = liveCandidates ?? demoCandidates;
-  const selected = displayedCandidates.find((candidate) => candidate.id === selectedId) ?? displayedCandidates[0];
-  const selectedWeather = weatherByCandidate[selectedId];
+  const selected = liveRoute ?? demoRoute;
+  const selectedWeather = weather;
   const selectedWeatherStatus = selectedWeather
     ? formatPlannerWeatherStatus(selectedWeather, weatherClock ?? selectedWeather.staleObservedAt ?? selectedWeather.generatedAt)
     : null;
-  const selectedWeatherAnnouncement = weatherLoading === selectedId
+  const selectedWeatherAnnouncement = weatherLoading === selected.id
     ? `${selected.label} 경로 날씨 조회 중`
     : selectedWeather && selectedWeatherStatus
       ? selectedWeather.stale
@@ -303,13 +287,13 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   }, [selectedWeather]);
   const departureAt = `${draft.rideDate}T${draft.departureTime}:00+09:00`;
   const { departureAt: displayedDepartureAt, timeline } = useMemo(() => buildPlannerDisplayTimeline({
-    live: Boolean(liveCandidates),
+    live: Boolean(liveRoute),
     draftDepartureAt: departureAt,
     fallbackDepartureAt: demoDepartureAt,
     includeRest: draft.includeRest,
     segments: selected.segments,
-  }), [departureAt, draft.includeRest, liveCandidates, selected]);
-  const selectedMapPoints = liveCandidates
+  }), [departureAt, draft.includeRest, liveRoute, selected]);
+  const selectedMapPoints = liveRoute
     ? [selected.segments[0].from, ...selected.segments.map((segment) => segment.to)].map((point, index, all) => {
         let role: MapMarkerRole = "waypoint";
         if (index === 0) role = "origin";
@@ -337,7 +321,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     routeGenerationRef.current += 1;
     weatherRequestRef.current += 1;
     setWeatherLoading(null);
-    if (liveCandidates) setLiveResultStale(true);
+    if (liveRoute) setLiveResultStale(true);
   }
 
   function update<K extends keyof PlannerDraft>(key: K, value: PlannerDraft[K]) {
@@ -409,9 +393,27 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     markRouteInputChanged();
   }
 
+  function moveAppliedWindingPoint(index: number, direction: -1 | 1) {
+    const point = appliedCollectionPoints?.[index];
+    if (!point?.winding) return;
+    setAppliedCollectionPoints((current) => current ? moveCollectionWinding(current, index, direction) : null);
+    setWaypointStatus(`${point.name}을(를) 전체 경유지 순서의 ${index + direction + 1}번째로 이동했습니다.`);
+    markRouteInputChanged();
+  }
+
   function removeWindingPoint(place: PlaceSearchResult) {
     setWindingPoints((current) => current.filter((item) => item.kakaoPlaceId !== place.kakaoPlaceId));
     setWaypointStatus(`${place.name}을(를) 와인딩 경유지에서 제거했습니다.`);
+    markRouteInputChanged();
+    focusAfterWindingEdit();
+  }
+
+  function removeAppliedWindingPoint(point: CollectionPoint) {
+    setAppliedCollectionPoints((current) => current
+      ? removeCollectionWinding(current, point.kakaoPlaceId)
+      : null);
+    setWindingPoints((current) => current.filter((item) => item.kakaoPlaceId !== point.kakaoPlaceId));
+    setWaypointStatus(`${point.name}을(를) 적용된 경로에서 제거했습니다.`);
     markRouteInputChanged();
     focusAfterWindingEdit();
   }
@@ -479,7 +481,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       rest: application.rest,
     }));
     setDraft((current) => ({ ...current, includeRest: application.includeRest }));
-    if (liveCandidates) setLiveResultStale(true);
+    if (liveRoute) setLiveResultStale(true);
     setWaypointStatus(`${title} 컬렉션의 최신 불변 버전을 계획에 적용했습니다.`);
     setNotice("컬렉션을 적용했습니다. 변경된 장소로 안전 경로를 다시 계산해 주세요.");
   }
@@ -526,10 +528,10 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
           forecast.longitude !== points[index].longitude || forecast.latitude !== points[index].latitude
         ))
       ) throw new Error("WEATHER_POINT_MISMATCH");
-      setWeatherByCandidate((current) => ({ ...current, [candidate.id]: response }));
-      setLiveCandidates((current) => current?.map((item) => item.id !== candidate.id ? item : ({
-        ...item,
-        segments: item.segments.map((segment, index) => {
+      setWeather(response);
+      setLiveRoute((current) => current ? ({
+        ...current,
+        segments: current.segments.map((segment, index) => {
           const forecast = response.forecasts[index];
           return {
             ...segment,
@@ -557,7 +559,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
             },
           };
         }),
-      })) ?? null);
+      }) : null);
     } catch {
       setNotice("날씨 공급자 응답을 안전하게 확인하지 못해 날씨를 표시하지 않았습니다.");
     } finally {
@@ -565,75 +567,10 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     }
   }
 
-  function chooseCandidate(candidate: RouteCandidate) {
-    if (actionGateRef.current.busy) {
-      setNotice(actionGateRef.current.planning
-        ? "계획 저장이 끝난 뒤 후보를 선택해 주세요."
-        : "현재 선택 경로 저장이 끝난 뒤 다른 후보를 선택해 주세요.");
-      return;
-    }
-    weatherRequestRef.current += 1;
-    setWeatherLoading(null);
-    setSelectedId(candidate.id);
-    if (!liveTripId) return;
-    const selectionLease = actionGateRef.current.beginSelection();
-    if (!selectionLease) {
-      setSelectedId(persistedSelectedRef.current);
-      setNotice("현재 계획 상태 저장이 끝난 뒤 후보를 선택해 주세요.");
-      return;
-    }
-    const tripId = liveTripId;
-    const generation = routeGenerationRef.current;
-    const intent = ++selectionIntentRef.current;
-    let selectionReleased = false;
-    const releaseSelection = () => {
-      if (selectionReleased) return;
-      selectionReleased = true;
-      selectionLease.release();
-      if (intent === selectionIntentRef.current) setSelectionPending(false);
-    };
-    setSelectionPending(true);
-    selectionQueueRef.current = selectionQueueRef.current.then(async () => {
-      if (generation !== routeGenerationRef.current || liveTripIdRef.current !== tripId) return;
-      const supabase = getBrowserSupabase();
-      if (!supabase) return;
-      const { error } = await supabase.rpc("select_trip_candidate", {
-        target_trip_id: tripId,
-        target_profile: candidate.id,
-      });
-      if (error) {
-        if (
-          intent === selectionIntentRef.current &&
-          generation === routeGenerationRef.current &&
-          liveTripIdRef.current === tripId
-        ) {
-          setSelectedId(persistedSelectedRef.current);
-          setNotice("선택 경로를 저장하지 못해 마지막 저장 경로로 되돌렸습니다.");
-        }
-        return;
-      }
-      persistedSelectedRef.current = candidate.id;
-      if (generation !== routeGenerationRef.current || liveTripIdRef.current !== tripId) return;
-      if (intent === selectionIntentRef.current && !weatherByCandidate[candidate.id]) {
-        releaseSelection();
-        void loadWeather(candidate, tripId, generation);
-      }
-    }).catch(() => {
-      if (intent === selectionIntentRef.current && liveTripIdRef.current === tripId) {
-        setSelectedId(persistedSelectedRef.current);
-        setNotice("선택 경로 저장 중 오류가 발생해 마지막 저장 경로로 되돌렸습니다.");
-      }
-    }).finally(releaseSelection);
-  }
-
   async function recalculate(event: FormEvent) {
     event.preventDefault();
     if (actionGateRef.current.planning) {
       setNotice("현재 계획의 계산과 저장이 끝날 때까지 기다려 주세요.");
-      return;
-    }
-    if (actionGateRef.current.selection) {
-      setNotice("선택 경로 저장이 끝난 뒤 다시 계산해 주세요.");
       return;
     }
     if (!connected && (!draft.origin.trim() || !draft.destination.trim() || !draft.lunch.trim())) {
@@ -687,11 +624,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       departureAt,
     };
     try {
-      const results = await Promise.all(
-        (["balanced", "winding", "short"] as const).map((candidate) => (
-          supabase.functions.invoke("plan-route", { body: { ...commonBody, candidate } })
-        )),
-      );
+      const result = await supabase.functions.invoke("plan-route", { body: commonBody });
       if (
         calculationGeneration !== routeGenerationRef.current ||
         liveTripIdRef.current !== targetTripId
@@ -699,25 +632,15 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         setNotice("계산 중 계획이 바뀌어 도착한 이전 경로를 적용하지 않았습니다. 다시 계산해 주세요.");
         return;
       }
-      if (results.some(({ error }) => error)) {
-        const labels = ["균형", "와인딩", "최단"];
-        const failed = results.flatMap((result, index) => result.error ? [labels[index]] : []);
-        const windingFailureCode = results[1].error
-          ? await plannerFunctionErrorCode(results[1].error)
-          : null;
-        if (liveCandidates) setLiveResultStale(true);
-        if (windingFailureCode === "WINDING_ROUTE_UNAVAILABLE") {
-          setNotice(windingUnavailableNotice(Boolean(liveCandidates)));
-        } else {
-          setNotice(liveCandidates
-            ? `${failed.join("·")} 경로 계산에 실패해 이전 실제 경로를 유지했습니다. 자동차 경로로 대체하지 않았습니다.`
-            : `${failed.join("·")} 경로를 안전 조건 안에서 계산하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.`);
-        }
+      if (result.error) {
+        if (liveRoute) setLiveResultStale(true);
+        setNotice(liveRoute
+          ? "추천 경로 계산에 실패해 이전 실제 경로를 유지했습니다. 자동차 경로로 대체하지 않았습니다."
+          : "추천 경로를 안전 조건 안에서 계산하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.");
         return;
       }
-      const responses = parseSafeRouteCandidateSet(results.map(({ data }) => data));
-      const candidates = responses.map(liveRouteCandidate);
-      setNotice("실제 경로 3개를 계산했습니다. 계획을 안전하게 저장하는 중입니다.");
+      const candidate = liveRouteCandidate(parseSafeRecommendedRoute(result.data));
+      setNotice("실제 추천 경로를 계산했습니다. 계획을 안전하게 저장하는 중입니다.");
 
       const { data: savedTripId, error: saveError } = await supabase.rpc("finalize_trip_plan", {
         target_planning_id: planningId,
@@ -735,30 +658,19 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         setNotice("저장 중 계획 상태가 바뀌어 도착한 결과를 화면에 적용하지 않았습니다. 다시 계산해 주세요.");
         return;
       }
-      setLiveCandidates(candidates);
-      setWeatherByCandidate({});
+      setLiveRoute(candidate);
+      setWeather(null);
       setLiveResultStale(false);
-      setSelectedId("balanced");
       setLiveTripId(savedTripId);
       liveTripIdRef.current = savedTripId;
-      persistedSelectedRef.current = "balanced";
-      selectionIntentRef.current += 1;
-      setSelectionPending(false);
-      selectionQueueRef.current = Promise.resolve();
-      setNotice("실제 경로 3개와 계획을 저장했습니다.");
-      void loadWeather(candidates[0], savedTripId, calculationGeneration);
+      setNotice("실제 추천 경로와 계획을 저장했습니다.");
+      void loadWeather(candidate, savedTripId, calculationGeneration);
     } catch (error) {
-      if (liveCandidates) setLiveResultStale(true);
-      const failedCandidate = error instanceof ProviderContractError
-        ? ({
-            INVALID_BALANCED_ROUTE_RESPONSE: "균형",
-            INVALID_WINDING_ROUTE_RESPONSE: "와인딩",
-            INVALID_SHORT_ROUTE_RESPONSE: "최단",
-          } as Record<string, string>)[error.code]
-        : undefined;
-      setNotice(liveCandidates
-        ? `${failedCandidate ? `${failedCandidate} ` : ""}응답을 안전하게 확인하지 못해 이전 실제 경로를 유지했습니다.`
-        : `${failedCandidate ? `${failedCandidate} ` : ""}경로 공급자 응답을 안전하게 확인하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.`);
+      if (liveRoute) setLiveResultStale(true);
+      const providerFailure = error instanceof ProviderContractError;
+      setNotice(liveRoute
+        ? `${providerFailure ? "추천 경로 " : ""}응답을 안전하게 확인하지 못해 이전 실제 경로를 유지했습니다.`
+        : `${providerFailure ? "추천 경로 " : ""}공급자 응답을 안전하게 확인하지 못했습니다. 예시 결과를 실제 성공으로 바꾸지 않았습니다.`);
       return;
     } finally {
       planningLease.release();
@@ -806,7 +718,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
           </div>
 
           <form onSubmit={recalculate} className="planner-form">
-            <fieldset className="planner-fields" disabled={calculating || selectionPending} aria-busy={calculating || selectionPending}>
+            <fieldset className="planner-fields" disabled={calculating} aria-busy={calculating}>
             <section className="form-section">
               <div className="section-label"><span>01</span>경로</div>
               {connected ? (
@@ -829,6 +741,13 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                         <strong>{point.name}</strong>
                         <small>{point.kind} · {point.dwellMinutes}분 · {point.selected ? "선택됨" : "선택 안 됨"}{point.winding ? " · 와인딩" : ""}</small>
                       </div>
+                      {point.winding ? (
+                        <div className="waypoint-actions">
+                          <button type="button" disabled={index === 0} onClick={() => moveAppliedWindingPoint(index, -1)} aria-label={`${point.name} 위로 이동`}>↑</button>
+                          <button type="button" disabled={index === appliedCollectionPoints.length - 1} onClick={() => moveAppliedWindingPoint(index, 1)} aria-label={`${point.name} 아래로 이동`}>↓</button>
+                          <button type="button" onClick={() => removeAppliedWindingPoint(point)} aria-label={`${point.name} 제거`}>×</button>
+                        </div>
+                      ) : null}
                     </li>
                   ))}
                 </ol>
@@ -854,7 +773,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
               ) : null}
               {connected && addingWinding ? (
                 <div className="winding-editor">
-                  <PlaceSearchField label="와인딩 경유지" placeholder="산길 입구, 고개, 전망대" selected={null} onSelect={addWindingPoint} />
+                  <PlaceSearchField label="와인딩 경유지" placeholder="산길 입구, 고개, 전망대" autoFocus selected={null} onSelect={addWindingPoint} />
                   <button className="text-button muted" type="button" onClick={cancelWindingEdit}>추가 취소</button>
                 </div>
               ) : null}
@@ -879,7 +798,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
               <label><span>출발</span><input type="time" value={draft.departureTime} onChange={(event) => update("departureTime", event.target.value)} /></label>
               <div className="time-estimate-note">
                 <span aria-hidden="true">↗</span>
-                <p><strong>복귀는 자동 계산</strong><small>경로·식사·선택 휴식을 합산해 후보별 예상 시각을 보여줍니다.</small></p>
+                <p><strong>복귀는 자동 계산</strong><small>추천 경로·식사·선택 휴식을 합산해 예상 시각을 보여줍니다.</small></p>
               </div>
             </section>
 
@@ -910,8 +829,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
               <span className="shield-mark">✓</span>
               <p><strong>오토바이 안전 조건 고정</strong><br />자동차전용도로 제외 조건을 완화하지 않습니다.</p>
             </div>
-            <button className="primary-button calculate" type="submit" disabled={calculating || selectionPending}>
-              {calculating ? "안전 경로 계산 중…" : selectionPending ? "선택 경로 저장 중…" : "선택 경로 다시 계산"}
+            <button className="primary-button calculate" type="submit" disabled={calculating}>
+              {calculating ? "안전 추천 경로 계산 중…" : "추천 경로 다시 계산"}
             </button>
             </fieldset>
           </form>
@@ -923,43 +842,20 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
             <div className="map-topbar">
               <div className="map-badges">
                 <div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>
-                {!liveCandidates ? <span className="example-data-badge">예시 데이터</span> : <span className="live-data-badge">{liveResultStale ? "이전 실제 경로" : "실제 경로"}</span>}
+                {!liveRoute ? <span className="example-data-badge">예시 데이터</span> : <span className="live-data-badge">{liveResultStale ? "이전 실제 경로" : "실제 경로"}</span>}
               </div>
               <button className="map-control" type="button" aria-label="현재 위치로 이동">⌖</button>
             </div>
             <div className="ride-summary">
-              <p>선택 경로</p>
+              <p>추천 경로</p>
               <h2>{selected.label}</h2>
               <div className="summary-metrics">
                 <span><strong>{selected.distanceKm}</strong> km</span>
                 <span><strong>{minutesLabel(timeline.rideMinutes)}</strong> 주행</span>
+                <span><strong>{minutesLabel(timeline.stopMinutes)}</strong> 정차</span>
                 <span><strong>{formatRideTime(displayedDepartureAt, timeline.returnAt)}</strong> 예상 복귀</span>
               </div>
               <div className="return-status safe">정차 포함 예상 복귀</div>
-            </div>
-          </div>
-
-          <div className="candidate-strip" aria-label="추천 경로 후보">
-            <div className="strip-heading">
-              <div><p className="eyebrow">ROUTE OPTIONS</p><h2>추천 경로 3개 {!liveCandidates ? <small>예시</small> : null}</h2></div>
-              <p>날씨는 순위에 반영하지 않고 구간 정보로만 표시합니다.</p>
-            </div>
-            <div className="candidate-grid">
-              {displayedCandidates.map((candidate) => (
-                <button
-                  type="button"
-                  className={`candidate-card ${selectedId === candidate.id ? "is-selected" : ""}`}
-                  key={candidate.id}
-                  disabled={calculating || selectionPending}
-                  onClick={() => void chooseCandidate(candidate)}
-                  aria-pressed={selectedId === candidate.id}
-                >
-                  <span className={`candidate-index ${candidateTone[candidate.id]}`}>0{displayedCandidates.indexOf(candidate) + 1}</span>
-                  <span className="candidate-copy"><strong>{candidate.label}</strong><small>{candidate.description}</small></span>
-                  <span className="candidate-stats"><b>{candidate.distanceKm} km</b><small>{minutesLabel(candidate.rideMinutes)} 주행</small><small>{formatRideTime(displayedDepartureAt, candidate.returnAt)} 예상 복귀</small></span>
-                  <span className="select-mark">{selectedId === candidate.id ? "✓" : "→"}</span>
-                </button>
-              ))}
             </div>
           </div>
 
@@ -967,9 +863,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
             <div className="forecast-heading">
               <div><p className="eyebrow">WEATHER BY ARRIVAL</p><h2>시간에 따른 구간 날씨</h2></div>
               <span className="forecast-issued">
-                {!liveCandidates
+                {!liveRoute
                   ? "예보 발행 09:00 · 예시"
-                  : weatherLoading === selectedId
+                  : weatherLoading === selected.id
                     ? "기상청 예보 조회 중"
                     : selectedWeatherStatus
                       ? selectedWeatherStatus.header
@@ -1004,8 +900,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
 
           {connected ? (
             <div className="management-grid">
-              <CollectionManager currentPoints={collectionPoints} onApply={applyCollection} disabled={calculating || selectionPending} />
-              <ShareManager tripId={liveTripId} disabled={calculating || selectionPending} />
+              <CollectionManager currentPoints={collectionPoints} onApply={applyCollection} disabled={calculating} />
+              <ShareManager tripId={liveTripId} disabled={calculating} />
             </div>
           ) : null}
         </section>

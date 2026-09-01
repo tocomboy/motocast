@@ -14,7 +14,7 @@ export type RouteResponseLeg<TPoint, TSection> = {
 
 export function buildSafeRouteResponse<TPoint, TSection>(input: {
   candidate: {
-    id: "balanced" | "winding" | "short";
+    id: "recommended" | "balanced" | "winding" | "short";
     label: string;
     estimatedWinding: boolean;
   };

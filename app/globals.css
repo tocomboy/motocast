@@ -155,7 +155,6 @@ button {
 .map-control,
 .close-panel,
 .text-button,
-.candidate-card,
 .mobile-plan-button {
   border: 0;
   cursor: pointer;
@@ -1160,17 +1159,10 @@ button {
   color: var(--danger);
 }
 
-.candidate-strip,
 .forecast-panel {
   padding: 28px 34px;
 }
 
-.candidate-strip {
-  background: var(--paper-deep);
-  border-bottom: 1px solid var(--line);
-}
-
-.strip-heading,
 .forecast-heading {
   align-items: end;
   display: flex;
@@ -1178,75 +1170,9 @@ button {
   margin-bottom: 17px;
 }
 
-.strip-heading h2,
 .forecast-heading h2 {
   font-size: 1.55rem;
 }
-
-.strip-heading h2 small {
-  background: #f8e1d7;
-  border-radius: 999px;
-  color: var(--orange-deep);
-  font-family: inherit;
-  font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  padding: 4px 7px;
-  vertical-align: middle;
-}
-
-.strip-heading > p {
-  color: #535b55;
-  font-size: 0.7rem;
-  margin: 0;
-}
-
-.candidate-grid {
-  display: grid;
-  gap: 11px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.candidate-card {
-  align-items: center;
-  background: rgba(255, 253, 248, 0.72);
-  border: 1px solid transparent;
-  border-radius: 12px;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: auto 1fr auto auto;
-  min-width: 0;
-  padding: 14px;
-  text-align: left;
-  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
-}
-
-.candidate-card:hover {
-  background: white;
-  transform: translateY(-2px);
-}
-
-.candidate-card.is-selected {
-  background: white;
-  border-color: var(--orange);
-  box-shadow: 0 8px 22px rgba(24, 34, 29, 0.08);
-}
-
-.candidate-index {
-  align-items: center;
-  border-radius: 50%;
-  color: var(--ink);
-  display: flex;
-  font-family: Georgia, serif;
-  font-size: 0.72rem;
-  height: 32px;
-  justify-content: center;
-  width: 32px;
-}
-
-.candidate-index.mint { background: var(--mint); }
-.candidate-index.orange { background: #f4a586; }
-.candidate-index.blue { background: var(--blue); }
 
 .candidate-copy,
 .candidate-stats {
@@ -1609,14 +1535,6 @@ button {
     padding-inline: 22px;
   }
 
-  .candidate-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .candidate-card {
-    grid-template-columns: auto minmax(140px, 1fr) auto auto;
-  }
-
   .timeline-row {
     grid-template-columns: 65px 22px minmax(170px, 1fr) auto;
   }
@@ -1714,33 +1632,14 @@ button {
     right: 14px;
   }
 
-  .candidate-strip,
   .forecast-panel {
     padding: 24px 17px;
   }
 
-  .strip-heading,
   .forecast-heading {
     align-items: flex-start;
     display: grid;
     gap: 8px;
-  }
-
-  .strip-heading > p {
-    line-height: 1.5;
-  }
-
-  .candidate-grid {
-    display: flex;
-    margin-right: -17px;
-    overflow-x: auto;
-    padding: 3px 17px 12px 0;
-    scroll-snap-type: x mandatory;
-  }
-
-  .candidate-card {
-    flex: 0 0 83vw;
-    scroll-snap-align: start;
   }
 
   .timeline-row {

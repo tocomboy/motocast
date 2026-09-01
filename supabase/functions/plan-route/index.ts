@@ -1,11 +1,8 @@
 import { consumeBudget, requireMember, serviceClient } from "../_shared/auth.ts";
 import { executeBudgetedProviderCall } from "../_shared/budgeted-call.ts";
-import { candidatePolicy } from "../_shared/candidate-policy.ts";
-import { assertEstimatedWindingAvailable, selectEstimatedWindingChunk } from "../_shared/estimated-winding.ts";
 import { corsHeaders, jsonResponse, safeErrorCode, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
-import { requestKakaoRoute, requestKakaoRoutes } from "../_shared/kakao-provider.ts";
+import { requestKakaoRoute } from "../_shared/kakao-provider.ts";
 import { assertKakaoSectionsContinuous, type NormalizedKakaoRoute } from "../_shared/kakao-route.ts";
-import type { KakaoRoutePriority } from "../_shared/kakao-safety.ts";
 import { assertRideUnder24Hours, legacyScheduleBoundary } from "../_shared/route-deadline.ts";
 import { parseRouteRequest, type RoutePointRequest } from "../_shared/route-request.ts";
 import { buildSafeRouteResponse } from "../_shared/route-response.ts";
@@ -74,47 +71,31 @@ Deno.serve(async (request) => {
     const apiKey = Deno.env.get("KAKAO_REST_API_KEY");
     if (!apiKey) throw new Error("PROVIDER_NOT_CONFIGURED");
 
-    const policy = candidatePolicy(input);
-    const points = policy.points;
+    const points = [input.origin, ...input.waypoints, input.destination];
     const legs = [];
     let cursor = 0;
     let departure = new Date(input.departureAt);
     let totalDistance = 0;
     let totalDuration = 0;
     const acceptedSections: NormalizedKakaoRoute["sections"] = [];
-    const estimatedWindingChunkDistinctness: boolean[] = [];
 
     while (cursor < points.length - 1) {
       const { endIndex, via } = nextChunk(points, cursor);
       const isFuture = departure.getTime() > Date.now() + 5 * 60_000;
       const operation = isFuture ? "future_directions" : "directions";
       const hardLimit = limitFromEnv(isFuture ? "KAKAO_FUTURE_DAILY_LIMIT" : "KAKAO_CURRENT_DAILY_LIMIT");
-      const providerInput = (priority: KakaoRoutePriority, requestAlternatives: boolean) => ({
+      const providerInput = {
         origin: points[cursor],
         destination: points[endIndex],
         waypoints: via,
         departureAt: departure,
         isFuture,
-        priority,
-        requestAlternatives,
         apiKey,
-      });
-      const providerCall = (priority: KakaoRoutePriority) => executeBudgetedProviderCall(
+      };
+      const selected = await executeBudgetedProviderCall(
         () => consumeBudget(user.id, "kakao", operation, hardLimit),
-        () => requestKakaoRoute(providerInput(priority, false)),
+        () => requestKakaoRoute(providerInput),
       );
-      const providerPoolCall = (priority: KakaoRoutePriority, requestAlternatives: boolean) => executeBudgetedProviderCall(
-        () => consumeBudget(user.id, "kakao", operation, hardLimit),
-        () => requestKakaoRoutes(providerInput(priority, requestAlternatives)),
-      );
-      let selected;
-      if (policy.requestAlternatives) {
-        const windingSelection = await selectEstimatedWindingChunk(providerPoolCall);
-        selected = windingSelection.selected;
-        estimatedWindingChunkDistinctness.push(windingSelection.distinct);
-      } else {
-        selected = await providerCall(policy.priority);
-      }
       const chunkPoints = [points[cursor], ...via, points[endIndex]];
       for (let index = 0; index < selected.result.sections.length; index += 1) {
         const section = selected.result.sections[index];
@@ -152,12 +133,11 @@ Deno.serve(async (request) => {
       cursor = endIndex;
     }
 
-    assertEstimatedWindingAvailable(policy.metadata.estimatedWinding, estimatedWindingChunkDistinctness);
     assertKakaoSectionsContinuous(acceptedSections);
     assertRideUnder24Hours(input.departureAt, departure.toISOString());
 
     const route = buildSafeRouteResponse({
-      candidate: policy.metadata,
+      candidate: { id: "recommended", label: "추천 경로", estimatedWinding: false },
       totalDistanceMeters: totalDistance,
       totalDurationSeconds: totalDuration,
       returnAt: departure.toISOString(),
@@ -179,7 +159,7 @@ Deno.serve(async (request) => {
       lunchStop: storagePoint(lunchStop),
       dinnerStop: dinnerStop ? storagePoint(dinnerStop) : null,
       waypoints: input.waypoints.map(storagePoint),
-      selectedProfile: "balanced",
+      selectedProfile: "recommended",
     };
     const { error: stageError } = await serviceClient().rpc("stage_route_candidate_internal", {
       member_id: user.id,

@@ -19,13 +19,14 @@ async function expectMapChromeNotToOverlap(page: import("@playwright/test").Page
 }
 
 test.describe("planner responsive shell", () => {
-  test("desktop keeps the plan and route comparison visible", async ({ page }) => {
+  test("desktop keeps the plan and single recommended route visible", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/");
 
     await expect(page.getByRole("heading", { name: "라이딩 계획" })).toBeVisible();
     await expect(page.getByText("복귀는 자동 계산", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /추천 경로 3개/ })).toBeVisible();
+    await expect(page.locator(".ride-summary h2")).toHaveText("추천 경로");
+    await expect(page.locator(".candidate-card")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "계획 수정" })).toBeHidden();
     await expect(page.locator("body")).not.toContainText("희망 복귀");
     await expect(page.locator("body")).not.toContainText("최종 복귀");

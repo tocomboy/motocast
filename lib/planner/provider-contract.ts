@@ -21,7 +21,7 @@ export type SafeRouteLeg = {
 
 export type SafeRouteResponse = {
   candidate: {
-    id: "balanced" | "winding" | "short";
+    id: "recommended" | "balanced" | "winding" | "short";
     label: string;
     estimatedWinding: boolean;
   };
@@ -196,9 +196,10 @@ export function parseSafeRouteResponse(value: unknown): SafeRouteResponse {
   const raw = record(value);
   const candidate = record(raw.candidate, "INVALID_ROUTE_CANDIDATE");
   if (
-    !["balanced", "winding", "short"].includes(String(candidate.id)) ||
+    !["recommended", "balanced", "winding", "short"].includes(String(candidate.id)) ||
     typeof candidate.label !== "string" || candidate.label.length < 1 || candidate.label.length > 80 ||
     typeof candidate.estimatedWinding !== "boolean" ||
+    (candidate.id === "recommended" && (candidate.label !== "추천 경로" || candidate.estimatedWinding !== false)) ||
     (candidate.estimatedWinding && (candidate.id !== "winding" || candidate.label !== "와인딩 추정"))
   ) throw new ProviderContractError("INVALID_ROUTE_CANDIDATE");
   const safety = record(raw.safety, "UNSAFE_ROUTE_RESPONSE");
@@ -307,5 +308,13 @@ export function parseSafeRouteCandidateSet(values: unknown[]): SafeRouteResponse
   }
   const fingerprints = new Set(parsed.map(routeResponseFingerprint));
   if (fingerprints.size !== expected.length) throw new ProviderContractError("DUPLICATE_ROUTE_CANDIDATES");
+  return parsed;
+}
+
+export function parseSafeRecommendedRoute(value: unknown): SafeRouteResponse {
+  const parsed = parseSafeRouteResponse(value);
+  if (parsed.candidate.id !== "recommended") {
+    throw new ProviderContractError("INVALID_RECOMMENDED_ROUTE_RESPONSE");
+  }
   return parsed;
 }

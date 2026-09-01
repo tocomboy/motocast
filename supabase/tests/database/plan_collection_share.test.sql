@@ -37,7 +37,7 @@ returns jsonb language sql immutable as $$
   select jsonb_build_object(
     'candidate', jsonb_build_object(
       'id', profile,
-      'label', case profile when 'balanced' then '균형' when 'winding' then '와인딩' else '최단' end,
+      'label', case profile when 'recommended' then '추천 경로' when 'balanced' then '균형' when 'winding' then '와인딩' else '최단' end,
       'estimatedWinding', false
     ),
     'safety', jsonb_build_object('vehicle', 'motorcycle', 'motorwayExcluded', true, 'fallbackUsed', false),
@@ -375,9 +375,11 @@ select * from public.publish_trip_share(
 grant select on published_result to authenticated;
 insert into tap_results values
   ((select published_snapshot = preview_snapshot from published_result cross join preview_result), 'published snapshot exactly matches the approved preview capability'),
-  ((select preview_snapshot ->> 'schemaVersion' = '2' from preview_result), 'new shares use the return-estimate-only schema'),
+  ((select preview_snapshot ->> 'schemaVersion' = '3' from preview_result), 'new shares use the single recommended route schema'),
   ((select not (preview_snapshot -> 'trip' ? 'desiredReturnAt') and not (preview_snapshot -> 'trip' ? 'hardReturnAt') from preview_result), 'new shares omit removed desired and hard return inputs'),
-  ((select preview_snapshot -> 'routes' -> 0 -> 'route' ? 'returnAt' from preview_result), 'new shares retain the computed route return time'),
+  ((select not (preview_snapshot -> 'trip' ? 'selectedProfile') and not (preview_snapshot ? 'routes') from preview_result), 'new shares expose no legacy candidate selection'),
+  ((select preview_snapshot -> 'route' ? 'returnAt' from preview_result), 'new shares retain the computed route return time'),
+  ((select preview_snapshot -> 'route' -> 'candidate' ->> 'id' = 'recommended' from preview_result), 'new shares expose one recommended route identity'),
   ((select preview_snapshot -> 'weather' is not null from preview_result), 'share includes weather only when it matches the selected stored route'),
   ((select preview_snapshot -> 'waypoints' -> 0 ->> 'id' = 'waypoint-0' from preview_result), 'share uses snapshot-local waypoint ids instead of owner table ids'),
   ((select preview_snapshot -> 'weather' ? 'validUntil' from preview_result), 'share exposes weather validity for freshness display'),
@@ -410,29 +412,23 @@ begin
 end;
 $$;
 
-create temp table stale_preview on commit drop as
+create temp table legacy_selection_preview on commit drop as
 select * from public.preview_trip_share((select id from trip_result));
-grant select on stale_preview to authenticated;
+grant select on legacy_selection_preview to authenticated;
 select public.select_trip_candidate((select id from trip_result), 'winding');
 insert into tap_results values (
-  (select public.resolve_share(share_token) -> 'trip' ->> 'selectedProfile' = 'balanced' from published_result),
+  (select public.resolve_share(share_token) -> 'route' -> 'candidate' ->> 'id' = 'recommended' from published_result),
   'source edits do not change an existing immutable share'
 );
 
-do $$
-declare rejected boolean := false;
-begin
-  begin
-    perform public.publish_trip_share(
-      (select id from trip_result),
-      (select preview_token from stale_preview)
-    );
-  exception when sqlstate 'P0001' then rejected := sqlerrm = 'SHARE_PREVIEW_STALE'; end;
-  insert into tap_results values
-    (rejected, 'source changes make a prior preview capability stale'),
-    ((select count(*) = 1 from public.share_links), 'stale preview rejection creates no public link');
-end;
-$$;
+create temp table legacy_selection_preview_after on commit drop as
+select * from public.preview_trip_share((select id from trip_result));
+grant select on legacy_selection_preview_after to authenticated;
+insert into tap_results values (
+  (select before.preview_snapshot = after.preview_snapshot
+   from legacy_selection_preview before cross join legacy_selection_preview_after after),
+  'legacy candidate selection does not change the schema 3 representative balanced route'
+);
 
 create temp table expired_preview on commit drop as
 select * from public.preview_trip_share((select id from trip_result));
@@ -480,7 +476,7 @@ select * from public.publish_trip_share(
 grant select on reissued_result to authenticated, anon;
 insert into tap_results values
   ((select reissued.share_token <> original.share_token from reissued_result reissued cross join published_result original), 'reissue creates a different token'),
-  ((select public.resolve_share(share_token) -> 'trip' ->> 'selectedProfile' = 'winding' from reissued_result), 'reissue publishes the newly previewed current snapshot');
+  ((select public.resolve_share(share_token) -> 'route' -> 'candidate' ->> 'id' = 'recommended' from reissued_result), 'reissue publishes one representative recommended route');
 
 select set_config('request.jwt.claim.sub', '72000000-0000-0000-0000-000000000002', true);
 insert into tap_results values
@@ -525,10 +521,66 @@ begin
 end;
 $$;
 
+create temp table recommended_plan_fixture on commit drop as
+select jsonb_set((select plan from plan_fixture), '{selectedProfile}', '"recommended"'::jsonb, false) as plan;
+grant select on recommended_plan_fixture to authenticated, service_role;
+set local role service_role;
+select public.stage_route_candidate_internal(
+  '71000000-0000-0000-0000-000000000001',
+  '73000000-0000-4000-8000-000000000007',
+  (select plan from recommended_plan_fixture),
+  pg_temp.test_route('recommended', 127.08)
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+create temp table recommended_trip_result on commit drop as
+select public.finalize_trip_plan('73000000-0000-4000-8000-000000000007', null) as id;
+grant select on recommended_trip_result to authenticated, service_role;
+create temp table recommended_preview on commit drop as
+select * from public.preview_trip_share((select id from recommended_trip_result));
+grant select on recommended_preview to authenticated;
+insert into tap_results values
+  ((select selected_profile = 'recommended' from public.trips where id = (select id from recommended_trip_result)), 'new plan stores the recommended profile'),
+  ((select count(*) = 1 from public.route_cache where trip_id = (select id from recommended_trip_result)), 'new plan atomically stores exactly one route'),
+  ((select count(*) = 0 from public.route_cache where trip_id = (select id from recommended_trip_result) and profile <> 'recommended'), 'new plan stores no legacy candidate rows'),
+  ((select preview_snapshot ->> 'schemaVersion' = '3' and preview_snapshot ? 'route' and not (preview_snapshot ? 'routes') from recommended_preview), 'new plan preview exposes one schema 3 route'),
+  ((select jsonb_array_length(preview_snapshot -> 'waypoints') = 2 and preview_snapshot -> 'waypoints' -> 0 ->> 'label' = '와인딩' from recommended_preview), 'new plan preserves custom winding waypoint order');
+
+set local role service_role;
+select public.stage_route_candidate_internal(
+  '71000000-0000-0000-0000-000000000001',
+  '73000000-0000-4000-8000-000000000008',
+  (select plan from recommended_plan_fixture),
+  pg_temp.test_route('recommended', 127.08)
+);
+select public.stage_route_candidate_internal(
+  '71000000-0000-0000-0000-000000000001',
+  '73000000-0000-4000-8000-000000000008',
+  (select plan from recommended_plan_fixture),
+  pg_temp.test_route('balanced', 127.09)
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.finalize_trip_plan('73000000-0000-4000-8000-000000000008', null);
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'ROUTE_PLAN_NOT_READY'; end;
+  insert into tap_results values
+    (rejected, 'new finalization rejects an extra candidate instead of partially saving it'),
+    ((select count(*) = 2 from public.trips), 'rejected extra-candidate finalization creates no partial trip');
+end;
+$$;
+insert into tap_results values (
+  public.delete_owned_trip((select id from recommended_trip_result)),
+  'owner can clean up the single-route test trip'
+);
+
 set local role anon;
 select set_config('request.jwt.claim.sub', '', true);
 insert into tap_results values (
-  (select public.resolve_share(share_token) -> 'trip' ->> 'selectedProfile' = 'winding' from reissued_result),
+  (select public.resolve_share(share_token) -> 'route' -> 'candidate' ->> 'id' = 'recommended' from reissued_result),
   'anonymous reader receives only the published snapshot through the resolver'
 );
 
@@ -549,7 +601,7 @@ insert into tap_results values
 set local role anon;
 select set_config('request.jwt.claim.sub', '', true);
 insert into tap_results values (
-  (select public.resolve_share(share_token) -> 'trip' ->> 'selectedProfile' = 'winding' from reissued_result),
+  (select public.resolve_share(share_token) -> 'route' -> 'candidate' ->> 'id' = 'recommended' from reissued_result),
   'deleting the source trip does not mutate its issued share snapshot'
 );
 

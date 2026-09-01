@@ -9,11 +9,12 @@ type Props = {
   label: string;
   placeholder: string;
   required?: boolean;
+  autoFocus?: boolean;
   selected: PlaceSearchResult | null;
   onSelect: (place: PlaceSearchResult | null) => void;
 };
 
-export function PlaceSearchField({ label, placeholder, required = false, selected, onSelect }: Props) {
+export function PlaceSearchField({ label, placeholder, required = false, autoFocus = false, selected, onSelect }: Props) {
   const inputId = useId();
   const statusId = useId();
   const [query, setQuery] = useState(selected?.name ?? "");
@@ -79,6 +80,7 @@ export function PlaceSearchField({ label, placeholder, required = false, selecte
           value={query}
           placeholder={placeholder}
           maxLength={100}
+          autoFocus={autoFocus}
           aria-describedby={statusId}
           aria-invalid={required && !selected}
           onChange={(event) => changeQuery(event.target.value)}

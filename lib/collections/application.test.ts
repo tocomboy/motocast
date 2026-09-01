@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   insertCollectionWinding,
+  moveCollectionWinding,
   prepareCollectionApplication,
+  removeCollectionWinding,
   replaceCollectionStop,
   setCollectionRestSelected,
 } from "./application";
@@ -90,6 +92,30 @@ describe("prepareCollectionApplication", () => {
     expect(result.lunch).toBeNull();
     expect(result.dinner).toBeNull();
     expect(result.orderedPoints).toHaveLength(2);
+  });
+
+  it("lets an applied winding point move across stops without reordering other points", () => {
+    const points = [
+      point("winding-a", { winding: true }),
+      point("lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" }),
+      point("winding-b", { winding: true }),
+      point("rest", { kind: "optional", dwellMinutes: 30, stopRole: "rest" }),
+    ];
+    expect(moveCollectionWinding(points, 2, -1).map((item) => item.id)).toEqual([
+      "winding-a", "winding-b", "lunch", "rest",
+    ]);
+    expect(moveCollectionWinding(points, 1, -1)).toBe(points);
+  });
+
+  it("removes only the selected applied winding point", () => {
+    const points = [
+      point("plain"),
+      point("winding-a", { winding: true }),
+      point("winding-b", { winding: true }),
+    ];
+    expect(removeCollectionWinding(points, "winding-a").map((item) => item.id)).toEqual([
+      "plain", "winding-b",
+    ]);
   });
 
   it("replaces an unselected lunch in its original ordered slot", () => {

@@ -11,7 +11,7 @@ export type WeatherPoint = {
 export type WeatherRequest = {
   points: WeatherPoint[];
   tripId: string;
-  candidateProfile: "balanced" | "winding" | "short";
+  candidateProfile: "recommended" | "balanced" | "winding" | "short";
 };
 
 export function parseWeatherPoints(value: unknown, nowMs = Date.now()): WeatherPoint[] {
@@ -46,7 +46,7 @@ export function parseWeatherRequest(value: unknown, nowMs = Date.now()): Weather
     typeof raw.tripId !== "string" ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw.tripId)
   ) throw new Error("INVALID_TRIP");
-  if (!['balanced', 'winding', 'short'].includes(String(raw.candidateProfile))) {
+  if (!['recommended', 'balanced', 'winding', 'short'].includes(String(raw.candidateProfile))) {
     throw new Error("INVALID_CANDIDATE");
   }
   return {

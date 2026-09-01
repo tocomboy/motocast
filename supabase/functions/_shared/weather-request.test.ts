@@ -26,11 +26,11 @@ describe("parseWeatherPoints", () => {
   it("accepts an owned-trip request shape", () => {
     expect(parseWeatherRequest({
       tripId: "f5ef8f03-bf21-4a9b-bf2b-82ce63cfc53e",
-      candidateProfile: "balanced",
+      candidateProfile: "recommended",
       points: [point],
     }, now)).toMatchObject({
       tripId: "f5ef8f03-bf21-4a9b-bf2b-82ce63cfc53e",
-      candidateProfile: "balanced",
+      candidateProfile: "recommended",
     });
   });
 

@@ -23,46 +23,38 @@ describe("planner persistence lock policy", () => {
     })();
 
     expect(gate.beginPlanning()).toBeNull();
-    expect(gate.beginSelection()).toBeNull();
     expect(gate.canApplyCollection()).toBe(false);
     expect(gate.canPublishShare()).toBe(false);
 
     finishFinalization();
     await persistence;
     expect(gate.busy).toBe(false);
-    const selection = gate.beginSelection();
-    expect(selection).not.toBeNull();
-    selection!.release();
+    expect(gate.beginPlanning()).not.toBeNull();
   });
 
-  it("wires the execution gate to candidate, collection, and planning mutations", () => {
+  it("wires the execution gate to collection and planning mutations", () => {
     const finalization = source.indexOf('supabase.rpc("finalize_trip_plan"');
     const release = source.indexOf("planningLease.release()", finalization);
     expect(finalization).toBeGreaterThan(-1);
     expect(release).toBeGreaterThan(finalization);
     expect(source).toContain("actionGateRef.current.beginPlanning()");
-    expect(source).toContain("actionGateRef.current.beginSelection()");
     expect(source).toContain("actionGateRef.current.canApplyCollection()");
-    expect(source).toContain("disabled={calculating || selectionPending}");
-    expect(source).toContain('className="planner-fields" disabled={calculating || selectionPending}');
-    expect(source).toContain("<ShareManager tripId={liveTripId} disabled={calculating || selectionPending} />");
+    expect(source).toContain('className="planner-fields" disabled={calculating}');
+    expect(source).toContain("<ShareManager tripId={liveTripId} disabled={calculating} />");
+    expect(source).not.toContain("select_trip_candidate");
   });
 
-  it("releases the selection lease before starting the non-blocking weather refresh", () => {
-    const selectionRpc = source.indexOf('supabase.rpc("select_trip_candidate"');
-    const weatherRefresh = source.indexOf("void loadWeather(candidate, tripId, generation)", selectionRpc);
-    const release = source.lastIndexOf("releaseSelection()", weatherRefresh);
-    expect(selectionRpc).toBeGreaterThan(-1);
-    expect(weatherRefresh).toBeGreaterThan(selectionRpc);
-    expect(source.slice(selectionRpc, weatherRefresh)).not.toContain("await loadWeather");
-    expect(release).toBeGreaterThan(selectionRpc);
-    expect(release).toBeLessThan(weatherRefresh);
+  it("starts weather refresh only after the single route is finalized", () => {
+    const finalization = source.indexOf('supabase.rpc("finalize_trip_plan"');
+    const weatherRefresh = source.indexOf("void loadWeather(candidate, savedTripId, calculationGeneration)", finalization);
+    expect(weatherRefresh).toBeGreaterThan(finalization);
+    expect(source.slice(finalization, weatherRefresh)).not.toContain("await loadWeather");
     expect(source).toContain("withClientTimeout(");
   });
 
   it("drops late weather responses before they can update global UI state", () => {
     const requestGuard = source.indexOf("weatherRequest !== weatherRequestRef.current");
-    const weatherUpdate = source.indexOf("setWeatherByCandidate", requestGuard);
+    const weatherUpdate = source.indexOf("setWeather(response)", requestGuard);
     expect(requestGuard).toBeGreaterThan(-1);
     expect(weatherUpdate).toBeGreaterThan(requestGuard);
   });

@@ -61,7 +61,7 @@ function weather(
   return { condition, temperatureC, precipitationProbability, windSpeedMps, issuedAt };
 }
 
-const windingSegments: PlannedSegment[] = [
+const recommendedSegments: PlannedSegment[] = [
   {
     id: "segment-1",
     from: points.origin,
@@ -96,54 +96,26 @@ const windingSegments: PlannedSegment[] = [
   },
 ];
 
-const profiles = [
-  {
-    id: "balanced" as const,
-    label: "균형",
-    description: "주행 시간과 경로의 균형",
-    distanceScale: 0.92,
-    timeScale: 0.9,
-  },
-  {
-    id: "winding" as const,
-    label: "와인딩 우선",
-    description: "저장한 굽이길 경유지를 최대한 유지",
-    distanceScale: 1,
-    timeScale: 1,
-  },
-  {
-    id: "short" as const,
-    label: "짧은 경로",
-    description: "필수 정차를 지키며 총 주행을 단축",
-    distanceScale: 0.78,
-    timeScale: 0.76,
-  },
-];
-
 export const demoDepartureAt = "2026-08-30T22:30:00.000Z";
 
-export const demoCandidates: RouteCandidate[] = profiles.map((profile) => {
-  const segments = windingSegments.map((segment) => ({
-    ...segment,
-    distanceKm: Math.round(segment.distanceKm * profile.distanceScale),
-    rideMinutes: Math.round(segment.rideMinutes * profile.timeScale),
-  }));
+export const demoRoute: RouteCandidate = (() => {
+  const segments = recommendedSegments;
   const timeline = buildTimeline({
     departureAt: demoDepartureAt,
     segments,
   });
 
   return {
-    id: profile.id,
-    label: profile.label,
-    description: profile.description,
+    id: "recommended",
+    label: "추천 경로",
+    description: "입력한 모든 필수 지점을 지나는 오토바이 안전 추천 경로",
     distanceKm: segments.reduce((total, segment) => total + segment.distanceKm, 0),
     rideMinutes: timeline.rideMinutes,
     stopMinutes: timeline.stopMinutes,
     returnAt: timeline.returnAt,
     segments,
   };
-});
+})();
 
 export const demoMapPoints = [
   { ...points.origin, role: "origin" as const },

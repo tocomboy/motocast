@@ -20,11 +20,7 @@ describe("safe provider errors", () => {
     expect(safeErrorStatus(error)).toBe(422);
   });
 
-  it("returns a stable public code only for an unavailable winding alternative", () => {
-    const unavailable = new Error("WINDING_ROUTE_UNAVAILABLE");
-    expect(safeErrorMessage(unavailable)).toContain("와인딩 경유지");
-    expect(safeErrorStatus(unavailable)).toBe(422);
-    expect(safeErrorCode(unavailable)).toBe("WINDING_ROUTE_UNAVAILABLE");
+  it("does not expose an internal provider error as a public code", () => {
     expect(safeErrorCode(new Error("secret internal detail"))).toBe("ROUTE_REQUEST_FAILED");
   });
 

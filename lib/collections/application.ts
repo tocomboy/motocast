@@ -58,3 +58,16 @@ export function insertCollectionWinding(points: CollectionPoint[], windingPoint:
   const insertionIndex = lastWinding >= 0 ? lastWinding + 1 : lunchIndex >= 0 ? lunchIndex : points.length;
   return [...points.slice(0, insertionIndex), windingPoint, ...points.slice(insertionIndex)];
 }
+
+export function moveCollectionWinding(points: CollectionPoint[], index: number, direction: -1 | 1) {
+  const target = points[index];
+  const nextIndex = index + direction;
+  if (!target?.winding || nextIndex < 0 || nextIndex >= points.length) return points;
+  const reordered = [...points];
+  [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
+  return reordered;
+}
+
+export function removeCollectionWinding(points: CollectionPoint[], kakaoPlaceId: string) {
+  return points.filter((point) => !point.winding || point.kakaoPlaceId !== kakaoPlaceId);
+}

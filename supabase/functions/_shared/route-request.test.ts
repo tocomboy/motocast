@@ -36,7 +36,6 @@ async function request(waypoints: RoutePointRequest[] = []) {
     waypoints: [lunch, ...waypoints],
     serviceDate: "2026-08-31",
     departureAt: "2026-08-31T07:30:00+09:00",
-    candidate: "balanced" as const,
   };
 }
 
@@ -91,15 +90,20 @@ describe("parseRouteRequest", () => {
     await expect(parseRouteRequest(local, secret)).rejects.toThrow("INVALID_ROUTE_TIME");
   });
 
-  it("ignores removed legacy return fields and rejects client-defined provider priority", async () => {
+  it("ignores removed legacy return fields and rejects every client-defined route policy", async () => {
     const withLegacyFields = {
       ...await request(),
       desiredReturnAt: "invalid legacy value",
       hardReturnAt: "invalid legacy value",
     };
     await expect(parseRouteRequest(withLegacyFields, secret)).resolves.not.toHaveProperty("hardReturnAt");
-    const legacy = { ...await request(), candidate: undefined, priority: "DISTANCE" };
-    await expect(parseRouteRequest(legacy, secret)).rejects.toThrow("INVALID_CANDIDATE");
+    for (const override of [
+      { candidate: "short" }, { priority: "DISTANCE" }, { alternatives: true },
+      { car_type: 1 }, { avoid: "none" }, { roadevent: 1 },
+    ]) {
+      await expect(parseRouteRequest({ ...await request(), ...override }, secret))
+        .rejects.toThrow("CLIENT_ROUTE_POLICY_FORBIDDEN");
+    }
   });
 
   it("requires a v4 planning id for trusted candidate staging", async () => {

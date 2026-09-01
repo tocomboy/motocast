@@ -45,7 +45,7 @@ export type TimelineSegment = PlannedSegment & {
 };
 
 export type RouteCandidate = {
-  id: "balanced" | "winding" | "short";
+  id: "recommended";
   label: string;
   description: string;
   distanceKm: number;

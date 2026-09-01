@@ -10,7 +10,7 @@ describe("assertRideUnder24Hours", () => {
     )).not.toThrow();
   });
 
-  it("rejects a candidate at the 24-hour service limit", () => {
+  it("rejects the recommended route at the 24-hour service limit", () => {
     expect(() => assertRideUnder24Hours(
       "2026-08-31T07:30:00+09:00",
       "2026-09-01T07:30:00+09:00",

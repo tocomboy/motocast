@@ -32,7 +32,6 @@ export function safeErrorMessage(error: unknown) {
   if (error.message === "PLACE_VERIFICATION_NOT_CONFIGURED") return "장소 검증 설정이 완료되지 않았습니다.";
   if (error.message === "UNVERIFIED_PLACE") return "검색 결과에서 장소를 다시 선택해 주세요.";
   if (error.message === "SAFE_ROUTE_NOT_FOUND") return "오토바이 안전 조건을 만족하는 경로를 찾지 못했습니다.";
-  if (error.message === "WINDING_ROUTE_UNAVAILABLE") return "서로 다른 와인딩 경로가 없습니다. 와인딩 경유지를 추가해 다시 계산해 주세요.";
   if (error.message === "ROUTE_EXCEEDS_24_HOURS") return "출발 후 24시간 안에 끝나는 경로를 찾지 못했습니다.";
   if (error.message === "PROVIDER_NOT_CONFIGURED") return "경로 공급자 설정이 완료되지 않았습니다.";
   if (["PROVIDER_AUTH_FAILED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE", "PROVIDER_REQUEST_REJECTED"].includes(error.message)) {
@@ -42,9 +41,7 @@ export function safeErrorMessage(error: unknown) {
 }
 
 export function safeErrorCode(error: unknown) {
-  if (error instanceof Error && error.message === "WINDING_ROUTE_UNAVAILABLE") {
-    return "WINDING_ROUTE_UNAVAILABLE";
-  }
+  void error;
   return "ROUTE_REQUEST_FAILED";
 }
 
@@ -53,7 +50,7 @@ export function safeErrorStatus(error: unknown) {
   if (error.message.includes("AUTH_REQUIRED")) return 401;
   if (error.message.includes("MEMBERSHIP_REQUIRED")) return 403;
   if (error.message.includes("API_DAILY_BUDGET_EXHAUSTED")) return 429;
-  if (error.message === "ROUTE_EXCEEDS_24_HOURS" || error.message === "WINDING_ROUTE_UNAVAILABLE") return 422;
+  if (error.message === "ROUTE_EXCEEDS_24_HOURS") return 422;
   if (
     error.message.includes("NOT_CONFIGURED") ||
     error.message === "PROVIDER_NOT_CONFIGURED"

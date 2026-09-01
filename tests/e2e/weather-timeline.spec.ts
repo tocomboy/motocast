@@ -130,3 +130,37 @@ test("renders model, outside-window, and stale states without changing route ord
   await expect(page.locator(".shared-weather-state")).toContainText("현재 기준 예보 유효기간 지남");
   await expect.poll(() => page.url()).not.toContain("#");
 });
+
+test("renders a schema version 3 share with one recommended route and no candidate selector", async ({ page }) => {
+  const legacy = snapshot();
+  const recommended = {
+    ...structuredClone(legacy.routes[0].route),
+    candidate: { id: "recommended", label: "추천 경로", estimatedWinding: false },
+  };
+  const current = {
+    schemaVersion: 3,
+    trip: {
+      title: legacy.trip.title,
+      serviceDate: legacy.trip.serviceDate,
+      departureAt: legacy.trip.departureAt,
+      origin: legacy.trip.origin,
+      destination: legacy.trip.destination,
+      lunchStop: legacy.trip.lunchStop,
+      dinnerStop: null,
+    },
+    waypoints: legacy.waypoints,
+    route: recommended,
+    weather: null,
+  };
+  expect(() => parseSharedRideSnapshot(current)).not.toThrow();
+  await page.route("**/api/shares/resolve", async (request) => {
+    await request.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ snapshot: current }) });
+  });
+
+  await page.goto(`/share#${"b".repeat(43)}`);
+  await expect(page.getByRole("heading", { name: "발행되는 추천 경로" })).toBeVisible();
+  await expect(page.locator(".shared-routes article")).toHaveCount(1);
+  await expect(page.locator(".shared-routes article")).toContainText("추천 경로");
+  await expect(page.locator(".shared-snapshot")).not.toContainText("와인딩 추정");
+  await expect(page.locator(".shared-snapshot")).not.toContainText("최단");
+});

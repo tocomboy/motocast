@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { requestKakaoRoute, requestKakaoRoutes, type KakaoRouteRequest } from "./kakao-provider";
+import { requestKakaoRoute, type KakaoRouteRequest } from "./kakao-provider";
 import type { RoutePointRequest } from "./route-request";
 
 function point(id: string, longitude: number, latitude: number): RoutePointRequest {
@@ -57,8 +57,6 @@ function request(overrides: Partial<KakaoRouteRequest> = {}): KakaoRouteRequest 
     waypoints: [],
     departureAt: new Date("2026-08-31T00:00:00.000Z"),
     isFuture: false,
-    priority: "RECOMMEND",
-    requestAlternatives: false,
     apiKey: "test-key",
     ...overrides,
   };
@@ -87,28 +85,13 @@ describe("requestKakaoRoute", () => {
     expect(requestedUrl!.searchParams.get("roadevent")).toBe("0");
     expect(requestedUrl!.searchParams.get("summary")).toBe("false");
     expect(requestedUrl!.searchParams.get("priority")).toBe("RECOMMEND");
+    expect(requestedUrl!.searchParams.has("alternatives")).toBe(false);
     expect(requestedUrl!.searchParams.has("departure_time")).toBe(isFuture);
     expect(requestedUrl!.searchParams.has("waypoints")).toBe(waypoints.length > 0);
   });
 
-  it("keeps the same safety policy when requesting winding alternatives", async () => {
-    let requestedUrl: URL | null = null;
-    const input = request({ requestAlternatives: true });
-    const points = [input.origin, input.destination];
-    const fetchImpl = vi.fn(async (raw: string | URL | Request) => {
-      requestedUrl = new URL(raw instanceof Request ? raw.url : raw.toString());
-      return Response.json({ routes: [providerRoute(points), providerRoute(points, 0.04)] });
-    });
-
-    await requestKakaoRoute(input, fetchImpl);
-
-    expect(requestedUrl!.searchParams.get("alternatives")).toBe("true");
-    expect(requestedUrl!.searchParams.get("car_type")).toBe("7");
-    expect(requestedUrl!.searchParams.get("avoid")).toBe("motorway");
-  });
-
-  it("keeps every validated provider alternative for server-owned winding selection", async () => {
-    const input = request({ priority: "TIME", requestAlternatives: true });
+  it("ignores additional provider routes and never asks for alternatives", async () => {
+    const input = request();
     const points = [input.origin, input.destination];
     let requestedUrl: URL | null = null;
     const fetchImpl = vi.fn(async (raw: string | URL | Request) => {
@@ -116,11 +99,9 @@ describe("requestKakaoRoute", () => {
       return Response.json({ routes: [providerRoute(points), providerRoute(points, 0.04)] });
     });
 
-    await expect(requestKakaoRoutes(input, fetchImpl)).resolves.toHaveLength(2);
-    expect(requestedUrl!.searchParams.get("priority")).toBe("TIME");
-    expect(requestedUrl!.searchParams.get("alternatives")).toBe("true");
-    expect(requestedUrl!.searchParams.get("car_type")).toBe("7");
-    expect(requestedUrl!.searchParams.get("avoid")).toBe("motorway");
+    await expect(requestKakaoRoute(input, fetchImpl)).resolves.toMatchObject({ summary: { distance: 1000 } });
+    expect(requestedUrl!.searchParams.get("priority")).toBe("RECOMMEND");
+    expect(requestedUrl!.searchParams.has("alternatives")).toBe(false);
   });
 
   it("fails without an unsafe fallback when Kakao is unavailable", async () => {

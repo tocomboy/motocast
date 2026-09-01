@@ -27,7 +27,7 @@ describe("normalizeKakaoRoutePayload", () => {
     expect(normalizeKakaoRoutePayload(payload()).summary.distance).toBe(12000);
   });
 
-  it("keeps validated alternative routes for winding selection", () => {
+  it("normalizes an extra provider route while the caller keeps one recommendation", () => {
     const value = payload();
     value.routes.push(structuredClone(value.routes[0]));
     expect(normalizeKakaoRoutesPayload(value)).toHaveLength(2);

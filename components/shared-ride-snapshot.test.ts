@@ -23,6 +23,22 @@ describe("buildSharedMapPoints", () => {
     }).map((point) => point.role)).toEqual(["origin", "lunch", "rest", "winding", "destination"]);
   });
 
+  it("does not mark a winding point omitted when a balanced route traverses it", () => {
+    const points = buildSharedMapPoints({
+      routePoints: [origin, winding, lunch, destination],
+      lunchStop: { ...lunch, id: "trip-lunch" },
+      dinnerStop: null,
+      selectedProfile: "balanced",
+      waypoints: [
+        { ...winding, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
+        { ...lunch, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+      ],
+    });
+
+    expect(points.map((point) => point.role)).toEqual(["origin", "winding", "lunch", "destination"]);
+    expect(points.some((point) => "nonTraversed" in point && point.nonTraversed)).toBe(false);
+  });
+
   it("keeps later stop roles when the selected route omits an earlier winding waypoint", () => {
     expect(buildSharedMapPoints({
       routePoints: [origin, lunch, rest, destination],

@@ -4,30 +4,19 @@ export type PlannerActionLease = {
 
 export class PlannerActionGate {
   #planning = false;
-  #selection = false;
 
   get planning() {
     return this.#planning;
   }
 
-  get selection() {
-    return this.#selection;
-  }
-
   get busy() {
-    return this.#planning || this.#selection;
+    return this.#planning;
   }
 
   beginPlanning(): PlannerActionLease | null {
     if (this.busy) return null;
     this.#planning = true;
-    return this.#lease("planning");
-  }
-
-  beginSelection(): PlannerActionLease | null {
-    if (this.busy) return null;
-    this.#selection = true;
-    return this.#lease("selection");
+    return this.#lease();
   }
 
   canApplyCollection() {
@@ -38,14 +27,13 @@ export class PlannerActionGate {
     return !this.busy;
   }
 
-  #lease(kind: "planning" | "selection"): PlannerActionLease {
+  #lease(): PlannerActionLease {
     let released = false;
     return {
       release: () => {
         if (released) return;
         released = true;
-        if (kind === "planning") this.#planning = false;
-        else this.#selection = false;
+        this.#planning = false;
       },
     };
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseSafeRouteCandidateSet, parseSafeRouteResponse, ProviderContractError, routeResponseFingerprint } from "./provider-contract";
+import { parseSafeRecommendedRoute, parseSafeRouteCandidateSet, parseSafeRouteResponse, ProviderContractError, routeResponseFingerprint } from "./provider-contract";
 import { buildSafeRouteResponse } from "../../supabase/functions/_shared/route-response";
 
 const point = (id: string) => ({
@@ -156,6 +156,22 @@ describe("parseSafeRouteResponse", () => {
       { name: "뒤", distance: 6000, duration: 900, vertexes: [127.18, 37.58, 127.2, 37.6] },
     ];
     expect(() => parseSafeRouteResponse(value)).toThrow("DISCONTINUOUS_ROUTE_GEOMETRY");
+  });
+});
+
+describe("parseSafeRecommendedRoute", () => {
+  it("accepts exactly the single recommended route identity", () => {
+    const recommended = response();
+    recommended.candidate = { id: "recommended", label: "추천 경로", estimatedWinding: false };
+    expect(parseSafeRecommendedRoute(recommended).candidate.id).toBe("recommended");
+    expect(() => parseSafeRecommendedRoute(response())).toThrow("INVALID_RECOMMENDED_ROUTE_RESPONSE");
+  });
+
+  it("rejects automatic winding semantics on the recommended route", () => {
+    expect(() => parseSafeRouteResponse({
+      ...response(),
+      candidate: { id: "recommended", label: "와인딩 추정", estimatedWinding: true },
+    })).toThrow("INVALID_ROUTE_CANDIDATE");
   });
 });
 
