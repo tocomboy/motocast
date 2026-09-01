@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { act, create, type ReactTestRenderer, type TestRendererOptions } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { sharedRideSnapshotWithOmissions } from "../tests/fixtures/shared-ride-snapshot";
+import { sharedRideEndpointOnlySnapshot, sharedRideSnapshotWithOmissions } from "../tests/fixtures/shared-ride-snapshot";
 import { KakaoMapCanvas, MapOmissionList, type MapMarkerRole, type MapPoint } from "./kakao-map-canvas";
 import { SharedRideSnapshotView } from "./shared-ride-snapshot";
 
@@ -277,6 +277,25 @@ describe("KakaoMapCanvas", () => {
       .toContain("와인딩 경유지 20 · 선택 경로 미통과");
     expect(sharedMap.findAllByProps({ "aria-labelledby": "map-omissions-heading" })).toHaveLength(0);
     expect(notice.parent?.parent).toBe(sharedMap.parent);
+    await act(async () => renderer.unmount());
+  });
+
+  it("renders a valid schema version 3 share with no lunch", async () => {
+    stubBrowser();
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <SharedRideSnapshotView
+          snapshot={sharedRideEndpointOnlySnapshot()}
+          referenceTime="2030-01-01T00:00:00.000Z"
+        />,
+        rendererOptions,
+      );
+    });
+
+    const lunch = renderer.root.findAllByType("dt").find((node) => node.children.join("") === "점심");
+    expect(lunch?.parent?.findByType("dd").children.join("")).toBe("없음");
+    expect(renderer.root.findAllByType("h1")[0].children.join("")).toBe("점심 없는 공개 라이딩");
     await act(async () => renderer.unmount());
   });
 

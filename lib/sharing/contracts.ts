@@ -23,7 +23,7 @@ type SharedTripBase = {
   departureAt: string;
   origin: SharedPlace;
   destination: SharedPlace;
-  lunchStop: SharedPlace;
+  lunchStop: SharedPlace | null;
   dinnerStop: SharedPlace | null;
 };
 
@@ -197,7 +197,9 @@ export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
     departureAt: timestamp(trip.departureAt),
     origin: place(trip.origin),
     destination: place(trip.destination),
-    lunchStop: place(trip.lunchStop),
+    lunchStop: schemaVersion < 3
+      ? place(trip.lunchStop)
+      : trip.lunchStop === null ? null : place(trip.lunchStop),
     dinnerStop: trip.dinnerStop === null ? null : place(trip.dinnerStop),
   };
   if (schemaVersion === 3) {

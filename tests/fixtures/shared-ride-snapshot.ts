@@ -113,3 +113,48 @@ export function rawSharedRideSnapshotWithOmissions(omissionCount = 20) {
 export function sharedRideSnapshotWithOmissions(omissionCount = 20): SharedRideSnapshot {
   return parseSharedRideSnapshot(rawSharedRideSnapshotWithOmissions(omissionCount));
 }
+
+export function sharedRideEndpointOnlySnapshot(): SharedRideSnapshot {
+  return parseSharedRideSnapshot({
+    schemaVersion: 3,
+    trip: {
+      title: "점심 없는 공개 라이딩",
+      serviceDate: "2030-01-01",
+      departureAt: "2030-01-01T00:00:00.000Z",
+      origin,
+      destination,
+      lunchStop: null,
+      dinnerStop: null,
+    },
+    waypoints: [],
+    route: {
+      candidate: { id: "recommended", label: "추천 경로", estimatedWinding: false },
+      safety: { vehicle: "motorcycle", motorwayExcluded: true, fallbackUsed: false },
+      totalDistanceMeters: 10_000,
+      totalDurationSeconds: 600,
+      returnAt: "2030-01-01T00:10:00.000Z",
+      legs: [{
+        from: origin,
+        to: destination,
+        via: [],
+        departureAt: "2030-01-01T00:00:00.000Z",
+        arrivalAt: "2030-01-01T00:10:00.000Z",
+        dwellMinutes: 0,
+        distanceMeters: 10_000,
+        durationSeconds: 600,
+        forecastTraffic: false,
+        sections: [{
+          distance: 10_000,
+          duration: 600,
+          roads: [{
+            name: "공개 직결 도로",
+            distance: 10_000,
+            duration: 600,
+            vertexes: [origin.longitude, origin.latitude, 127.4, 37.4, destination.longitude, destination.latitude],
+          }],
+        }],
+      }],
+    },
+    weather: null,
+  });
+}

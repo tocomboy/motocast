@@ -76,6 +76,12 @@ describe("parseSharedRideSnapshot", () => {
     expect(() => parseSharedRideSnapshot({ ...current, routes: snapshot.routes })).toThrow("INVALID_SHARE_SNAPSHOT");
     expect(() => parseSharedRideSnapshot({ ...current, route: route("balanced", 127.1) })).toThrow("INVALID_RECOMMENDED_ROUTE_RESPONSE");
 
+    expect(parseSharedRideSnapshot({
+      ...current,
+      trip: { ...current.trip, lunchStop: null },
+      waypoints: [],
+    })).toMatchObject({ schemaVersion: 3, trip: { lunchStop: null }, waypoints: [] });
+
     const matchingWeather = {
       source: "kma",
       issuedAt: "2026-08-30T23:30:00.000Z",
@@ -102,6 +108,23 @@ describe("parseSharedRideSnapshot", () => {
       ...current,
       weather: { ...matchingWeather, segments: [{ ...matchingWeather.segments[0], longitude: 128 }] },
     })).toThrow("INVALID_SHARE_SNAPSHOT");
+  });
+
+  it("keeps lunch required for historical schema versions", () => {
+    for (const schemaVersion of [1, 2] as const) {
+      expect(() => parseSharedRideSnapshot({
+        ...snapshot,
+        schemaVersion,
+        trip: {
+          ...snapshot.trip,
+          ...(schemaVersion === 1 ? {
+            desiredReturnAt: "2026-08-31T08:00:00.000Z",
+            hardReturnAt: "2026-08-31T09:00:00.000Z",
+          } : {}),
+          lunchStop: null,
+        },
+      })).toThrow("INVALID_SHARE_SNAPSHOT");
+    }
   });
 
   it("accepts a complete immutable snapshot with three safe routes", () => {

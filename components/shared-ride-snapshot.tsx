@@ -35,7 +35,7 @@ export function buildSharedMapPoints(input: {
     stopRole?: "lunch" | "dinner" | "rest";
   }>;
   waypoints: SharedWaypoint[];
-  lunchStop: SharedPlace;
+  lunchStop: SharedPlace | null;
   dinnerStop: SharedPlace | null;
 }) {
   const traversedWaypoints = input.waypoints.filter((item) => item.selected);
@@ -141,7 +141,7 @@ export function SharedRideSnapshotView({
           ) : (
             <div><dt>예상 복귀</dt><dd>{snapshot.trip.destination.label} · {formatRideTime(snapshot.trip.departureAt, selected.returnAt)}</dd></div>
           )}
-          <div><dt>점심</dt><dd>{snapshot.trip.lunchStop.label}</dd></div>
+          <div><dt>점심</dt><dd>{snapshot.trip.lunchStop?.label ?? "없음"}</dd></div>
           <div><dt>저녁</dt><dd>{snapshot.trip.dinnerStop?.label ?? "없음"}</dd></div>
           <div><dt>추천 경로</dt><dd>{snapshot.schemaVersion === 3 ? "Kakao 추천" : selected.candidate.label}</dd></div>
         </dl>

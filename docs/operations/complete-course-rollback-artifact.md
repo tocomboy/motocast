@@ -11,7 +11,7 @@ This rollback tree is based on the previous deployed application plus its review
 ## Preserved boundary
 
 - The previous route-writing contract remains available for creating a new legacy three-route trip. Updating an existing trip stays fail-closed under `LEGACY_TRIP_UPDATE_UNSUPPORTED`.
-- Immutable schemaVersion 1, 2, and 3 shares remain readable.
+- Immutable schemaVersion 1, 2, and 3 shares remain readable. SchemaVersion 3 keeps optional lunch nullable, while historical schemaVersion 1/2 snapshots retain their required-lunch contract.
 - Current complete-course collections remain stored but unavailable until the reviewed forward Web and database-compatible `save-collection` function are restored together.
 
 ## Required rollback smoke
@@ -20,5 +20,5 @@ This rollback tree is based on the previous deployed application plus its review
 2. Confirm the collection closure notice is visible and that no collection mutation or apply controls exist at mobile and desktop widths.
 3. Confirm a direct request to `save-collection` returns the fixed 503 maintenance response and creates no collection/version row.
 4. Create a new route without targeting an existing trip, then verify route geometry and weather.
-5. Resolve one existing schemaVersion 3 link and one schemaVersion 1/2 fixture.
+5. Resolve one existing endpoint-only schemaVersion 3 link with no lunch and one schemaVersion 1/2 fixture.
 6. Restore the forward bundle atomically before reopening collection actions.
