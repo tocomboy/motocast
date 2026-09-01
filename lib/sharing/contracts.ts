@@ -17,15 +17,17 @@ export type SharedWaypoint = SharedPlace & {
   winding: boolean;
 };
 
-type SharedTripBase = {
+type SharedTripCommon = {
   title: string;
   serviceDate: string;
   departureAt: string;
   origin: SharedPlace;
   destination: SharedPlace;
-  lunchStop: SharedPlace | null;
   dinnerStop: SharedPlace | null;
 };
+
+type LegacySharedTrip = SharedTripCommon & { lunchStop: SharedPlace };
+type CurrentSharedTrip = SharedTripCommon & { lunchStop: SharedPlace | null };
 
 type SharedWeather = {
   source: "kma";
@@ -50,7 +52,7 @@ type LegacySharedSnapshotBody = {
 export type SharedRideSnapshot =
   | {
       schemaVersion: 1;
-      trip: SharedTripBase & {
+      trip: LegacySharedTrip & {
         selectedProfile: "balanced" | "winding" | "short";
         desiredReturnAt: string;
         hardReturnAt: string;
@@ -58,11 +60,11 @@ export type SharedRideSnapshot =
     } & LegacySharedSnapshotBody
   | {
       schemaVersion: 2;
-      trip: SharedTripBase & { selectedProfile: "balanced" | "winding" | "short" };
+      trip: LegacySharedTrip & { selectedProfile: "balanced" | "winding" | "short" };
     } & LegacySharedSnapshotBody
   | {
       schemaVersion: 3;
-      trip: SharedTripBase;
+      trip: CurrentSharedTrip;
       waypoints: SharedWaypoint[];
       route: SafeRouteResponse;
       weather: null | SharedWeather;
@@ -191,27 +193,34 @@ export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
   if (schemaVersion < 3 && weather && "candidateProfile" in weather && weather.candidateProfile !== selectedProfile) {
     throw new Error("INVALID_SHARE_SNAPSHOT");
   }
-  const parsedTrip: SharedTripBase = {
+  const parsedTripCommon: SharedTripCommon = {
     title: boundedText(trip.title, 120),
     serviceDate: boundedText(trip.serviceDate, 10),
     departureAt: timestamp(trip.departureAt),
     origin: place(trip.origin),
     destination: place(trip.destination),
-    lunchStop: schemaVersion < 3
-      ? place(trip.lunchStop)
-      : trip.lunchStop === null ? null : place(trip.lunchStop),
     dinnerStop: trip.dinnerStop === null ? null : place(trip.dinnerStop),
   };
   if (schemaVersion === 3) {
-    return { schemaVersion: 3, trip: parsedTrip, waypoints, route: recommendedRoute!, weather } as SharedRideSnapshot;
+    return {
+      schemaVersion: 3,
+      trip: {
+        ...parsedTripCommon,
+        lunchStop: trip.lunchStop === null ? null : place(trip.lunchStop),
+      },
+      waypoints,
+      route: recommendedRoute!,
+      weather,
+    };
   }
+  const legacyTrip: LegacySharedTrip = { ...parsedTripCommon, lunchStop: place(trip.lunchStop) };
   const legacyWeather = weather as (SharedWeather & { candidateProfile: "balanced" | "winding" | "short" }) | null;
   const body = { waypoints, routes: routes!, weather: legacyWeather };
   if (schemaVersion === 1) {
     return {
       schemaVersion: 1,
       trip: {
-        ...parsedTrip,
+        ...legacyTrip,
         selectedProfile: selectedProfile as "balanced" | "winding" | "short",
         desiredReturnAt: timestamp(trip.desiredReturnAt),
         hardReturnAt: timestamp(trip.hardReturnAt),
@@ -221,7 +230,7 @@ export function parseSharedRideSnapshot(value: unknown): SharedRideSnapshot {
   }
   return {
     schemaVersion: 2,
-    trip: { ...parsedTrip, selectedProfile: selectedProfile as "balanced" | "winding" | "short" },
+    trip: { ...legacyTrip, selectedProfile: selectedProfile as "balanced" | "winding" | "short" },
     ...body,
   };
 }

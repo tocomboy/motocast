@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { parseSharedRideSnapshot } from "./contracts";
+import { parseSharedRideSnapshot, type SharedPlace, type SharedRideSnapshot } from "./contracts";
 
 const origin = { id: "origin", label: "출발", longitude: 127, latitude: 37, kind: "pass-through", dwellMinutes: 0, selected: true };
 const destination = { id: "destination", label: "복귀", longitude: 127.2, latitude: 37.2, kind: "pass-through", dwellMinutes: 0, selected: true };
@@ -53,6 +53,15 @@ const snapshot = {
 };
 
 describe("parseSharedRideSnapshot", () => {
+  it("models lunch nullability by schema version", () => {
+    expectTypeOf<Extract<SharedRideSnapshot, { schemaVersion: 1 }>["trip"]["lunchStop"]>()
+      .toEqualTypeOf<SharedPlace>();
+    expectTypeOf<Extract<SharedRideSnapshot, { schemaVersion: 2 }>["trip"]["lunchStop"]>()
+      .toEqualTypeOf<SharedPlace>();
+    expectTypeOf<Extract<SharedRideSnapshot, { schemaVersion: 3 }>["trip"]["lunchStop"]>()
+      .toEqualTypeOf<SharedPlace | null>();
+  });
+
   it("accepts a schema version 3 snapshot with exactly one recommended route", () => {
     const current = {
       schemaVersion: 3,
