@@ -26,6 +26,26 @@ let pendingCleanup: LiveCleanupState | null = null;
 // a failure cannot persist a published token in a trace, screenshot, or video.
 test.use({ screenshot: "off", trace: "off", video: "off" });
 
+function seoulDepartureIn(minutesAhead: number) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(Date.now() + minutesAhead * 60_000));
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
+  const year = value("year");
+  const month = value("month");
+  const day = value("day");
+  const hour = value("hour");
+  const minute = value("minute");
+  if (!year || !month || !day || !hour || !minute) throw new Error("Failed to derive a Seoul test departure");
+  return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}` };
+}
+
 async function selectFirstPlace(
   page: Page,
   label: string,
@@ -174,6 +194,9 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
     await page.getByRole("button", { name: "계획 수정" }).click();
     await expect(page.getByRole("dialog", { name: "라이딩 계획 편집" })).toBeVisible();
+    const departure = seoulDepartureIn(30);
+    await page.getByLabel("라이딩 날짜").fill(departure.date);
+    await page.getByLabel("출발", { exact: true }).fill(departure.time);
     await selectFirstPlace(page, "출발지", liveQueries.origin!);
     await selectFirstPlace(page, "복귀지", liveQueries.destination!);
     await selectFirstPlace(page, "점심", liveQueries.lunch!);

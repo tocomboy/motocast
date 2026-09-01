@@ -51,6 +51,10 @@ A custom winding point is a rider-authored mandatory zero-dwell pass-through poi
 
 The trusted request boundary rejects more than twenty selected custom winding points before consuming provider budget. Edge and database validation both use `0.005` degrees only for a requested place to snap to the provider road endpoint, while actual road-to-road continuity inside and across split legs remains `0.0002` degrees. Finalization locks the drafts, compares their canonical plan and recommended-route hashes with the durable planning tombstone, and revalidates geometry before persistence. Current schemaVersion 3 share projection preserves the accepted occurrence `stopRole`; immutable schemaVersion 1/2 rows are never rewritten and continue to use the legacy reader fallback.
 
+## Weather provider diagnostics
+
+The browser continues to receive only the safe generic provider error or a stale snapshot. Edge logs may record a KMA HTTP status or the documented short `resultCode` after constraining it to at most sixteen ASCII letters, digits, `_`, or `-`; all other values become `UNKNOWN`. Never log the `authKey`, request URL, response body, `resultMsg`, forecast payload, or browser authorization. A connected smoke must set a future Seoul departure before calculating the route so a past static form default cannot be misclassified as provider failure.
+
 ## Return estimate and legacy storage boundary
 
 The planner accepts a ride date and departure time only. `plan-route` derives the recommended route's `returnAt` from validated Kakao section durations plus meal and selected-rest dwell, accepts a return after Seoul midnight, and rejects a computed duration of 24 hours or more. The browser cannot supply a desired or hard return value that affects this decision.

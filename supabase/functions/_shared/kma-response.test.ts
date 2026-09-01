@@ -14,8 +14,14 @@ describe("parseKmaItems", () => {
     expect(weatherFailureKind(error)).toBe("provider");
   });
 
-  it("rejects provider status and empty forecast payloads", async () => {
-    await expect(parseKmaItems(new Response("{}", { status: 503 }))).rejects.toThrow("KMA_REQUEST_FAILED");
+  it("records only a bounded HTTP status or provider result code and rejects empty forecasts", async () => {
+    await expect(parseKmaItems(new Response("{}", { status: 503 }))).rejects.toThrow("KMA_HTTP_STATUS_503");
+    await expect(parseKmaItems(new Response(JSON.stringify({
+      response: { header: { resultCode: "03", resultMsg: "provider detail is not logged" } },
+    })))).rejects.toThrow("KMA_RESULT_CODE_03");
+    await expect(parseKmaItems(new Response(JSON.stringify({
+      response: { header: { resultCode: "unsafe value with spaces" } },
+    })))).rejects.toThrow("KMA_RESULT_CODE_UNKNOWN");
     await expect(parseKmaItems(new Response(JSON.stringify({ response: { header: { resultCode: "00" }, body: { items: { item: [] } } } })))).rejects.toThrow("KMA_FORECAST_NOT_FOUND");
   });
 
