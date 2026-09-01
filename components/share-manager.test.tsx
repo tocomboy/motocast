@@ -74,4 +74,17 @@ describe("ShareManager collection preview request", () => {
     expect(previewButton.props.disabled).toBe(true);
     await act(async () => renderer.unmount());
   });
+
+  it("does not replay a consumed automatic preview after the same trip is blocked and becomes ready again", async () => {
+    const renderer = await renderShareManager();
+    expect(browserMocks.rpc).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      renderer.update(<StrictMode><ShareManager tripId={null} previewRequest={0} /></StrictMode>);
+    });
+    await act(async () => {
+      renderer.update(<StrictMode><ShareManager tripId={tripId} previewRequest={1} /></StrictMode>);
+    });
+    expect(browserMocks.rpc).toHaveBeenCalledTimes(1);
+    await act(async () => renderer.unmount());
+  });
 });

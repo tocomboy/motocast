@@ -202,7 +202,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const [calculating, setCalculating] = useState(false);
   const [clock, setClock] = useState(() => new Date());
   const [shareIntentGeneration, setShareIntentGeneration] = useState<number | null>(null);
-  const [sharePreviewRequest, setSharePreviewRequest] = useState(0);
+  const [sharePreviewRequest, setSharePreviewRequest] = useState<{ serial: number; tripId: string } | null>(null);
+  const [shareManagerEpoch, setShareManagerEpoch] = useState(0);
   const [placeSelectionRevision, setPlaceSelectionRevision] = useState(0);
   const plannerPanelRef = useRef<HTMLElement>(null);
   const mobilePlanButtonRef = useRef<HTMLButtonElement>(null);
@@ -214,6 +215,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const routeGenerationRef = useRef(0);
   const liveTripIdRef = useRef<string | null>(null);
   const weatherRequestRef = useRef(0);
+  const sharePreviewSerialRef = useRef(0);
   const actionGateRef = useRef(new PlannerActionGate());
   const windingPointCount = appliedCollectionPoints
     ? selectedWindingCount(appliedCollectionPoints)
@@ -314,6 +316,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const shareWeatherReady = selectedWeather
     ? isFreshWeatherForSharing(selectedWeather, weatherClock ?? currentReferenceTime())
     : false;
+  const shareTripId = !liveResultStale && shareIntentGeneration === null && shareWeatherReady ? liveTripId : null;
   const selectedWeatherAnnouncement = weatherLoading === selected.id
     ? `${selected.label} 날씨 조회 중`
     : selectedWeather && selectedWeatherStatus
@@ -364,9 +367,15 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       : null
   ), [collectionPoints, places.destination, places.origin]);
 
+  function invalidateShareSession() {
+    setSharePreviewRequest(null);
+    setShareManagerEpoch((current) => current + 1);
+  }
+
   function markRouteInputChanged() {
     routeGenerationRef.current += 1;
     setShareIntentGeneration(null);
+    invalidateShareSession();
     weatherRequestRef.current += 1;
     setWeatherLoading(null);
     if (liveRoute) setLiveResultStale(true);
@@ -569,6 +578,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     const collectionGeneration = ++routeGenerationRef.current;
     weatherRequestRef.current += 1;
     setWeatherLoading(null);
+    invalidateShareSession();
     setAppliedCollectionPoints(application.orderedPoints.map(asAppliedPoint));
     setWindingPoints(application.selectedWindingPoints);
     setPlaces({
@@ -735,6 +745,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       setNotice("현재 계획 상태 저장이 끝난 뒤 다시 계산해 주세요.", "warning");
       return;
     }
+    invalidateShareSession();
     setCalculating(true);
     weatherRequestRef.current += 1;
     setWeatherLoading(null);
@@ -807,7 +818,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         const weatherReady = await loadWeather(candidate, savedTripId, calculationGeneration, true);
         setShareIntentGeneration(null);
         if (weatherReady) {
-          setSharePreviewRequest((current) => current + 1);
+          sharePreviewSerialRef.current += 1;
+          setSharePreviewRequest({ serial: sharePreviewSerialRef.current, tripId: savedTripId });
         }
       } else {
         void loadWeather(candidate, savedTripId, calculationGeneration);
@@ -1084,9 +1096,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
             <div className="management-grid">
               <CollectionManager currentCourse={currentCourse} onApply={applyCollection} onShare={prepareCollectionShare} disabled={calculating} />
               <ShareManager
-                key={`share-${liveTripId ?? "none"}-${!liveResultStale && shareIntentGeneration === null && shareWeatherReady ? "ready" : "blocked"}`}
-                tripId={!liveResultStale && shareIntentGeneration === null && shareWeatherReady ? liveTripId : null}
-                previewRequest={sharePreviewRequest}
+                key={`share-${liveTripId ?? "none"}-${shareManagerEpoch}`}
+                tripId={shareTripId}
+                previewRequest={sharePreviewRequest?.tripId === shareTripId ? sharePreviewRequest.serial : 0}
                 disabled={calculating}
               />
             </div>

@@ -43,8 +43,16 @@ describe("planner persistence lock policy", () => {
     expect(source).toContain('className="planner-fields" disabled={calculating}');
     expect(source).toContain("onShare={prepareCollectionShare}");
     expect(source).toContain("isFreshWeatherForSharing(selectedWeather, weatherClock ?? currentReferenceTime())");
-    expect(source).toContain('tripId={!liveResultStale && shareIntentGeneration === null && shareWeatherReady ? liveTripId : null}');
-    expect(source).toContain("previewRequest={sharePreviewRequest}");
+    expect(source).toContain("const shareTripId = !liveResultStale && shareIntentGeneration === null && shareWeatherReady ? liveTripId : null");
+    expect(source).toContain('key={`share-${liveTripId ?? "none"}-${shareManagerEpoch}`}');
+    expect(source).toContain("previewRequest={sharePreviewRequest?.tripId === shareTripId ? sharePreviewRequest.serial : 0}");
+    expect(source.match(/invalidateShareSession\(\);/g)).toHaveLength(3);
+    const invalidator = source.indexOf("function invalidateShareSession()");
+    const clearPreviewRequest = source.indexOf("setSharePreviewRequest(null)", invalidator);
+    const advanceShareEpoch = source.indexOf("setShareManagerEpoch((current) => current + 1)", clearPreviewRequest);
+    expect(invalidator).toBeGreaterThan(-1);
+    expect(clearPreviewRequest).toBeGreaterThan(invalidator);
+    expect(advanceShareEpoch).toBeGreaterThan(clearPreviewRequest);
     expect(source).toContain("disabled={calculating}");
     expect(source).not.toContain("select_trip_candidate");
   });
@@ -59,7 +67,7 @@ describe("planner persistence lock policy", () => {
     expect(shareIntentRelease).toBeGreaterThan(shareWeatherRefresh);
     expect(previewOpen).toBeGreaterThan(shareIntentRelease);
     expect(normalWeatherRefresh).toBeGreaterThan(previewOpen);
-    expect(source.indexOf("shareWeatherReady ? liveTripId : null")).toBeGreaterThan(normalWeatherRefresh);
+    expect(source.indexOf("sharePreviewSerialRef.current += 1")).toBeGreaterThan(shareWeatherRefresh);
     expect(source).toContain("withClientTimeout(");
   });
 

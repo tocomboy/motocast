@@ -491,6 +491,20 @@ begin
 end;
 $$;
 
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.preview_trip_share((select id from trip_result));
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'SHARE_WEATHER_NOT_FRESH'; end;
+  insert into tap_results values (rejected, 'missing weather cannot mint a share preview capability');
+end;
+$$;
+
+reset role;
+set local role service_role;
 create temp table weather_result(id uuid) on commit drop;
 insert into weather_result
 select public.insert_weather_snapshot_internal(
@@ -663,6 +677,48 @@ begin
     );
   exception when sqlstate 'P0001' then rejected := sqlerrm = 'SHARE_WEATHER_NOT_FRESH'; end;
   insert into tap_results values (rejected, 'weather that becomes stale after preview cannot publish');
+end;
+$$;
+
+reset role;
+set local role service_role;
+select public.insert_weather_snapshot_internal(
+  '71000000-0000-0000-0000-000000000001',
+  (select id from trip_result),
+  'balanced',
+  clock_timestamp() - interval '5 minutes',
+  clock_timestamp() + interval '2 seconds',
+  pg_temp.test_weather_segments(
+    pg_temp.test_route('balanced', 127.05),
+    'balanced',
+    clock_timestamp() - interval '5 minutes'
+  ),
+  repeat('2', 64),
+  clock_timestamp()
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+create temp table advancing_clock_preview on commit drop as
+select * from public.preview_trip_share((select id from trip_result));
+grant select on advancing_clock_preview to authenticated;
+select pg_sleep(2.1);
+do $$
+declare
+  preview_rejected boolean := false;
+  publish_rejected boolean := false;
+begin
+  begin
+    perform public.preview_trip_share((select id from trip_result));
+  exception when sqlstate 'P0001' then preview_rejected := sqlerrm = 'SHARE_WEATHER_NOT_FRESH'; end;
+  begin
+    perform public.publish_trip_share(
+      (select id from trip_result),
+      (select preview_token from advancing_clock_preview)
+    );
+  exception when sqlstate 'P0001' then publish_rejected := sqlerrm = 'SHARE_WEATHER_NOT_FRESH'; end;
+  insert into tap_results values
+    (preview_rejected, 'weather expiring after transaction start cannot mint a preview'),
+    (publish_rejected, 'weather expiring after preview cannot publish in the same transaction');
 end;
 $$;
 

@@ -564,7 +564,7 @@ $rename_unchecked_share_builder$;
 create or replace function public.build_trip_share_snapshot(target_trip_id uuid, target_owner_id uuid)
 returns jsonb
 language plpgsql
-stable
+volatile
 security definer
 set search_path = public, extensions, pg_temp
 as $$
@@ -577,7 +577,7 @@ begin
   if snapshot_weather is null
      or snapshot_weather = 'null'::jsonb
      or coalesce((snapshot_weather ->> 'stale')::boolean, true)
-     or (snapshot_weather ->> 'validUntil')::timestamptz <= now() then
+     or (snapshot_weather ->> 'validUntil')::timestamptz <= clock_timestamp() then
     raise exception 'SHARE_WEATHER_NOT_FRESH';
   end if;
   return snapshot;
