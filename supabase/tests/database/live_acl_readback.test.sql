@@ -100,7 +100,8 @@ with denied(function_signature) as (
     ('public.share_route_point(jsonb)'),
     ('public.share_route(jsonb)'),
     ('public.share_weather_segments(jsonb)'),
-    ('public.recommended_route_matches_plan(jsonb,jsonb)')
+    ('public.recommended_route_matches_plan(jsonb,jsonb)'),
+    ('public.recommended_route_sections_match(jsonb,jsonb,jsonb,integer,integer)')
 )
 insert into acl_results(ok, description)
 select

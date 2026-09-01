@@ -114,6 +114,10 @@ create temp table recommended_validation_results(
   missing_point_id_rejected boolean,
   missing_dwell_rejected boolean,
   missing_total_rejected boolean,
+  missing_road_distance_rejected boolean,
+  null_vertex_rejected boolean,
+  out_of_range_vertex_rejected boolean,
+  disconnected_geometry_rejected boolean,
   expired_route_change_rejected boolean,
   twenty_four_hour_rejected boolean,
   reused_rejected boolean,
@@ -127,6 +131,10 @@ declare
   missing_point_id_rejected boolean := false;
   missing_dwell_rejected boolean := false;
   missing_total_rejected boolean := false;
+  missing_road_distance_rejected boolean := false;
+  null_vertex_rejected boolean := false;
+  out_of_range_vertex_rejected boolean := false;
+  disconnected_geometry_rejected boolean := false;
   expired_route_change_rejected boolean := false;
   twenty_four_hour_rejected boolean := false;
   reused_rejected boolean := false;
@@ -179,6 +187,34 @@ begin
       fixture_route - 'totalDurationSeconds'
     );
   exception when sqlstate 'P0001' then missing_total_rejected := sqlerrm = 'INVALID_STAGED_ROUTE'; end;
+  begin
+    perform public.stage_route_candidate_internal(
+      '75100000-0000-0000-0000-000000000001',
+      '76100000-0000-4000-8000-000000000019', fixture_plan,
+      fixture_route #- '{legs,0,sections,0,roads,0,distance}'
+    );
+  exception when sqlstate 'P0001' then missing_road_distance_rejected := sqlerrm = 'INVALID_STAGED_ROUTE'; end;
+  begin
+    perform public.stage_route_candidate_internal(
+      '75100000-0000-0000-0000-000000000001',
+      '76100000-0000-4000-8000-000000000020', fixture_plan,
+      jsonb_set(fixture_route, '{legs,0,sections,0,roads,0,vertexes,2}', 'null'::jsonb)
+    );
+  exception when sqlstate 'P0001' then null_vertex_rejected := sqlerrm = 'INVALID_STAGED_ROUTE'; end;
+  begin
+    perform public.stage_route_candidate_internal(
+      '75100000-0000-0000-0000-000000000001',
+      '76100000-0000-4000-8000-000000000021', fixture_plan,
+      jsonb_set(fixture_route, '{legs,0,sections,0,roads,0,vertexes,2}', '140'::jsonb)
+    );
+  exception when sqlstate 'P0001' then out_of_range_vertex_rejected := sqlerrm = 'INVALID_STAGED_ROUTE'; end;
+  begin
+    perform public.stage_route_candidate_internal(
+      '75100000-0000-0000-0000-000000000001',
+      '76100000-0000-4000-8000-000000000022', fixture_plan,
+      jsonb_set(fixture_route, '{legs,1,sections,0,roads,0,vertexes,0}', '127.06'::jsonb)
+    );
+  exception when sqlstate 'P0001' then disconnected_geometry_rejected := sqlerrm = 'INVALID_STAGED_ROUTE'; end;
   perform public.stage_route_candidate_internal(
     '75100000-0000-0000-0000-000000000001',
     '76100000-0000-4000-8000-000000000017', fixture_plan, fixture_route
@@ -230,6 +266,8 @@ begin
   insert into recommended_validation_results values (
     omitted_rejected, reordered_rejected, dwell_rejected,
     missing_point_id_rejected, missing_dwell_rejected, missing_total_rejected,
+    missing_road_distance_rejected, null_vertex_rejected,
+    out_of_range_vertex_rejected, disconnected_geometry_rejected,
     expired_route_change_rejected,
     twenty_four_hour_rejected,
     reused_rejected, exact_retry_accepted
@@ -313,6 +351,10 @@ insert into tap_results values
   ((select missing_point_id_rejected from recommended_validation_results), 'staging rejects a missing mandatory point id'),
   ((select missing_dwell_rejected from recommended_validation_results), 'staging rejects a missing dwell time'),
   ((select missing_total_rejected from recommended_validation_results), 'staging rejects a missing route total'),
+  ((select missing_road_distance_rejected from recommended_validation_results), 'staging rejects a missing road distance'),
+  ((select null_vertex_rejected from recommended_validation_results), 'staging rejects a null road vertex'),
+  ((select out_of_range_vertex_rejected from recommended_validation_results), 'staging rejects an out-of-range road vertex'),
+  ((select disconnected_geometry_rejected from recommended_validation_results), 'staging rejects disconnected road geometry'),
   ((select expired_route_change_rejected from recommended_validation_results), 'an expired draft cannot change its durable route payload'),
   ((select twenty_four_hour_rejected from recommended_validation_results), 'staging rejects a route lasting exactly 24 hours'),
   ((select reused_rejected from recommended_validation_results), 'a planning id rejects a different payload'),

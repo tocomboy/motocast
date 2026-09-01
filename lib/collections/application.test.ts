@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  appliedWindingActionLabel,
   insertCollectionWinding,
   moveCollectionWinding,
   prepareCollectionApplication,
@@ -127,6 +128,11 @@ describe("prepareCollectionApplication", () => {
     expect(removeCollectionWinding(points, "same-1").map((item) => item.uiKey)).toEqual([
       "lunch-1", "same-2",
     ]);
+  });
+
+  it("gives repeated occurrences distinct accessible action names", () => {
+    expect(appliedWindingActionLabel(1, "같은 고개", "제거")).toBe("1번째 같은 고개 제거");
+    expect(appliedWindingActionLabel(3, "같은 고개", "제거")).toBe("3번째 같은 고개 제거");
   });
 
   it("replaces an unselected lunch in its original ordered slot", () => {

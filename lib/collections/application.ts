@@ -2,6 +2,11 @@ import type { CollectionPoint } from "./contracts";
 import type { PlaceSearchResult } from "../places/search";
 
 type StopRole = "lunch" | "dinner" | "rest";
+type WindingAction = "위로 이동" | "아래로 이동" | "제거";
+
+export function appliedWindingActionLabel(position: number, name: string, action: WindingAction) {
+  return `${position}번째 ${name} ${action}`;
+}
 
 export function collectionPointToPlace(point: CollectionPoint): PlaceSearchResult {
   return {

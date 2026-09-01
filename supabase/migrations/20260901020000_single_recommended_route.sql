@@ -60,6 +60,143 @@ from public.route_plan_drafts
 group by owner_id, planning_id
 on conflict (owner_id, planning_id) do nothing;
 
+create or replace function public.recommended_route_sections_match(
+  sections jsonb, expected_from jsonb, expected_to jsonb,
+  expected_distance integer, expected_duration integer
+)
+returns boolean
+language plpgsql
+immutable
+set search_path = public, pg_temp
+as $$
+declare
+  section_item jsonb;
+  road_item jsonb;
+  vertex_item jsonb;
+  vertex_position integer;
+  vertex_count integer;
+  section_distance_numeric numeric;
+  section_duration_numeric numeric;
+  road_distance_numeric numeric;
+  road_duration_numeric numeric;
+  section_distance bigint;
+  section_duration bigint;
+  road_distance bigint;
+  road_duration bigint;
+  road_distance_total bigint;
+  road_duration_total bigint;
+  section_distance_total bigint := 0;
+  section_duration_total bigint := 0;
+  coordinate double precision;
+  road_start_lon double precision;
+  road_start_lat double precision;
+  road_end_lon double precision;
+  road_end_lat double precision;
+  previous_end_lon double precision := null;
+  previous_end_lat double precision := null;
+begin
+  if jsonb_typeof(sections) is distinct from 'array'
+     or coalesce(jsonb_array_length(sections), 0) < 1
+     or jsonb_typeof(expected_from -> 'longitude') is distinct from 'number'
+     or jsonb_typeof(expected_from -> 'latitude') is distinct from 'number'
+     or jsonb_typeof(expected_to -> 'longitude') is distinct from 'number'
+     or jsonb_typeof(expected_to -> 'latitude') is distinct from 'number'
+     or expected_distance is null or expected_distance <= 0
+     or expected_duration is null or expected_duration <= 0 then
+    return false;
+  end if;
+
+  for section_item in select value from jsonb_array_elements(sections) loop
+    if jsonb_typeof(section_item) is distinct from 'object'
+       or jsonb_typeof(section_item -> 'distance') is distinct from 'number'
+       or jsonb_typeof(section_item -> 'duration') is distinct from 'number'
+       or jsonb_typeof(section_item -> 'roads') is distinct from 'array'
+       or coalesce(jsonb_array_length(section_item -> 'roads'), 0) < 1 then
+      return false;
+    end if;
+    section_distance_numeric := (section_item ->> 'distance')::numeric;
+    section_duration_numeric := (section_item ->> 'duration')::numeric;
+    if section_distance_numeric <= 0 or section_distance_numeric <> trunc(section_distance_numeric)
+       or section_duration_numeric <= 0 or section_duration_numeric <> trunc(section_duration_numeric)
+       or section_distance_numeric > 9223372036854775807
+       or section_duration_numeric > 9223372036854775807 then
+      return false;
+    end if;
+    section_distance := section_distance_numeric::bigint;
+    section_duration := section_duration_numeric::bigint;
+    road_distance_total := 0;
+    road_duration_total := 0;
+
+    for road_item in select value from jsonb_array_elements(section_item -> 'roads') loop
+      if jsonb_typeof(road_item) is distinct from 'object'
+         or jsonb_typeof(road_item -> 'distance') is distinct from 'number'
+         or jsonb_typeof(road_item -> 'duration') is distinct from 'number'
+         or jsonb_typeof(road_item -> 'vertexes') is distinct from 'array' then
+        return false;
+      end if;
+      road_distance_numeric := (road_item ->> 'distance')::numeric;
+      road_duration_numeric := (road_item ->> 'duration')::numeric;
+      if road_distance_numeric < 0 or road_distance_numeric <> trunc(road_distance_numeric)
+         or road_duration_numeric < 0 or road_duration_numeric <> trunc(road_duration_numeric)
+         or road_distance_numeric > 9223372036854775807
+         or road_duration_numeric > 9223372036854775807 then
+        return false;
+      end if;
+      road_distance := road_distance_numeric::bigint;
+      road_duration := road_duration_numeric::bigint;
+      vertex_count := jsonb_array_length(road_item -> 'vertexes');
+      if vertex_count < 4 or vertex_count % 2 <> 0 then return false; end if;
+
+      for vertex_item, vertex_position in
+        select value, ordinality::integer
+        from jsonb_array_elements(road_item -> 'vertexes') with ordinality
+      loop
+        if jsonb_typeof(vertex_item) is distinct from 'number' then return false; end if;
+        coordinate := (vertex_item #>> '{}')::double precision;
+        if (vertex_position % 2 = 1 and (coordinate < 124.5 or coordinate > 132))
+           or (vertex_position % 2 = 0 and (coordinate < 32.8 or coordinate > 38.7)) then
+          return false;
+        end if;
+      end loop;
+
+      road_start_lon := (road_item -> 'vertexes' ->> 0)::double precision;
+      road_start_lat := (road_item -> 'vertexes' ->> 1)::double precision;
+      road_end_lon := (road_item -> 'vertexes' ->> (vertex_count - 2))::double precision;
+      road_end_lat := (road_item -> 'vertexes' ->> (vertex_count - 1))::double precision;
+      if previous_end_lon is null then
+        if abs(road_start_lon - (expected_from ->> 'longitude')::double precision) > 0.0002
+           or abs(road_start_lat - (expected_from ->> 'latitude')::double precision) > 0.0002 then
+          return false;
+        end if;
+      elsif abs(road_start_lon - previous_end_lon) > 0.0002
+         or abs(road_start_lat - previous_end_lat) > 0.0002 then
+        return false;
+      end if;
+      previous_end_lon := road_end_lon;
+      previous_end_lat := road_end_lat;
+      road_distance_total := road_distance_total + road_distance;
+      road_duration_total := road_duration_total + road_duration;
+    end loop;
+
+    if road_distance_total <> section_distance or road_duration_total <> section_duration then
+      return false;
+    end if;
+    section_distance_total := section_distance_total + section_distance;
+    section_duration_total := section_duration_total + section_duration;
+  end loop;
+
+  return coalesce(
+    section_distance_total = expected_distance
+    and section_duration_total = expected_duration
+    and abs(previous_end_lon - (expected_to ->> 'longitude')::double precision) <= 0.0002
+    and abs(previous_end_lat - (expected_to ->> 'latitude')::double precision) <= 0.0002,
+    false
+  );
+exception when others then
+  return false;
+end;
+$$;
+
 create or replace function public.recommended_route_matches_plan(plan jsonb, route jsonb)
 returns boolean
 language plpgsql
@@ -137,25 +274,10 @@ begin
        or arrival_time is distinct from cursor_time + make_interval(secs => duration_seconds)
        or jsonb_typeof(leg_item -> 'via') is distinct from 'array'
        or jsonb_array_length(leg_item -> 'via') is distinct from 0
-       or jsonb_typeof(leg_item -> 'sections') is distinct from 'array'
-       or coalesce(jsonb_array_length(leg_item -> 'sections'), 0) < 1
-       or exists (
-         select 1 from jsonb_array_elements(leg_item -> 'sections') section
-         where jsonb_typeof(section -> 'roads') is distinct from 'array'
-            or coalesce(jsonb_array_length(section -> 'roads'), 0) < 1
-       )
-       or coalesce((select sum((section ->> 'distance')::integer)
-         from jsonb_array_elements(leg_item -> 'sections') section), -1) <> distance_meters
-       or coalesce((select sum((section ->> 'duration')::integer)
-         from jsonb_array_elements(leg_item -> 'sections') section), -1) <> duration_seconds
-       or exists (
-         select 1
-         from jsonb_array_elements(leg_item -> 'sections') section,
-              jsonb_array_elements(section -> 'roads') road
-         where jsonb_typeof(road -> 'vertexes') is distinct from 'array'
-            or coalesce(jsonb_array_length(road -> 'vertexes'), 0) < 4
-            or jsonb_array_length(road -> 'vertexes') % 2 <> 0
-       ) then
+       or public.recommended_route_sections_match(
+         leg_item -> 'sections', expected_from, expected_to,
+         distance_meters, duration_seconds
+       ) is not true then
       return false;
     end if;
 
@@ -680,6 +802,7 @@ $$;
 -- Keep the previously reviewed ACL boundary explicit after replacements.
 revoke all on function public.save_trip_plan(jsonb, jsonb) from public, anon, authenticated, service_role;
 revoke all on function public.recommended_route_matches_plan(jsonb, jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.recommended_route_sections_match(jsonb, jsonb, jsonb, integer, integer) from public, anon, authenticated, service_role;
 revoke all on function public.stage_route_candidate_internal(uuid, uuid, jsonb, jsonb) from public, anon, authenticated;
 grant execute on function public.stage_route_candidate_internal(uuid, uuid, jsonb, jsonb) to service_role;
 revoke all on function public.finalize_trip_plan(uuid, uuid) from public, anon, authenticated, service_role;

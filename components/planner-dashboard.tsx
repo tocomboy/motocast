@@ -4,10 +4,11 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { CollectionManager } from "@/components/collection-manager";
-import { KakaoMapCanvas, type MapMarkerRole } from "@/components/kakao-map-canvas";
+import { KakaoMapCanvas } from "@/components/kakao-map-canvas";
 import { PlaceSearchField } from "@/components/place-search-field";
 import { ShareManager } from "@/components/share-manager";
 import {
+  appliedWindingActionLabel,
   insertCollectionWinding,
   moveCollectionWinding,
   prepareCollectionApplication,
@@ -24,6 +25,7 @@ import {
 } from "@/lib/planner/demo";
 import { PlannerActionGate } from "@/lib/planner/action-gate";
 import { withClientTimeout } from "@/lib/planner/client-timeout";
+import { buildPlannerMapPoints } from "@/lib/planner/map-points";
 import { parseSafeRecommendedRoute, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
 import { buildTimeline, formatRideTime, weatherRiskLabel } from "@/lib/planner/schedule";
 import type { PlannedSegment, RouteCandidate } from "@/lib/planner/types";
@@ -196,6 +198,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const liveTripIdRef = useRef<string | null>(null);
   const weatherRequestRef = useRef(0);
   const actionGateRef = useRef(new PlannerActionGate());
+  const windingPointCount = appliedCollectionPoints
+    ? appliedCollectionPoints.filter((point) => point.winding).length
+    : windingPoints.length;
 
   function asAppliedPoint(point: CollectionPoint): AppliedCollectionPoint {
     appliedPointKeySequenceRef.current += 1;
@@ -302,15 +307,10 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     segments: selected.segments,
   }), [departureAt, draft.includeRest, liveRoute, selected]);
   const selectedMapPoints = liveRoute
-    ? [selected.segments[0].from, ...selected.segments.map((segment) => segment.to)].map((point, index, all) => {
-        let role: MapMarkerRole = "waypoint";
-        if (index === 0) role = "origin";
-        else if (index === all.length - 1) role = "destination";
-        else if (point.id === places.lunch?.kakaoPlaceId) role = "lunch";
-        else if (point.id === places.dinner?.kakaoPlaceId) role = "dinner";
-        else if (point.id === places.rest?.kakaoPlaceId) role = "rest";
-        else if (point.winding) role = "winding";
-        return { ...point, role };
+    ? buildPlannerMapPoints(selected.segments, {
+        lunchId: places.lunch?.kakaoPlaceId,
+        dinnerId: places.dinner?.kakaoPlaceId,
+        restId: places.rest?.kakaoPlaceId,
       })
     : demoMapPoints;
 
@@ -362,21 +362,22 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   function addWindingPoint(place: PlaceSearchResult | null) {
     if (!place) return;
     if (
-      windingPoints.some((item) => item.kakaoPlaceId === place.kakaoPlaceId) ||
-      appliedCollectionPoints?.some((item) => item.kakaoPlaceId === place.kakaoPlaceId)
+      (appliedCollectionPoints
+        ? appliedCollectionPoints.some((item) => item.kakaoPlaceId === place.kakaoPlaceId)
+        : windingPoints.some((item) => item.kakaoPlaceId === place.kakaoPlaceId))
     ) {
       setWaypointStatus(`${place.name}은(는) 이미 와인딩 경유지에 있습니다.`);
       setAddingWinding(false);
       focusAfterWindingEdit();
       return;
     }
-    if (windingPoints.length >= 20) {
+    if (windingPointCount >= 20) {
       setWaypointStatus("와인딩 경유지는 최대 20개까지 추가할 수 있습니다.");
       setAddingWinding(false);
       focusAfterWindingEdit();
       return;
     }
-    setWindingPoints((current) => [...current, place]);
+    if (!appliedCollectionPoints) setWindingPoints((current) => [...current, place]);
     setAppliedCollectionPoints((current) => {
       if (!current) return null;
       const point = asAppliedPoint(routePoint(place, "pass-through", 0, true));
@@ -385,7 +386,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     setAddingWinding(false);
     setWaypointStatus(`${place.name}을(를) 와인딩 경유지 마지막에 추가했습니다.`);
     markRouteInputChanged();
-    focusAfterWindingEdit(windingPoints.length + 1 >= 20);
+    focusAfterWindingEdit(windingPointCount + 1 >= 20);
   }
 
   function moveWindingPoint(index: number, direction: -1 | 1) {
@@ -420,7 +421,6 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     setAppliedCollectionPoints((current) => current
       ? removeCollectionWinding(current, point.uiKey)
       : null);
-    setWindingPoints((current) => current.filter((item) => item.kakaoPlaceId !== point.kakaoPlaceId));
     setWaypointStatus(`${point.name}을(를) 적용된 경로에서 제거했습니다.`);
     markRouteInputChanged();
     focusAfterWindingEdit();
@@ -751,9 +751,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                       </div>
                       {point.winding ? (
                         <div className="waypoint-actions">
-                          <button type="button" disabled={index === 0} onClick={() => moveAppliedWindingPoint(index, -1)} aria-label={`${point.name} 위로 이동`}>↑</button>
-                          <button type="button" disabled={index === appliedCollectionPoints.length - 1} onClick={() => moveAppliedWindingPoint(index, 1)} aria-label={`${point.name} 아래로 이동`}>↓</button>
-                          <button type="button" onClick={() => removeAppliedWindingPoint(point)} aria-label={`${point.name} 제거`}>×</button>
+                          <button type="button" disabled={index === 0} onClick={() => moveAppliedWindingPoint(index, -1)} aria-label={appliedWindingActionLabel(index + 1, point.name, "위로 이동")}>↑</button>
+                          <button type="button" disabled={index === appliedCollectionPoints.length - 1} onClick={() => moveAppliedWindingPoint(index, 1)} aria-label={appliedWindingActionLabel(index + 1, point.name, "아래로 이동")}>↓</button>
+                          <button type="button" onClick={() => removeAppliedWindingPoint(point)} aria-label={appliedWindingActionLabel(index + 1, point.name, "제거")}>×</button>
                         </div>
                       ) : null}
                     </li>
@@ -789,10 +789,10 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                 ref={addWindingButtonRef}
                 className="text-button"
                 type="button"
-                disabled={connected && (addingWinding || windingPoints.length >= 20)}
+                disabled={connected && (addingWinding || windingPointCount >= 20)}
                 onClick={() => connected ? setAddingWinding(true) : setNotice("커스텀 경유지는 실제 연결 모드에서 장소 검색으로 추가합니다.")}
               >
-                + 커스텀 와인딩 경유지 추가{windingPoints.length ? ` · ${windingPoints.length}개` : ""}
+                + 커스텀 와인딩 경유지 추가{windingPointCount ? ` · ${windingPointCount}개` : ""}
               </button>
               <p className="sr-only" role="status" aria-live="polite">{waypointStatus}</p>
             </section>

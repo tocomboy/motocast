@@ -51,7 +51,7 @@ A custom winding point is a rider-authored mandatory zero-dwell pass-through poi
 
 The planner accepts a ride date and departure time only. `plan-route` derives the recommended route's `returnAt` from validated Kakao section durations plus meal and selected-rest dwell, accepts a return after Seoul midnight, and rejects a computed duration of 24 hours or more. The browser cannot supply a desired or hard return value that affects this decision.
 
-The initial `trips` table still has non-null `desired_return_at` and `hard_return_at` columns. Until a separate data migration removes them, the trusted Edge Function supplies the Seoul departure-day end as an undisplayed compatibility value to the private persistence path. It is not a deadline, does not reject routes, and must never be exposed in schemaVersion 2 share snapshots. Existing immutable schemaVersion 1 shares remain readable with their historical fields.
+The initial `trips` table still has non-null `desired_return_at` and `hard_return_at` columns. Until a separate data migration removes them, the trusted Edge Function supplies the Seoul departure-day end as an undisplayed compatibility value to the private persistence path. It is not a deadline, does not reject routes, and must never be exposed in current schemaVersion 3 share snapshots. Existing immutable schemaVersion 1 shares remain readable with their historical fields, and schemaVersion 2 remains readable without reintroducing removed return inputs.
 
 ## Supabase promotion order
 
@@ -64,28 +64,33 @@ stays closed until the migration head, deployed function version/JWT setting,
 and Vercel SHA/Ready readbacks agree. Never describe a mixed-version interval
 as available.
 
-Rollback is coupled as well. Before Production, prepare and independently
-review a reader-compatible rollback artifact that understands immutable
-schemaVersion 3 shares even if the route writer is rolled back. A Production
-rollout without that artifact or an explicitly approved maintenance/rollback
-plan is forbidden. In Preview, revoke and read back every test-owned
-schemaVersion 3 link before rollback, then roll back Vercel and Edge together;
-never rewrite an issued snapshot. Production remains blocked by `OPS-008` and
-this rollback gate.
+Rollback is coupled as well. Before applying this migration to Preview or
+Production, prepare and independently review an exact rollback Web artifact
+based on the previous application that can read immutable schemaVersion 3
+shares while retaining its previous route-writing contract. Record its fixed
+SHA and build evidence in this runbook. A rollout without that artifact is
+forbidden: revoking existing test links is insufficient because the migrated
+database continues to create schemaVersion 3 previews. During rollback, first
+deploy that reader-compatible Web artifact, then roll back the matching Edge
+Functions together; do not downgrade the database writer, rewrite an issued
+snapshot, or claim sharing recovery until a new share preview and an existing
+schemaVersion 3 link both read back successfully. Production remains blocked
+by `OPS-008` and this rollback gate.
 
 1. After confirming the exact target and receiving approval, reset only the disposable local PostgreSQL 17 instance at `127.0.0.1:54322`; then apply all migrations from an empty database and run the explicit database tests. Never use this reset against either hosted project.
 2. Obtain fixed-SHA independent data-integrity and security approval.
-3. Dry-run Preview migration application:
+3. Create the reader-compatible rollback Web artifact described above from the previous deployed application, independently review it, and record its exact SHA plus schemaVersion 1/2/3 read tests. Do not apply the Preview migration before this artifact exists.
+4. Dry-run Preview migration application:
 
    ```bash
    npx --yes supabase@2.116.0 db push --project-ref lehjmbgfpoemqcwxowbx --include-all --skip-vault --dry-run
    ```
 
-4. Apply to Preview only, then read back migration versions, RLS and function ACLs.
-5. During the Preview maintenance window, deploy `search-places`, `plan-route`, `weather-timeline`, `save-collection`, and `kakao-oidc` from the reviewed fixed SHA, then deploy/read back that exact Vercel SHA. The first four retain JWT verification; only `kakao-oidc` is intentionally public with `verify_jwt=false` under `AUTH-004`. Read back each deployed Edge Function version and JWT setting after deployment.
-6. Register Preview-only Auth provider redirects and server secrets through the Supabase Dashboard or masked input. Never put values in command arguments or shell history. Preview name-only readback confirms all ten application secret names, including `KAKAO_LOGIN_CLIENT_SECRET` and `KAKAO_OIDC_STATE_SECRET`; values are never read or printed. The authorize request must use the HTTPS callback derived from `SUPABASE_URL`, not an internal Edge `request.url`.
-7. Use disposable Preview identities to execute the complete Preview gate. The first Kakao identity has been registered as the sole Preview administrator; use a separate invited identity for rider-isolation checks.
-8. Resolve `OPS-008`, back up the chosen empty/pre-cutover Production database, and repeat the reviewed migration/function sequence for Production.
+5. Apply to Preview only, then read back migration versions, RLS and function ACLs.
+6. During the Preview maintenance window, deploy `search-places`, `plan-route`, `weather-timeline`, `save-collection`, and `kakao-oidc` from the reviewed fixed SHA, then deploy/read back that exact Vercel SHA. The first four retain JWT verification; only `kakao-oidc` is intentionally public with `verify_jwt=false` under `AUTH-004`. Read back each deployed Edge Function version and JWT setting after deployment.
+7. Register Preview-only Auth provider redirects and server secrets through the Supabase Dashboard or masked input. Never put values in command arguments or shell history. Preview name-only readback confirms all ten application secret names, including `KAKAO_LOGIN_CLIENT_SECRET` and `KAKAO_OIDC_STATE_SECRET`; values are never read or printed. The authorize request must use the HTTPS callback derived from `SUPABASE_URL`, not an internal Edge `request.url`.
+8. Use disposable Preview identities to execute the complete Preview gate. The first Kakao identity has been registered as the sole Preview administrator; use a separate invited identity for rider-isolation checks.
+9. Resolve `OPS-008`, back up the chosen empty/pre-cutover Production database, and repeat the reviewed migration/function sequence for Production.
 
 Preview browser automation is fail-closed to `https://motocast-git-develop-tocomboys-projects.vercel.app` and Supabase project `lehjmbgfpoemqcwxowbx`. Run auth and authenticated Preview automation from WSL/Linux, then create the storage state through `npm run test:e2e:auth` in a dedicated owner-private directory outside the repository; the helper writes a `0600` state file and origin/project metadata. Native Windows fails before browser launch because this workflow cannot prove an owner-only NTFS ACL. `npm run test:e2e:preview` rejects missing metadata, symlinks, permissive files, another project, loopback, arbitrary HTTPS, and Production origins. Authenticated runs do not retain browser artifacts. Live mutation cleanup records its obligation before each request, captures exact nonsecret resource IDs from responses, and uses a separately timed `afterEach` hook to revoke only the test-owned active share, delete the exact collection, and call the ownership-enforcing `delete_owned_trip` boundary for the captured test trip; any unknown outcome or cleanup failure keeps the gate red.
 
