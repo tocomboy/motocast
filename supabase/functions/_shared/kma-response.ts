@@ -36,6 +36,7 @@ function validNumericValue(value: string, minimum: number, maximum: number, inte
 
 function validForecastValue(category: string, value: unknown, model: ForecastModel) {
   if (typeof value !== "string" || value !== value.trim() || value.length === 0 || value.length > 64) return false;
+  if ((category === "T1H" && model !== "ultra") || (category === "TMP" && model !== "short")) return false;
   if (category === "T1H" || category === "TMP") return validNumericValue(value, -100, 100);
   if (category === "POP") return validNumericValue(value, 0, 100, true);
   if (category === "WSD") return validNumericValue(value, 0, 200);

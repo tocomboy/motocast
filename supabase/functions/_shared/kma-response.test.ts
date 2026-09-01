@@ -69,6 +69,7 @@ describe("parseKmaItems", () => {
     { label: "probability over 100", value: { ...validItem, category: "POP", fcstValue: "101" } },
     { label: "negative wind", value: { ...validItem, category: "WSD", fcstValue: "-5" } },
     { label: "ultra-only precipitation code in short model", value: { ...validItem, category: "PTY", fcstValue: "5" } },
+    { label: "ultra temperature in short model", value: { ...validItem, category: "T1H", fcstValue: "22" } },
   ])("rejects forecast identity or semantic mismatch: $label", async ({ value }) => {
     await expect(parse(new Response(JSON.stringify({
       response: { header: { resultCode: "00" }, body: { items: { item: [value] } } },
@@ -91,6 +92,8 @@ describe("parseKmaItems", () => {
     const parseUltra = (item: typeof validItem) => parseKmaItems(responseFor(item), { ...expected, model: "ultra" });
     await expect(parseUltra({ ...validItem, category: "PTY", fcstValue: "5" })).resolves.toHaveLength(1);
     await expect(parseUltra({ ...validItem, category: "PTY", fcstValue: "4" })).rejects.toEqual(new Error("KMA_INVALID_RESPONSE"));
+    await expect(parseUltra({ ...validItem, category: "TMP", fcstValue: "22" })).rejects.toEqual(new Error("KMA_INVALID_RESPONSE"));
+    await expect(parseUltra({ ...validItem, category: "T1H", fcstValue: "22" })).resolves.toHaveLength(1);
   });
 
   it("returns a documented successful item array", async () => {

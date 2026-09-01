@@ -160,7 +160,7 @@ async function fetchTimeline(memberId: string, points: WeatherPoint[], apiKey: s
       forecast = await fetchForecast({ model, nx, ny, apiKey, target, now });
       cache.set(cacheKey, forecast);
     }
-    const temperature = forecast.values.T1H ?? forecast.values.TMP;
+    const temperature = model === "ultra" ? forecast.values.T1H : forecast.values.TMP;
     forecasts.push({
       ...point,
       status: "forecast",
