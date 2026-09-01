@@ -44,7 +44,8 @@ describe("planner persistence lock policy", () => {
     expect(source).toContain("onShare={prepareCollectionShare}");
     expect(source).toContain("isFreshWeatherForSharing(selectedWeather, weatherClock ?? currentReferenceTime())");
     expect(source).toContain("const shareTripId = !liveResultStale && shareIntentGeneration === null && shareWeatherReady ? liveTripId : null");
-    expect(source).toContain('key={`share-${liveTripId ?? "none"}-${shareManagerEpoch}`}');
+    expect(source).not.toContain('key={`share-${liveTripId ?? "none"}-${shareManagerEpoch}`}');
+    expect(source).toContain("sessionEpoch={shareManagerEpoch}");
     expect(source).toContain("previewRequest={sharePreviewRequest?.tripId === shareTripId ? sharePreviewRequest.serial : 0}");
     expect(source.match(/invalidateShareSession\(\);/g)).toHaveLength(3);
     const invalidator = source.indexOf("function invalidateShareSession()");

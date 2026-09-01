@@ -1096,8 +1096,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
             <div className="management-grid">
               <CollectionManager currentCourse={currentCourse} onApply={applyCollection} onShare={prepareCollectionShare} disabled={calculating} />
               <ShareManager
-                key={`share-${liveTripId ?? "none"}-${shareManagerEpoch}`}
                 tripId={shareTripId}
+                sessionEpoch={shareManagerEpoch}
                 previewRequest={sharePreviewRequest?.tripId === shareTripId ? sharePreviewRequest.serial : 0}
                 disabled={calculating}
               />

@@ -7,20 +7,31 @@ import { parseSharedRideSnapshot, type SharedRideSnapshot } from "@/lib/sharing/
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 type ShareLinkRow = { id: string; createdAt: string; revokedAt: string | null };
+type ShareStatus = { epoch: number; message: string };
 
-export function ShareManager({ tripId, previewRequest = 0, disabled = false }: { tripId: string | null; previewRequest?: number; disabled?: boolean }) {
+export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, disabled = false }: { tripId: string | null; sessionEpoch?: number; previewRequest?: number; disabled?: boolean }) {
   const [links, setLinks] = useState<ShareLinkRow[]>([]);
   const [preview, setPreview] = useState<SharedRideSnapshot | null>(null);
   const [previewRaw, setPreviewRaw] = useState<unknown>(null);
   const [previewTripId, setPreviewTripId] = useState<string | null>(null);
+  const [previewEpoch, setPreviewEpoch] = useState(-1);
   const [previewToken, setPreviewToken] = useState<string | null>(null);
   const [previewReferenceTime, setPreviewReferenceTime] = useState<string>(new Date(0).toISOString());
-  const [issued, setIssued] = useState<{ tripId: string; shareId: string; url: string } | null>(null);
-  const [status, setStatus] = useState("여행 루트와 날씨 요약을 확인한 뒤에만 발행됩니다.");
-  const [busy, setBusy] = useState(false);
+  const [issued, setIssued] = useState<{ epoch: number; tripId: string; shareId: string; url: string } | null>(null);
+  const [status, setStatus] = useState<ShareStatus>({
+    epoch: sessionEpoch,
+    message: "여행 루트와 날씨 요약을 확인한 뒤에만 발행됩니다.",
+  });
+  const [busyEpoch, setBusyEpoch] = useState<number | null>(null);
   const handledPreviewRequestRef = useRef(0);
+  const sessionEpochRef = useRef(sessionEpoch);
+  const busy = busyEpoch === sessionEpoch;
 
-  const loadLinks = useCallback(async () => {
+  useEffect(() => {
+    sessionEpochRef.current = sessionEpoch;
+  }, [sessionEpoch]);
+
+  const loadLinks = useCallback(async (reportErrors = true) => {
     const supabase = getBrowserSupabase();
     if (!supabase) return;
     const { data, error } = await supabase
@@ -28,7 +39,7 @@ export function ShareManager({ tripId, previewRequest = 0, disabled = false }: {
       .select("id,created_at,revoked_at")
       .order("created_at", { ascending: false });
     if (error || !Array.isArray(data)) {
-      setStatus("공유 발행 기록을 불러오지 못했습니다.");
+      if (reportErrors) setStatus({ epoch: sessionEpochRef.current, message: "공유 발행 기록을 불러오지 못했습니다." });
       return;
     }
     const parsed = data.flatMap((row) => (
@@ -38,7 +49,7 @@ export function ShareManager({ tripId, previewRequest = 0, disabled = false }: {
         : []
     ));
     if (parsed.length !== data.length) {
-      setStatus("공유 발행 기록 응답을 안전하게 확인하지 못했습니다.");
+      if (reportErrors) setStatus({ epoch: sessionEpochRef.current, message: "공유 발행 기록 응답을 안전하게 확인하지 못했습니다." });
       return;
     }
     setLinks(parsed);
@@ -47,27 +58,32 @@ export function ShareManager({ tripId, previewRequest = 0, disabled = false }: {
   const createPreview = useCallback(async () => {
     if (disabled) return;
     if (!tripId) {
-      setStatus("실제 경로를 계산해 계획을 저장한 뒤 공유할 수 있습니다.");
+      setStatus({ epoch: sessionEpoch, message: "실제 경로와 유효한 최신 날씨를 준비한 뒤 공유할 수 있습니다." });
       return;
     }
     const supabase = getBrowserSupabase();
     if (!supabase) return;
-    setBusy(true);
+    const operationEpoch = sessionEpoch;
+    setBusyEpoch(operationEpoch);
     const { data, error } = await supabase.rpc("preview_trip_share", { target_trip_id: tripId });
-    setBusy(false);
+    if (sessionEpochRef.current !== operationEpoch) return;
+    setBusyEpoch(null);
     if (error) {
-      setStatus(error.message.includes("SHARE_WEATHER_NOT_FRESH")
-        ? "아직 유효한 최신 날씨가 없어 공유 미리보기를 만들 수 없습니다. 날씨를 다시 조회해 주세요."
-        : "공유 미리보기를 만들지 못했습니다. 저장 상태와 권한을 확인해 주세요.");
+      setStatus({
+        epoch: operationEpoch,
+        message: error.message.includes("SHARE_WEATHER_NOT_FRESH")
+          ? "아직 유효한 최신 날씨가 없어 공유 미리보기를 만들 수 없습니다. 날씨를 다시 조회해 주세요."
+          : "공유 미리보기를 만들지 못했습니다. 저장 상태와 권한을 확인해 주세요.",
+      });
       return;
     }
     if (!Array.isArray(data) || data.length !== 1) {
-      setStatus("공유 미리보기 응답을 안전하게 확인하지 못했습니다.");
+      setStatus({ epoch: operationEpoch, message: "공유 미리보기 응답을 안전하게 확인하지 못했습니다." });
       return;
     }
     const row = data[0] as { preview_snapshot?: unknown; preview_token?: unknown };
     if (typeof row.preview_token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(row.preview_token)) {
-      setStatus("공유 미리보기 승인 정보를 안전하게 확인하지 못했습니다.");
+      setStatus({ epoch: operationEpoch, message: "공유 미리보기 승인 정보를 안전하게 확인하지 못했습니다." });
       return;
     }
     try {
@@ -75,13 +91,14 @@ export function ShareManager({ tripId, previewRequest = 0, disabled = false }: {
       setPreviewRaw(row.preview_snapshot);
       setPreviewToken(row.preview_token);
       setPreviewTripId(tripId);
+      setPreviewEpoch(operationEpoch);
       setPreviewReferenceTime(new Date().toISOString());
       setIssued(null);
-      setStatus("아래 여행 루트와 날씨 요약을 확인한 뒤 링크를 발행하세요.");
+      setStatus({ epoch: operationEpoch, message: "아래 여행 루트와 날씨 요약을 확인한 뒤 링크를 발행하세요." });
     } catch {
-      setStatus("공유 미리보기 응답을 안전하게 확인하지 못했습니다.");
+      setStatus({ epoch: operationEpoch, message: "공유 미리보기 응답을 안전하게 확인하지 못했습니다." });
     }
-  }, [disabled, tripId]);
+  }, [disabled, sessionEpoch, tripId]);
 
   useEffect(() => {
     const task = window.setTimeout(() => void loadLinks(), 0);
@@ -94,29 +111,39 @@ export function ShareManager({ tripId, previewRequest = 0, disabled = false }: {
     void createPreview();
   }, [previewRequest, tripId, disabled, busy, createPreview]);
 
-  const activePreview = previewTripId === tripId ? preview : null;
-  const issuedUrl = issued?.tripId === tripId ? issued.url : null;
+  const activePreview = previewEpoch === sessionEpoch && previewTripId === tripId ? preview : null;
+  const issuedUrl = issued?.epoch === sessionEpoch && issued.tripId === tripId ? issued.url : null;
+  const visibleStatus = !tripId
+    ? "실제 경로와 유효한 최신 날씨를 준비한 뒤 공유할 수 있습니다."
+    : status.epoch === sessionEpoch
+      ? status.message
+      : "여행 루트와 날씨 요약을 확인한 뒤에만 발행됩니다.";
 
   async function publish() {
     if (disabled) return;
-    if (!tripId || !activePreview || previewRaw === null || !previewToken) return;
+    if (!tripId || !activePreview || previewEpoch !== sessionEpoch || previewRaw === null || !previewToken) return;
     const supabase = getBrowserSupabase();
     if (!supabase) return;
-    setBusy(true);
+    const operationEpoch = sessionEpoch;
+    setBusyEpoch(operationEpoch);
     const { data, error } = await supabase.rpc("publish_trip_share", {
       target_trip_id: tripId,
       approved_preview_token: previewToken,
     });
+    if (sessionEpochRef.current !== operationEpoch) {
+      if (!error) await loadLinks(false);
+      return;
+    }
     if (error || !Array.isArray(data) || data.length !== 1) {
-      setBusy(false);
+      setBusyEpoch(null);
       if (error?.message.includes("SHARE_PREVIEW")) {
         setPreviewToken(null);
-        setStatus("미리보기가 만료됐거나 원본이 바뀌었습니다. 공유 요약 미리보기를 다시 만들어 주세요.");
+        setStatus({ epoch: operationEpoch, message: "미리보기가 만료됐거나 원본이 바뀌었습니다. 공유 요약 미리보기를 다시 만들어 주세요." });
       } else if (error?.message.includes("SHARE_WEATHER_NOT_FRESH")) {
         setPreviewToken(null);
-        setStatus("날씨가 오래됐거나 만료되어 발행하지 않았습니다. 날씨를 다시 조회하고 새 미리보기를 확인해 주세요.");
+        setStatus({ epoch: operationEpoch, message: "날씨가 오래됐거나 만료되어 발행하지 않았습니다. 날씨를 다시 조회하고 새 미리보기를 확인해 주세요." });
       } else {
-        setStatus("공유 링크를 발행하지 못했습니다.");
+        setStatus({ epoch: operationEpoch, message: "공유 링크를 발행하지 못했습니다." });
       }
       return;
     }
@@ -124,14 +151,14 @@ export function ShareManager({ tripId, previewRequest = 0, disabled = false }: {
     const token = result.share_token;
     const shareId = result.share_id;
     if (typeof shareId !== "string" || typeof token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(token)) {
-      setBusy(false);
-      setStatus("발행 결과를 안전하게 확인하지 못했습니다. 공유 기록에서 공개 상태를 확인해 주세요.");
+      setBusyEpoch(null);
+      setStatus({ epoch: operationEpoch, message: "발행 결과를 안전하게 확인하지 못했습니다. 공유 기록에서 공개 상태를 확인해 주세요." });
       return;
     }
-    setBusy(false);
+    setBusyEpoch(null);
     setPreviewToken(null);
-    setIssued({ tripId, shareId, url: `${window.location.origin}/share#${token}` });
-    setStatus("불변 공유 링크를 발행했습니다. 원본을 수정해도 이 링크의 내용은 바뀌지 않습니다.");
+    setIssued({ epoch: operationEpoch, tripId, shareId, url: `${window.location.origin}/share#${token}` });
+    setStatus({ epoch: operationEpoch, message: "불변 공유 링크를 발행했습니다. 원본을 수정해도 이 링크의 내용은 바뀌지 않습니다." });
     await loadLinks();
   }
 
@@ -139,15 +166,20 @@ export function ShareManager({ tripId, previewRequest = 0, disabled = false }: {
     if (disabled) return;
     const supabase = getBrowserSupabase();
     if (!supabase) return;
-    setBusy(true);
+    const operationEpoch = sessionEpoch;
+    setBusyEpoch(operationEpoch);
     const { error } = await supabase.rpc("revoke_share", { target_share_id: link.id });
-    setBusy(false);
+    if (sessionEpochRef.current !== operationEpoch) {
+      if (!error) await loadLinks(false);
+      return;
+    }
+    setBusyEpoch(null);
     if (error) {
-      setStatus("공유 링크를 회수하지 못했습니다. 이미 회수됐거나 권한이 없습니다.");
+      setStatus({ epoch: operationEpoch, message: "공유 링크를 회수하지 못했습니다. 이미 회수됐거나 권한이 없습니다." });
       return;
     }
     if (issued?.shareId === link.id) setIssued(null);
-    setStatus("공유 링크를 회수했습니다. 다시 공유하려면 새 미리보기와 새 링크를 발행하세요.");
+    setStatus({ epoch: operationEpoch, message: "공유 링크를 회수했습니다. 다시 공유하려면 새 미리보기와 새 링크를 발행하세요." });
     await loadLinks();
   }
 
@@ -155,9 +187,9 @@ export function ShareManager({ tripId, previewRequest = 0, disabled = false }: {
     if (!issuedUrl) return;
     try {
       await navigator.clipboard.writeText(issuedUrl);
-      setStatus("공유 링크를 복사했습니다.");
+      setStatus({ epoch: sessionEpoch, message: "공유 링크를 복사했습니다." });
     } catch {
-      setStatus("자동 복사에 실패했습니다. 링크를 직접 선택해 복사해 주세요.");
+      setStatus({ epoch: sessionEpoch, message: "자동 복사에 실패했습니다. 링크를 직접 선택해 복사해 주세요." });
     }
   }
 
@@ -195,7 +227,7 @@ export function ShareManager({ tripId, previewRequest = 0, disabled = false }: {
           ))}
         </ul>
       ) : null}
-      <p className="manager-status" role="status" aria-live="polite">{status}</p>
+      <p className="manager-status" role="status" aria-live="polite">{visibleStatus}</p>
     </section>
   );
 }
