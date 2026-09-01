@@ -3,9 +3,7 @@
 create extension if not exists dblink with schema extensions;
 
 drop trigger if exists delay_test_finalize on public.trips;
-drop trigger if exists fail_test_route_insert on public.route_cache;
 drop function if exists public.delay_test_finalize();
-drop function if exists public.fail_test_route_insert();
 drop function if exists public.test_finalize_route(uuid, uuid);
 delete from auth.users where id = '75000000-0000-0000-0000-000000000001';
 
@@ -147,8 +145,9 @@ insert into tap_results values
   ((select count(*) = 3 from public.route_cache r join public.trips t on t.id = r.trip_id where t.user_id = '75000000-0000-0000-0000-000000000001'), 'the winning finalization stores exactly three routes'),
   ((select count(*) = 0 from public.route_plan_drafts where owner_id = '75000000-0000-0000-0000-000000000001'), 'the winning finalization consumes all route drafts');
 
--- Prove that a failure after aggregate mutation begins rolls back the old trip,
--- its routes and its draft capability as one transaction.
+-- Legacy exact-three drafts remain readable/finalizable only as new plans. They
+-- cannot target an existing trip because pre-migration staging did not bind a
+-- trusted target identity or revision into the immutable plan hash.
 insert into public.route_plan_drafts(owner_id, planning_id, candidate_profile, plan, route, geometry_fingerprint)
 select
   '75000000-0000-0000-0000-000000000001',
@@ -159,41 +158,21 @@ select
   public.route_geometry_fingerprint(route)
 from jsonb_array_elements((select routes from route_fixture)) as staged(route);
 
-create or replace function public.fail_test_route_insert()
-returns trigger language plpgsql set search_path = public, pg_temp as $$
-begin
-  if new.profile = 'winding' then raise exception 'FORCED_ROUTE_WRITE_FAILURE'; end if;
-  return new;
-end;
-$$;
-create trigger fail_test_route_insert before insert on public.route_cache
-for each row execute function public.fail_test_route_insert();
-
 set role authenticated;
 select set_config('request.jwt.claim.sub', '75000000-0000-0000-0000-000000000001', false);
-do $$
-declare
-  target_trip uuid := (select id from public.trips where user_id = auth.uid());
-  rejected boolean := false;
-begin
-  begin
-    perform public.finalize_trip_plan('76000000-0000-4000-8000-000000000002', target_trip);
-  exception when others then
-    rejected := sqlerrm = 'FORCED_ROUTE_WRITE_FAILURE';
-  end;
-  insert into tap_results values (rejected, 'a forced mid-write route failure is surfaced');
-end;
-$$;
+create temp table legacy_update_result as
+select public.test_finalize_route(
+  '76000000-0000-4000-8000-000000000002',
+  (select id from public.trips where user_id = auth.uid())
+) as result;
 reset role;
 
-drop trigger fail_test_route_insert on public.route_cache;
-drop function public.fail_test_route_insert();
-
 insert into tap_results values
-  ((select title = '경합 계획' from public.trips where user_id = '75000000-0000-0000-0000-000000000001'), 'failed replacement restores the original trip row'),
-  ((select count(*) = 1 from public.trip_waypoints w join public.trips t on t.id = w.trip_id where t.user_id = '75000000-0000-0000-0000-000000000001'), 'failed replacement restores original waypoints'),
-  ((select count(*) = 3 from public.route_cache r join public.trips t on t.id = r.trip_id where t.user_id = '75000000-0000-0000-0000-000000000001'), 'failed replacement restores all original routes'),
-  ((select count(*) = 3 from public.route_plan_drafts where owner_id = '75000000-0000-0000-0000-000000000001' and planning_id = '76000000-0000-4000-8000-000000000002'), 'failed replacement preserves the retryable route drafts');
+  ((select result = 'LEGACY_TRIP_UPDATE_UNSUPPORTED' from legacy_update_result), 'legacy finalization rejects an unbound existing-trip target'),
+  ((select title = '경합 계획' from public.trips where user_id = '75000000-0000-0000-0000-000000000001'), 'rejected legacy update preserves the original trip row'),
+  ((select count(*) = 1 from public.trip_waypoints w join public.trips t on t.id = w.trip_id where t.user_id = '75000000-0000-0000-0000-000000000001'), 'rejected legacy update preserves original waypoints'),
+  ((select count(*) = 3 from public.route_cache r join public.trips t on t.id = r.trip_id where t.user_id = '75000000-0000-0000-0000-000000000001'), 'rejected legacy update preserves all original routes'),
+  ((select count(*) = 3 from public.route_plan_drafts where owner_id = '75000000-0000-0000-0000-000000000001' and planning_id = '76000000-0000-4000-8000-000000000002'), 'rejected legacy update preserves the retryable route drafts');
 
 -- Simulate drafts staged across a fingerprint-function deployment. The stored
 -- cache can be stale or corrupt; finalization must re-hash the locked route JSON.
@@ -211,13 +190,12 @@ set role authenticated;
 select set_config('request.jwt.claim.sub', '75000000-0000-0000-0000-000000000001', false);
 do $$
 declare
-  target_trip uuid := (select id from public.trips where user_id = auth.uid());
   replacement uuid;
 begin
-  replacement := public.finalize_trip_plan('76000000-0000-4000-8000-000000000002', target_trip);
+  replacement := public.finalize_trip_plan('76000000-0000-4000-8000-000000000002', null);
   insert into tap_results values (
-    replacement = target_trip,
-    'finalization accepts distinct route JSON despite stale cached fingerprints'
+    replacement is not null,
+    'legacy new-plan finalization accepts distinct route JSON despite stale cached fingerprints'
   );
 end;
 $$;

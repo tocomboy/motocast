@@ -3,7 +3,9 @@
 create extension if not exists dblink with schema extensions;
 
 drop trigger if exists delay_test_recommended_finalize on public.trips;
+drop trigger if exists fail_test_recommended_route_insert on public.route_cache;
 drop function if exists public.delay_test_recommended_finalize();
+drop function if exists public.fail_test_recommended_route_insert();
 drop function if exists public.test_finalize_recommended_route(uuid);
 drop function if exists public.test_finalize_recommended_route(uuid, uuid);
 delete from auth.users where id = '75100000-0000-0000-0000-000000000001';
@@ -604,6 +606,32 @@ select public.test_finalize_recommended_route(
 ) as result;
 select set_config('request.jwt.claim.sub', '', false);
 
+select public.stage_route_candidate_internal(
+  '75100000-0000-0000-0000-000000000001',
+  '76100000-0000-4000-8000-000000000049',
+  (select plan from recommended_fixture), (select route from recommended_fixture)
+);
+create temp table atomic_trip_count_before as
+select count(*) as value from public.trips
+where user_id = '75100000-0000-0000-0000-000000000001';
+create or replace function public.fail_test_recommended_route_insert()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+begin
+  if new.profile = 'recommended' then raise exception 'FORCED_RECOMMENDED_ROUTE_WRITE_FAILURE'; end if;
+  return new;
+end;
+$$;
+create trigger fail_test_recommended_route_insert before insert on public.route_cache
+for each row execute function public.fail_test_recommended_route_insert();
+select set_config('request.jwt.claim.sub', '75100000-0000-0000-0000-000000000001', false);
+create temp table atomic_write_failure_result as
+select public.test_finalize_recommended_route(
+  '76100000-0000-4000-8000-000000000049'
+) as result;
+select set_config('request.jwt.claim.sub', '', false);
+drop trigger fail_test_recommended_route_insert on public.route_cache;
+drop function public.fail_test_recommended_route_insert();
+
 create temp table tap_results(ok boolean not null, description text not null);
 insert into tap_results values
   ((select count(*) = 1 from recommended_results where result ~ '^[0-9a-f-]{36}$'), 'concurrent recommended finalizers produce one saved trip'),
@@ -652,7 +680,20 @@ insert into tap_results values
   ((select status = 'staging' from public.route_plan_runs
     where owner_id = '75100000-0000-0000-0000-000000000001'
       and planning_id = '76100000-0000-4000-8000-000000000048'),
-   'a rejected plan-hash mutation does not consume its planning lifecycle');
+   'a rejected plan-hash mutation does not consume its planning lifecycle'),
+  ((select result = 'FORCED_RECOMMENDED_ROUTE_WRITE_FAILURE' from atomic_write_failure_result),
+   'a recommended route write failure is surfaced after aggregate mutation begins'),
+  ((select count(*) = (select value from atomic_trip_count_before)
+    from public.trips where user_id = '75100000-0000-0000-0000-000000000001'),
+   'failed recommended finalization rolls back the inserted trip aggregate'),
+  ((select count(*) = 1 from public.route_plan_drafts
+    where owner_id = '75100000-0000-0000-0000-000000000001'
+      and planning_id = '76100000-0000-4000-8000-000000000049'),
+   'failed recommended finalization preserves its retryable route draft'),
+  ((select status = 'staging' and saved_trip_id is null from public.route_plan_runs
+    where owner_id = '75100000-0000-0000-0000-000000000001'
+      and planning_id = '76100000-0000-4000-8000-000000000049'),
+   'failed recommended finalization preserves the unconsumed lifecycle');
 
 select dblink_disconnect('recommended_c1');
 select dblink_disconnect('recommended_c2');

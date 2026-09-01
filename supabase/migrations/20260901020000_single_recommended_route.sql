@@ -416,6 +416,9 @@ begin
      and ((target_trip_id is null) is distinct from (expected_updated_at is null)) then
     raise exception 'INVALID_PLAN';
   end if;
+  if plan ->> 'selectedProfile' <> 'recommended' and target_trip_id is not null then
+    raise exception 'LEGACY_TRIP_UPDATE_UNSUPPORTED';
+  end if;
 
   if departure_time >= desired_return_time
      or desired_return_time > hard_return_time
@@ -727,10 +730,10 @@ begin
       raise exception 'UNSAFE_ROUTE_RESPONSE';
     end if;
   else
-    staged_plan := case
-      when target_trip_id is null then staged_plan - 'tripId'
-      else jsonb_set(staged_plan, '{tripId}', to_jsonb(target_trip_id), true)
-    end;
+    if target_trip_id is not null then
+      raise exception 'LEGACY_TRIP_UPDATE_UNSUPPORTED';
+    end if;
+    staged_plan := staged_plan - 'tripId';
   end if;
   result_trip_id := public.save_trip_plan(staged_plan, staged_routes);
   update public.route_plan_runs
