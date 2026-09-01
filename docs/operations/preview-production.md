@@ -84,6 +84,8 @@ by `OPS-008` and this rollback gate.
 1. After confirming the exact target and receiving approval, reset only the disposable local PostgreSQL 17 instance at `127.0.0.1:54322`; then apply all migrations from an empty database and run the explicit database tests. Never use this reset against either hosted project.
 2. Obtain fixed-SHA independent data-integrity and security approval.
 3. Create the reader-compatible rollback Web artifact described above from the previous deployed application, independently review it, and record its exact SHA plus schemaVersion 1/2/3 read tests. Do not apply the Preview migration before this artifact exists.
+
+   Prepared artifact: remote branch `rollback/schema-v3-reader-20260901`, exact SHA `9f4cb83d5ccf1e327b318dc843f2a32a7bf67518`, based directly on previous deployed `84a013b2fc23743d90fb3500a42d3863590aa5c6`. It retains the legacy three-route writer while reading immutable schemaVersion 1/2 and singular schemaVersion 3 shares. Independent correctness, security, and operations reviews report `BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 0`. Writer/reviewer evidence passes ESLint, TypeScript, focused schema 1/2/3 tests (`16/16`), full Vitest (`50 files / 288 tests`), all five Edge Function Deno checks, the 13-route production build, deterministic Chromium (`14 PASS / 2 SKIP`), exact-range diff check, and a names-only sensitive-value scan. GitHub readback confirms the exact remote SHA and zero Actions runs/deployments for that non-deploying branch. During an actual rollback, route writes remain closed until this Web artifact and the matching legacy Edge bundle are both active; the database and issued shares are never downgraded or rewritten.
 4. Dry-run Preview migration application:
 
    ```bash

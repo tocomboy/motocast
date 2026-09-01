@@ -128,6 +128,16 @@ describe("parseRouteRequest", () => {
     await expect(parseRouteRequest(invalid, secret)).rejects.toThrow("INVALID_PLANNING_ID");
   });
 
+  it("validates the optional target trip identity before provider work", async () => {
+    await expect(parseRouteRequest(await request(), secret)).resolves.toMatchObject({ tripId: null });
+    await expect(parseRouteRequest({
+      ...await request(),
+      tripId: "f5ef8f03-bf21-4a9b-bf2b-82ce63cfc53e",
+    }, secret)).resolves.toMatchObject({ tripId: "f5ef8f03-bf21-4a9b-bf2b-82ce63cfc53e" });
+    await expect(parseRouteRequest({ ...await request(), tripId: "another-plan" }, secret))
+      .rejects.toThrow("INVALID_TRIP_ID");
+  });
+
   it("accepts a late departure without requiring a same-date return boundary", async () => {
     const lateDeparture = {
       ...await request(),

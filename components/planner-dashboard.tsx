@@ -623,6 +623,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     ];
     const commonBody = {
       planningId,
+      tripId: targetTripId,
       origin: routePoint(places.origin, "pass-through", 0),
       destination: routePoint(places.destination, "pass-through", 0),
       waypoints: appliedCollectionPoints?.filter((point) => point.selected) ?? generatedWaypoints,

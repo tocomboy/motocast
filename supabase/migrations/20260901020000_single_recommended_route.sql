@@ -231,6 +231,8 @@ declare
   previous_leg_end_lon double precision := null;
   previous_leg_end_lat double precision := null;
   road_continuity_tolerance constant double precision := 0.0002;
+  target_trip_id uuid;
+  target_updated_at timestamptz;
   total_distance bigint := 0;
   total_duration bigint := 0;
 begin
@@ -245,10 +247,20 @@ begin
      or route -> 'safety' ->> 'motorwayExcluded' is distinct from 'true'
      or route -> 'safety' ->> 'fallbackUsed' is distinct from 'false'
      or jsonb_typeof(route -> 'legs') is distinct from 'array'
+     or not (plan ? 'tripId')
+     or not (plan ? 'targetUpdatedAt')
+     or jsonb_typeof(plan -> 'tripId') not in ('null', 'string')
+     or jsonb_typeof(plan -> 'targetUpdatedAt') not in ('null', 'string')
      or exists (
        select 1 from jsonb_array_elements(plan -> 'waypoints') point
        where point ->> 'selected' is distinct from 'true'
      ) then
+    return false;
+  end if;
+
+  target_trip_id := nullif(plan ->> 'tripId', '')::uuid;
+  target_updated_at := (plan ->> 'targetUpdatedAt')::timestamptz;
+  if (target_trip_id is null) is distinct from (target_updated_at is null) then
     return false;
   end if;
 
@@ -368,6 +380,7 @@ declare
   matching_dinner_count integer;
   rest_count integer;
   winding_count integer;
+  expected_updated_at timestamptz;
 begin
   if current_user_id is null or not public.is_active_member(current_user_id) then
     raise exception 'MEMBERSHIP_REQUIRED';
@@ -393,9 +406,16 @@ begin
     desired_return_time := (plan ->> 'desiredReturnAt')::timestamptz;
     hard_return_time := (plan ->> 'hardReturnAt')::timestamptz;
     target_trip_id := nullif(plan ->> 'tripId', '')::uuid;
+    expected_updated_at := case when plan ->> 'selectedProfile' = 'recommended'
+      then (plan ->> 'targetUpdatedAt')::timestamptz else null end;
   exception when others then
     raise exception 'INVALID_PLAN';
   end;
+
+  if plan ->> 'selectedProfile' = 'recommended'
+     and ((target_trip_id is null) is distinct from (expected_updated_at is null)) then
+    raise exception 'INVALID_PLAN';
+  end if;
 
   if departure_time >= desired_return_time
      or desired_return_time > hard_return_time
@@ -472,8 +492,12 @@ begin
   else
     perform 1 from public.trips
     where id = target_trip_id and user_id = current_user_id
+      and (plan ->> 'selectedProfile' <> 'recommended' or updated_at = expected_updated_at)
     for update;
-    if not found then raise exception 'TRIP_NOT_FOUND'; end if;
+    if not found then
+      if plan ->> 'selectedProfile' = 'recommended' then raise exception 'TRIP_VERSION_CONFLICT'; end if;
+      raise exception 'TRIP_NOT_FOUND';
+    end if;
 
     update public.trips
     set title = btrim(plan ->> 'title'), service_date = service_day,
@@ -625,6 +649,7 @@ declare
   stored_route_hash text;
   current_plan_hash text;
   current_route_hash text;
+  staged_target_trip_id uuid;
 begin
   if current_user_id is null or not public.is_active_member(current_user_id) then
     raise exception 'MEMBERSHIP_REQUIRED';
@@ -696,10 +721,17 @@ begin
     end if;
   end if;
 
-  staged_plan := case
-    when target_trip_id is null then staged_plan - 'tripId'
-    else jsonb_set(staged_plan, '{tripId}', to_jsonb(target_trip_id), true)
-  end;
+  if staged_plan ->> 'selectedProfile' = 'recommended' then
+    staged_target_trip_id := nullif(staged_plan ->> 'tripId', '')::uuid;
+    if staged_target_trip_id is distinct from target_trip_id then
+      raise exception 'UNSAFE_ROUTE_RESPONSE';
+    end if;
+  else
+    staged_plan := case
+      when target_trip_id is null then staged_plan - 'tripId'
+      else jsonb_set(staged_plan, '{tripId}', to_jsonb(target_trip_id), true)
+    end;
+  end if;
   result_trip_id := public.save_trip_plan(staged_plan, staged_routes);
   update public.route_plan_runs
   set status = 'consumed', saved_trip_id = result_trip_id, consumed_at = now()

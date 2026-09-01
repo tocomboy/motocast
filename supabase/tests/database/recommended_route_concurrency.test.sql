@@ -5,6 +5,7 @@ create extension if not exists dblink with schema extensions;
 drop trigger if exists delay_test_recommended_finalize on public.trips;
 drop function if exists public.delay_test_recommended_finalize();
 drop function if exists public.test_finalize_recommended_route(uuid);
+drop function if exists public.test_finalize_recommended_route(uuid, uuid);
 delete from auth.users where id = '75100000-0000-0000-0000-000000000001';
 
 insert into auth.users (
@@ -99,6 +100,8 @@ select
     'departureAt', '2026-08-31T00:00:00.000Z',
     'desiredReturnAt', '2026-08-31T08:00:00.000Z',
     'hardReturnAt', '2026-08-31T09:00:00.000Z',
+    'tripId', null,
+    'targetUpdatedAt', null,
     'origin', pg_temp.recommended_point('origin', '출발', 127, 37, 'pass-through', 0, false),
     'destination', pg_temp.recommended_point('destination', '복귀', 127.2, 37.2, 'pass-through', 0, false),
     'lunchStop', pg_temp.recommended_point('lunch', '점심', 127.1, 37.1, 'stop', 60, false, 'lunch'),
@@ -464,14 +467,16 @@ begin
 end;
 $$;
 
-create or replace function public.test_finalize_recommended_route(target_planning_id uuid)
+create or replace function public.test_finalize_recommended_route(
+  target_planning_id uuid, target_trip_id uuid default null
+)
 returns text language plpgsql set search_path = public, pg_temp as $$
 begin
-  return public.finalize_trip_plan(target_planning_id, null)::text;
+  return public.finalize_trip_plan(target_planning_id, target_trip_id)::text;
 exception when others then return sqlerrm;
 end;
 $$;
-grant execute on function public.test_finalize_recommended_route(uuid) to authenticated;
+grant execute on function public.test_finalize_recommended_route(uuid, uuid) to authenticated;
 
 select set_config('request.jwt.claim.sub', '75100000-0000-0000-0000-000000000001', false);
 create temp table tampered_finalize_result as
@@ -533,12 +538,78 @@ select result from dblink_get_result('recommended_c3') as response(result text);
 drop trigger delay_test_recommended_finalize on public.trips;
 drop function public.delay_test_recommended_finalize();
 
+create temp table recommended_target_fixture as
+select result::uuid as trip_id, trip.updated_at,
+  jsonb_set(
+    jsonb_set((select plan from recommended_fixture), '{tripId}', to_jsonb(result::uuid), true),
+    '{targetUpdatedAt}', to_jsonb(trip.updated_at), true
+  ) as plan,
+  (select route from recommended_fixture) as route
+from recommended_results join public.trips trip on trip.id = result::uuid
+where result ~ '^[0-9a-f-]{36}$';
+
+insert into public.trips(
+  id, user_id, title, service_date, departure_at, desired_return_at, hard_return_at,
+  origin, destination, lunch_stop, dinner_stop, selected_profile
+)
+select '76100000-0000-4000-8000-000000000099', user_id, '보존 대상 계획',
+  service_date, departure_at, desired_return_at, hard_return_at,
+  origin, destination, lunch_stop, dinner_stop, selected_profile
+from public.trips where id = (select trip_id from recommended_target_fixture);
+
+select public.stage_route_candidate_internal(
+  '75100000-0000-0000-0000-000000000001',
+  '76100000-0000-4000-8000-000000000045',
+  (select plan from recommended_target_fixture), (select route from recommended_target_fixture)
+);
+select public.stage_route_candidate_internal(
+  '75100000-0000-0000-0000-000000000001',
+  '76100000-0000-4000-8000-000000000046',
+  (select plan from recommended_target_fixture), (select route from recommended_target_fixture)
+);
+select public.stage_route_candidate_internal(
+  '75100000-0000-0000-0000-000000000001',
+  '76100000-0000-4000-8000-000000000047',
+  (select plan from recommended_target_fixture), (select route from recommended_target_fixture)
+);
+select public.stage_route_candidate_internal(
+  '75100000-0000-0000-0000-000000000001',
+  '76100000-0000-4000-8000-000000000048',
+  (select plan from recommended_fixture), (select route from recommended_fixture)
+);
+update public.route_plan_drafts
+set plan = jsonb_set(plan, '{title}', '"유효한 계획 변조"'::jsonb)
+where owner_id = '75100000-0000-0000-0000-000000000001'
+  and planning_id = '76100000-0000-4000-8000-000000000048';
+
+select set_config('request.jwt.claim.sub', '75100000-0000-0000-0000-000000000001', false);
+create temp table wrong_target_result as
+select public.test_finalize_recommended_route(
+  '76100000-0000-4000-8000-000000000045',
+  '76100000-0000-4000-8000-000000000099'
+) as result;
+create temp table first_target_update_result as
+select public.test_finalize_recommended_route(
+  '76100000-0000-4000-8000-000000000046',
+  (select trip_id from recommended_target_fixture)
+) as result;
+create temp table stale_target_update_result as
+select public.test_finalize_recommended_route(
+  '76100000-0000-4000-8000-000000000047',
+  (select trip_id from recommended_target_fixture)
+) as result;
+create temp table plan_hash_tampered_result as
+select public.test_finalize_recommended_route(
+  '76100000-0000-4000-8000-000000000048'
+) as result;
+select set_config('request.jwt.claim.sub', '', false);
+
 create temp table tap_results(ok boolean not null, description text not null);
 insert into tap_results values
   ((select count(*) = 1 from recommended_results where result ~ '^[0-9a-f-]{36}$'), 'concurrent recommended finalizers produce one saved trip'),
   ((select count(*) = 1 from recommended_results where result = 'ROUTE_PLAN_NOT_READY'), 'the losing recommended finalizer fails closed'),
   ((select count(*) = 1 from recommended_results where result = 'ROUTE_PLAN_ALREADY_CONSUMED'), 'a late stage retry cannot resurrect a consumed planning id'),
-  ((select count(*) = 1 from public.trips where user_id = '75100000-0000-0000-0000-000000000001'), 'recommended finalization never duplicates the trip'),
+  ((select count(*) = 1 from public.trips where id = (select trip_id from recommended_target_fixture)), 'recommended finalization never duplicates the planned trip'),
   ((select count(*) = 1 from public.route_cache r join public.trips t on t.id = r.trip_id where t.user_id = '75100000-0000-0000-0000-000000000001'), 'recommended finalization stores exactly one route'),
   ((select count(*) = 1 from public.route_cache r join public.trips t on t.id = r.trip_id where t.user_id = '75100000-0000-0000-0000-000000000001' and r.profile = 'recommended'), 'the stored route keeps the recommended identity'),
   ((select count(*) = 0 from public.route_plan_drafts where owner_id = '75100000-0000-0000-0000-000000000001' and planning_id = '76100000-0000-4000-8000-000000000001'), 'recommended finalization consumes its one draft'),
@@ -567,12 +638,26 @@ insert into tap_results values
   ((select result = 'UNSAFE_ROUTE_RESPONSE' from hash_tampered_finalize_result),
    'finalization rejects a structurally valid draft whose durable route hash changed'),
   ((select result = 'UNSAFE_ROUTE_RESPONSE' from cross_leg_tampered_finalize_result),
-   'finalization rejects an adjacent-leg road gap even when a privileged test aligns the durable hash');
+   'finalization rejects an adjacent-leg road gap even when a privileged test aligns the durable hash'),
+  ((select result = 'UNSAFE_ROUTE_RESPONSE' from wrong_target_result),
+   'finalization rejects a target trip that was not bound during trusted staging'),
+  ((select result = (select trip_id::text from recommended_target_fixture) from first_target_update_result),
+   'the first update succeeds only for the staged target identity and revision'),
+  ((select result = 'TRIP_VERSION_CONFLICT' from stale_target_update_result),
+   'a second planning id with a stale target revision cannot overwrite the first update'),
+  ((select title = '보존 대상 계획' from public.trips where id = '76100000-0000-4000-8000-000000000099'),
+   'wrong-target finalization leaves the other owned trip unchanged'),
+  ((select result = 'UNSAFE_ROUTE_RESPONSE' from plan_hash_tampered_result),
+   'finalization rejects a structurally valid draft whose durable plan hash changed'),
+  ((select status = 'staging' from public.route_plan_runs
+    where owner_id = '75100000-0000-0000-0000-000000000001'
+      and planning_id = '76100000-0000-4000-8000-000000000048'),
+   'a rejected plan-hash mutation does not consume its planning lifecycle');
 
 select dblink_disconnect('recommended_c1');
 select dblink_disconnect('recommended_c2');
 select dblink_disconnect('recommended_c3');
-drop function public.test_finalize_recommended_route(uuid);
+drop function public.test_finalize_recommended_route(uuid, uuid);
 drop function public.test_stage_recommended_route(uuid, jsonb, jsonb);
 delete from auth.users where id = '75100000-0000-0000-0000-000000000001';
 

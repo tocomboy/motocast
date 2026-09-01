@@ -38,10 +38,19 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405, cors);
 
   try {
-    const { user } = await requireMember(request);
+    const { supabase, user } = await requireMember(request);
     const verificationSecret = Deno.env.get("PLACE_VERIFICATION_SECRET");
     if (!verificationSecret) throw new Error("PLACE_VERIFICATION_NOT_CONFIGURED");
     const input = await parseRouteRequest(await request.json(), verificationSecret);
+    const targetRevision = input.tripId ? await (async () => {
+      const { data, error } = await supabase
+        .from("trips")
+        .select("updated_at")
+        .eq("id", input.tripId)
+        .maybeSingle();
+      if (error || !data || typeof data.updated_at !== "string") throw new Error("INVALID_TRIP_TARGET");
+      return data.updated_at;
+    })() : null;
     const apiKey = Deno.env.get("KAKAO_REST_API_KEY");
     if (!apiKey) throw new Error("PROVIDER_NOT_CONFIGURED");
 
@@ -70,6 +79,8 @@ Deno.serve(async (request) => {
       // undisplayed fields. Route eligibility is governed by the computed returnAt.
       desiredReturnAt: legacyBoundary,
       hardReturnAt: legacyBoundary,
+      tripId: input.tripId,
+      targetUpdatedAt: targetRevision,
       origin: storagePoint(input.origin),
       destination: storagePoint(input.destination),
       lunchStop: storagePoint(lunchStop),

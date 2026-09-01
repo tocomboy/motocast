@@ -579,7 +579,8 @@ end;
 $$;
 
 create temp table recommended_plan_fixture on commit drop as
-select jsonb_set((select plan from plan_fixture), '{selectedProfile}', '"recommended"'::jsonb, false) as plan;
+select jsonb_set((select plan from plan_fixture), '{selectedProfile}', '"recommended"'::jsonb, false)
+  || jsonb_build_object('tripId', null, 'targetUpdatedAt', null) as plan;
 grant select on recommended_plan_fixture to authenticated, service_role;
 set local role service_role;
 select public.stage_route_candidate_internal(

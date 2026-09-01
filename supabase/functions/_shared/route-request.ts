@@ -16,6 +16,7 @@ export type RoutePointRequest = VerifiablePlace & {
 
 export type RouteRequest = {
   planningId: string;
+  tripId: string | null;
   origin: RoutePointRequest;
   destination: RoutePointRequest;
   waypoints: RoutePointRequest[];
@@ -88,6 +89,9 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
   if (typeof body.planningId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.planningId)) {
     throw new Error("INVALID_PLANNING_ID");
   }
+  if (body.tripId !== undefined && body.tripId !== null && (
+    typeof body.tripId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.tripId)
+  )) throw new Error("INVALID_TRIP_ID");
 
   const selectedWaypoints = body.waypoints.filter((point) => point.selected);
   if (selectedWaypoints.some((point) => (
@@ -113,6 +117,7 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
 
   return {
     planningId: body.planningId,
+    tripId: body.tripId ?? null,
     origin: canonicalPoint(body.origin, true),
     destination: canonicalPoint(body.destination, true),
     waypoints: selectedWaypoints.map((point) => canonicalPoint(point)),
