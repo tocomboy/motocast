@@ -14,9 +14,7 @@ export type CandidatePolicy = {
 
 export function candidatePolicy(input: RouteRequest): CandidatePolicy {
   const hasCustomWinding = input.waypoints.some(isWindingOnlyWaypoint);
-  const waypoints = input.candidate === "winding"
-    ? input.waypoints
-    : input.waypoints.filter((point) => !isWindingOnlyWaypoint(point));
+  const waypoints = input.waypoints;
 
   if (input.candidate === "short") {
     return {

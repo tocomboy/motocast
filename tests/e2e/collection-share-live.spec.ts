@@ -26,14 +26,27 @@ let pendingCleanup: LiveCleanupState | null = null;
 // a failure cannot persist a published token in a trace, screenshot, or video.
 test.use({ screenshot: "off", trace: "off", video: "off" });
 
-async function selectFirstPlace(page: Page, label: string, query: string) {
+async function selectFirstPlace(
+  page: Page,
+  label: string,
+  query: string,
+  selectedListName?: string,
+) {
   const input = page.getByLabel(new RegExp(`^${label}(?: · 필수)?$`));
   await input.fill(query);
   await input.press("Enter");
   const results = page.getByRole("list", { name: `${label} 검색 결과` });
   await expect(results).toBeVisible({ timeout: 20_000 });
-  await results.getByRole("button").first().click();
-  await expect(input).toHaveAttribute("aria-invalid", "false");
+  const firstResult = results.getByRole("button").first();
+  const selectedName = (await firstResult.locator("strong").innerText()).trim();
+  await firstResult.click();
+  if (selectedListName) {
+    await expect(
+      page.getByRole("list", { name: selectedListName }).getByText(selectedName, { exact: true }),
+    ).toBeVisible();
+  } else {
+    await expect(input).toHaveAttribute("aria-invalid", "false");
+  }
 }
 
 async function startCollectionDeletion(page: Page, collectionId: string) {
@@ -141,7 +154,7 @@ test.afterEach(async ({ context }, testInfo) => {
 
 test("calculates, stores, publishes, revokes, and cleans up test-owned resources", async ({ page }) => {
   test.setTimeout(240_000);
-  test.skip(!liveMutationsEnabled || !hasLiveQueries, "Requires explicit live mutation opt-in and five private place queries");
+  test.skip(!liveMutationsEnabled || !hasLiveQueries, "Requires explicit live mutation opt-in and five place queries");
   const title = `MOTOCAST E2E ${Date.now()}`;
   const cleanup: LiveCleanupState = {
     collectionMutationStarted: false,
@@ -164,7 +177,12 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await page.getByRole("checkbox", { name: /휴식 일정에 포함/ }).check();
     await selectFirstPlace(page, "휴식 장소", liveQueries.rest!);
     await page.getByRole("button", { name: /커스텀 와인딩 경유지 추가/ }).click();
-    await selectFirstPlace(page, "와인딩 경유지", liveQueries.winding!);
+    await selectFirstPlace(
+      page,
+      "와인딩 경유지",
+      liveQueries.winding!,
+      "커스텀 와인딩 경유지 순서",
+    );
 
     const finalizedTrip = page.waitForResponse((response) => (
       response.url().includes("/rest/v1/rpc/finalize_trip_plan") && response.request().method() === "POST"
@@ -187,6 +205,15 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/휴식/);
     await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/와인딩/);
     await expect(page.getByRole("status").filter({ hasText: /균형 경로 날씨:/ })).toBeVisible({ timeout: 60_000 });
+    for (const [index, label] of ["커스텀 와인딩", "최단"].entries()) {
+      const card = page.locator(".candidate-card").nth(index + 1);
+      await card.click();
+      await expect(card).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/와인딩/);
+      await expect(
+        page.getByRole("status").filter({ hasText: new RegExp(`${label} 경로 날씨:`) }),
+      ).toBeVisible({ timeout: 60_000 });
+    }
 
     await page.getByLabel("새 컬렉션 이름").fill(title);
     const savedCollection = page.waitForResponse((response) => (

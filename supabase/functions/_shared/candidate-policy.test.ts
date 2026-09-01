@@ -39,10 +39,17 @@ describe("candidatePolicy", () => {
     expect(candidatePolicy(request("short")).priority).toBe("DISTANCE");
   });
 
-  it("keeps custom winding points mandatory only for the winding candidate", () => {
-    const winding = point("winding", true);
-    expect(candidatePolicy(request("winding", [winding])).points).toContain(winding);
-    expect(candidatePolicy(request("balanced", [winding])).points).not.toContain(winding);
+  it("keeps custom winding points mandatory for every candidate", () => {
+    const waypoints = [point("winding-1", true), point("plain"), point("winding-2", true)];
+    for (const candidate of ["balanced", "winding", "short"] as const) {
+      expect(candidatePolicy(request(candidate, waypoints)).points.map((item) => item.id)).toEqual([
+        "origin",
+        "winding-1",
+        "plain",
+        "winding-2",
+        "destination",
+      ]);
+    }
   });
 
   it("never drops a required stop even if an untrusted caller overlaps the winding flag", () => {
