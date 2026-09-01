@@ -67,5 +67,18 @@ describe("weather forecast boundaries", () => {
       { date: "20260831", time: "1200" },
       "short",
     )).toThrow("KMA_INVALID_RESPONSE");
+
+    const ultraItems = items.map((item) => item.category === "TMP"
+      ? { ...item, category: "T1H" }
+      : item);
+    expect(validatedForecastValues(ultraItems, { date: "20260831", time: "1200" }, "ultra")).toMatchObject({
+      T1H: "22",
+      POP: "30",
+    });
+    expect(() => validatedForecastValues(
+      ultraItems.filter((item) => item.category !== "POP"),
+      { date: "20260831", time: "1200" },
+      "ultra",
+    )).toThrow("KMA_INVALID_RESPONSE");
   });
 });

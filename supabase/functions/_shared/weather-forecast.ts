@@ -145,7 +145,7 @@ export function validatedForecastValues(
 ) {
   const values = closestForecast(items, target);
   const required = model === "ultra"
-    ? ["T1H", "WSD", "SKY", "PTY"]
+    ? ["T1H", "POP", "WSD", "SKY", "PTY"]
     : ["TMP", "POP", "WSD", "SKY", "PTY"];
   if (!required.every((category) => Object.hasOwn(values, category))) {
     throw new Error("KMA_INVALID_RESPONSE");
