@@ -18,6 +18,35 @@ async function expectMapChromeNotToOverlap(page: import("@playwright/test").Page
   expect(overlap).toBe(false);
 }
 
+async function expectRouteSummaryVisibleInsideMap(page: import("@playwright/test").Page) {
+  const map = page.locator(".map-area");
+  const summary = page.locator(".ride-summary");
+  const metrics = page.locator(".summary-metrics");
+  await expect(map).toBeVisible();
+  await expect(summary).toBeVisible();
+  await expect(metrics).toBeVisible();
+  await expect(metrics.locator("span").filter({ hasText: /주행$/ })).toBeVisible();
+  await expect(metrics.locator("span").filter({ hasText: /정차$/ })).toBeVisible();
+  await expect(metrics.locator("span").filter({ hasText: /예상 복귀$/ })).toBeVisible();
+  const layout = await page.evaluate(() => {
+    const mapBox = document.querySelector(".map-area")!.getBoundingClientRect();
+    const summaryBox = document.querySelector(".ride-summary")!.getBoundingClientRect();
+    const topbarBox = document.querySelector(".map-topbar")!.getBoundingClientRect();
+    const overlaps = (left: DOMRect, right: DOMRect) => (
+      left.left < right.right && left.right > right.left && left.top < right.bottom && left.bottom > right.top
+    );
+    return {
+      insideMap: summaryBox.left >= mapBox.left && summaryBox.right <= mapBox.right &&
+        summaryBox.top >= mapBox.top && summaryBox.bottom <= mapBox.bottom,
+      overlapsTopbar: overlaps(summaryBox, topbarBox),
+      summaryHasNoInternalOverflow: summaryBox.width >= document.querySelector(".ride-summary")!.scrollWidth &&
+        summaryBox.height >= document.querySelector(".ride-summary")!.scrollHeight,
+    };
+  });
+  expect(layout).toEqual({ insideMap: true, overlapsTopbar: false, summaryHasNoInternalOverflow: true });
+  await expect(page.locator(".candidate-card, .candidate-strip, .candidate-tab")).toHaveCount(0);
+}
+
 test.describe("planner responsive shell", () => {
   test("desktop keeps the plan and single recommended route visible", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -26,7 +55,7 @@ test.describe("planner responsive shell", () => {
     await expect(page.getByRole("heading", { name: "라이딩 계획" })).toBeVisible();
     await expect(page.getByText("복귀는 자동 계산", { exact: true })).toBeVisible();
     await expect(page.locator(".ride-summary h2")).toHaveText("추천 경로");
-    await expect(page.locator(".candidate-card")).toHaveCount(0);
+    await expectRouteSummaryVisibleInsideMap(page);
     await expect(page.getByRole("button", { name: "계획 수정" })).toBeHidden();
     await expect(page.locator("body")).not.toContainText("희망 복귀");
     await expect(page.locator("body")).not.toContainText("최종 복귀");
@@ -66,11 +95,8 @@ test.describe("planner responsive shell", () => {
     await expect(dialog).toBeHidden();
     await expect(openButton).toBeFocused();
     await expect(page.locator(".ride-summary h2")).toHaveText("추천 경로");
-    await expect(page.locator(".summary-metrics")).toContainText("주행");
-    await expect(page.locator(".summary-metrics")).toContainText("정차");
-    await expect(page.locator(".summary-metrics")).toContainText("예상 복귀");
+    await expectRouteSummaryVisibleInsideMap(page);
     await expect(page.getByRole("heading", { name: "시간에 따른 구간 날씨" })).toBeVisible();
-    await expect(page.locator(".candidate-card")).toHaveCount(0);
 
     const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(hasHorizontalOverflow).toBe(false);

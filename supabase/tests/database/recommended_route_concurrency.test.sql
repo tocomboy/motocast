@@ -111,6 +111,10 @@ create temp table recommended_validation_results(
   omitted_rejected boolean,
   reordered_rejected boolean,
   dwell_rejected boolean,
+  missing_point_id_rejected boolean,
+  missing_dwell_rejected boolean,
+  missing_total_rejected boolean,
+  expired_route_change_rejected boolean,
   twenty_four_hour_rejected boolean,
   reused_rejected boolean,
   exact_retry_accepted boolean
@@ -120,6 +124,10 @@ declare
   omitted_rejected boolean := false;
   reordered_rejected boolean := false;
   dwell_rejected boolean := false;
+  missing_point_id_rejected boolean := false;
+  missing_dwell_rejected boolean := false;
+  missing_total_rejected boolean := false;
+  expired_route_change_rejected boolean := false;
   twenty_four_hour_rejected boolean := false;
   reused_rejected boolean := false;
   exact_retry_accepted boolean := false;
@@ -150,6 +158,48 @@ begin
       jsonb_set(fixture_route, '{legs,1,dwellMinutes}', '0'::jsonb)
     );
   exception when sqlstate 'P0001' then dwell_rejected := sqlerrm = 'INVALID_STAGED_ROUTE'; end;
+  begin
+    perform public.stage_route_candidate_internal(
+      '75100000-0000-0000-0000-000000000001',
+      '76100000-0000-4000-8000-000000000014', fixture_plan,
+      fixture_route #- '{legs,1,to,id}'
+    );
+  exception when sqlstate 'P0001' then missing_point_id_rejected := sqlerrm = 'INVALID_STAGED_ROUTE'; end;
+  begin
+    perform public.stage_route_candidate_internal(
+      '75100000-0000-0000-0000-000000000001',
+      '76100000-0000-4000-8000-000000000015', fixture_plan,
+      fixture_route #- '{legs,1,dwellMinutes}'
+    );
+  exception when sqlstate 'P0001' then missing_dwell_rejected := sqlerrm = 'INVALID_STAGED_ROUTE'; end;
+  begin
+    perform public.stage_route_candidate_internal(
+      '75100000-0000-0000-0000-000000000001',
+      '76100000-0000-4000-8000-000000000016', fixture_plan,
+      fixture_route - 'totalDurationSeconds'
+    );
+  exception when sqlstate 'P0001' then missing_total_rejected := sqlerrm = 'INVALID_STAGED_ROUTE'; end;
+  perform public.stage_route_candidate_internal(
+    '75100000-0000-0000-0000-000000000001',
+    '76100000-0000-4000-8000-000000000017', fixture_plan, fixture_route
+  );
+  update public.route_plan_drafts
+  set created_at = now() - interval '2 hours'
+  where owner_id = '75100000-0000-0000-0000-000000000001'
+    and planning_id = '76100000-0000-4000-8000-000000000017';
+  perform public.stage_route_candidate_internal(
+    '75100000-0000-0000-0000-000000000001',
+    '76100000-0000-4000-8000-000000000018', fixture_plan, fixture_route
+  );
+  begin
+    perform public.stage_route_candidate_internal(
+      '75100000-0000-0000-0000-000000000001',
+      '76100000-0000-4000-8000-000000000017', fixture_plan,
+      jsonb_set(fixture_route, '{legs,0,sections,0,roads,0,vertexes,2}', '127.03'::jsonb)
+    );
+  exception when sqlstate 'P0001' then
+    expired_route_change_rejected := sqlerrm = 'PLANNING_ID_REUSED';
+  end;
   twenty_four_hour_route := jsonb_set(fixture_route, '{legs,2,durationSeconds}', '81600'::jsonb);
   twenty_four_hour_route := jsonb_set(twenty_four_hour_route, '{legs,2,arrivalAt}', '"2026-09-01T00:00:00.000Z"'::jsonb);
   twenty_four_hour_route := jsonb_set(twenty_four_hour_route, '{legs,2,sections,0,duration}', '81600'::jsonb);
@@ -178,7 +228,10 @@ begin
     exact_retry_accepted := true;
   exception when others then exact_retry_accepted := false; end;
   insert into recommended_validation_results values (
-    omitted_rejected, reordered_rejected, dwell_rejected, twenty_four_hour_rejected,
+    omitted_rejected, reordered_rejected, dwell_rejected,
+    missing_point_id_rejected, missing_dwell_rejected, missing_total_rejected,
+    expired_route_change_rejected,
+    twenty_four_hour_rejected,
     reused_rejected, exact_retry_accepted
   );
 end;
@@ -252,11 +305,15 @@ insert into tap_results values
   ((select count(*) = 1 from public.trips where user_id = '75100000-0000-0000-0000-000000000001'), 'recommended finalization never duplicates the trip'),
   ((select count(*) = 1 from public.route_cache r join public.trips t on t.id = r.trip_id where t.user_id = '75100000-0000-0000-0000-000000000001'), 'recommended finalization stores exactly one route'),
   ((select count(*) = 1 from public.route_cache r join public.trips t on t.id = r.trip_id where t.user_id = '75100000-0000-0000-0000-000000000001' and r.profile = 'recommended'), 'the stored route keeps the recommended identity'),
-  ((select count(*) = 0 from public.route_plan_drafts where owner_id = '75100000-0000-0000-0000-000000000001'), 'recommended finalization consumes its one draft'),
+  ((select count(*) = 0 from public.route_plan_drafts where owner_id = '75100000-0000-0000-0000-000000000001' and planning_id = '76100000-0000-4000-8000-000000000001'), 'recommended finalization consumes its one draft'),
   ((select status = 'consumed' and saved_trip_id is not null from public.route_plan_runs where owner_id = '75100000-0000-0000-0000-000000000001' and planning_id = '76100000-0000-4000-8000-000000000001'), 'planning lifecycle keeps a consumed tombstone'),
   ((select omitted_rejected from recommended_validation_results), 'staging rejects a route that omits a mandatory point'),
   ((select reordered_rejected from recommended_validation_results), 'staging rejects reordered mandatory points'),
   ((select dwell_rejected from recommended_validation_results), 'staging rejects changed dwell time'),
+  ((select missing_point_id_rejected from recommended_validation_results), 'staging rejects a missing mandatory point id'),
+  ((select missing_dwell_rejected from recommended_validation_results), 'staging rejects a missing dwell time'),
+  ((select missing_total_rejected from recommended_validation_results), 'staging rejects a missing route total'),
+  ((select expired_route_change_rejected from recommended_validation_results), 'an expired draft cannot change its durable route payload'),
   ((select twenty_four_hour_rejected from recommended_validation_results), 'staging rejects a route lasting exactly 24 hours'),
   ((select reused_rejected from recommended_validation_results), 'a planning id rejects a different payload'),
   ((select exact_retry_accepted from recommended_validation_results), 'an exact pre-finalize retry is idempotent');

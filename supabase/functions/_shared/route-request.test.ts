@@ -99,7 +99,7 @@ describe("parseRouteRequest", () => {
     await expect(parseRouteRequest(withLegacyFields, secret)).resolves.not.toHaveProperty("hardReturnAt");
     for (const override of [
       { candidate: "short" }, { priority: "DISTANCE" }, { alternatives: true },
-      { car_type: 1 }, { avoid: "none" }, { roadevent: 1 },
+      { car_type: 1 }, { avoid: "none" }, { roadevent: 1 }, { summary: true },
     ]) {
       await expect(parseRouteRequest({ ...await request(), ...override }, secret))
         .rejects.toThrow("CLIENT_ROUTE_POLICY_FORBIDDEN");

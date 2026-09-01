@@ -24,6 +24,7 @@ create table if not exists public.route_plan_runs (
   owner_id uuid not null references auth.users(id) on delete cascade,
   planning_id uuid not null,
   plan_hash text not null check (char_length(plan_hash) = 64),
+  route_hash text,
   status text not null default 'staging' check (status in ('staging', 'consumed')),
   -- Keep the consumed target id as an audit tombstone even if the rider later
   -- deletes the trip aggregate. It is intentionally not a foreign key.
@@ -37,14 +38,24 @@ create table if not exists public.route_plan_runs (
   )
 );
 
+alter table public.route_plan_runs add column if not exists route_hash text;
+alter table public.route_plan_runs drop constraint if exists route_plan_runs_route_hash_check;
+alter table public.route_plan_runs add constraint route_plan_runs_route_hash_check
+  check (route_hash is null or char_length(route_hash) = 64);
+
 alter table public.route_plan_runs enable row level security;
 revoke all on public.route_plan_runs from public, anon, authenticated, service_role;
 
 -- Preserve any in-flight legacy drafts if this migration is applied while a
 -- Preview request is between provider staging and browser finalization.
-insert into public.route_plan_runs(owner_id, planning_id, plan_hash, created_at)
+insert into public.route_plan_runs(owner_id, planning_id, plan_hash, route_hash, created_at)
 select owner_id, planning_id,
-  encode(extensions.digest(min(plan::text), 'sha256'), 'hex'), min(created_at)
+  encode(extensions.digest(min(plan::text), 'sha256'), 'hex'),
+  case when count(*) = 1 and min(candidate_profile) = 'recommended'
+    then encode(extensions.digest(min(route::text), 'sha256'), 'hex')
+    else null
+  end,
+  min(created_at)
 from public.route_plan_drafts
 group by owner_id, planning_id
 on conflict (owner_id, planning_id) do nothing;
@@ -73,16 +84,20 @@ declare
   total_distance bigint := 0;
   total_duration bigint := 0;
 begin
-  if jsonb_typeof(plan) <> 'object' or jsonb_typeof(route) <> 'object'
-     or plan ->> 'selectedProfile' <> 'recommended'
-     or route -> 'candidate' ->> 'id' <> 'recommended'
-     or route -> 'safety' ->> 'vehicle' <> 'motorcycle'
-     or route -> 'safety' ->> 'motorwayExcluded' <> 'true'
-     or route -> 'safety' ->> 'fallbackUsed' <> 'false'
-     or jsonb_typeof(route -> 'legs') <> 'array'
+  if jsonb_typeof(plan) is distinct from 'object'
+     or jsonb_typeof(route) is distinct from 'object'
+     or jsonb_typeof(plan -> 'origin') is distinct from 'object'
+     or jsonb_typeof(plan -> 'destination') is distinct from 'object'
+     or jsonb_typeof(plan -> 'waypoints') is distinct from 'array'
+     or plan ->> 'selectedProfile' is distinct from 'recommended'
+     or route -> 'candidate' ->> 'id' is distinct from 'recommended'
+     or route -> 'safety' ->> 'vehicle' is distinct from 'motorcycle'
+     or route -> 'safety' ->> 'motorwayExcluded' is distinct from 'true'
+     or route -> 'safety' ->> 'fallbackUsed' is distinct from 'false'
+     or jsonb_typeof(route -> 'legs') is distinct from 'array'
      or exists (
        select 1 from jsonb_array_elements(plan -> 'waypoints') point
-       where point ->> 'selected' <> 'true'
+       where point ->> 'selected' is distinct from 'true'
      ) then
     return false;
   end if;
@@ -109,24 +124,25 @@ begin
     distance_meters := (leg_item ->> 'distanceMeters')::integer;
     arrival_time := (leg_item ->> 'arrivalAt')::timestamptz;
 
-    if leg_item -> 'from' ->> 'id' <> expected_from ->> 'id'
+    if leg_item -> 'from' ->> 'id' is distinct from expected_from ->> 'id'
        or leg_item -> 'from' -> 'longitude' is distinct from expected_from -> 'longitude'
        or leg_item -> 'from' -> 'latitude' is distinct from expected_from -> 'latitude'
-       or leg_item -> 'to' ->> 'id' <> expected_to ->> 'id'
+       or leg_item -> 'to' ->> 'id' is distinct from expected_to ->> 'id'
        or leg_item -> 'to' -> 'longitude' is distinct from expected_to -> 'longitude'
        or leg_item -> 'to' -> 'latitude' is distinct from expected_to -> 'latitude'
-       or dwell_minutes <> (expected_to ->> 'dwellMinutes')::integer
-       or duration_seconds <= 0 or distance_meters <= 0
-       or (leg_item ->> 'departureAt')::timestamptz <> cursor_time
-       or arrival_time <> cursor_time + make_interval(secs => duration_seconds)
-       or jsonb_typeof(leg_item -> 'via') <> 'array'
-       or jsonb_array_length(leg_item -> 'via') <> 0
-       or jsonb_typeof(leg_item -> 'sections') <> 'array'
-       or jsonb_array_length(leg_item -> 'sections') < 1
+       or dwell_minutes is distinct from (expected_to ->> 'dwellMinutes')::integer
+       or duration_seconds is null or duration_seconds <= 0
+       or distance_meters is null or distance_meters <= 0
+       or (leg_item ->> 'departureAt')::timestamptz is distinct from cursor_time
+       or arrival_time is distinct from cursor_time + make_interval(secs => duration_seconds)
+       or jsonb_typeof(leg_item -> 'via') is distinct from 'array'
+       or jsonb_array_length(leg_item -> 'via') is distinct from 0
+       or jsonb_typeof(leg_item -> 'sections') is distinct from 'array'
+       or coalesce(jsonb_array_length(leg_item -> 'sections'), 0) < 1
        or exists (
          select 1 from jsonb_array_elements(leg_item -> 'sections') section
-         where jsonb_typeof(section -> 'roads') <> 'array'
-            or jsonb_array_length(section -> 'roads') < 1
+         where jsonb_typeof(section -> 'roads') is distinct from 'array'
+            or coalesce(jsonb_array_length(section -> 'roads'), 0) < 1
        )
        or coalesce((select sum((section ->> 'distance')::integer)
          from jsonb_array_elements(leg_item -> 'sections') section), -1) <> distance_meters
@@ -136,8 +152,8 @@ begin
          select 1
          from jsonb_array_elements(leg_item -> 'sections') section,
               jsonb_array_elements(section -> 'roads') road
-         where jsonb_typeof(road -> 'vertexes') <> 'array'
-            or jsonb_array_length(road -> 'vertexes') < 4
+         where jsonb_typeof(road -> 'vertexes') is distinct from 'array'
+            or coalesce(jsonb_array_length(road -> 'vertexes'), 0) < 4
             or jsonb_array_length(road -> 'vertexes') % 2 <> 0
        ) then
       return false;
@@ -149,10 +165,10 @@ begin
   end loop;
 
   return_time := (route ->> 'returnAt')::timestamptz;
-  return total_distance = (route ->> 'totalDistanceMeters')::bigint
+  return coalesce(total_distance = (route ->> 'totalDistanceMeters')::bigint
     and total_duration = (route ->> 'totalDurationSeconds')::bigint
     and return_time = cursor_time
-    and return_time - departure_time < interval '24 hours';
+    and return_time - departure_time < interval '24 hours', false);
 exception when others then
   return false;
 end;
@@ -262,7 +278,7 @@ begin
     plan ->> 'selectedProfile' = 'recommended'
     and route_count = 1 and distinct_profiles = 1 and valid_route_count = 1
     and routes -> 0 -> 'candidate' ->> 'id' = 'recommended'
-    and public.recommended_route_matches_plan(plan, routes -> 0)
+    and public.recommended_route_matches_plan(plan, routes -> 0) is true
   ) and not (
     plan ->> 'selectedProfile' in ('balanced', 'winding', 'short')
     and route_count = 3 and distinct_profiles = 3 and valid_route_count = 3
@@ -347,8 +363,10 @@ declare
   profile text := staged_route -> 'candidate' ->> 'id';
   fingerprint text;
   plan_hash text;
+  route_hash text;
   run_status text;
   stored_plan_hash text;
+  stored_route_hash text;
   existing_plan jsonb;
   existing_route jsonb;
 begin
@@ -369,24 +387,31 @@ begin
      or jsonb_array_length(staged_route -> 'legs') < 1 then
     raise exception 'INVALID_STAGED_ROUTE';
   end if;
-  if profile = 'recommended' and not public.recommended_route_matches_plan(staged_plan, staged_route) then
+  if profile = 'recommended' and public.recommended_route_matches_plan(staged_plan, staged_route) is not true then
     raise exception 'INVALID_STAGED_ROUTE';
   end if;
   fingerprint := public.route_geometry_fingerprint(staged_route);
   if fingerprint is null or char_length(fingerprint) <> 64 then raise exception 'INVALID_STAGED_ROUTE'; end if;
 
   plan_hash := encode(extensions.digest(staged_plan::text, 'sha256'), 'hex');
-  insert into public.route_plan_runs(owner_id, planning_id, plan_hash)
-  values (member_id, target_planning_id, plan_hash)
+  route_hash := encode(extensions.digest(staged_route::text, 'sha256'), 'hex');
+  insert into public.route_plan_runs(owner_id, planning_id, plan_hash, route_hash)
+  values (
+    member_id, target_planning_id, plan_hash,
+    case when profile = 'recommended' then route_hash else null end
+  )
   on conflict (owner_id, planning_id) do nothing;
 
-  select status, route_plan_runs.plan_hash
-  into run_status, stored_plan_hash
+  select status, route_plan_runs.plan_hash, route_plan_runs.route_hash
+  into run_status, stored_plan_hash, stored_route_hash
   from public.route_plan_runs
   where owner_id = member_id and planning_id = target_planning_id
   for update;
-  if run_status <> 'staging' then raise exception 'ROUTE_PLAN_ALREADY_CONSUMED'; end if;
-  if stored_plan_hash <> plan_hash then raise exception 'PLANNING_ID_REUSED'; end if;
+  if run_status is distinct from 'staging' then raise exception 'ROUTE_PLAN_ALREADY_CONSUMED'; end if;
+  if stored_plan_hash is distinct from plan_hash
+     or (profile = 'recommended' and stored_route_hash is distinct from route_hash) then
+    raise exception 'PLANNING_ID_REUSED';
+  end if;
 
   select plan, route into existing_plan, existing_route
   from public.route_plan_drafts
@@ -435,8 +460,14 @@ begin
   -- have a lifecycle row. Browser and service roles cannot insert drafts
   -- directly, so this compatibility backfill does not create a public replay
   -- path and never replaces an existing consumed tombstone.
-  insert into public.route_plan_runs(owner_id, planning_id, plan_hash, created_at)
-  select owner_id, planning_id, encode(extensions.digest(min(plan::text), 'sha256'), 'hex'), min(created_at)
+  insert into public.route_plan_runs(owner_id, planning_id, plan_hash, route_hash, created_at)
+  select owner_id, planning_id,
+    encode(extensions.digest(min(plan::text), 'sha256'), 'hex'),
+    case when count(*) = 1 and min(candidate_profile) = 'recommended'
+      then encode(extensions.digest(min(route::text), 'sha256'), 'hex')
+      else null
+    end,
+    min(created_at)
   from public.route_plan_drafts
   where owner_id = current_user_id and planning_id = target_planning_id
   group by owner_id, planning_id

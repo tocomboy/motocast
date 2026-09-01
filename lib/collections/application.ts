@@ -68,6 +68,6 @@ export function moveCollectionWinding<T extends CollectionPoint>(points: T[], in
   return reordered;
 }
 
-export function removeCollectionWinding<T extends CollectionPoint>(points: T[], kakaoPlaceId: string): T[] {
-  return points.filter((point) => !point.winding || point.kakaoPlaceId !== kakaoPlaceId);
+export function removeCollectionWinding<T extends CollectionPoint & { uiKey: string }>(points: T[], uiKey: string): T[] {
+  return points.filter((point) => !point.winding || point.uiKey !== uiKey);
 }

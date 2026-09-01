@@ -416,9 +416,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     focusAfterWindingEdit();
   }
 
-  function removeAppliedWindingPoint(point: CollectionPoint) {
+  function removeAppliedWindingPoint(point: AppliedCollectionPoint) {
     setAppliedCollectionPoints((current) => current
-      ? removeCollectionWinding(current, point.kakaoPlaceId)
+      ? removeCollectionWinding(current, point.uiKey)
       : null);
     setWindingPoints((current) => current.filter((item) => item.kakaoPlaceId !== point.kakaoPlaceId));
     setWaypointStatus(`${point.name}을(를) 적용된 경로에서 제거했습니다.`);

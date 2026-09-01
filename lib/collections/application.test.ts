@@ -109,12 +109,23 @@ describe("prepareCollectionApplication", () => {
 
   it("removes only the selected applied winding point", () => {
     const points = [
-      point("plain"),
-      point("winding-a", { winding: true }),
-      point("winding-b", { winding: true }),
+      { ...point("plain"), uiKey: "plain-1" },
+      { ...point("winding-a", { winding: true }), uiKey: "winding-a-1" },
+      { ...point("winding-b", { winding: true }), uiKey: "winding-b-1" },
     ];
-    expect(removeCollectionWinding(points, "winding-a").map((item) => item.id)).toEqual([
+    expect(removeCollectionWinding(points, "winding-a-1").map((item) => item.id)).toEqual([
       "plain", "winding-b",
+    ]);
+  });
+
+  it("removes one occurrence when a collection repeats the same winding place", () => {
+    const points = [
+      { ...point("first", { kakaoPlaceId: "same", winding: true }), uiKey: "same-1" },
+      { ...point("lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" }), uiKey: "lunch-1" },
+      { ...point("second", { kakaoPlaceId: "same", winding: true }), uiKey: "same-2" },
+    ];
+    expect(removeCollectionWinding(points, "same-1").map((item) => item.uiKey)).toEqual([
+      "lunch-1", "same-2",
     ]);
   });
 

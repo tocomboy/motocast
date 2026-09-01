@@ -80,7 +80,7 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
     seoulCalendarDate(departure) !== body.serviceDate
   ) throw new Error("INVALID_ROUTE_TIME");
   const policyFields = value as Record<string, unknown>;
-  if (["candidate", "priority", "alternatives", "car_type", "avoid", "roadevent"].some((key) => key in policyFields)) {
+  if (["candidate", "priority", "alternatives", "car_type", "avoid", "roadevent", "summary"].some((key) => key in policyFields)) {
     throw new Error("CLIENT_ROUTE_POLICY_FORBIDDEN");
   }
   if (typeof body.planningId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.planningId)) {

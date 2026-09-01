@@ -14,6 +14,13 @@ describe("safe provider errors", () => {
     expect(safeErrorStatus(new Error("API_DAILY_BUDGET_EXHAUSTED"))).toBe(429);
   });
 
+  it("reports an obsolete client route policy as input failure instead of provider outage", () => {
+    const error = new Error("CLIENT_ROUTE_POLICY_FORBIDDEN");
+    expect(safeErrorStatus(error)).toBe(400);
+    expect(safeErrorMessage(error)).toContain("경로 설정");
+    expect(safeErrorMessage(error)).not.toContain("공급자");
+  });
+
   it("uses an unprocessable response for the 24-hour service limit", () => {
     const error = new Error("ROUTE_EXCEEDS_24_HOURS");
     expect(safeErrorMessage(error)).toContain("24시간");
