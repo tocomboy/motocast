@@ -75,7 +75,9 @@ describe("orchestrateRecommendedRoute", () => {
   it("preserves ordered stops, dwell and ETA while charging once per split provider call", async () => {
     const departureAt = "2026-09-01T00:04:00.000Z";
     const deps = dependencies(Date.parse("2026-09-01T00:00:00.000Z"));
-    const points = [point(0), point(1), point(2, 30), point(3), point(4), point(5, 15), point(6), point(7), point(8)];
+    const lunch = { ...point(2, 30), stopRole: "lunch" as const };
+    const rest = { ...point(5, 15), kind: "optional" as const, stopRole: "rest" as const };
+    const points = [point(0), point(1), lunch, point(3), point(4), rest, point(6), point(7), point(8)];
 
     const result = await orchestrateRecommendedRoute(points, departureAt, deps.value);
 
@@ -94,6 +96,9 @@ describe("orchestrateRecommendedRoute", () => {
     ]);
     expect(result.legs.map((leg) => leg.to.id)).toEqual(points.slice(1).map((item) => item.id));
     expect(result.legs.map((leg) => leg.dwellMinutes)).toEqual([0, 30, 0, 0, 15, 0, 0, 0]);
+    expect(result.legs.map((leg) => leg.to.stopRole)).toEqual([
+      undefined, "lunch", undefined, undefined, "rest", undefined, undefined, undefined,
+    ]);
     expect(result.legs.slice(1).every((leg, index) => {
       const previous = result.legs[index];
       return Date.parse(leg.departureAt) === Date.parse(previous.arrivalAt) + previous.dwellMinutes * 60_000;

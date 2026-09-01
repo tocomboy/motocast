@@ -63,6 +63,8 @@ function canonicalPoint(point: RoutePointRequest, endpoint = false): RoutePointR
     kind: endpoint ? "pass-through" : point.kind,
     dwellMinutes: passThrough ? 0 : point.dwellMinutes,
     selected: true,
+    winding: endpoint ? false : point.winding === true,
+    stopRole: endpoint ? undefined : point.stopRole,
   };
 }
 

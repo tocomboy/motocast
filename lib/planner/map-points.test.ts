@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildPlannerMapPoints } from "./map-points";
 import type { PlannedSegment, RoutePoint } from "./types";
 
-function point(id: string, winding = false): RoutePoint {
+function point(id: string, winding = false, stopRole?: RoutePoint["stopRole"]): RoutePoint {
   return {
     id,
     label: id,
@@ -13,6 +13,7 @@ function point(id: string, winding = false): RoutePoint {
     dwellMinutes: winding ? 0 : 60,
     selected: true,
     winding,
+    stopRole,
   };
 }
 
@@ -37,15 +38,32 @@ describe("buildPlannerMapPoints", () => {
   it("preserves winding and meal roles when the same Kakao place occurs twice", () => {
     const origin = point("origin");
     const winding = point("same-place", true);
-    const lunch = point("same-place");
+    const lunch = point("same-place", false, "lunch");
     const destination = point("destination");
 
     expect(buildPlannerMapPoints([
       segment("0", origin, winding),
       segment("1", winding, lunch),
       segment("2", lunch, destination),
-    ], { lunchId: "same-place" }).map(({ role }) => role)).toEqual([
+    ]).map(({ role }) => role)).toEqual([
       "origin", "winding", "lunch", "destination",
+    ]);
+  });
+
+  it("keeps occurrence roles from the accepted route when form places later change", () => {
+    const origin = point("origin");
+    const lunch = point("same-place", false, "lunch");
+    const rest = point("same-place", false, "rest");
+    const dinner = point("same-place", false, "dinner");
+    const destination = point("destination");
+
+    expect(buildPlannerMapPoints([
+      segment("0", origin, lunch),
+      segment("1", lunch, rest),
+      segment("2", rest, dinner),
+      segment("3", dinner, destination),
+    ]).map(({ role }) => role)).toEqual([
+      "origin", "lunch", "rest", "dinner", "destination",
     ]);
   });
 });

@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { parseSafeRecommendedRoute, parseSafeRouteCandidateSet, parseSafeRouteResponse, ProviderContractError, routeResponseFingerprint } from "./provider-contract";
 import { buildSafeRouteResponse } from "../../supabase/functions/_shared/route-response";
+import type { RoutePoint } from "./types";
 
-const point = (id: string) => ({
+const point = (id: string): RoutePoint => ({
   id,
   label: id,
   latitude: 37.5,
@@ -172,6 +173,29 @@ describe("parseSafeRecommendedRoute", () => {
       ...response(),
       candidate: { id: "recommended", label: "와인딩 추정", estimatedWinding: true },
     })).toThrow("INVALID_ROUTE_CANDIDATE");
+  });
+
+  it("preserves occurrence-specific stop roles and rejects conflicting semantics", () => {
+    const recommended = response();
+    recommended.candidate = { id: "recommended", label: "추천 경로", estimatedWinding: false };
+    recommended.legs[0].to = {
+      ...recommended.legs[0].to,
+      kind: "stop",
+      dwellMinutes: 60,
+      stopRole: "lunch",
+    };
+    recommended.legs[0].dwellMinutes = 60;
+    recommended.totalDurationSeconds += 3600;
+    recommended.returnAt = "2026-08-31T01:30:00.000Z";
+    expect(parseSafeRecommendedRoute(recommended).legs[0].to.stopRole).toBe("lunch");
+
+    const invalid = structuredClone(recommended);
+    invalid.legs[0].to.kind = "optional";
+    expect(() => parseSafeRecommendedRoute(invalid)).toThrow("INVALID_ROUTE_POINT");
+
+    const zeroDwell = structuredClone(recommended);
+    zeroDwell.legs[0].to.dwellMinutes = 0;
+    expect(() => parseSafeRecommendedRoute(zeroDwell)).toThrow("INVALID_ROUTE_POINT");
   });
 });
 

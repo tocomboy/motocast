@@ -57,6 +57,40 @@ create or replace function pg_temp.recommended_leg(
   );
 $$;
 
+create or replace function pg_temp.route_with_split_roads(route jsonb)
+returns jsonb language sql immutable as $$
+  select jsonb_set(route, '{legs,0,sections,0,roads}', jsonb_build_array(
+    jsonb_build_object(
+      'name', '앞 도로', 'distance', 5000, 'duration', 300,
+      'vertexes', jsonb_build_array(127, 37, 127.025, 37.025)
+    ),
+    jsonb_build_object(
+      'name', '뒤 도로', 'distance', 5000, 'duration', 300,
+      'vertexes', jsonb_build_array(127.025, 37.025, 127.05, 37.05)
+    )
+  ));
+$$;
+
+create or replace function pg_temp.route_with_split_sections(route jsonb)
+returns jsonb language sql immutable as $$
+  select jsonb_set(route, '{legs,0,sections}', jsonb_build_array(
+    jsonb_build_object(
+      'distance', 5000, 'duration', 300,
+      'roads', jsonb_build_array(jsonb_build_object(
+        'name', '앞 구간', 'distance', 5000, 'duration', 300,
+        'vertexes', jsonb_build_array(127, 37, 127.025, 37.025)
+      ))
+    ),
+    jsonb_build_object(
+      'distance', 5000, 'duration', 300,
+      'roads', jsonb_build_array(jsonb_build_object(
+        'name', '뒤 구간', 'distance', 5000, 'duration', 300,
+        'vertexes', jsonb_build_array(127.025, 37.025, 127.05, 37.05)
+      ))
+    )
+  ));
+$$;
+
 create temp table recommended_fixture on commit preserve rows as
 select
   jsonb_build_object(
@@ -118,6 +152,8 @@ create temp table recommended_validation_results(
   null_vertex_rejected boolean,
   out_of_range_vertex_rejected boolean,
   disconnected_geometry_rejected boolean,
+  snapped_endpoint_accepted boolean,
+  distant_endpoint_rejected boolean,
   expired_route_change_rejected boolean,
   twenty_four_hour_rejected boolean,
   reused_rejected boolean,
@@ -135,6 +171,8 @@ declare
   null_vertex_rejected boolean := false;
   out_of_range_vertex_rejected boolean := false;
   disconnected_geometry_rejected boolean := false;
+  snapped_endpoint_accepted boolean := false;
+  distant_endpoint_rejected boolean := false;
   expired_route_change_rejected boolean := false;
   twenty_four_hour_rejected boolean := false;
   reused_rejected boolean := false;
@@ -215,6 +253,21 @@ begin
       jsonb_set(fixture_route, '{legs,1,sections,0,roads,0,vertexes,0}', '127.06'::jsonb)
     );
   exception when sqlstate 'P0001' then disconnected_geometry_rejected := sqlerrm = 'INVALID_STAGED_ROUTE'; end;
+  begin
+    perform public.stage_route_candidate_internal(
+      '75100000-0000-0000-0000-000000000001',
+      '76100000-0000-4000-8000-000000000023', fixture_plan,
+      jsonb_set(fixture_route, '{legs,0,sections,0,roads,0,vertexes,0}', '127.001'::jsonb)
+    );
+    snapped_endpoint_accepted := true;
+  exception when others then snapped_endpoint_accepted := false; end;
+  begin
+    perform public.stage_route_candidate_internal(
+      '75100000-0000-0000-0000-000000000001',
+      '76100000-0000-4000-8000-000000000024', fixture_plan,
+      jsonb_set(fixture_route, '{legs,0,sections,0,roads,0,vertexes,0}', '127.006'::jsonb)
+    );
+  exception when sqlstate 'P0001' then distant_endpoint_rejected := sqlerrm = 'INVALID_STAGED_ROUTE'; end;
   perform public.stage_route_candidate_internal(
     '75100000-0000-0000-0000-000000000001',
     '76100000-0000-4000-8000-000000000017', fixture_plan, fixture_route
@@ -268,10 +321,109 @@ begin
     missing_point_id_rejected, missing_dwell_rejected, missing_total_rejected,
     missing_road_distance_rejected, null_vertex_rejected,
     out_of_range_vertex_rejected, disconnected_geometry_rejected,
+    snapped_endpoint_accepted, distant_endpoint_rejected,
     expired_route_change_rejected,
     twenty_four_hour_rejected,
     reused_rejected, exact_retry_accepted
   );
+end;
+$$;
+
+create temp table recommended_malformed_cases(
+  planning_id uuid primary key,
+  description text not null,
+  route jsonb not null
+);
+insert into recommended_malformed_cases
+select '76100000-0000-4000-8000-000000000030'::uuid,
+  'staging rejects a missing duration on the second road',
+  pg_temp.route_with_split_roads(route) #- '{legs,0,sections,0,roads,1,duration}'
+from recommended_fixture
+union all
+select '76100000-0000-4000-8000-000000000031',
+  'staging rejects a missing duration on the second section',
+  pg_temp.route_with_split_sections(route) #- '{legs,0,sections,1,duration}'
+from recommended_fixture
+union all
+select '76100000-0000-4000-8000-000000000032',
+  'staging rejects a road-to-section distance mismatch',
+  jsonb_set(route, '{legs,0,sections,0,roads,0,distance}', '9999'::jsonb)
+from recommended_fixture
+union all
+select '76100000-0000-4000-8000-000000000033',
+  'staging rejects a section-to-leg distance mismatch',
+  jsonb_set(jsonb_set(route,
+    '{legs,0,sections,0,roads,0,distance}', '9999'::jsonb),
+    '{legs,0,sections,0,distance}', '9999'::jsonb)
+from recommended_fixture
+union all
+select '76100000-0000-4000-8000-000000000034',
+  'staging rejects an odd road vertex array',
+  jsonb_set(route, '{legs,0,sections,0,roads,0,vertexes}', '[127,37,127.025]'::jsonb)
+from recommended_fixture
+union all
+select '76100000-0000-4000-8000-000000000035',
+  'staging rejects a string road coordinate',
+  jsonb_set(route, '{legs,0,sections,0,roads,0,vertexes,2}', '"127.025"'::jsonb)
+from recommended_fixture
+union all
+select '76100000-0000-4000-8000-000000000036',
+  'staging rejects an oversized road scalar before bigint overflow',
+  jsonb_set(route, '{legs,0,sections,0,roads,0,distance}', '9223372036854775808'::jsonb)
+from recommended_fixture
+union all
+select '76100000-0000-4000-8000-000000000037',
+  'staging rejects a disconnected second road',
+  jsonb_set(pg_temp.route_with_split_roads(route),
+    '{legs,0,sections,0,roads,1,vertexes,0}', '127.026'::jsonb)
+from recommended_fixture
+union all
+select '76100000-0000-4000-8000-000000000038',
+  'staging rejects a final endpoint beyond the shared snap tolerance',
+  jsonb_set(route, '{legs,0,sections,0,roads,0,vertexes,4}', '127.044'::jsonb)
+from recommended_fixture
+union all
+select '76100000-0000-4000-8000-000000000040',
+  'staging rejects a route point whose stop role differs from the plan',
+  jsonb_set(route, '{legs,1,to,stopRole}', '"dinner"'::jsonb)
+from recommended_fixture
+union all
+select '76100000-0000-4000-8000-000000000041',
+  'staging rejects a route point whose selected state differs from the plan',
+  jsonb_set(route, '{legs,1,to,selected}', 'false'::jsonb)
+from recommended_fixture;
+
+create temp table recommended_malformed_results(
+  description text not null,
+  rejected boolean not null
+);
+do $$
+declare
+  malformed record;
+  rejected boolean;
+begin
+  for malformed in select * from recommended_malformed_cases order by planning_id loop
+    rejected := false;
+    begin
+      perform public.stage_route_candidate_internal(
+        '75100000-0000-0000-0000-000000000001', malformed.planning_id,
+        (select plan from recommended_fixture), malformed.route
+      );
+    exception when sqlstate 'P0001' then
+      rejected := sqlerrm = 'INVALID_STAGED_ROUTE';
+    end;
+    insert into recommended_malformed_results values (malformed.description, rejected);
+  end loop;
+
+  perform public.stage_route_candidate_internal(
+    '75100000-0000-0000-0000-000000000001',
+    '76100000-0000-4000-8000-000000000039',
+    (select plan from recommended_fixture), (select route from recommended_fixture)
+  );
+  update public.route_plan_drafts
+  set route = route #- '{legs,0,sections,0,roads,0,duration}'
+  where owner_id = '75100000-0000-0000-0000-000000000001'
+    and planning_id = '76100000-0000-4000-8000-000000000039';
 end;
 $$;
 
@@ -283,6 +435,11 @@ exception when others then return sqlerrm;
 end;
 $$;
 grant execute on function public.test_finalize_recommended_route(uuid) to authenticated;
+
+select set_config('request.jwt.claim.sub', '75100000-0000-0000-0000-000000000001', false);
+create temp table tampered_finalize_result as
+select public.test_finalize_recommended_route('76100000-0000-4000-8000-000000000039') as result;
+select set_config('request.jwt.claim.sub', '', false);
 
 create or replace function public.test_stage_recommended_route(target_planning_id uuid, staged_plan jsonb, staged_route jsonb)
 returns text language plpgsql set search_path = public, pg_temp as $$
@@ -355,10 +512,17 @@ insert into tap_results values
   ((select null_vertex_rejected from recommended_validation_results), 'staging rejects a null road vertex'),
   ((select out_of_range_vertex_rejected from recommended_validation_results), 'staging rejects an out-of-range road vertex'),
   ((select disconnected_geometry_rejected from recommended_validation_results), 'staging rejects disconnected road geometry'),
+  ((select snapped_endpoint_accepted from recommended_validation_results), 'staging accepts provider endpoint snapping within the shared tolerance'),
+  ((select distant_endpoint_rejected from recommended_validation_results), 'staging rejects provider endpoint snapping beyond the shared tolerance'),
   ((select expired_route_change_rejected from recommended_validation_results), 'an expired draft cannot change its durable route payload'),
   ((select twenty_four_hour_rejected from recommended_validation_results), 'staging rejects a route lasting exactly 24 hours'),
   ((select reused_rejected from recommended_validation_results), 'a planning id rejects a different payload'),
   ((select exact_retry_accepted from recommended_validation_results), 'an exact pre-finalize retry is idempotent');
+insert into tap_results
+select rejected, description from recommended_malformed_results order by description;
+insert into tap_results values
+  ((select result = 'UNSAFE_ROUTE_RESPONSE' from tampered_finalize_result),
+   'finalization revalidates and rejects a staged draft mutated after admission');
 
 select dblink_disconnect('recommended_c1');
 select dblink_disconnect('recommended_c2');

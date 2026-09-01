@@ -72,6 +72,7 @@ function timestamp(value: unknown): string {
 
 function routePoint(value: unknown): RoutePoint {
   const raw = record(value);
+  const stopRole = raw.stopRole;
   if (
     typeof raw.id !== "string" || raw.id.length < 1 || raw.id.length > 100 ||
     typeof raw.label !== "string" || raw.label.trim().length < 1 || raw.label.length > 160 ||
@@ -79,7 +80,14 @@ function routePoint(value: unknown): RoutePoint {
     typeof raw.longitude !== "number" || !Number.isFinite(raw.longitude) ||
     !["pass-through", "stop", "optional"].includes(String(raw.kind)) ||
     !Number.isInteger(raw.dwellMinutes) || Number(raw.dwellMinutes) < 0 || Number(raw.dwellMinutes) > 1440 ||
-    typeof raw.selected !== "boolean"
+    typeof raw.selected !== "boolean" ||
+    (raw.winding !== undefined && typeof raw.winding !== "boolean") ||
+    (stopRole !== undefined && !["lunch", "dinner", "rest"].includes(String(stopRole))) ||
+    (stopRole === "lunch" && raw.kind !== "stop") ||
+    (stopRole === "dinner" && raw.kind !== "stop") ||
+    (stopRole === "rest" && raw.kind !== "optional") ||
+    (stopRole !== undefined && Number(raw.dwellMinutes) <= 0) ||
+    (raw.winding === true && stopRole !== undefined)
   ) {
     throw new ProviderContractError("INVALID_ROUTE_POINT");
   }
@@ -95,6 +103,7 @@ function routePoint(value: unknown): RoutePoint {
     dwellMinutes: Number(raw.dwellMinutes),
     selected: raw.selected,
     winding: typeof raw.winding === "boolean" ? raw.winding : undefined,
+    stopRole: stopRole as RoutePoint["stopRole"],
   };
 }
 
@@ -184,6 +193,7 @@ function leg(value: unknown): SafeRouteLeg {
   const sectionDuration = parsed.sections.reduce((total, item) => total + item.duration, 0);
   if (
     elapsedSeconds !== parsed.durationSeconds ||
+    parsed.to.dwellMinutes !== parsed.dwellMinutes ||
     sectionDistance !== parsed.distanceMeters ||
     sectionDuration !== parsed.durationSeconds
   ) {

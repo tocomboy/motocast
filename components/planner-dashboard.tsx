@@ -9,12 +9,14 @@ import { PlaceSearchField } from "@/components/place-search-field";
 import { ShareManager } from "@/components/share-manager";
 import {
   appliedWindingActionLabel,
+  hasSelectedWindingPlace,
   insertCollectionWinding,
   moveCollectionWinding,
   prepareCollectionApplication,
   removeCollectionWinding,
   replaceCollectionStop,
   setCollectionRestSelected,
+  selectedWindingCount,
 } from "@/lib/collections/application";
 import type { CollectionPoint } from "@/lib/collections/contracts";
 import type { PlaceSearchResult } from "@/lib/places/search";
@@ -199,7 +201,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const weatherRequestRef = useRef(0);
   const actionGateRef = useRef(new PlannerActionGate());
   const windingPointCount = appliedCollectionPoints
-    ? appliedCollectionPoints.filter((point) => point.winding).length
+    ? selectedWindingCount(appliedCollectionPoints)
     : windingPoints.length;
 
   function asAppliedPoint(point: CollectionPoint): AppliedCollectionPoint {
@@ -307,11 +309,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     segments: selected.segments,
   }), [departureAt, draft.includeRest, liveRoute, selected]);
   const selectedMapPoints = liveRoute
-    ? buildPlannerMapPoints(selected.segments, {
-        lunchId: places.lunch?.kakaoPlaceId,
-        dinnerId: places.dinner?.kakaoPlaceId,
-        restId: places.rest?.kakaoPlaceId,
-      })
+    ? buildPlannerMapPoints(selected.segments)
     : demoMapPoints;
 
   const collectionPoints = useMemo<CollectionPoint[]>(() => {
@@ -363,7 +361,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     if (!place) return;
     if (
       (appliedCollectionPoints
-        ? appliedCollectionPoints.some((item) => item.kakaoPlaceId === place.kakaoPlaceId)
+        ? hasSelectedWindingPlace(appliedCollectionPoints, place.kakaoPlaceId)
         : windingPoints.some((item) => item.kakaoPlaceId === place.kakaoPlaceId))
     ) {
       setWaypointStatus(`${place.name}은(는) 이미 와인딩 경유지에 있습니다.`);

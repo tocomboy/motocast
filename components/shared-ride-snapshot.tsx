@@ -29,13 +29,45 @@ function sameSharedPlace(
 }
 
 export function buildSharedMapPoints(input: {
-  routePoints: SharedPlace[];
+  routePoints: Array<SharedPlace & {
+    kind?: "pass-through" | "stop" | "optional";
+    winding?: boolean;
+    stopRole?: "lunch" | "dinner" | "rest";
+  }>;
   waypoints: SharedWaypoint[];
   lunchStop: SharedPlace;
   dinnerStop: SharedPlace | null;
 }) {
   const traversedWaypoints = input.waypoints.filter((item) => item.selected);
   const matchedWaypoints = new Set<SharedWaypoint>();
+  const assignedStops = { lunch: false, dinner: false };
+  const occurrenceRole = (
+    point: SharedPlace & {
+      kind?: "pass-through" | "stop" | "optional";
+      winding?: boolean;
+      stopRole?: "lunch" | "dinner" | "rest";
+    },
+    waypoint?: SharedWaypoint,
+  ): MapMarkerRole => {
+    if (point.stopRole) {
+      if (point.stopRole !== "rest") assignedStops[point.stopRole] = true;
+      return point.stopRole;
+    }
+    if (point.winding || waypoint?.winding) return "winding";
+    if (point.kind === "optional" || waypoint?.kind === "optional") return "rest";
+    if (point.kind === "pass-through" || waypoint?.kind === "pass-through") return "waypoint";
+    const isLunch = sameSharedPlace(point, input.lunchStop);
+    const isDinner = sameSharedPlace(point, input.dinnerStop);
+    if (isLunch && !assignedStops.lunch) {
+      assignedStops.lunch = true;
+      return "lunch";
+    }
+    if (isDinner && !assignedStops.dinner) {
+      assignedStops.dinner = true;
+      return "dinner";
+    }
+    return "waypoint";
+  };
   const routePoints = input.routePoints.map((point, index, all) => {
     const samePlaceWaypoints = index > 0 && index < all.length - 1
       ? traversedWaypoints.filter((waypoint) => !matchedWaypoints.has(waypoint) && sameSharedPlace(point, waypoint))
@@ -49,20 +81,13 @@ export function buildSharedMapPoints(input: {
     let role: MapMarkerRole = "waypoint";
     if (index === 0) role = "origin";
     else if (index === all.length - 1) role = "destination";
-    else if (matchingWaypoint?.kind === "optional") role = "rest";
-    else if (matchingWaypoint?.winding) role = "winding";
-    else if (sameSharedPlace(point, input.lunchStop)) role = "lunch";
-    else if (sameSharedPlace(point, input.dinnerStop)) role = "dinner";
+    else role = occurrenceRole(point, matchingWaypoint);
     return { ...point, role };
   });
   const omittedWaypoints = traversedWaypoints
     .filter((waypoint) => !matchedWaypoints.has(waypoint))
     .map((waypoint) => {
-      let role: MapMarkerRole = "waypoint";
-      if (waypoint.kind === "optional") role = "rest";
-      else if (waypoint.winding) role = "winding";
-      else if (sameSharedPlace(waypoint, input.lunchStop)) role = "lunch";
-      else if (sameSharedPlace(waypoint, input.dinnerStop)) role = "dinner";
+      const role = occurrenceRole(waypoint, waypoint);
       return { ...waypoint, label: `${waypoint.label} · 선택 경로 미통과`, role, nonTraversed: true };
     });
   return [...routePoints, ...omittedWaypoints];

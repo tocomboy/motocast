@@ -72,6 +72,22 @@ describe("normalizeKakaoRoutePayload", () => {
     ])).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
   });
 
+  it("accepts normal endpoint snapping but rejects points outside the shared persistence tolerance", () => {
+    const route = normalizeKakaoRoutePayload(payload());
+    route.summary.origin.longitude = 127.101;
+    route.summary.destination.longitude = 127.199;
+    expect(() => assertKakaoRouteMatchesPoints(route, [
+      { longitude: 127.1, latitude: 37.5 },
+      { longitude: 127.2, latitude: 37.6 },
+    ])).not.toThrow();
+
+    route.summary.origin.longitude = 127.106;
+    expect(() => assertKakaoRouteMatchesPoints(route, [
+      { longitude: 127.1, latitude: 37.5 },
+      { longitude: 127.2, latitude: 37.6 },
+    ])).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+  });
+
   it("rejects a provider summary that substitutes another destination", () => {
     const value = payload();
     value.routes[0].summary.destination.x = 128.2;

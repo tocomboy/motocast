@@ -88,6 +88,8 @@ declare
   section_distance_total bigint := 0;
   section_duration_total bigint := 0;
   coordinate double precision;
+  endpoint_snap_tolerance constant double precision := 0.005;
+  road_continuity_tolerance constant double precision := 0.0002;
   road_start_lon double precision;
   road_start_lat double precision;
   road_end_lon double precision;
@@ -164,12 +166,12 @@ begin
       road_end_lon := (road_item -> 'vertexes' ->> (vertex_count - 2))::double precision;
       road_end_lat := (road_item -> 'vertexes' ->> (vertex_count - 1))::double precision;
       if previous_end_lon is null then
-        if abs(road_start_lon - (expected_from ->> 'longitude')::double precision) > 0.0002
-           or abs(road_start_lat - (expected_from ->> 'latitude')::double precision) > 0.0002 then
+        if abs(road_start_lon - (expected_from ->> 'longitude')::double precision) > endpoint_snap_tolerance
+           or abs(road_start_lat - (expected_from ->> 'latitude')::double precision) > endpoint_snap_tolerance then
           return false;
         end if;
-      elsif abs(road_start_lon - previous_end_lon) > 0.0002
-         or abs(road_start_lat - previous_end_lat) > 0.0002 then
+      elsif abs(road_start_lon - previous_end_lon) > road_continuity_tolerance
+         or abs(road_start_lat - previous_end_lat) > road_continuity_tolerance then
         return false;
       end if;
       previous_end_lon := road_end_lon;
@@ -188,8 +190,8 @@ begin
   return coalesce(
     section_distance_total = expected_distance
     and section_duration_total = expected_duration
-    and abs(previous_end_lon - (expected_to ->> 'longitude')::double precision) <= 0.0002
-    and abs(previous_end_lat - (expected_to ->> 'latitude')::double precision) <= 0.0002,
+    and abs(previous_end_lon - (expected_to ->> 'longitude')::double precision) <= endpoint_snap_tolerance
+    and abs(previous_end_lat - (expected_to ->> 'latitude')::double precision) <= endpoint_snap_tolerance,
     false
   );
 exception when others then
@@ -264,9 +266,21 @@ begin
     if leg_item -> 'from' ->> 'id' is distinct from expected_from ->> 'id'
        or leg_item -> 'from' -> 'longitude' is distinct from expected_from -> 'longitude'
        or leg_item -> 'from' -> 'latitude' is distinct from expected_from -> 'latitude'
+       or leg_item -> 'from' ->> 'kind' is distinct from expected_from ->> 'kind'
+       or leg_item -> 'from' ->> 'dwellMinutes' is distinct from expected_from ->> 'dwellMinutes'
+       or leg_item -> 'from' ->> 'selected' is distinct from expected_from ->> 'selected'
+       or leg_item -> 'from' ->> 'stopRole' is distinct from expected_from ->> 'stopRole'
+       or coalesce((leg_item -> 'from' ->> 'winding')::boolean, false)
+          is distinct from coalesce((expected_from ->> 'winding')::boolean, false)
        or leg_item -> 'to' ->> 'id' is distinct from expected_to ->> 'id'
        or leg_item -> 'to' -> 'longitude' is distinct from expected_to -> 'longitude'
        or leg_item -> 'to' -> 'latitude' is distinct from expected_to -> 'latitude'
+       or leg_item -> 'to' ->> 'kind' is distinct from expected_to ->> 'kind'
+       or leg_item -> 'to' ->> 'dwellMinutes' is distinct from expected_to ->> 'dwellMinutes'
+       or leg_item -> 'to' ->> 'selected' is distinct from expected_to ->> 'selected'
+       or leg_item -> 'to' ->> 'stopRole' is distinct from expected_to ->> 'stopRole'
+       or coalesce((leg_item -> 'to' ->> 'winding')::boolean, false)
+          is distinct from coalesce((expected_to ->> 'winding')::boolean, false)
        or dwell_minutes is distinct from (expected_to ->> 'dwellMinutes')::integer
        or duration_seconds is null or duration_seconds <= 0
        or distance_meters is null or distance_meters <= 0

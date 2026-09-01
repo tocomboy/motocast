@@ -21,8 +21,10 @@ type RequestedPoint = { longitude: number; latitude: number };
 // road-selection failures, incidents, or endpoint-specific failures and must
 // not be presented as proof that no motorcycle-safe route exists.
 const KAKAO_NO_ROUTE_RESULT_CODES = new Set([1]);
+const ROAD_CONTINUITY_TOLERANCE = 0.0002;
+const REQUEST_POINT_SNAP_TOLERANCE = 0.005;
 
-function geometryNear(left: KakaoSummaryPoint, right: KakaoSummaryPoint, tolerance = 0.0002) {
+function geometryNear(left: KakaoSummaryPoint, right: KakaoSummaryPoint, tolerance = ROAD_CONTINUITY_TOLERANCE) {
   return Math.abs(left.longitude - right.longitude) <= tolerance && Math.abs(left.latitude - right.latitude) <= tolerance;
 }
 
@@ -132,7 +134,7 @@ export function normalizeKakaoRoutesPayload(value: unknown): NormalizedKakaoRout
 }
 
 function near(left: KakaoSummaryPoint, right: RequestedPoint) {
-  return Math.abs(left.longitude - right.longitude) <= 0.005 && Math.abs(left.latitude - right.latitude) <= 0.005;
+  return geometryNear(left, right, REQUEST_POINT_SNAP_TOLERANCE);
 }
 
 function sectionEndpoints(section: NormalizedKakaoRoute["sections"][number]) {

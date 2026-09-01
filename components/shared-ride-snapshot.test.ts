@@ -101,4 +101,40 @@ describe("buildSharedMapPoints", () => {
       ],
     }).map((point) => point.role)).toEqual(["origin", "winding", "lunch", "destination"]);
   });
+
+  it("keeps same-place plain, lunch and dinner occurrences distinct", () => {
+    const same = { id: "same", label: "같은 장소", longitude: 127.1, latitude: 37.1 };
+    expect(buildSharedMapPoints({
+      routePoints: [origin, same, same, same, destination],
+      lunchStop: { ...same, id: "trip-lunch" },
+      dinnerStop: { ...same, id: "trip-dinner" },
+      waypoints: [
+        { ...same, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: false },
+        { ...same, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+        { ...same, id: "waypoint-2", position: 2, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+      ],
+    }).map((point) => point.role)).toEqual([
+      "origin", "waypoint", "lunch", "dinner", "destination",
+    ]);
+  });
+
+  it("uses immutable route stop roles for new snapshots", () => {
+    const same = { id: "same", label: "같은 장소", longitude: 127.1, latitude: 37.1 };
+    expect(buildSharedMapPoints({
+      routePoints: [
+        origin,
+        { ...same, kind: "stop", stopRole: "dinner" },
+        { ...same, kind: "stop", stopRole: "lunch" },
+        destination,
+      ],
+      lunchStop: { ...same, id: "trip-lunch" },
+      dinnerStop: { ...same, id: "trip-dinner" },
+      waypoints: [
+        { ...same, id: "waypoint-0", position: 0, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+        { ...same, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
+      ],
+    }).map((point) => point.role)).toEqual([
+      "origin", "dinner", "lunch", "destination",
+    ]);
+  });
 });

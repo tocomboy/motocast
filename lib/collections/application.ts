@@ -39,6 +39,14 @@ export function prepareCollectionApplication(points: CollectionPoint[]) {
   };
 }
 
+export function selectedWindingCount(points: CollectionPoint[]) {
+  return points.filter((point) => point.selected && point.winding).length;
+}
+
+export function hasSelectedWindingPlace(points: CollectionPoint[], kakaoPlaceId: string) {
+  return points.some((point) => point.selected && point.winding && point.kakaoPlaceId === kakaoPlaceId);
+}
+
 export function replaceCollectionStop<T extends CollectionPoint>(
   points: T[],
   stopRole: StopRole,

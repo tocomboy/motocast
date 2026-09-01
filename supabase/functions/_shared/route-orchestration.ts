@@ -42,6 +42,7 @@ function responsePoint(point: RoutePointRequest) {
     dwellMinutes: point.dwellMinutes,
     selected: point.selected,
     winding: point.winding,
+    stopRole: point.stopRole,
   };
 }
 

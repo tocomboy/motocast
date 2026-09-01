@@ -12,6 +12,7 @@ export type RoutePoint = Coordinate & {
   dwellMinutes: number;
   selected: boolean;
   winding?: boolean;
+  stopRole?: "lunch" | "dinner" | "rest";
 };
 
 export type WeatherSnapshot = {

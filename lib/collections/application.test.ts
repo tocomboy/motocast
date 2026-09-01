@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   appliedWindingActionLabel,
+  hasSelectedWindingPlace,
   insertCollectionWinding,
   moveCollectionWinding,
   prepareCollectionApplication,
   removeCollectionWinding,
   replaceCollectionStop,
   setCollectionRestSelected,
+  selectedWindingCount,
 } from "./application";
 import type { CollectionPoint } from "./contracts";
 
@@ -31,6 +33,20 @@ function point(id: string, overrides: Partial<CollectionPoint> = {}): Collection
 }
 
 describe("prepareCollectionApplication", () => {
+  it("counts and de-duplicates only winding occurrences selected for the active route", () => {
+    const inactive = Array.from({ length: 20 }, (_, index) => point(`inactive-${index}`, {
+      kakaoPlaceId: `inactive-${index}`,
+      winding: true,
+      selected: false,
+    }));
+    expect(selectedWindingCount(inactive)).toBe(0);
+    expect(hasSelectedWindingPlace(inactive, "inactive-0")).toBe(false);
+
+    const active = point("active", { kakaoPlaceId: "active", winding: true, selected: true });
+    expect(selectedWindingCount([...inactive, active])).toBe(1);
+    expect(hasSelectedWindingPlace([...inactive, active], "active")).toBe(true);
+  });
+
   it("preserves the full ordered template while activating only selected winding/rest points", () => {
     const points = [
       point("plain"),
