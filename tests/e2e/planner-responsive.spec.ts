@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { rawSharedRideSnapshotWithOmissions } from "../fixtures/shared-ride-snapshot";
 
 async function expectMapChromeNotToOverlap(page: import("@playwright/test").Page) {
+  await page.evaluate(() => document.fonts.ready);
   await page.locator(".map-shell").evaluate((shell) => {
     const legend = document.createElement("ul");
     legend.className = "map-marker-legend";
@@ -10,12 +11,21 @@ async function expectMapChromeNotToOverlap(page: import("@playwright/test").Page
     legend.innerHTML = "<li>출발</li><li>복귀</li><li>점심</li><li>휴식</li><li>와인딩</li>";
     shell.appendChild(legend);
   });
-  const overlap = await page.evaluate(() => {
+  const layout = await page.evaluate(() => {
     const topbar = document.querySelector(".map-topbar")!.getBoundingClientRect();
+    const badges = [...document.querySelectorAll(".map-topbar .example-data-badge, .map-topbar .live-data-badge")]
+      .map((element) => element.getBoundingClientRect());
     const legend = document.querySelector(".map-marker-legend")!.getBoundingClientRect();
-    return topbar.left < legend.right && topbar.right > legend.left && topbar.top < legend.bottom && topbar.bottom > legend.top;
+    const chrome = [topbar, ...badges];
+    return {
+      overlap: chrome.some((item) => (
+        item.left < legend.right && item.right > legend.left && item.top < legend.bottom && item.bottom > legend.top
+      )),
+      verticalGap: legend.top - Math.max(...chrome.map((item) => item.bottom)),
+    };
   });
-  expect(overlap).toBe(false);
+  expect(layout.overlap).toBe(false);
+  expect(layout.verticalGap).toBeGreaterThanOrEqual(8);
 }
 
 async function expectRouteSummaryVisibleInsideMap(page: import("@playwright/test").Page) {
