@@ -1,10 +1,11 @@
-import type { KmaItem } from "./weather-forecast.ts";
+import type { ForecastModel, KmaItem } from "./weather-forecast.ts";
 
 export type KmaResponseIdentity = {
   baseDate: string;
   baseTime: string;
   nx: number;
   ny: number;
+  model: ForecastModel;
 };
 
 function sanitizedProviderCode(value: unknown) {
@@ -27,17 +28,22 @@ function validKmaTime(value: unknown): value is string {
 }
 
 function validNumericValue(value: string, minimum: number, maximum: number, integer = false) {
+  const format = integer ? /^-?\d+$/ : /^-?\d+(?:\.\d+)?$/;
+  if (!format.test(value)) return false;
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric >= minimum && numeric <= maximum && (!integer || Number.isInteger(numeric));
 }
 
-function validForecastValue(category: string, value: unknown) {
+function validForecastValue(category: string, value: unknown, model: ForecastModel) {
   if (typeof value !== "string" || value !== value.trim() || value.length === 0 || value.length > 64) return false;
   if (category === "T1H" || category === "TMP") return validNumericValue(value, -100, 100);
   if (category === "POP") return validNumericValue(value, 0, 100, true);
   if (category === "WSD") return validNumericValue(value, 0, 200);
   if (category === "SKY") return [1, 3, 4].includes(Number(value)) && validNumericValue(value, 1, 4, true);
-  if (category === "PTY") return validNumericValue(value, 0, 7, true);
+  if (category === "PTY") {
+    const allowed = model === "ultra" ? [0, 1, 2, 3, 5, 6, 7] : [0, 1, 2, 3, 4];
+    return validNumericValue(value, 0, 7, true) && allowed.includes(Number(value));
+  }
   return true;
 }
 
@@ -49,7 +55,7 @@ function validKmaItem(value: unknown, expected: KmaResponseIdentity): value is K
     typeof item.category === "string" && /^[A-Z0-9]{1,8}$/.test(item.category) &&
     validKmaDate(item.fcstDate) &&
     validKmaTime(item.fcstTime) &&
-    validForecastValue(item.category, item.fcstValue) &&
+    validForecastValue(item.category, item.fcstValue, expected.model) &&
     item.nx === expected.nx &&
     item.ny === expected.ny;
 }

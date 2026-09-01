@@ -4,10 +4,13 @@ import { parseKmaItems } from "./kma-response";
 import { weatherFailureKind } from "./weather-failure";
 
 describe("parseKmaItems", () => {
-  const expected = { baseDate: "20260831", baseTime: "1100", nx: 60, ny: 127 };
+  const expected = { baseDate: "20260831", baseTime: "1100", nx: 60, ny: 127, model: "short" as const };
   const parse = (response: Response) => parseKmaItems(response, expected);
   const validItem = {
-    ...expected,
+    baseDate: expected.baseDate,
+    baseTime: expected.baseTime,
+    nx: expected.nx,
+    ny: expected.ny,
     category: "TMP",
     fcstDate: "20260831",
     fcstTime: "1200",
@@ -59,8 +62,13 @@ describe("parseKmaItems", () => {
     { label: "wrong grid", value: { ...validItem, nx: 1, ny: 1 } },
     { label: "blank temperature", value: { ...validItem, fcstValue: " " } },
     { label: "non-numeric temperature", value: { ...validItem, fcstValue: "not-a-number" } },
+    { label: "hexadecimal probability", value: { ...validItem, category: "POP", fcstValue: "0x10" } },
+    { label: "decimal-form integer probability", value: { ...validItem, category: "POP", fcstValue: "10.0" } },
+    { label: "exponent wind", value: { ...validItem, category: "WSD", fcstValue: "1e2" } },
+    { label: "explicit plus wind", value: { ...validItem, category: "WSD", fcstValue: "+2.5" } },
     { label: "probability over 100", value: { ...validItem, category: "POP", fcstValue: "101" } },
     { label: "negative wind", value: { ...validItem, category: "WSD", fcstValue: "-5" } },
+    { label: "ultra-only precipitation code in short model", value: { ...validItem, category: "PTY", fcstValue: "5" } },
   ])("rejects forecast identity or semantic mismatch: $label", async ({ value }) => {
     await expect(parse(new Response(JSON.stringify({
       response: { header: { resultCode: "00" }, body: { items: { item: [value] } } },
@@ -71,6 +79,18 @@ describe("parseKmaItems", () => {
     await expect(parse(new Response(JSON.stringify({
       response: { header: { resultCode: "00" }, body: { items: { item: [validItem, validItem] } } },
     })))).rejects.toEqual(new Error("KMA_INVALID_RESPONSE"));
+  });
+
+  it("uses model-specific precipitation codes and accepts ordinary decimal values", async () => {
+    const responseFor = (item: typeof validItem) => new Response(JSON.stringify({
+      response: { header: { resultCode: "00" }, body: { items: { item: [item] } } },
+    }));
+    await expect(parse(responseFor({ ...validItem, category: "PTY", fcstValue: "4" }))).resolves.toHaveLength(1);
+    await expect(parse(responseFor({ ...validItem, category: "WSD", fcstValue: "2.5" }))).resolves.toHaveLength(1);
+
+    const parseUltra = (item: typeof validItem) => parseKmaItems(responseFor(item), { ...expected, model: "ultra" });
+    await expect(parseUltra({ ...validItem, category: "PTY", fcstValue: "5" })).resolves.toHaveLength(1);
+    await expect(parseUltra({ ...validItem, category: "PTY", fcstValue: "4" })).rejects.toEqual(new Error("KMA_INVALID_RESPONSE"));
   });
 
   it("returns a documented successful item array", async () => {

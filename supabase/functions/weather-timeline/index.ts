@@ -131,6 +131,7 @@ async function fetchForecast(input: {
     baseTime: base.time,
     nx: input.nx,
     ny: input.ny,
+    model: input.model,
   });
   return { values: validatedForecastValues(items, input.target, input.model), base };
 }
