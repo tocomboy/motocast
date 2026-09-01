@@ -14,7 +14,12 @@ vi.mock("@/lib/supabase/browser", () => ({
   }),
 }));
 
+vi.mock("@/components/shared-ride-snapshot", () => ({
+  SharedRideSnapshotView: () => <div data-testid="shared-ride-snapshot" />,
+}));
+
 import { ShareManager } from "./share-manager";
+import { rawSharedRideSnapshotWithOmissions } from "../tests/fixtures/shared-ride-snapshot";
 
 const tripId = "123e4567-e89b-42d3-a456-426614174000";
 
@@ -140,6 +145,54 @@ describe("ShareManager collection preview request", () => {
       renderer.update(<StrictMode><ShareManager tripId={tripId} sessionEpoch={1} previewRequest={2} /></StrictMode>);
     });
     expect(browserMocks.rpc).toHaveBeenCalledTimes(2);
+    await act(async () => renderer.unmount());
+  });
+
+  it("keeps the newest link history when an older read finishes last", async () => {
+    let resolveInitialLinks!: (value: { data: Array<{ id: string; created_at: string; revoked_at: null }>; error: null }) => void;
+    browserMocks.from.mockReset();
+    browserMocks.from
+      .mockReturnValueOnce({
+        select() { return this; },
+        order: () => new Promise((resolve) => { resolveInitialLinks = resolve; }),
+      })
+      .mockReturnValue({
+        select() { return this; },
+        order: async () => ({
+          data: [
+            { id: "10000000-0000-4000-8000-000000000001", created_at: "2030-01-01T00:00:00.000Z", revoked_at: null },
+            { id: "10000000-0000-4000-8000-000000000002", created_at: "2030-01-02T00:00:00.000Z", revoked_at: null },
+          ],
+          error: null,
+        }),
+      });
+    browserMocks.rpc
+      .mockResolvedValueOnce({
+        data: [{
+          preview_snapshot: rawSharedRideSnapshotWithOmissions(0),
+          preview_token: "p".repeat(43),
+        }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [{ share_id: "10000000-0000-4000-8000-000000000002", share_token: "s".repeat(43) }],
+        error: null,
+      });
+    const renderer = await renderShareManager();
+    const publishButton = renderer.root.findByProps({ className: "primary-button" });
+    await act(async () => {
+      publishButton.props.onClick();
+      await Promise.resolve();
+    });
+    expect(renderer.root.findAllByType("li")).toHaveLength(2);
+    await act(async () => {
+      resolveInitialLinks({
+        data: [{ id: "10000000-0000-4000-8000-000000000001", created_at: "2030-01-01T00:00:00.000Z", revoked_at: null }],
+        error: null,
+      });
+      await Promise.resolve();
+    });
+    expect(renderer.root.findAllByType("li")).toHaveLength(2);
     await act(async () => renderer.unmount());
   });
 });

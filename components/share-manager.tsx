@@ -24,6 +24,7 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
   });
   const [busyEpoch, setBusyEpoch] = useState<number | null>(null);
   const handledPreviewRequestRef = useRef(0);
+  const linksRequestRef = useRef(0);
   const sessionEpochRef = useRef(sessionEpoch);
   const busy = busyEpoch === sessionEpoch;
 
@@ -34,10 +35,12 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
   const loadLinks = useCallback(async (reportErrors = true) => {
     const supabase = getBrowserSupabase();
     if (!supabase) return;
+    const linksRequest = ++linksRequestRef.current;
     const { data, error } = await supabase
       .from("share_links")
       .select("id,created_at,revoked_at")
       .order("created_at", { ascending: false });
+    if (linksRequest !== linksRequestRef.current) return;
     if (error || !Array.isArray(data)) {
       if (reportErrors) setStatus({ epoch: sessionEpochRef.current, message: "공유 발행 기록을 불러오지 못했습니다." });
       return;
