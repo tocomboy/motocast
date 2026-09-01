@@ -96,10 +96,12 @@ export async function parseRouteRequest(value: unknown, verificationSecret: stri
   const lunches = selectedWaypoints.filter((point) => point.stopRole === "lunch");
   const dinners = selectedWaypoints.filter((point) => point.stopRole === "dinner");
   const rests = selectedWaypoints.filter((point) => point.stopRole === "rest");
+  const windingPoints = selectedWaypoints.filter((point) => point.winding === true);
   if (
     lunches.length !== 1 || lunches[0].kind !== "stop" ||
     dinners.length > 1 || dinners.some((point) => point.kind !== "stop") ||
     rests.length > 1 || rests.some((point) => point.kind !== "optional") ||
+    windingPoints.length > 20 ||
     selectedWaypoints.some((point) => point.kind !== "pass-through" && point.stopRole === undefined)
   ) throw new Error("INVALID_WAYPOINTS");
 

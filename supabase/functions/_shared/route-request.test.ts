@@ -83,6 +83,23 @@ describe("parseRouteRequest", () => {
     await expect(parseRouteRequest(await request([windingRest]), secret)).rejects.toThrow("INVALID_WAYPOINTS");
   });
 
+  it("rejects more than twenty selected winding points before a provider call", async () => {
+    const windingPoints = await Promise.all(Array.from({ length: 21 }, (_, index) => point({
+      kakaoPlaceId: `winding-${index}`,
+      longitude: 127.1 + index * 0.001,
+      winding: true,
+    })));
+    await expect(parseRouteRequest(await request(windingPoints.slice(0, 20)), secret)).resolves.toMatchObject({
+      waypoints: expect.arrayContaining([expect.objectContaining({ kakaoPlaceId: "winding-19" })]),
+    });
+    await expect(parseRouteRequest(await request(windingPoints), secret)).rejects.toThrow("INVALID_WAYPOINTS");
+
+    windingPoints[20].selected = false;
+    await expect(parseRouteRequest(await request(windingPoints), secret)).resolves.toMatchObject({
+      waypoints: expect.not.arrayContaining([expect.objectContaining({ kakaoPlaceId: "winding-20" })]),
+    });
+  });
+
   it("rejects normalized or timezone-less departure timestamps", async () => {
     const impossible = { ...await request(), departureAt: "2026-02-31T07:30:00+09:00" };
     await expect(parseRouteRequest(impossible, secret)).rejects.toThrow("INVALID_ROUTE_TIME");

@@ -49,6 +49,8 @@ Edge admission and database persistence use the same `0.005` degree tolerance on
 
 A custom winding point is a rider-authored mandatory zero-dwell pass-through point, not an automatically detected route class. All provider chunks must retain its order together with meals and selected rest. If Kakao cannot return a safe route through the approved points, the request fails explicitly; never request a winding alternative, generate an arbitrary detour, draw a straight line, or use a passenger-car fallback.
 
+The trusted request boundary rejects more than twenty selected custom winding points before consuming provider budget. Edge and database validation both use `0.005` degrees only for a requested place to snap to the provider road endpoint, while actual road-to-road continuity inside and across split legs remains `0.0002` degrees. Finalization locks the drafts, compares their canonical plan and recommended-route hashes with the durable planning tombstone, and revalidates geometry before persistence. Current schemaVersion 3 share projection preserves the accepted occurrence `stopRole`; immutable schemaVersion 1/2 rows are never rewritten and continue to use the legacy reader fallback.
+
 ## Return estimate and legacy storage boundary
 
 The planner accepts a ride date and departure time only. `plan-route` derives the recommended route's `returnAt` from validated Kakao section durations plus meal and selected-rest dwell, accepts a return after Seoul midnight, and rejects a computed duration of 24 hours or more. The browser cannot supply a desired or hard return value that affects this decision.

@@ -601,6 +601,9 @@ insert into tap_results values
   ((select count(*) = 1 from public.route_cache where trip_id = (select id from recommended_trip_result)), 'new plan atomically stores exactly one route'),
   ((select count(*) = 0 from public.route_cache where trip_id = (select id from recommended_trip_result) and profile <> 'recommended'), 'new plan stores no legacy candidate rows'),
   ((select preview_snapshot ->> 'schemaVersion' = '3' and preview_snapshot ? 'route' and not (preview_snapshot ? 'routes') from recommended_preview), 'new plan preview exposes one schema 3 route'),
+  ((select preview_snapshot -> 'route' -> 'legs' -> 1 -> 'to' ->> 'stopRole' = 'lunch'
+      and preview_snapshot -> 'route' -> 'legs' -> 2 -> 'from' ->> 'stopRole' = 'lunch'
+    from recommended_preview), 'schema 3 share projection preserves accepted route occurrence stop roles'),
   ((select jsonb_array_length(preview_snapshot -> 'waypoints') = 2 and preview_snapshot -> 'waypoints' -> 0 ->> 'label' = '와인딩' from recommended_preview), 'new plan preserves custom winding waypoint order');
 
 set local role service_role;

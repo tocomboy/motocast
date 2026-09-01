@@ -220,6 +220,17 @@ declare
   duration_seconds integer;
   dwell_minutes integer;
   distance_meters integer;
+  first_road_item jsonb;
+  last_section_item jsonb;
+  last_road_item jsonb;
+  vertex_count integer;
+  leg_start_lon double precision;
+  leg_start_lat double precision;
+  leg_end_lon double precision;
+  leg_end_lat double precision;
+  previous_leg_end_lon double precision := null;
+  previous_leg_end_lat double precision := null;
+  road_continuity_tolerance constant double precision := 0.0002;
   total_distance bigint := 0;
   total_duration bigint := 0;
 begin
@@ -294,6 +305,29 @@ begin
        ) is not true then
       return false;
     end if;
+
+    -- Each leg is validated against the shared requested point with the wider
+    -- provider snap tolerance above. The actual Kakao road geometry must still
+    -- be continuous across split-call leg boundaries at the stricter road
+    -- tolerance, otherwise a renderer would synthesize a straight connector.
+    first_road_item := leg_item -> 'sections' -> 0 -> 'roads' -> 0;
+    last_section_item := leg_item -> 'sections' ->
+      (jsonb_array_length(leg_item -> 'sections') - 1);
+    last_road_item := last_section_item -> 'roads' ->
+      (jsonb_array_length(last_section_item -> 'roads') - 1);
+    vertex_count := jsonb_array_length(last_road_item -> 'vertexes');
+    leg_start_lon := (first_road_item -> 'vertexes' ->> 0)::double precision;
+    leg_start_lat := (first_road_item -> 'vertexes' ->> 1)::double precision;
+    leg_end_lon := (last_road_item -> 'vertexes' ->> (vertex_count - 2))::double precision;
+    leg_end_lat := (last_road_item -> 'vertexes' ->> (vertex_count - 1))::double precision;
+    if previous_leg_end_lon is not null and (
+      abs(leg_start_lon - previous_leg_end_lon) > road_continuity_tolerance
+      or abs(leg_start_lat - previous_leg_end_lat) > road_continuity_tolerance
+    ) then
+      return false;
+    end if;
+    previous_leg_end_lon := leg_end_lon;
+    previous_leg_end_lat := leg_end_lat;
 
     total_distance := total_distance + distance_meters;
     total_duration := total_duration + duration_seconds + dwell_minutes * 60;
@@ -587,6 +621,10 @@ declare
   fingerprint_count integer;
   result_trip_id uuid;
   run_status text;
+  stored_plan_hash text;
+  stored_route_hash text;
+  current_plan_hash text;
+  current_route_hash text;
 begin
   if current_user_id is null or not public.is_active_member(current_user_id) then
     raise exception 'MEMBERSHIP_REQUIRED';
@@ -609,7 +647,8 @@ begin
   group by owner_id, planning_id
   on conflict (owner_id, planning_id) do nothing;
 
-  select status into run_status
+  select status, plan_hash, route_hash
+  into run_status, stored_plan_hash, stored_route_hash
   from public.route_plan_runs
   where owner_id = current_user_id and planning_id = target_planning_id
   for update;
@@ -644,6 +683,17 @@ begin
     )
   ) then
     raise exception 'ROUTE_PLAN_NOT_READY';
+  end if;
+
+  current_plan_hash := encode(extensions.digest(staged_plan::text, 'sha256'), 'hex');
+  if stored_plan_hash is distinct from current_plan_hash then
+    raise exception 'UNSAFE_ROUTE_RESPONSE';
+  end if;
+  if staged_plan ->> 'selectedProfile' = 'recommended' then
+    current_route_hash := encode(extensions.digest((staged_routes -> 0)::text, 'sha256'), 'hex');
+    if stored_route_hash is distinct from current_route_hash then
+      raise exception 'UNSAFE_ROUTE_RESPONSE';
+    end if;
   end if;
 
   staged_plan := case
@@ -721,6 +771,31 @@ begin
   ) returning id into created_snapshot_id;
   return created_snapshot_id;
 end;
+$$;
+
+-- Current schemaVersion 3 shares preserve the accepted route occurrence role.
+-- Legacy schemaVersion 1/2 snapshots are immutable rows and remain readable
+-- through the browser's role fallback; they are never rewritten here.
+create or replace function public.share_route_point(point jsonb)
+returns jsonb
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select jsonb_build_object(
+    'id', point ->> 'id',
+    'label', point ->> 'label',
+    'longitude', point -> 'longitude',
+    'latitude', point -> 'latitude',
+    'kind', point ->> 'kind',
+    'dwellMinutes', point -> 'dwellMinutes',
+    'selected', point -> 'selected',
+    'winding', coalesce(point -> 'winding', 'false'::jsonb)
+  ) || case
+    when point ->> 'stopRole' in ('lunch', 'dinner', 'rest')
+      then jsonb_build_object('stopRole', point ->> 'stopRole')
+    else '{}'::jsonb
+  end;
 $$;
 
 -- Every newly issued share is schemaVersion 3 with one representative route.

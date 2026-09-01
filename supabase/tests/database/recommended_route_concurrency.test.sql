@@ -391,6 +391,14 @@ union all
 select '76100000-0000-4000-8000-000000000041',
   'staging rejects a route point whose selected state differs from the plan',
   jsonb_set(route, '{legs,1,to,selected}', 'false'::jsonb)
+from recommended_fixture
+union all
+select '76100000-0000-4000-8000-000000000042',
+  'staging rejects a gap between adjacent legs even when both endpoints are within snap tolerance',
+  jsonb_set(
+    jsonb_set(route, '{legs,0,sections,0,roads,0,vertexes,4}', '127.054'::jsonb),
+    '{legs,1,sections,0,roads,0,vertexes,0}', '127.046'::jsonb
+  )
 from recommended_fixture;
 
 create temp table recommended_malformed_results(
@@ -424,6 +432,35 @@ begin
   set route = route #- '{legs,0,sections,0,roads,0,duration}'
   where owner_id = '75100000-0000-0000-0000-000000000001'
     and planning_id = '76100000-0000-4000-8000-000000000039';
+
+  perform public.stage_route_candidate_internal(
+    '75100000-0000-0000-0000-000000000001',
+    '76100000-0000-4000-8000-000000000043',
+    (select plan from recommended_fixture), (select route from recommended_fixture)
+  );
+  update public.route_plan_drafts
+  set route = jsonb_set(route, '{legs,0,sections,0,roads,0,vertexes,2}', '127.026'::jsonb)
+  where owner_id = '75100000-0000-0000-0000-000000000001'
+    and planning_id = '76100000-0000-4000-8000-000000000043';
+
+  perform public.stage_route_candidate_internal(
+    '75100000-0000-0000-0000-000000000001',
+    '76100000-0000-4000-8000-000000000044',
+    (select plan from recommended_fixture), (select route from recommended_fixture)
+  );
+  update public.route_plan_drafts
+  set route = jsonb_set(
+    jsonb_set(route, '{legs,0,sections,0,roads,0,vertexes,4}', '127.054'::jsonb),
+    '{legs,1,sections,0,roads,0,vertexes,0}', '127.046'::jsonb
+  )
+  where owner_id = '75100000-0000-0000-0000-000000000001'
+    and planning_id = '76100000-0000-4000-8000-000000000044';
+  update public.route_plan_runs run
+  set route_hash = encode(extensions.digest(draft.route::text, 'sha256'), 'hex')
+  from public.route_plan_drafts draft
+  where run.owner_id = draft.owner_id and run.planning_id = draft.planning_id
+    and run.owner_id = '75100000-0000-0000-0000-000000000001'
+    and run.planning_id = '76100000-0000-4000-8000-000000000044';
 end;
 $$;
 
@@ -439,6 +476,10 @@ grant execute on function public.test_finalize_recommended_route(uuid) to authen
 select set_config('request.jwt.claim.sub', '75100000-0000-0000-0000-000000000001', false);
 create temp table tampered_finalize_result as
 select public.test_finalize_recommended_route('76100000-0000-4000-8000-000000000039') as result;
+create temp table hash_tampered_finalize_result as
+select public.test_finalize_recommended_route('76100000-0000-4000-8000-000000000043') as result;
+create temp table cross_leg_tampered_finalize_result as
+select public.test_finalize_recommended_route('76100000-0000-4000-8000-000000000044') as result;
 select set_config('request.jwt.claim.sub', '', false);
 
 create or replace function public.test_stage_recommended_route(target_planning_id uuid, staged_plan jsonb, staged_route jsonb)
@@ -522,7 +563,11 @@ insert into tap_results
 select rejected, description from recommended_malformed_results order by description;
 insert into tap_results values
   ((select result = 'UNSAFE_ROUTE_RESPONSE' from tampered_finalize_result),
-   'finalization revalidates and rejects a staged draft mutated after admission');
+   'finalization revalidates and rejects a structurally invalid staged draft'),
+  ((select result = 'UNSAFE_ROUTE_RESPONSE' from hash_tampered_finalize_result),
+   'finalization rejects a structurally valid draft whose durable route hash changed'),
+  ((select result = 'UNSAFE_ROUTE_RESPONSE' from cross_leg_tampered_finalize_result),
+   'finalization rejects an adjacent-leg road gap even when a privileged test aligns the durable hash');
 
 select dblink_disconnect('recommended_c1');
 select dblink_disconnect('recommended_c2');
