@@ -209,7 +209,6 @@ describe("KakaoMapCanvas", () => {
       { label: "점심지", latitude: 37.52, longitude: 127.12, role: "lunch" as const },
       { label: "저녁지", latitude: 37.53, longitude: 127.13, role: "dinner" as const },
       { label: "휴식지", latitude: 37.54, longitude: 127.14, role: "rest" as const },
-      { label: "굽이길", latitude: 37.55, longitude: 127.15, role: "winding" as const },
       { label: "경유지", latitude: 37.56, longitude: 127.16, role: "waypoint" as const },
     ];
     const renderer = await mountMap(undefined, rolePoints);
@@ -222,12 +221,11 @@ describe("KakaoMapCanvas", () => {
       "점심 · 점심지",
       "저녁 · 저녁지",
       "휴식 · 휴식지",
-      "와인딩 · 굽이길",
       "경유 · 경유지",
     ]);
     const legend = renderer.root.findByProps({ "aria-label": "지도 지점 표시 안내" });
     expect(legend.findAllByType("li").map((item) => item.children.at(-1))).toEqual([
-      "출발", "복귀", "점심", "저녁", "휴식", "와인딩", "경유",
+      "출발", "복귀", "점심", "저녁", "휴식", "경유",
     ]);
     await act(async () => renderer.unmount());
   });
@@ -238,18 +236,18 @@ describe("KakaoMapCanvas", () => {
     const maps = installMaps();
     const renderer = await mountMap(undefined, [
       { label: "점심", latitude: 37.52, longitude: 127.12, role: "lunch" },
-      { label: "점심 · 선택 경로 미통과", latitude: 37.52, longitude: 127.12, role: "winding", nonTraversed: true },
+      { label: "점심 · 선택 경로 미통과", latitude: 37.52, longitude: 127.12, role: "waypoint", nonTraversed: true },
     ]);
     await flush(maps.loadCallbacks);
 
     expect(maps.Marker).toHaveBeenCalledTimes(1);
     expect(maps.MarkerImage).toHaveBeenCalledTimes(1);
     const markerCall = maps.Marker.mock.calls[0] as unknown as [{ title: string }];
-    expect(markerCall[0].title).toBe("점심 · 점심 / 와인딩 · 점심 · 선택 경로 미통과");
+    expect(markerCall[0].title).toBe("점심 · 점심 / 경유 · 점심 · 선택 경로 미통과");
     const markerImageCall = maps.MarkerImage.mock.calls[0] as unknown as [string];
     const compositeSvg = decodeURIComponent(markerImageCall[0].replace("data:image/svg+xml;charset=UTF-8,", ""));
     expect(compositeSvg).toContain(">점</text>");
-    expect(compositeSvg).toContain(">와×</text>");
+    expect(compositeSvg).toContain(">경×</text>");
     expect(maps.extend).toHaveBeenCalledTimes(1);
     await act(async () => renderer.unmount());
   });
@@ -285,7 +283,7 @@ describe("KakaoMapCanvas", () => {
       label: `와인딩 경유지 ${index + 1} · 선택 경로 미통과`,
       latitude: 37.5 + index / 1000,
       longitude: 127.1 + index / 1000,
-      role: "winding" as const,
+      role: "waypoint" as const,
       nonTraversed: true,
     }));
     let renderer!: ReactTestRenderer;

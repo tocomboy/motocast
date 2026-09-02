@@ -5,7 +5,7 @@ import { buildSharedMapPoints } from "./shared-ride-snapshot";
 const origin = { id: "route-origin", label: "출발", longitude: 127, latitude: 37 };
 const lunch = { id: "route-lunch", label: "점심", longitude: 127.1, latitude: 37.1 };
 const rest = { id: "route-rest", label: "휴식", longitude: 127.2, latitude: 37.2 };
-const winding = { id: "route-winding", label: "와인딩", longitude: 127.3, latitude: 37.3 };
+const winding = { id: "route-winding", label: "경유지", longitude: 127.3, latitude: 37.3 };
 const destination = { id: "route-destination", label: "복귀", longitude: 127.4, latitude: 37.4 };
 
 describe("buildSharedMapPoints", () => {
@@ -28,7 +28,7 @@ describe("buildSharedMapPoints", () => {
         { ...rest, id: "waypoint-1", position: 1, kind: "optional", dwellMinutes: 30, selected: true, winding: false },
         { ...winding, id: "waypoint-2", position: 2, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
       ],
-    }).map((point) => point.role)).toEqual(["origin", "lunch", "rest", "winding", "destination"]);
+    }).map((point) => point.role)).toEqual(["origin", "lunch", "rest", "waypoint", "destination"]);
   });
 
   it("does not mark a winding point omitted when a balanced route traverses it", () => {
@@ -42,7 +42,7 @@ describe("buildSharedMapPoints", () => {
       ],
     });
 
-    expect(points.map((point) => point.role)).toEqual(["origin", "winding", "lunch", "destination"]);
+    expect(points.map((point) => point.role)).toEqual(["origin", "waypoint", "lunch", "destination"]);
     expect(points.some((point) => "nonTraversed" in point && point.nonTraversed)).toBe(false);
   });
 
@@ -61,7 +61,7 @@ describe("buildSharedMapPoints", () => {
       { role: "lunch" },
       { role: "rest" },
       { role: "destination" },
-      { role: "winding", label: "와인딩 · 선택 경로 미통과" },
+      { role: "waypoint", label: "경유지 · 선택 경로 미통과" },
     ]);
   });
 
@@ -78,7 +78,7 @@ describe("buildSharedMapPoints", () => {
       { role: "origin" },
       { role: "lunch" },
       { role: "destination" },
-      { role: "winding", label: "점심 · 선택 경로 미통과", nonTraversed: true },
+      { role: "waypoint", label: "점심 · 선택 경로 미통과", nonTraversed: true },
     ]);
   });
 
@@ -95,7 +95,7 @@ describe("buildSharedMapPoints", () => {
       { role: "origin" },
       { role: "lunch" },
       { role: "destination" },
-      { role: "winding", nonTraversed: true },
+      { role: "waypoint", nonTraversed: true },
     ]);
   });
 
@@ -108,7 +108,7 @@ describe("buildSharedMapPoints", () => {
         { ...lunch, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
         { ...lunch, id: "waypoint-1", position: 1, kind: "stop", dwellMinutes: 60, selected: true, winding: false },
       ],
-    }).map((point) => point.role)).toEqual(["origin", "winding", "lunch", "destination"]);
+    }).map((point) => point.role)).toEqual(["origin", "waypoint", "lunch", "destination"]);
   });
 
   it("keeps same-place plain, lunch and dinner occurrences distinct", () => {

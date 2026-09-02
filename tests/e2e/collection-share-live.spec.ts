@@ -6,7 +6,7 @@ const liveQueries = {
   destination: process.env.MOTOCAST_E2E_DESTINATION_QUERY?.trim(),
   lunch: process.env.MOTOCAST_E2E_LUNCH_QUERY?.trim(),
   rest: process.env.MOTOCAST_E2E_REST_QUERY?.trim(),
-  winding: process.env.MOTOCAST_E2E_WINDING_QUERY?.trim(),
+  waypoint: process.env.MOTOCAST_E2E_WAYPOINT_QUERY?.trim() ?? process.env.MOTOCAST_E2E_WINDING_QUERY?.trim(),
 };
 const hasLiveQueries = Object.values(liveQueries).every(Boolean);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -67,6 +67,7 @@ async function selectFirstPlace(
   } else {
     await expect(input).toHaveAttribute("aria-invalid", "false");
   }
+  return selectedName;
 }
 
 async function startCollectionDeletion(page: Page, collectionId: string) {
@@ -212,18 +213,26 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await page.getByLabel("출발", { exact: true }).fill(departure.time);
     await selectFirstPlace(page, "출발지", liveQueries.origin!);
     await selectFirstPlace(page, "복귀지", liveQueries.destination!);
-    await selectFirstPlace(page, "점심 · 선택", liveQueries.lunch!);
-    await page.getByRole("button", { name: "+ 휴식지 추가" }).click();
-    await selectFirstPlace(page, "1번째 휴식 장소", liveQueries.rest!);
-    await page.getByRole("button", { name: /커스텀 와인딩 경유지 추가/ }).click();
-    await expect(page.getByLabel(/^와인딩 경유지$/)).toBeFocused();
-    await selectFirstPlace(
-      page,
-      "와인딩 경유지",
-      liveQueries.winding!,
-      "커스텀 와인딩 경유지 순서",
-    );
+    const waypointType = page.getByLabel("추가할 종류");
+    const addWaypoint = page.getByRole("button", { name: /^\+ 경유지 추가/ });
+    await waypointType.selectOption("lunch");
+    await addWaypoint.click();
+    const lunchName = await selectFirstPlace(page, "1번째 점심 장소", liveQueries.lunch!);
+    await waypointType.selectOption("waypoint");
+    await addWaypoint.click();
+    const waypointName = await selectFirstPlace(page, "2번째 경유지 장소", liveQueries.waypoint!);
+    await page.getByRole("button", { name: "2번째 경유지 위로 이동" }).click();
+    await waypointType.selectOption("rest");
+    await addWaypoint.click();
+    const restName = await selectFirstPlace(page, "3번째 휴식 장소", liveQueries.rest!);
+    const orderedItems = page.getByRole("list", { name: "경유지 방문 순서" }).getByRole("listitem");
+    await expect(orderedItems.nth(0)).toContainText(waypointName);
+    await expect(orderedItems.nth(1)).toContainText(lunchName);
+    await expect(orderedItems.nth(2)).toContainText(restName);
 
+    const plannedRoute = page.waitForRequest((request) => (
+      request.url().includes("/functions/v1/plan-route") && request.method() === "POST"
+    ), { timeout: 120_000 });
     const finalizationStarted = page.waitForRequest((request) => (
       request.url().includes("/rest/v1/rpc/finalize_trip_plan") && request.method() === "POST"
     ), { timeout: 120_000 });
@@ -231,6 +240,8 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
       response.url().includes("/rest/v1/rpc/finalize_trip_plan") && response.request().method() === "POST"
     ), { timeout: 120_000 });
     await page.getByRole("button", { name: "추천 경로 다시 계산" }).click();
+    const plannedRouteBody = (await plannedRoute).postDataJSON() as { waypoints?: Array<{ stopRole?: string }> };
+    expect(plannedRouteBody.waypoints?.map((point) => point.stopRole ?? "waypoint")).toEqual(["waypoint", "lunch", "rest"]);
     await finalizationStarted;
     cleanup.tripMutationStarted = true;
     const finalizedResponse = await finalizedTrip;
@@ -246,12 +257,12 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/복귀/);
     await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/점심/);
     await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/휴식/);
-    await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/와인딩/);
+    await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/경유/);
     await expect(page.getByRole("status").filter({ hasText: /추천 경로 날씨:/ })).toBeVisible({ timeout: 60_000 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/와인딩/);
+    await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/경유/);
     await expect(page.locator(".live-data-badge")).toHaveText("실제 경로");
     expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
 
@@ -277,7 +288,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     cleanup.collectionId = savedCollectionId;
     await expect(page.getByRole("status").filter({ hasText: `${title} 컬렉션의 1번째 불변 버전` })).toBeVisible();
 
-    const restDwell = page.getByLabel("머무는 시간 · 분").first();
+    const restDwell = page.getByLabel("휴식 머무는 시간 · 분").first();
     await restDwell.fill("45");
     await expect(restDwell).toHaveValue("45");
 
@@ -292,7 +303,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(manualPreviewButton).toBeDisabled();
     await expect(page.locator(".share-preview")).toHaveCount(0);
     await expect(restDwell).toHaveValue("30");
-    await expect(page.getByRole("list", { name: "적용된 컬렉션 경유지 순서" })).toContainText("30분");
+    await expect(page.getByRole("list", { name: "경유지 방문 순서" })).toContainText("30분");
     expect(planRouteRequestCount).toBe(routeCountBeforePreparation);
     expect(finalizeRequestCount).toBe(finalizeCountBeforePreparation);
     expect(weatherRequestCount).toBe(weatherCountBeforePreparation);
@@ -410,26 +421,26 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await page.getByRole("button", { name: "계획 수정" }).click();
     const plannerDialog = page.getByRole("dialog", { name: "라이딩 계획 편집" });
     await expect(plannerDialog).toBeVisible();
-    const addRest = plannerDialog.getByRole("button", { name: /^\+ 휴식지 추가/ });
+    const addRest = plannerDialog.getByRole("button", { name: /^\+ 경유지 추가/ });
+    await plannerDialog.getByLabel("추가할 종류").selectOption("rest");
     for (let index = 0; index < 4; index += 1) await addRest.click();
-    await expect(addRest).toContainText("5/5");
-    await expect(addRest).toBeDisabled();
-    const dwellInputs = plannerDialog.getByLabel("머무는 시간 · 분");
+    await addRest.click();
+    await expect(plannerDialog.getByRole("status").filter({ hasText: "휴식은 최대 5개까지 추가할 수 있습니다." })).toBeVisible();
+    const dwellInputs = plannerDialog.getByLabel("휴식 머무는 시간 · 분");
     await dwellInputs.first().fill("45");
     await expect(dwellInputs.first()).toHaveValue("45");
-    await plannerDialog.getByRole("button", { name: "2번째 휴식 위로 이동" }).click();
+    await plannerDialog.getByRole("button", { name: "4번째 휴식 위로 이동" }).click();
     await plannerDialog.getByRole("button", { name: "추천 경로 다시 계산" }).click();
     const errorNotice = plannerDialog.getByRole("alert");
     await expect(errorNotice).toBeFocused();
-    await expect(errorNotice).toContainText("추가한 모든 휴식지에서 검색 결과 장소를 선택해 주세요.");
+    await expect(errorNotice).toContainText("추가한 모든 경유지에서 검색 결과 장소를 선택해 주세요.");
     expect(await errorNotice.evaluate((element) => {
       const box = element.getBoundingClientRect();
       return box.left >= 0 && box.right <= window.innerWidth && element.scrollWidth <= element.clientWidth;
     })).toBe(true);
     for (let remaining = 5; remaining > 0; remaining -= 1) {
-      await plannerDialog.getByRole("button", { name: /휴식 제거/ }).first().click();
+      await plannerDialog.getByRole("button", { name: /번째 휴식 제거/ }).first().click();
     }
-    await expect(addRest).toContainText("0/5");
     await expect(addRest).toBeEnabled();
 
     if (!cleanup.collectionId) throw new Error("Live collection cleanup identity was not captured");

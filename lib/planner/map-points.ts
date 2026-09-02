@@ -7,7 +7,6 @@ export function buildPlannerMapPoints(segments: PlannedSegment[]) {
     let role: "origin" | "destination" | "lunch" | "dinner" | "rest" | "winding" | "waypoint" = "waypoint";
     if (index === 0) role = "origin";
     else if (index === points.length - 1) role = "destination";
-    else if (point.winding === true) role = "winding";
     else if (point.stopRole === "lunch") role = "lunch";
     else if (point.stopRole === "dinner") role = "dinner";
     else if (point.stopRole === "rest") role = "rest";

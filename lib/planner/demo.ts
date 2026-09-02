@@ -119,7 +119,7 @@ export const demoRoute: RouteCandidate = (() => {
 
 export const demoMapPoints = [
   { ...points.origin, role: "origin" as const },
-  { ...points.pass, role: "winding" as const },
+  { ...points.pass, role: "waypoint" as const },
   { ...points.lunch, role: "lunch" as const },
   { ...points.rest, role: "rest" as const },
   { ...points.destination, role: "destination" as const },

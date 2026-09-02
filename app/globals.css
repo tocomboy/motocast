@@ -389,6 +389,16 @@ button {
   width: 100%;
 }
 
+.planner-form select {
+  background: #f8f5ee;
+  border: 1px solid #ded7ca;
+  border-radius: 9px;
+  color: var(--ink);
+  min-width: 0;
+  padding: 11px 12px;
+  width: 100%;
+}
+
 .planner-form input::placeholder {
   color: #9e9b92;
 }
@@ -568,12 +578,6 @@ button {
   line-height: 1.45;
 }
 
-.waypoint-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
 .ordered-waypoints {
   display: grid;
   gap: 7px;
@@ -644,52 +648,6 @@ button {
 .waypoint-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.35;
-}
-
-.winding-editor {
-  background: #fbf4eb;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  display: grid;
-  gap: 8px;
-  padding: 10px;
-}
-
-.text-button.muted {
-  color: var(--ink-soft);
-}
-
-.waypoint-tag {
-  align-items: center;
-  background: #edf1ed;
-  border-radius: 8px;
-  display: inline-flex;
-  font-size: 0.72rem;
-  gap: 7px;
-  padding: 8px 9px;
-}
-
-.waypoint-tag.winding {
-  background: #fbe6dc;
-}
-
-.waypoint-tag i {
-  background: var(--ink-soft);
-  border-radius: 50%;
-  height: 6px;
-  width: 6px;
-}
-
-.waypoint-tag.winding i {
-  background: var(--orange);
-}
-
-.waypoint-tag button {
-  background: none;
-  border: 0;
-  color: #747c77;
-  cursor: pointer;
-  padding: 0 1px;
 }
 
 .text-button {
@@ -2258,47 +2216,73 @@ textarea:focus-visible {
 .weather-chip[data-condition="snow"] .weather-word::before { content: "✳ "; }
 .weather-chip[data-condition="unknown"] .weather-word::before { content: "? "; }
 
-.rest-list {
+.waypoint-editor {
   display: grid;
-  gap: 10px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
+  gap: 12px;
 }
 
-.rest-list > li {
+.waypoint-empty,
+.waypoint-help {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ordered-waypoint.waypoint-card {
+  align-items: stretch;
   background: #fbf4eb;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  display: grid;
+  border-color: var(--line);
   gap: 10px;
-  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   padding: 12px;
 }
 
-.rest-heading,
-.rest-actions {
+.waypoint-card .waypoint-heading {
   align-items: center;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 8px;
-  justify-content: space-between;
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
-.rest-heading strong,
-.rest-heading span,
-.rest-actions button {
+.waypoint-card .waypoint-heading > span:last-child {
+  color: var(--ink-soft);
   font-size: 0.875rem;
 }
 
-.rest-heading span { color: var(--ink-soft); }
+.waypoint-position {
+  color: var(--orange-deep);
+  font-family: Georgia, serif;
+  font-size: 0.875rem;
+  font-weight: 800;
+}
 
-.rest-actions button {
+.waypoint-card .waypoint-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.waypoint-card .waypoint-actions button {
   background: white;
   border: 1px solid var(--line);
   border-radius: 7px;
+  font-size: 0.875rem;
+  height: auto;
   min-height: 40px;
   padding: 8px 10px;
+  width: auto;
+}
+
+.waypoint-add-row {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.waypoint-add-row .text-button {
+  min-height: 44px;
+  padding: 9px 0;
 }
 
 .action-notice {
@@ -2430,8 +2414,22 @@ textarea:focus-visible {
     grid-column: 1 / -1;
   }
 
-  .rest-actions {
-    justify-content: flex-start;
+  .waypoint-add-row {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .waypoint-add-row .text-button {
+    justify-self: stretch;
+    text-align: left;
+  }
+
+  .waypoint-card .waypoint-heading {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .waypoint-card .waypoint-heading > span:last-child {
+    grid-column: 2;
   }
 }
 

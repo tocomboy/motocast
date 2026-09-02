@@ -5,21 +5,10 @@ import Link from "next/link";
 
 import { CollectionManager } from "@/components/collection-manager";
 import { KakaoMapCanvas } from "@/components/kakao-map-canvas";
+import { OrderedWaypointEditor } from "@/components/ordered-waypoint-editor";
 import { PlaceSearchField } from "@/components/place-search-field";
 import { ShareManager } from "@/components/share-manager";
-import {
-  appliedWindingActionLabel,
-  insertCollectionRest,
-  insertCollectionWinding,
-  moveCollectionRest,
-  moveCollectionWinding,
-  prepareCollectionApplication,
-  removeCollectionOccurrence,
-  removeCollectionWinding,
-  replaceCollectionOccurrence,
-  replaceCollectionStop,
-  selectedWindingCount,
-} from "@/lib/collections/application";
+import { prepareCollectionApplication } from "@/lib/collections/application";
 import type { CollectionCourse, CollectionPoint } from "@/lib/collections/contracts";
 import type { PlaceSearchResult } from "@/lib/places/search";
 import {
@@ -31,6 +20,11 @@ import { PlannerActionGate } from "@/lib/planner/action-gate";
 import { withClientTimeout } from "@/lib/planner/client-timeout";
 import { isPastDeparture, minimumDeparture } from "@/lib/planner/departure";
 import { buildPlannerMapPoints } from "@/lib/planner/map-points";
+import {
+  collectionPointFromEditableWaypoint,
+  editableWaypointFromCollectionPoint,
+  type EditableWaypoint,
+} from "@/lib/planner/ordered-waypoints";
 import { parseSafeRecommendedRoute, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
 import { readRouteFailureCode, routeFailureNotice } from "@/lib/planner/route-failure";
 import { buildTimeline, formatRideTime, weatherRiskLabel } from "@/lib/planner/schedule";
@@ -44,8 +38,6 @@ type PlannerDraft = {
   destination: string;
   rideDate: string;
   departureTime: string;
-  lunch: string;
-  dinner: string;
 };
 
 type PlannerPlaces = {
@@ -53,10 +45,6 @@ type PlannerPlaces = {
   destination: PlaceSearchResult | null;
 };
 
-type AppliedCollectionPoint = CollectionPoint & { uiKey: string };
-type RestStop = { id: string; place: PlaceSearchResult | null; dwellMinutes: number };
-type PlaceOccurrence = { id: string; place: PlaceSearchResult };
-type MealStops = { lunch: PlaceOccurrence | null; dinner: PlaceOccurrence | null };
 type PlannerNotice = { message: string; severity: "info" | "warning" | "error"; eventId: number };
 
 function seoulToday() {
@@ -78,8 +66,6 @@ const defaultDraft: PlannerDraft = {
   destination: "팔당 복귀점",
   rideDate: seoulToday(),
   departureTime: "07:30",
-  lunch: "",
-  dinner: "",
 };
 
 function minutesLabel(value: number) {
@@ -105,6 +91,18 @@ function weatherModelLabel(status: string | undefined, model: string | undefined
 
 function isUuid(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function endpointPoint(place: PlaceSearchResult) {
+  return {
+    ...place,
+    id: place.kakaoPlaceId,
+    label: place.name,
+    kind: "pass-through" as const,
+    dwellMinutes: 0,
+    selected: true,
+    winding: false,
+  };
 }
 
 function liveRouteCandidate(response: SafeRouteResponse): RouteCandidate {
@@ -178,11 +176,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     origin: null,
     destination: null,
   });
-  const [mealStops, setMealStops] = useState<MealStops>({ lunch: null, dinner: null });
-  const [restStops, setRestStops] = useState<RestStop[]>([]);
-  const [windingPoints, setWindingPoints] = useState<PlaceOccurrence[]>([]);
-  const [appliedCollectionPoints, setAppliedCollectionPoints] = useState<AppliedCollectionPoint[] | null>(null);
-  const [addingWinding, setAddingWinding] = useState(false);
+  const [waypoints, setWaypoints] = useState<EditableWaypoint[]>([]);
   const [liveRoute, setLiveRoute] = useState<RouteCandidate | null>(null);
   const [liveTripId, setLiveTripId] = useState<string | null>(null);
   const [weather, setWeather] = useState<WeatherTimelineResponse | null>(null);
@@ -207,34 +201,24 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const [placeSelectionRevision, setPlaceSelectionRevision] = useState(0);
   const plannerPanelRef = useRef<HTMLElement>(null);
   const mobilePlanButtonRef = useRef<HTMLButtonElement>(null);
-  const addWindingButtonRef = useRef<HTMLButtonElement>(null);
-  const addRestButtonRef = useRef<HTMLButtonElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
   const noticeSequenceRef = useRef(0);
-  const appliedPointKeySequenceRef = useRef(0);
   const routeGenerationRef = useRef(0);
   const liveTripIdRef = useRef<string | null>(null);
   const weatherRequestRef = useRef(0);
   const sharePreviewSerialRef = useRef(0);
   const actionGateRef = useRef(new PlannerActionGate());
-  const windingPointCount = appliedCollectionPoints
-    ? selectedWindingCount(appliedCollectionPoints)
-    : windingPoints.length;
-
   function setNotice(message: string, severity: PlannerNotice["severity"] = "info") {
     noticeSequenceRef.current += 1;
     setNoticeState({ message, severity, eventId: noticeSequenceRef.current });
   }
 
-  function asAppliedPoint(point: CollectionPoint): AppliedCollectionPoint {
-    appliedPointKeySequenceRef.current += 1;
-    return { ...point, uiKey: `applied-point-${appliedPointKeySequenceRef.current}` };
-  }
-
   useEffect(() => {
-    const currentKey = "motocast-planner-draft-v2";
-    const legacyKey = "motocast-planner-draft-v1";
-    const saved = window.localStorage.getItem(currentKey) ?? window.localStorage.getItem(legacyKey);
+    const currentKey = "motocast-planner-draft-v3";
+    const legacyKeys = ["motocast-planner-draft-v2", "motocast-planner-draft-v1"];
+    const saved = window.localStorage.getItem(currentKey) ?? legacyKeys
+      .map((key) => window.localStorage.getItem(key))
+      .find((value) => value !== null);
     if (!saved) return;
     let restored: PlannerDraft;
     try {
@@ -244,13 +228,11 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         destination: typeof parsed.destination === "string" ? parsed.destination : defaultDraft.destination,
         rideDate: typeof parsed.rideDate === "string" ? parsed.rideDate : defaultDraft.rideDate,
         departureTime: typeof parsed.departureTime === "string" ? parsed.departureTime : defaultDraft.departureTime,
-        lunch: typeof parsed.lunch === "string" ? parsed.lunch : defaultDraft.lunch,
-        dinner: typeof parsed.dinner === "string" ? parsed.dinner : defaultDraft.dinner,
       };
-      window.localStorage.removeItem(legacyKey);
+      legacyKeys.forEach((key) => window.localStorage.removeItem(key));
     } catch {
       window.localStorage.removeItem(currentKey);
-      window.localStorage.removeItem(legacyKey);
+      legacyKeys.forEach((key) => window.localStorage.removeItem(key));
       return;
     }
     const task = window.setTimeout(() => setDraft(restored), 0);
@@ -258,7 +240,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem("motocast-planner-draft-v2", JSON.stringify(draft));
+    window.localStorage.setItem("motocast-planner-draft-v3", JSON.stringify(draft));
   }, [draft]);
 
   useEffect(() => {
@@ -341,31 +323,28 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     live: Boolean(liveRoute),
     draftDepartureAt: departureAt,
     fallbackDepartureAt: demoDepartureAt,
-    includeRest: restStops.length > 0,
+    includeRest: waypoints.some((waypoint) => waypoint.role === "rest"),
     segments: selected.segments,
-  }), [departureAt, liveRoute, restStops.length, selected]);
+  }), [departureAt, liveRoute, selected, waypoints]);
   const selectedMapPoints = liveRoute
     ? buildPlannerMapPoints(selected.segments)
     : demoMapPoints;
 
   const collectionPoints = useMemo<CollectionPoint[]>(() => {
-    if (appliedCollectionPoints) return appliedCollectionPoints;
     if (!connected) return [];
-    return [
-      ...windingPoints.map((occurrence) => routePoint(occurrence.place, "pass-through", 0, true, undefined, occurrence.id)),
-      ...(mealStops.lunch ? [routePoint(mealStops.lunch.place, "stop", 60, false, "lunch", mealStops.lunch.id)] : []),
-      ...restStops.flatMap((rest) => rest.place
-        ? [routePoint(rest.place, "optional", rest.dwellMinutes, false, "rest", rest.id)]
-        : []),
-      ...(mealStops.dinner ? [routePoint(mealStops.dinner.place, "stop", 60, false, "dinner", mealStops.dinner.id)] : []),
-    ];
-  }, [appliedCollectionPoints, connected, mealStops, restStops, windingPoints]);
+    return waypoints.flatMap((waypoint) => {
+      const point = collectionPointFromEditableWaypoint(waypoint);
+      return point ? [point] : [];
+    });
+  }, [connected, waypoints]);
+
+  const allWaypointPlacesSelected = collectionPoints.length === waypoints.length;
 
   const currentCourse = useMemo<CollectionCourse | null>(() => (
-    places.origin && places.destination
+    places.origin && places.destination && allWaypointPlacesSelected
       ? { origin: places.origin, destination: places.destination, points: collectionPoints }
       : null
-  ), [collectionPoints, places.destination, places.origin]);
+  ), [allWaypointPlacesSelected, collectionPoints, places.destination, places.origin]);
 
   function invalidateShareSession() {
     setSharePreviewRequest(null);
@@ -391,182 +370,14 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     markRouteInputChanged();
   }
 
-  function selectMeal(stopRole: keyof MealStops, place: PlaceSearchResult | null) {
-    const previous = mealStops[stopRole];
-    const occurrence = place ? { id: previous?.id ?? crypto.randomUUID(), place } : null;
-    setMealStops((current) => ({ ...current, [stopRole]: occurrence }));
-    setAppliedCollectionPoints((current) => {
-      if (!current) return null;
-      const replacement = occurrence
-        ? asAppliedPoint(routePoint(occurrence.place, "stop", 60, false, stopRole, occurrence.id))
-        : null;
-      return replaceCollectionStop(current, stopRole, replacement);
-    });
+  function updateWaypoints(next: EditableWaypoint[]) {
+    setWaypoints(next);
     markRouteInputChanged();
-  }
-
-  function addRestStop() {
-    if (restStops.length >= 5) {
-      setWaypointStatus("휴식지는 최대 5개까지 추가할 수 있습니다.");
-      return;
-    }
-    setRestStops((current) => [...current, { id: crypto.randomUUID(), place: null, dwellMinutes: 30 }]);
-    setWaypointStatus(`${restStops.length + 1}번째 휴식지를 추가했습니다. 장소를 선택해 주세요.`);
-    markRouteInputChanged();
-  }
-
-  function selectRestStop(id: string, place: PlaceSearchResult | null) {
-    const rest = restStops.find((item) => item.id === id);
-    if (!rest) return;
-    setRestStops((current) => current.map((item) => item.id === id ? { ...item, place } : item));
-    setAppliedCollectionPoints((current) => {
-      if (!current) return null;
-      if (!place) return removeCollectionOccurrence(current, id);
-      const replacement = asAppliedPoint(routePoint(place, "optional", rest.dwellMinutes, false, "rest", id));
-      return current.some((point) => point.id === id)
-        ? replaceCollectionOccurrence(current, id, replacement)
-        : insertCollectionRest(current, replacement);
-    });
-    markRouteInputChanged();
-  }
-
-  function updateRestDwell(id: string, dwellMinutes: number) {
-    if (!Number.isInteger(dwellMinutes) || dwellMinutes < 1 || dwellMinutes > 1440) return;
-    setRestStops((current) => current.map((item) => item.id === id ? { ...item, dwellMinutes } : item));
-    setAppliedCollectionPoints((current) => current?.map((point) => (
-      point.id === id ? { ...point, dwellMinutes } : point
-    )) ?? null);
-    markRouteInputChanged();
-  }
-
-  function moveRestStop(id: string, direction: -1 | 1) {
-    setRestStops((current) => {
-      const index = current.findIndex((item) => item.id === id);
-      const target = index + direction;
-      if (index < 0 || target < 0 || target >= current.length) return current;
-      const reordered = [...current];
-      [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
-      return reordered;
-    });
-    setAppliedCollectionPoints((current) => current ? moveCollectionRest(current, id, direction) : null);
-    markRouteInputChanged();
-  }
-
-  function removeRestStop(id: string) {
-    const index = restStops.findIndex((item) => item.id === id);
-    const focusId = restStops[index + 1]?.id ?? restStops[index - 1]?.id ?? null;
-    setRestStops((current) => current.filter((item) => item.id !== id));
-    setAppliedCollectionPoints((current) => current ? removeCollectionOccurrence(current, id) : null);
-    setWaypointStatus("휴식지를 제거했습니다.");
-    markRouteInputChanged();
-    window.setTimeout(() => {
-      if (focusId) {
-        plannerPanelRef.current
-          ?.querySelector<HTMLButtonElement>(`[data-rest-id="${focusId}"] button[aria-label$="휴식 제거"]`)
-          ?.focus();
-      } else {
-        addRestButtonRef.current?.focus();
-      }
-    }, 0);
-  }
-
-  function addWindingPoint(place: PlaceSearchResult | null) {
-    if (!place) return;
-    if (windingPointCount >= 20) {
-      setWaypointStatus("와인딩 경유지는 최대 20개까지 추가할 수 있습니다.");
-      setAddingWinding(false);
-      focusAfterWindingEdit();
-      return;
-    }
-    const occurrence = { id: crypto.randomUUID(), place };
-    if (!appliedCollectionPoints) setWindingPoints((current) => [...current, occurrence]);
-    setAppliedCollectionPoints((current) => {
-      if (!current) return null;
-      const point = asAppliedPoint(routePoint(place, "pass-through", 0, true, undefined, occurrence.id));
-      return insertCollectionWinding(current, point);
-    });
-    setAddingWinding(false);
-    setWaypointStatus(`${place.name}을(를) 와인딩 경유지 마지막에 추가했습니다.`);
-    markRouteInputChanged();
-    focusAfterWindingEdit(windingPointCount + 1 >= 20);
-  }
-
-  function moveWindingPoint(index: number, direction: -1 | 1) {
-    const occurrence = windingPoints[index];
-    setWindingPoints((current) => {
-      const nextIndex = index + direction;
-      if (nextIndex < 0 || nextIndex >= current.length) return current;
-      const next = [...current];
-      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-      return next;
-    });
-    if (occurrence) setWaypointStatus(`${occurrence.place.name}을(를) ${index + direction + 1}번째로 이동했습니다.`);
-    markRouteInputChanged();
-  }
-
-  function moveAppliedWindingPoint(index: number, direction: -1 | 1) {
-    const point = appliedCollectionPoints?.[index];
-    if (!point?.winding) return;
-    setAppliedCollectionPoints((current) => current ? moveCollectionWinding(current, index, direction) : null);
-    setWaypointStatus(`${point.name}을(를) 전체 경유지 순서의 ${index + direction + 1}번째로 이동했습니다.`);
-    markRouteInputChanged();
-  }
-
-  function removeWindingPoint(occurrence: PlaceOccurrence) {
-    setWindingPoints((current) => current.filter((item) => item.id !== occurrence.id));
-    setWaypointStatus(`${occurrence.place.name}을(를) 와인딩 경유지에서 제거했습니다.`);
-    markRouteInputChanged();
-    focusAfterWindingEdit();
-  }
-
-  function removeAppliedWindingPoint(point: AppliedCollectionPoint) {
-    setAppliedCollectionPoints((current) => current
-      ? removeCollectionWinding(current, point.uiKey)
-      : null);
-    setWaypointStatus(`${point.name}을(를) 적용된 경로에서 제거했습니다.`);
-    markRouteInputChanged();
-    focusAfterWindingEdit();
-  }
-
-  function focusAfterWindingEdit(forceWaypoint = false) {
-    window.setTimeout(() => {
-      if (!forceWaypoint && addWindingButtonRef.current && !addWindingButtonRef.current.disabled) {
-        addWindingButtonRef.current.focus();
-        return;
-      }
-      plannerPanelRef.current?.querySelector<HTMLElement>(".waypoint-actions button:not(:disabled)")?.focus();
-    }, 0);
-  }
-
-  function cancelWindingEdit() {
-    setAddingWinding(false);
-    setWaypointStatus("와인딩 경유지 추가를 취소했습니다.");
-    focusAfterWindingEdit();
   }
 
   function closePlannerPanel() {
     setPlannerOpen(false);
     if (isCompact) window.setTimeout(() => mobilePlanButtonRef.current?.focus(), 0);
-  }
-
-  function routePoint(
-    place: PlaceSearchResult,
-    kind: "pass-through" | "stop" | "optional",
-    dwellMinutes: number,
-    winding = false,
-    stopRole?: "lunch" | "dinner" | "rest",
-    occurrenceId: string = place.kakaoPlaceId,
-  ) {
-    return {
-      ...place,
-      id: occurrenceId,
-      label: place.name,
-      kind,
-      dwellMinutes,
-      selected: true,
-      winding,
-      stopRole,
-    };
   }
 
   function applyCollection(course: CollectionCourse, title: string, sharing = false) {
@@ -579,14 +390,11 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     weatherRequestRef.current += 1;
     setWeatherLoading(null);
     invalidateShareSession();
-    setAppliedCollectionPoints(application.orderedPoints.map(asAppliedPoint));
-    setWindingPoints(application.selectedWindingPoints);
+    setWaypoints(application.orderedPoints.map(editableWaypointFromCollectionPoint));
     setPlaces({
       origin: application.origin,
       destination: application.destination,
     });
-    setMealStops({ lunch: application.lunch, dinner: application.dinner });
-    setRestStops(application.rests);
     setPlaceSelectionRevision((current) => current + 1);
     setShareIntentGeneration(sharing ? collectionGeneration : null);
     if (liveRoute) setLiveResultStale(true);
@@ -722,9 +530,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       setNotice("출발지와 복귀지는 검색 결과에서 장소를 선택해야 합니다.", "error");
       return;
     }
-    if (restStops.some((rest) => !rest.place)) {
+    if (!allWaypointPlacesSelected) {
       setShareIntentGeneration(null);
-      setNotice("추가한 모든 휴식지에서 검색 결과 장소를 선택해 주세요.", "error");
+      setNotice("추가한 모든 경유지에서 검색 결과 장소를 선택해 주세요.", "error");
       return;
     }
 
@@ -754,20 +562,12 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
     const targetTripId = liveTripIdRef.current;
     const planningId = crypto.randomUUID();
     setNotice("오토바이·자동차전용도로 제외 조건으로 경로를 계산 중입니다.");
-    const generatedWaypoints = [
-      ...windingPoints.map((occurrence) => routePoint(occurrence.place, "pass-through", 0, true, undefined, occurrence.id)),
-      ...(mealStops.lunch ? [routePoint(mealStops.lunch.place, "stop", 60, false, "lunch", mealStops.lunch.id)] : []),
-      ...restStops.flatMap((rest) => rest.place
-        ? [routePoint(rest.place, "optional", rest.dwellMinutes, false, "rest", rest.id)]
-        : []),
-      ...(mealStops.dinner ? [routePoint(mealStops.dinner.place, "stop", 60, false, "dinner", mealStops.dinner.id)] : []),
-    ];
     const commonBody = {
       planningId,
       tripId: targetTripId,
-      origin: routePoint(places.origin, "pass-through", 0),
-      destination: routePoint(places.destination, "pass-through", 0),
-      waypoints: appliedCollectionPoints?.filter((point) => point.selected) ?? generatedWaypoints,
+      origin: endpointPoint(places.origin),
+      destination: endpointPoint(places.destination),
+      waypoints: collectionPoints,
       serviceDate: draft.rideDate,
       departureAt,
     };
@@ -892,65 +692,23 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                   <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>
                 </>
               )}
-              {connected && appliedCollectionPoints ? (
-                <ol className="ordered-waypoints" aria-label="적용된 컬렉션 경유지 순서">
-                  {appliedCollectionPoints.map((point, index) => (
-                    <li className="ordered-waypoint" key={point.uiKey}>
-                      <span>{String(index + 1).padStart(2, "0")}</span>
-                      <div>
-                        <strong>{point.name}</strong>
-                        <small>{point.kind} · {point.dwellMinutes}분 · {point.selected ? "선택됨" : "선택 안 됨"}{point.winding ? " · 와인딩" : ""}</small>
-                      </div>
-                      {point.winding ? (
-                        <div className="waypoint-actions">
-                          <button type="button" disabled={index === 0} onClick={() => moveAppliedWindingPoint(index, -1)} aria-label={appliedWindingActionLabel(index + 1, point.name, "위로 이동")}>↑</button>
-                          <button type="button" disabled={index === appliedCollectionPoints.length - 1} onClick={() => moveAppliedWindingPoint(index, 1)} aria-label={appliedWindingActionLabel(index + 1, point.name, "아래로 이동")}>↓</button>
-                          <button type="button" onClick={() => removeAppliedWindingPoint(point)} aria-label={appliedWindingActionLabel(index + 1, point.name, "제거")}>×</button>
-                        </div>
-                      ) : null}
-                    </li>
-                  ))}
-                </ol>
-              ) : connected && windingPoints.length ? (
-                <ol className="ordered-waypoints" aria-label="커스텀 와인딩 경유지 순서">
-                  {windingPoints.map((occurrence, index) => (
-                    <li className="ordered-waypoint" key={occurrence.id}>
-                      <span>{String(index + 1).padStart(2, "0")}</span>
-                      <div><strong>{occurrence.place.name}</strong><small>{occurrence.place.roadAddress ?? occurrence.place.address}</small></div>
-                      <div className="waypoint-actions">
-                        <button type="button" disabled={index === 0} onClick={() => moveWindingPoint(index, -1)} aria-label={`${index + 1}번째 ${occurrence.place.name} 위로 이동`}>↑</button>
-                        <button type="button" disabled={index === windingPoints.length - 1} onClick={() => moveWindingPoint(index, 1)} aria-label={`${index + 1}번째 ${occurrence.place.name} 아래로 이동`}>↓</button>
-                        <button type="button" onClick={() => removeWindingPoint(occurrence)} aria-label={`${index + 1}번째 ${occurrence.place.name} 제거`}>×</button>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              ) : !connected ? (
-                <div className="waypoint-list">
-                  <span className="waypoint-tag winding"><i />유명산 굽이길 <button type="button" aria-label="유명산 굽이길 제거">×</button></span>
-                  <span className="waypoint-tag"><i />홍천 점심 <button type="button" aria-label="홍천 점심 제거">×</button></span>
-                </div>
-              ) : null}
-              {connected && addingWinding ? (
-                <div className="winding-editor">
-                  <PlaceSearchField label="와인딩 경유지" placeholder="산길 입구, 고개, 전망대" autoFocus selected={null} onSelect={addWindingPoint} />
-                  <button className="text-button muted" type="button" onClick={cancelWindingEdit}>추가 취소</button>
-                </div>
-              ) : null}
-              <button
-                ref={addWindingButtonRef}
-                className="text-button"
-                type="button"
-                disabled={connected && (addingWinding || windingPointCount >= 20)}
-                onClick={() => connected ? setAddingWinding(true) : setNotice("커스텀 경유지는 실제 연결 모드에서 장소 검색으로 추가합니다.")}
-              >
-                + 커스텀 와인딩 경유지 추가{windingPointCount ? ` · ${windingPointCount}개` : ""}
-              </button>
+            </section>
+
+            <section className="form-section">
+              <div className="section-label"><span>02</span>경유지</div>
+              <OrderedWaypointEditor
+                connected={connected}
+                disabled={calculating}
+                selectionRevision={placeSelectionRevision}
+                waypoints={waypoints}
+                onChange={updateWaypoints}
+                onStatus={setWaypointStatus}
+              />
               <p className="sr-only" role="status" aria-live="polite">{waypointStatus}</p>
             </section>
 
             <section className="form-section">
-              <div className="section-label"><span>02</span>시간</div>
+              <div className="section-label"><span>03</span>시간</div>
               <label>
                 <span>라이딩 날짜</span>
                 <input type="date" min={departureMinimum.date} value={draft.rideDate} onChange={(event) => update("rideDate", event.target.value)} />
@@ -960,40 +718,6 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                 <span aria-hidden="true">↗</span>
                 <p><strong>복귀는 자동 계산</strong><small>추천 경로·선택한 식사와 휴식을 합산해 예상 시각을 보여줍니다.</small></p>
               </div>
-            </section>
-
-            <section className="form-section">
-              <div className="section-label"><span>03</span>정차</div>
-              {connected ? (
-                <>
-                  <PlaceSearchField key={`lunch-${placeSelectionRevision}`} label="점심 · 선택" placeholder="입력하지 않아도 됩니다" selected={mealStops.lunch?.place ?? null} onSelect={(place) => selectMeal("lunch", place)} />
-                  <PlaceSearchField key={`dinner-${placeSelectionRevision}`} label="저녁 · 선택" placeholder="입력하지 않아도 됩니다" selected={mealStops.dinner?.place ?? null} onSelect={(place) => selectMeal("dinner", place)} />
-                </>
-              ) : (
-                <>
-                  <label><span>점심 · 선택</span><input placeholder="입력하지 않아도 됩니다" value={draft.lunch} onChange={(event) => update("lunch", event.target.value)} /></label>
-                  <label><span>저녁 · 선택</span><input placeholder="입력하지 않아도 됩니다" value={draft.dinner} onChange={(event) => update("dinner", event.target.value)} /></label>
-                </>
-              )}
-              {connected && restStops.length ? (
-                <ol className="rest-list" aria-label="선택한 휴식지 순서">
-                  {restStops.map((rest, index) => (
-                    <li key={rest.id} data-rest-id={rest.id}>
-                      <div className="rest-heading"><strong>{index + 1}번째 휴식</strong><span>{rest.dwellMinutes}분 정차</span></div>
-                      <PlaceSearchField key={`${rest.id}-${placeSelectionRevision}`} label={`${index + 1}번째 휴식 장소`} placeholder="카페, 휴게소, 전망대" required selected={rest.place} onSelect={(place) => selectRestStop(rest.id, place)} />
-                      <label><span>머무는 시간 · 분</span><input type="number" min={1} max={1440} step={1} value={rest.dwellMinutes} onChange={(event) => updateRestDwell(rest.id, Number(event.target.value))} /></label>
-                      <div className="rest-actions">
-                        <button type="button" disabled={index === 0} onClick={() => moveRestStop(rest.id, -1)} aria-label={`${index + 1}번째 휴식 위로 이동`}>↑ 위로</button>
-                        <button type="button" disabled={index === restStops.length - 1} onClick={() => moveRestStop(rest.id, 1)} aria-label={`${index + 1}번째 휴식 아래로 이동`}>↓ 아래로</button>
-                        <button className="danger-text" type="button" onClick={() => removeRestStop(rest.id)} aria-label={`${index + 1}번째 휴식 제거`}>제거</button>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
-              <button ref={addRestButtonRef} className="text-button" type="button" disabled={!connected || restStops.length >= 5} onClick={addRestStop}>
-                + 휴식지 추가 · {restStops.length}/5
-              </button>
             </section>
 
             <div className="safety-note">

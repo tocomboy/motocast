@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-export type MapMarkerRole = "origin" | "destination" | "lunch" | "dinner" | "rest" | "winding" | "waypoint";
+export type MapMarkerRole = "origin" | "destination" | "lunch" | "dinner" | "rest" | "waypoint";
 export type MapPoint = { label: string; latitude: number; longitude: number; role?: MapMarkerRole; nonTraversed?: boolean };
 type PathPoint = { latitude: number; longitude: number };
 const KAKAO_MAP_LOAD_TIMEOUT_MS = 10_000;
@@ -12,7 +12,6 @@ const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; c
   lunch: { label: "점심", symbol: "점", color: "#cc5d32" },
   dinner: { label: "저녁", symbol: "저", color: "#764a78" },
   rest: { label: "휴식", symbol: "휴", color: "#277b74" },
-  winding: { label: "와인딩", symbol: "와", color: "#9a6427" },
   waypoint: { label: "경유", symbol: "경", color: "#5f6d63" },
 };
 

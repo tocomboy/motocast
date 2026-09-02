@@ -83,7 +83,7 @@ describe("planner persistence lock policy", () => {
     const application = source.indexOf("function applyCollection");
     const invalidation = source.indexOf("weatherRequestRef.current += 1", application);
     const clear = source.indexOf("setWeatherLoading(null)", invalidation);
-    const applyPoints = source.indexOf("setAppliedCollectionPoints", clear);
+    const applyPoints = source.indexOf("setWaypoints(application.orderedPoints", clear);
     expect(application).toBeGreaterThan(-1);
     expect(invalidation).toBeGreaterThan(application);
     expect(clear).toBeGreaterThan(invalidation);

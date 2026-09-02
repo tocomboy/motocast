@@ -35,7 +35,7 @@ function segment(id: string, from: RoutePoint, to: RoutePoint): PlannedSegment {
 }
 
 describe("buildPlannerMapPoints", () => {
-  it("preserves winding and meal roles when the same Kakao place occurs twice", () => {
+  it("preserves route waypoint and meal roles when the same Kakao place occurs twice", () => {
     const origin = point("origin");
     const winding = point("same-place", true);
     const lunch = point("same-place", false, "lunch");
@@ -46,7 +46,7 @@ describe("buildPlannerMapPoints", () => {
       segment("1", winding, lunch),
       segment("2", lunch, destination),
     ]).map(({ role }) => role)).toEqual([
-      "origin", "winding", "lunch", "destination",
+      "origin", "waypoint", "lunch", "destination",
     ]);
   });
 

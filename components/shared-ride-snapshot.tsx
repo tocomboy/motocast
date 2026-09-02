@@ -53,7 +53,7 @@ export function buildSharedMapPoints(input: {
       if (point.stopRole !== "rest") assignedStops[point.stopRole] = true;
       return point.stopRole;
     }
-    if (point.winding || waypoint?.winding) return "winding";
+    if (point.winding || waypoint?.winding) return "waypoint";
     if (point.kind === "optional" || waypoint?.kind === "optional") return "rest";
     if (point.kind === "pass-through" || waypoint?.kind === "pass-through") return "waypoint";
     const isLunch = sameSharedPlace(point, input.lunchStop);
