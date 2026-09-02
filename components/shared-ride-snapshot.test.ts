@@ -111,7 +111,7 @@ describe("buildSharedMapPoints", () => {
       { role: "origin" },
       { role: "lunch" },
       { role: "destination" },
-      { role: "waypoint", label: "경유지 · 선택 경로 미통과", nonTraversed: true },
+      { role: "winding", label: "와인딩 · 선택 경로 미통과", nonTraversed: true },
     ]);
   });
 
