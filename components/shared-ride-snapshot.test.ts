@@ -88,6 +88,33 @@ describe("buildSharedMapPoints", () => {
     ]);
   });
 
+  it("marks only the truly omitted legacy occurrence when a traversed place has DB coordinate drift", () => {
+    expect(buildSharedMapPoints({
+      routePoints: [origin, lunch, destination],
+      lunchStop: { ...lunch, id: "trip-lunch" },
+      dinnerStop: null,
+      waypoints: [
+        { ...winding, id: "waypoint-0", position: 0, kind: "pass-through", dwellMinutes: 0, selected: true, winding: true },
+        {
+          ...lunch,
+          id: "waypoint-1",
+          longitude: lunch.longitude + 5e-10,
+          latitude: lunch.latitude - 5e-10,
+          position: 1,
+          kind: "stop",
+          dwellMinutes: 60,
+          selected: true,
+          winding: false,
+        },
+      ],
+    })).toMatchObject([
+      { role: "origin" },
+      { role: "lunch" },
+      { role: "destination" },
+      { role: "waypoint", label: "경유지 · 선택 경로 미통과", nonTraversed: true },
+    ]);
+  });
+
   it("keeps a same-place winding-only marker omitted from a balanced candidate", () => {
     expect(buildSharedMapPoints({
       routePoints: [origin, lunch, destination],

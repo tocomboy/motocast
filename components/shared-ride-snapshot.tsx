@@ -15,6 +15,8 @@ function conditionLabel(condition: string | undefined) {
   return ({ clear: "맑음", cloudy: "흐림", rain: "비", snow: "눈", unknown: "미정" } as Record<string, string>)[condition ?? "unknown"] ?? "미정";
 }
 
+const SHARED_PLACE_COORDINATE_TOLERANCE = 0.000001;
+
 function sameSharedPlace(
   left: { id: string; label: string; longitude: number; latitude: number },
   right: { id: string; label: string; longitude: number; latitude: number } | null | undefined,
@@ -22,8 +24,8 @@ function sameSharedPlace(
   return Boolean(right) && (
     left.id === right!.id || (
       left.label === right!.label &&
-      left.longitude === right!.longitude &&
-      left.latitude === right!.latitude
+      Math.abs(left.longitude - right!.longitude) <= SHARED_PLACE_COORDINATE_TOLERANCE &&
+      Math.abs(left.latitude - right!.latitude) <= SHARED_PLACE_COORDINATE_TOLERANCE
     )
   );
 }
