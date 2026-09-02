@@ -224,9 +224,9 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(page.getByLabel("2번째 경유지 장소")).toBeFocused();
     const waypointName = await selectFirstPlace(page, "2번째 경유지 장소", liveQueries.waypoint!);
     await page.getByRole("button", { name: "2번째 경유지 위로 이동" }).click();
-    await expect(page.getByRole("button", { name: "1번째 경유지 위로 이동" })).toBeFocused();
+    await expect(page.getByRole("button", { name: "1번째 경유지 아래로 이동" })).toBeFocused();
     await page.getByRole("button", { name: "1번째 경유지 아래로 이동" }).click();
-    await expect(page.getByRole("button", { name: "2번째 경유지 아래로 이동" })).toBeFocused();
+    await expect(page.getByRole("button", { name: "2번째 경유지 위로 이동" })).toBeFocused();
     await waypointType.selectOption("rest");
     await addWaypoint.click();
     await expect(page.getByLabel("3번째 휴식 장소")).toBeFocused();

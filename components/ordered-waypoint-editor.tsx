@@ -93,8 +93,13 @@ export function OrderedWaypointEditor({
     const waypoint = waypoints[index];
     const reordered = moveWaypoint(waypoints, index, direction);
     if (!waypoint || reordered === waypoints) return;
+    const nextIndex = index + direction;
     onChange(reordered);
-    onStatus(`${waypoint.place?.name ?? waypointRoleLabel(waypoint.role)}을(를) ${index + direction + 1}번째로 이동했습니다.`);
+    onStatus(`${waypoint.place?.name ?? waypointRoleLabel(waypoint.role)}을(를) ${nextIndex + 1}번째로 이동했습니다.`);
+    const focusSelector = direction === -1
+      ? nextIndex === 0 ? ".waypoint-move-down" : ".waypoint-move-up"
+      : nextIndex === reordered.length - 1 ? ".waypoint-move-up" : ".waypoint-move-down";
+    focusWaypoint(waypoint.id, focusSelector);
   }
 
   return (
@@ -147,8 +152,8 @@ export function OrderedWaypointEditor({
                   </label>
                 ) : null}
                 <div className="waypoint-actions">
-                  <button type="button" disabled={index === 0} onClick={() => reorder(index, -1)} aria-label={`${index + 1}번째 ${roleLabel} 위로 이동`}>↑ 위로</button>
-                  <button type="button" disabled={index === waypoints.length - 1} onClick={() => reorder(index, 1)} aria-label={`${index + 1}번째 ${roleLabel} 아래로 이동`}>↓ 아래로</button>
+                  <button className="waypoint-move-up" type="button" disabled={index === 0} onClick={() => reorder(index, -1)} aria-label={`${index + 1}번째 ${roleLabel} 위로 이동`}>↑ 위로</button>
+                  <button className="waypoint-move-down" type="button" disabled={index === waypoints.length - 1} onClick={() => reorder(index, 1)} aria-label={`${index + 1}번째 ${roleLabel} 아래로 이동`}>↓ 아래로</button>
                   <button className="danger-text waypoint-remove" type="button" onClick={() => removeWaypoint(waypoint.id)} aria-label={`${index + 1}번째 ${roleLabel} 제거`}>제거</button>
                 </div>
               </li>
