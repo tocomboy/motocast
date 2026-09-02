@@ -45,7 +45,12 @@ type PlannerPlaces = {
   destination: PlaceSearchResult | null;
 };
 
-type PlannerNotice = { message: string; severity: "info" | "warning" | "error"; eventId: number };
+type PlannerNotice = {
+  message: string;
+  severity: "info" | "warning" | "error";
+  source: "planner" | "waypoint";
+  eventId: number;
+};
 
 function seoulToday() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
@@ -191,6 +196,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
       ? "저장된 데모 계획입니다. 장소를 확인한 뒤 추천 경로를 다시 계산하세요."
       : "환경변수가 없어 데모 모드로 실행 중입니다. 실제 외부 API는 호출하지 않습니다.",
     severity: "info",
+    source: "planner",
     eventId: 0,
   });
   const [calculating, setCalculating] = useState(false);
@@ -208,9 +214,20 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
   const weatherRequestRef = useRef(0);
   const sharePreviewSerialRef = useRef(0);
   const actionGateRef = useRef(new PlannerActionGate());
-  function setNotice(message: string, severity: PlannerNotice["severity"] = "info") {
+  function setNotice(
+    message: string,
+    severity: PlannerNotice["severity"] = "info",
+    source: PlannerNotice["source"] = "planner",
+  ) {
     noticeSequenceRef.current += 1;
-    setNoticeState({ message, severity, eventId: noticeSequenceRef.current });
+    setNoticeState({ message, severity, source, eventId: noticeSequenceRef.current });
+  }
+
+  function reportWaypointSuccess(message: string) {
+    setWaypointStatus(message);
+    if (notice.source === "waypoint" && notice.severity === "error") {
+      setNotice(message, "info", "waypoint");
+    }
   }
 
   useEffect(() => {
@@ -702,8 +719,8 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                 selectionRevision={placeSelectionRevision}
                 waypoints={waypoints}
                 onChange={updateWaypoints}
-                onStatus={setWaypointStatus}
-                onError={(message) => setNotice(message, "error")}
+                onStatus={reportWaypointSuccess}
+                onError={(message) => setNotice(message, "error", "waypoint")}
               />
               <p className="sr-only" role="status" aria-live="polite">{waypointStatus}</p>
             </section>

@@ -238,6 +238,8 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(duplicateRoleError).toContainText("점심은 하나만 추가할 수 있습니다.");
     await expect(thirdRole).toHaveValue("rest");
     await thirdRole.selectOption("dinner");
+    await expect(duplicateRoleError).toHaveCount(0);
+    await expect(page.locator(".action-notice").filter({ hasText: "휴식을(를) 저녁으로 변경했습니다." })).toBeVisible();
     await expect(page.getByLabel("3번째 저녁 머무는 시간 · 분")).toHaveValue("60");
     await thirdRole.selectOption("rest");
     await expect(page.getByLabel("3번째 휴식 머무는 시간 · 분")).toHaveValue("30");
@@ -488,6 +490,10 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(restLimitError).toBeFocused();
     await expect(restLimitError).toContainText("휴식은 최대 5개까지 추가할 수 있습니다.");
     await expect(plannerDialog.getByLabel("추가할 종류")).toHaveValue("rest");
+    await plannerDialog.getByRole("button", { name: "7번째 휴식 제거" }).click();
+    await expect(restLimitError).toHaveCount(0);
+    await expect(plannerDialog.locator(".action-notice").filter({ hasText: "휴식을(를) 경로에서 제거했습니다." })).toBeVisible();
+    await addRest.click();
     const firstRestDwell = plannerDialog.getByLabel("3번째 휴식 머무는 시간 · 분");
     await firstRestDwell.fill("45");
     await expect(firstRestDwell).toHaveValue("45");
