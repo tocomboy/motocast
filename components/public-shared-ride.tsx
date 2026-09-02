@@ -15,25 +15,30 @@ export function PublicSharedRide() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const mountedRef = useRef(false);
   const resolutionRef = useRef<Promise<void> | null>(null);
-  const tokenRef = useRef<string | null>(null);
+  const resolutionSequenceRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
-    if (!resolutionRef.current) {
-      tokenRef.current ??= window.location.hash.slice(1);
-      const token = tokenRef.current;
+    const resolveFragment = () => {
+      const token = window.location.hash.slice(1);
+      const resolutionSequence = ++resolutionSequenceRef.current;
       try {
         window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
       } catch {
         resolutionRef.current = Promise.resolve().then(() => {
-          if (mountedRef.current) setState({ status: "unavailable" });
+          if (mountedRef.current && resolutionSequence === resolutionSequenceRef.current) {
+            setState({ status: "unavailable" });
+          }
         });
-        return () => { mountedRef.current = false; };
+        return;
       }
 
+      setState({ status: "loading" });
       resolutionRef.current = (async () => {
         if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
-          if (mountedRef.current) setState({ status: "invalid-link" });
+          if (mountedRef.current && resolutionSequence === resolutionSequenceRef.current) {
+            setState({ status: "invalid-link" });
+          }
           return;
         }
         const response = await fetch("/api/shares/resolve", {
@@ -42,20 +47,28 @@ export function PublicSharedRide() {
           body: JSON.stringify({ token }),
           cache: "no-store",
         });
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || resolutionSequence !== resolutionSequenceRef.current) return;
         if (response.status === 404) setState({ status: "not-found" });
         else if (!response.ok) setState({ status: "unavailable" });
         else {
           const body = await response.json() as { snapshot?: unknown };
-          if (mountedRef.current) {
+          if (mountedRef.current && resolutionSequence === resolutionSequenceRef.current) {
             setState({ status: "found", snapshot: parseSharedRideSnapshot(body.snapshot), referenceTime: new Date().toISOString() });
           }
         }
       })().catch(() => {
-        if (mountedRef.current) setState({ status: "unavailable" });
+        if (mountedRef.current && resolutionSequence === resolutionSequenceRef.current) {
+          setState({ status: "unavailable" });
+        }
       });
-    }
-    return () => { mountedRef.current = false; };
+    };
+    const handleHashChange = () => resolveFragment();
+    window.addEventListener("hashchange", handleHashChange);
+    if (!resolutionRef.current) resolveFragment();
+    return () => {
+      mountedRef.current = false;
+      window.removeEventListener("hashchange", handleHashChange);
+    };
   }, []);
 
   useEffect(() => {
