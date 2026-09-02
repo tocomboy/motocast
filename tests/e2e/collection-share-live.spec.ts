@@ -218,7 +218,9 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
       revokedResolveConsoleErrorCount += 1;
       return;
     }
-    unexpectedBrowserErrors.push(`console: ${redactBearer(message.text())} @ ${location.url}:${location.lineNumber}`);
+    unexpectedBrowserErrors.push(redactBearer(
+      `console: ${message.text()} @ ${location.url}:${location.lineNumber}`,
+    ));
   });
   page.on("request", (request) => {
     if (request.method() !== "POST") return;
