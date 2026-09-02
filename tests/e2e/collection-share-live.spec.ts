@@ -233,7 +233,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const restName = await selectFirstPlace(page, "3번째 휴식 장소", liveQueries.rest!);
     const thirdRole = page.getByLabel("3번째 경유지 종류");
     await thirdRole.selectOption("lunch");
-    const duplicateRoleError = page.getByRole("alert");
+    const duplicateRoleError = page.locator('.action-notice[role="alert"]');
     await expect(duplicateRoleError).toBeFocused();
     await expect(duplicateRoleError).toContainText("점심은 하나만 추가할 수 있습니다.");
     await expect(thirdRole).toHaveValue("rest");
