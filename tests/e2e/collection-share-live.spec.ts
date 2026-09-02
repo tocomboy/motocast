@@ -96,7 +96,11 @@ async function startShareRevocation(page: Page, shareId: string) {
 }
 
 async function verifyRevokedShare(page: Page, revokedUrl: string) {
+  const resolution = page.waitForResponse((response) => (
+    response.url().endsWith("/api/shares/resolve") && response.request().method() === "POST"
+  ), { timeout: 30_000 });
   await page.evaluate((target) => window.location.assign(target), revokedUrl);
+  expect((await resolution).status()).toBe(404);
   await expect(page.getByRole("heading", { name: "공유 링크가 없거나 회수되었습니다." })).toBeVisible();
   await expect.poll(() => !page.url().includes("#")).toBe(true);
 }
@@ -186,14 +190,36 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     tripId: null,
   };
   pendingCleanup = cleanup;
-  let browserErrorCount = 0;
+  const redactBearer = (value: string) => value.replace(/[A-Za-z0-9_-]{43}/g, "<redacted-bearer>");
+  const unexpectedBrowserErrors: string[] = [];
+  let revokedResolveConsoleErrorCount = 0;
   let planRouteRequestCount = 0;
   let finalizeRequestCount = 0;
   let weatherRequestCount = 0;
   let previewRequestCount = 0;
   let publishRequestCount = 0;
-  page.on("pageerror", () => { browserErrorCount += 1; });
-  page.on("console", (message) => { if (message.type() === "error") browserErrorCount += 1; });
+  page.on("pageerror", (error) => {
+    unexpectedBrowserErrors.push(`pageerror: ${redactBearer(error.message)}`);
+  });
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    const location = message.location();
+    let isExpectedRevokedResolve404 = false;
+    try {
+      const errorUrl = new URL(location.url);
+      const pageUrl = new URL(page.url());
+      isExpectedRevokedResolve404 = errorUrl.origin === pageUrl.origin
+        && errorUrl.pathname === "/api/shares/resolve"
+        && message.text().includes("status of 404");
+    } catch {
+      isExpectedRevokedResolve404 = false;
+    }
+    if (isExpectedRevokedResolve404) {
+      revokedResolveConsoleErrorCount += 1;
+      return;
+    }
+    unexpectedBrowserErrors.push(`console: ${redactBearer(message.text())} @ ${location.url}:${location.lineNumber}`);
+  });
   page.on("request", (request) => {
     if (request.method() !== "POST") return;
     if (request.url().includes("/functions/v1/plan-route")) planRouteRequestCount += 1;
@@ -529,5 +555,6 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     expect(deleted).toBe(true);
     cleanup.tripId = null;
     cleanup.tripMutationStarted = false;
-    expect(browserErrorCount).toBe(0);
+    await expect.poll(() => revokedResolveConsoleErrorCount).toBe(2);
+    expect(unexpectedBrowserErrors).toEqual([]);
 });
