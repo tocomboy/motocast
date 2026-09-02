@@ -91,6 +91,20 @@ describe("parseCollectionSaveRequest", () => {
       .rejects.toThrow("INVALID_COLLECTION");
   });
 
+  it("canonicalizes and limits semantic mandatory waypoints independently of the legacy winding bit", async () => {
+    const points = await Promise.all(Array.from({ length: 21 }, (_, index) => requestPoint({
+      id: `waypoint-occurrence-${index}`,
+      kakaoPlaceId: `waypoint-${index}`,
+      winding: false,
+    })));
+    await expect(parseCollectionSaveRequest(await requestBody(points.slice(0, 20)), secret))
+      .resolves.toMatchObject({
+        points: expect.arrayContaining([expect.objectContaining({ id: "waypoint-occurrence-19", winding: true })]),
+      });
+    await expect(parseCollectionSaveRequest(await requestBody(points), secret))
+      .rejects.toThrow("INVALID_COLLECTION");
+  });
+
   it("rejects duplicate occurrence ids even when the Kakao places differ", async () => {
     const lunch = await requestPoint({ id: "same-occurrence", kakaoPlaceId: "lunch", kind: "stop", dwellMinutes: 60, stopRole: "lunch" });
     const rest = await requestPoint({ id: "same-occurrence", kakaoPlaceId: "rest", kind: "optional", dwellMinutes: 30, stopRole: "rest" });

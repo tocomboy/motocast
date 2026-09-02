@@ -27,6 +27,7 @@ import { OrderedWaypointEditor } from "./ordered-waypoint-editor";
 function Harness() {
   const [waypoints, setWaypoints] = useState<EditableWaypoint[]>([]);
   const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
   return (
     <>
       <OrderedWaypointEditor
@@ -35,8 +36,10 @@ function Harness() {
         waypoints={waypoints}
         onChange={setWaypoints}
         onStatus={setStatus}
+        onError={setError}
       />
       <output>{status}</output>
+      <output data-error>{error}</output>
     </>
   );
 }
@@ -68,17 +71,23 @@ describe("OrderedWaypointEditor", () => {
     await act(async () => add().props.onClick());
     await act(async () => renderer.root.findByProps({ "data-place-label": "2번째 경유지 장소" }).props.onClick());
     await act(async () => renderer.root.findByProps({ "aria-label": "2번째 경유지 위로 이동" }).props.onClick());
+    await act(async () => renderer.root.findByProps({ "aria-label": "1번째 경유지 아래로 이동" }).props.onClick());
 
     await act(async () => addRole().props.onChange({ target: { value: "rest" } }));
     await act(async () => add().props.onClick());
 
     const list = renderer.root.findByProps({ "aria-label": "경유지 방문 순서" });
     expect(list.findAllByType("li").map((item) => item.findByType("select").props.value)).toEqual([
-      "waypoint", "lunch", "rest",
+      "lunch", "waypoint", "rest",
     ]);
-    expect(renderer.root.findByProps({ "aria-label": "2번째 경유지 종류" }).props.value).toBe("lunch");
+    expect(renderer.root.findByProps({ "aria-label": "2번째 경유지 종류" }).props.value).toBe("waypoint");
     expect(renderer.root.findByProps({ "aria-label": "3번째 경유지 종류" }).props.value).toBe("rest");
+    expect(renderer.root.findByProps({ "aria-label": "3번째 휴식 머무는 시간 · 분" }).props.value).toBe(30);
     expect(renderer.root.findAllByType("output")[0].children.join("")).toContain("휴식");
+
+    await act(async () => renderer.root.findByProps({ "aria-label": "3번째 경유지 종류" }).props.onChange({ target: { value: "lunch" } }));
+    expect(renderer.root.findByProps({ "aria-label": "3번째 경유지 종류" }).props.value).toBe("rest");
+    expect(renderer.root.findByProps({ "data-error": true }).children.join("")).toContain("점심은 하나만");
 
     await act(async () => renderer.unmount());
   });

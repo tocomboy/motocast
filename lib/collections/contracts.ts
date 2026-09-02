@@ -69,7 +69,7 @@ export function parseCollectionPoint(value: unknown): CollectionPoint {
     kind: raw.kind as WaypointKind,
     dwellMinutes,
     selected: raw.selected,
-    winding: raw.winding,
+    winding: raw.kind === "pass-through" && raw.stopRole === undefined,
     stopRole: raw.stopRole as CollectionPoint["stopRole"],
   };
 }
@@ -80,7 +80,7 @@ function validateCollectionCoursePoints(points: CollectionPoint[]) {
   if (
     points.length > 30 || ids.size !== points.length ||
     countRole("lunch") > 1 || countRole("dinner") > 1 || countRole("rest") > 5 ||
-    points.filter((point) => point.winding).length > 20
+    points.filter((point) => point.kind === "pass-through" && point.stopRole === undefined).length > 20
   ) throw new Error("INVALID_COLLECTION_VERSION");
   return points;
 }

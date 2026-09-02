@@ -28,6 +28,10 @@ export function isWindingOnlyWaypoint(point: Pick<RoutePointRequest, "kind" | "d
   return point.winding === true && point.kind === "pass-through" && point.dwellMinutes === 0 && point.stopRole === undefined;
 }
 
+export function isMandatoryPassThrough(point: Pick<RoutePointRequest, "kind" | "stopRole">) {
+  return point.kind === "pass-through" && point.stopRole === undefined;
+}
+
 function hasValidWindingSemantics(point: Pick<RoutePointRequest, "kind" | "dwellMinutes" | "winding" | "stopRole">) {
   return point.winding !== true || isWindingOnlyWaypoint(point);
 }
@@ -64,7 +68,9 @@ function canonicalPoint(point: RoutePointRequest, endpoint = false): RoutePointR
     kind: endpoint ? "pass-through" : point.kind,
     dwellMinutes: passThrough ? 0 : point.dwellMinutes,
     selected: true,
-    winding: endpoint ? false : point.winding === true,
+    // `winding` is a legacy storage marker. Every current role-free
+    // pass-through is the same mandatory waypoint and is canonicalized here.
+    winding: endpoint ? false : isMandatoryPassThrough(point),
     stopRole: endpoint ? undefined : point.stopRole,
   };
 }
@@ -108,12 +114,12 @@ export async function parseRouteRequest(
   const lunches = selectedWaypoints.filter((point) => point.stopRole === "lunch");
   const dinners = selectedWaypoints.filter((point) => point.stopRole === "dinner");
   const rests = selectedWaypoints.filter((point) => point.stopRole === "rest");
-  const windingPoints = selectedWaypoints.filter((point) => point.winding === true);
+  const mandatoryWaypoints = selectedWaypoints.filter(isMandatoryPassThrough);
   if (
     lunches.length > 1 || lunches.some((point) => point.kind !== "stop") ||
     dinners.length > 1 || dinners.some((point) => point.kind !== "stop") ||
     rests.length > 5 || rests.some((point) => point.kind !== "optional") ||
-    windingPoints.length > 20 ||
+    mandatoryWaypoints.length > 20 ||
     selectedWaypoints.some((point) => point.kind !== "pass-through" && point.stopRole === undefined)
   ) throw new Error("INVALID_WAYPOINTS");
 
@@ -132,4 +138,14 @@ export async function parseRouteRequest(
     serviceDate: body.serviceDate,
     departureAt: departure.toISOString(),
   };
+}
+
+export async function withValidatedRouteRequest<T>(
+  value: unknown,
+  verificationSecret: string,
+  providerWork: (input: RouteRequest) => Promise<T>,
+  now: () => Date = () => new Date(),
+): Promise<T> {
+  const input = await parseRouteRequest(value, verificationSecret, now);
+  return providerWork(input);
 }

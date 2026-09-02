@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { signPlace } from "./place-verification";
-import { parseRouteRequest, type RoutePointRequest } from "./route-request";
+import { parseRouteRequest, withValidatedRouteRequest, type RoutePointRequest } from "./route-request";
 
 const secret = "test-secret-with-at-least-thirty-two-bytes";
 const fixedNow = () => new Date("2026-08-30T00:00:00.000Z");
@@ -85,21 +85,37 @@ describe("parseRouteRequest", () => {
     await expect(parse(await request([windingRest]))).rejects.toThrow("INVALID_WAYPOINTS");
   });
 
-  it("rejects more than twenty selected winding points before a provider call", async () => {
-    const windingPoints = await Promise.all(Array.from({ length: 21 }, (_, index) => point({
-      kakaoPlaceId: `winding-${index}`,
+  it("canonicalizes and limits semantic mandatory waypoints independently of the legacy winding bit", async () => {
+    const mandatoryWaypoints = await Promise.all(Array.from({ length: 21 }, (_, index) => point({
+      kakaoPlaceId: `waypoint-${index}`,
       longitude: 127.1 + index * 0.001,
-      winding: true,
+      winding: false,
     })));
-    await expect(parse(await request(windingPoints.slice(0, 20)))).resolves.toMatchObject({
-      waypoints: expect.arrayContaining([expect.objectContaining({ kakaoPlaceId: "winding-19" })]),
+    await expect(parse(await request(mandatoryWaypoints.slice(0, 20)))).resolves.toMatchObject({
+      waypoints: expect.arrayContaining([expect.objectContaining({ kakaoPlaceId: "waypoint-19", winding: true })]),
     });
-    await expect(parse(await request(windingPoints))).rejects.toThrow("INVALID_WAYPOINTS");
+    await expect(parse(await request(mandatoryWaypoints))).rejects.toThrow("INVALID_WAYPOINTS");
 
-    windingPoints[20].selected = false;
-    await expect(parse(await request(windingPoints))).resolves.toMatchObject({
-      waypoints: expect.not.arrayContaining([expect.objectContaining({ kakaoPlaceId: "winding-20" })]),
+    mandatoryWaypoints[20].selected = false;
+    await expect(parse(await request(mandatoryWaypoints))).resolves.toMatchObject({
+      waypoints: expect.not.arrayContaining([expect.objectContaining({ kakaoPlaceId: "waypoint-20" })]),
     });
+  });
+
+  it("rejects twenty-one semantic waypoints before any provider or budget work", async () => {
+    const providerAndBudgetWork = vi.fn(async () => "unreachable");
+    const mandatoryWaypoints = await Promise.all(Array.from({ length: 21 }, (_, index) => point({
+      kakaoPlaceId: `pre-provider-waypoint-${index}`,
+      longitude: 127.1 + index * 0.001,
+      winding: false,
+    })));
+    await expect(withValidatedRouteRequest(
+      await request(mandatoryWaypoints),
+      secret,
+      providerAndBudgetWork,
+      fixedNow,
+    )).rejects.toThrow("INVALID_WAYPOINTS");
+    expect(providerAndBudgetWork).not.toHaveBeenCalled();
   });
 
   it("rejects normalized or timezone-less departure timestamps", async () => {

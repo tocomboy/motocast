@@ -1,5 +1,5 @@
 import { verifyPlace, type VerifiablePlace } from "./place-verification.ts";
-import { isWindingOnlyWaypoint } from "./route-request.ts";
+import { isMandatoryPassThrough, isWindingOnlyWaypoint } from "./route-request.ts";
 
 export type CollectionSavePoint = VerifiablePlace & {
   id: string;
@@ -77,7 +77,9 @@ function parsePoint(value: unknown): CollectionSavePoint {
     kind: point.kind as CollectionSavePoint["kind"],
     dwellMinutes: Number(point.dwellMinutes),
     selected: point.selected,
-    winding: point.winding,
+    // Persist the current canonical marker even when a forged/legacy client
+    // sends `false`; aggregate limits are based on semantics, not this bit.
+    winding: isMandatoryPassThrough(point as Pick<CollectionSavePoint, "kind" | "stopRole">),
     ...(point.stopRole ? { stopRole: point.stopRole } : {}),
   };
 }
@@ -104,7 +106,7 @@ export async function parseCollectionSaveRequest(value: unknown, verificationSec
     lunches.length > 1 || lunches.some((point) => point.kind !== "stop") ||
     dinners.length > 1 || dinners.some((point) => point.kind !== "stop") ||
     rests.length > 5 || rests.some((point) => point.kind !== "optional") ||
-    selected.filter((point) => point.winding).length > 20
+    selected.filter(isMandatoryPassThrough).length > 20
   ) throw new Error("INVALID_COLLECTION");
   const verified = await Promise.all([origin, destination, ...points].map((point) => (
     verifyPlace(point, point.verificationToken, verificationSecret)

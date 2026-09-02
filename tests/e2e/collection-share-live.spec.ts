@@ -217,18 +217,49 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const addWaypoint = page.getByRole("button", { name: /^\+ 경유지 추가/ });
     await waypointType.selectOption("lunch");
     await addWaypoint.click();
+    await expect(page.getByLabel("1번째 점심 장소")).toBeFocused();
     const lunchName = await selectFirstPlace(page, "1번째 점심 장소", liveQueries.lunch!);
     await waypointType.selectOption("waypoint");
     await addWaypoint.click();
+    await expect(page.getByLabel("2번째 경유지 장소")).toBeFocused();
     const waypointName = await selectFirstPlace(page, "2번째 경유지 장소", liveQueries.waypoint!);
     await page.getByRole("button", { name: "2번째 경유지 위로 이동" }).click();
+    await expect(page.getByRole("button", { name: "1번째 경유지 위로 이동" })).toBeFocused();
+    await page.getByRole("button", { name: "1번째 경유지 아래로 이동" }).click();
+    await expect(page.getByRole("button", { name: "2번째 경유지 아래로 이동" })).toBeFocused();
     await waypointType.selectOption("rest");
     await addWaypoint.click();
+    await expect(page.getByLabel("3번째 휴식 장소")).toBeFocused();
     const restName = await selectFirstPlace(page, "3번째 휴식 장소", liveQueries.rest!);
+    const thirdRole = page.getByLabel("3번째 경유지 종류");
+    await thirdRole.selectOption("lunch");
+    const duplicateRoleError = page.getByRole("alert");
+    await expect(duplicateRoleError).toBeFocused();
+    await expect(duplicateRoleError).toContainText("점심은 하나만 추가할 수 있습니다.");
+    await expect(thirdRole).toHaveValue("rest");
+    await thirdRole.selectOption("dinner");
+    await expect(page.getByLabel("3번째 저녁 머무는 시간 · 분")).toHaveValue("60");
+    await thirdRole.selectOption("rest");
+    await expect(page.getByLabel("3번째 휴식 머무는 시간 · 분")).toHaveValue("30");
     const orderedItems = page.getByRole("list", { name: "경유지 방문 순서" }).getByRole("listitem");
-    await expect(orderedItems.nth(0)).toContainText(waypointName);
-    await expect(orderedItems.nth(1)).toContainText(lunchName);
+    await expect(orderedItems.nth(0)).toContainText(lunchName);
+    await expect(orderedItems.nth(1)).toContainText(waypointName);
     await expect(orderedItems.nth(2)).toContainText(restName);
+
+    for (const viewport of [
+      { width: 320, height: 800 },
+      { width: 390, height: 844 },
+      { width: 820, height: 1180 },
+      { width: 1440, height: 900 },
+    ]) {
+      await page.setViewportSize(viewport);
+      const cards = page.locator(".ordered-waypoint");
+      await expect(cards).toHaveCount(3);
+      expect(await cards.evaluateAll((items) => items.every((item) => (
+        item.scrollWidth <= item.clientWidth && item.getBoundingClientRect().right <= window.innerWidth
+      )))).toBe(true);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
 
     const plannedRoute = page.waitForRequest((request) => (
       request.url().includes("/functions/v1/plan-route") && request.method() === "POST"
@@ -240,8 +271,15 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
       response.url().includes("/rest/v1/rpc/finalize_trip_plan") && response.request().method() === "POST"
     ), { timeout: 120_000 });
     await page.getByRole("button", { name: "추천 경로 다시 계산" }).click();
-    const plannedRouteBody = (await plannedRoute).postDataJSON() as { waypoints?: Array<{ stopRole?: string }> };
-    expect(plannedRouteBody.waypoints?.map((point) => point.stopRole ?? "waypoint")).toEqual(["waypoint", "lunch", "rest"]);
+    const plannedRouteBody = (await plannedRoute).postDataJSON() as {
+      waypoints?: Array<{ id: string; stopRole?: string; dwellMinutes: number }>;
+    };
+    const expectedWaypointSequence = plannedRouteBody.waypoints?.map((point) => ({
+      id: point.id,
+      role: point.stopRole ?? "waypoint",
+      dwellMinutes: point.dwellMinutes,
+    }));
+    expect(expectedWaypointSequence?.map((point) => point.role)).toEqual(["lunch", "waypoint", "rest"]);
     await finalizationStarted;
     cleanup.tripMutationStarted = true;
     const finalizedResponse = await finalizedTrip;
@@ -288,7 +326,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     cleanup.collectionId = savedCollectionId;
     await expect(page.getByRole("status").filter({ hasText: `${title} 컬렉션의 1번째 불변 버전` })).toBeVisible();
 
-    const restDwell = page.getByLabel("휴식 머무는 시간 · 분").first();
+    const restDwell = page.getByLabel("3번째 휴식 머무는 시간 · 분");
     await restDwell.fill("45");
     await expect(restDwell).toHaveValue("45");
 
@@ -303,13 +341,22 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(manualPreviewButton).toBeDisabled();
     await expect(page.locator(".share-preview")).toHaveCount(0);
     await expect(restDwell).toHaveValue("30");
-    await expect(page.getByRole("list", { name: "경유지 방문 순서" })).toContainText("30분");
+    await expect(orderedItems.nth(0)).toContainText(lunchName);
+    await expect(orderedItems.nth(1)).toContainText(waypointName);
+    await expect(orderedItems.nth(2)).toContainText(restName);
+    await expect(page.getByLabel("1번째 경유지 종류")).toHaveValue("lunch");
+    await expect(page.getByLabel("2번째 경유지 종류")).toHaveValue("waypoint");
+    await expect(page.getByLabel("3번째 경유지 종류")).toHaveValue("rest");
+    await expect(page.getByLabel("3번째 휴식 머무는 시간 · 분")).toHaveValue("30");
     expect(planRouteRequestCount).toBe(routeCountBeforePreparation);
     expect(finalizeRequestCount).toBe(finalizeCountBeforePreparation);
     expect(weatherRequestCount).toBe(weatherCountBeforePreparation);
     expect(previewRequestCount).toBe(previewCountBeforePreparation);
     expect(publishRequestCount).toBe(publishCountBeforePreparation);
 
+    const preparedRouteRequest = page.waitForRequest((request) => (
+      request.url().includes("/functions/v1/plan-route") && request.method() === "POST"
+    ), { timeout: 120_000 });
     const preparedRoute = page.waitForResponse((response) => (
       response.url().includes("/functions/v1/plan-route") && response.request().method() === "POST"
     ), { timeout: 120_000 });
@@ -323,6 +370,14 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
       response.url().includes("/rest/v1/rpc/preview_trip_share") && response.request().method() === "POST"
     ), { timeout: 120_000 });
     await page.getByRole("button", { name: "추천 경로 다시 계산" }).click();
+    const preparedRouteBody = (await preparedRouteRequest).postDataJSON() as {
+      waypoints?: Array<{ id: string; stopRole?: string; dwellMinutes: number }>;
+    };
+    expect(preparedRouteBody.waypoints?.map((point) => ({
+      id: point.id,
+      role: point.stopRole ?? "waypoint",
+      dwellMinutes: point.dwellMinutes,
+    }))).toEqual(expectedWaypointSequence);
     const preparedResponses = await Promise.all([preparedRoute, preparedFinalization, preparedWeather, preparedPreview]);
     if (preparedResponses.some((response) => !response.ok())) throw new Error("Collection share preparation rejected");
     const preparedTripId: unknown = await preparedResponses[1].json();
@@ -334,6 +389,10 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     expect(publishRequestCount).toBe(publishCountBeforePreparation);
 
     await expect(page.getByText("아직 공개되지 않았습니다.", { exact: true })).toBeVisible();
+    const sharedLegs = page.locator(".share-preview .shared-legs li");
+    await expect(sharedLegs.nth(0)).toContainText(lunchName);
+    await expect(sharedLegs.nth(1)).toContainText(waypointName);
+    await expect(sharedLegs.nth(2)).toContainText(restName);
     await expect(page.locator(".share-preview")).toContainText("예상 복귀");
     await expect(page.locator(".share-preview")).not.toContainText("희망 복귀");
     await expect(page.locator(".share-preview")).not.toContainText("최종 복귀");
@@ -425,10 +484,13 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await plannerDialog.getByLabel("추가할 종류").selectOption("rest");
     for (let index = 0; index < 4; index += 1) await addRest.click();
     await addRest.click();
-    await expect(plannerDialog.getByRole("status").filter({ hasText: "휴식은 최대 5개까지 추가할 수 있습니다." })).toBeVisible();
-    const dwellInputs = plannerDialog.getByLabel("휴식 머무는 시간 · 분");
-    await dwellInputs.first().fill("45");
-    await expect(dwellInputs.first()).toHaveValue("45");
+    const restLimitError = plannerDialog.getByRole("alert");
+    await expect(restLimitError).toBeFocused();
+    await expect(restLimitError).toContainText("휴식은 최대 5개까지 추가할 수 있습니다.");
+    await expect(plannerDialog.getByLabel("추가할 종류")).toHaveValue("rest");
+    const firstRestDwell = plannerDialog.getByLabel("3번째 휴식 머무는 시간 · 분");
+    await firstRestDwell.fill("45");
+    await expect(firstRestDwell).toHaveValue("45");
     await plannerDialog.getByRole("button", { name: "4번째 휴식 위로 이동" }).click();
     await plannerDialog.getByRole("button", { name: "추천 경로 다시 계산" }).click();
     const errorNotice = plannerDialog.getByRole("alert");
@@ -440,6 +502,11 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     })).toBe(true);
     for (let remaining = 5; remaining > 0; remaining -= 1) {
       await plannerDialog.getByRole("button", { name: /번째 휴식 제거/ }).first().click();
+      if (remaining > 1) {
+        await expect(plannerDialog.getByRole("button", { name: "3번째 휴식 제거" })).toBeFocused();
+      } else {
+        await expect(plannerDialog.getByRole("button", { name: "2번째 경유지 제거" })).toBeFocused();
+      }
     }
     await expect(addRest).toBeEnabled();
 

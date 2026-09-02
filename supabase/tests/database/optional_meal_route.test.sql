@@ -132,6 +132,28 @@ create temp table five_rest_fixture on commit drop as select * from pg_temp.opti
 create temp table six_rest_fixture on commit drop as select * from pg_temp.optional_meal_fixture(6);
 grant select on direct_fixture, five_rest_fixture, six_rest_fixture to authenticated, service_role;
 
+create temp table mandatory_waypoint_limit_fixture on commit drop as
+select waypoint_count,
+  jsonb_set((select plan from direct_fixture), '{waypoints}', points) as plan,
+  jsonb_build_object(
+    'origin', (select plan -> 'origin' from direct_fixture) || jsonb_build_object('verificationToken', repeat('a', 43)),
+    'destination', (select plan -> 'destination' from direct_fixture) || jsonb_build_object('verificationToken', repeat('a', 43)),
+    'points', points
+  ) as course
+from (values (20), (21)) limits(waypoint_count)
+cross join lateral (
+  select jsonb_agg(
+    pg_temp.optional_point(
+      'waypoint-' || position,
+      '경유지 ' || position,
+      127 + position * 0.001,
+      37 + position * 0.001,
+      'pass-through', 0
+    ) || jsonb_build_object('verificationToken', repeat('a', 43)) order by position
+  ) as points
+  from generate_series(1, waypoint_count) position
+) generated;
+
 insert into tap_results values
   ((select is_nullable = 'YES' from information_schema.columns
     where table_schema = 'public' and table_name = 'trips' and column_name = 'lunch_stop'),
@@ -144,7 +166,19 @@ insert into tap_results values
   ((select public.is_valid_current_plan_stops(plan) from five_rest_fixture),
    'current plan validation accepts five rests without lunch'),
   ((select not public.is_valid_current_plan_stops(plan) from six_rest_fixture),
-   'current plan validation rejects a sixth rest without lunch');
+   'current plan validation rejects a sixth rest without lunch'),
+  ((select public.is_valid_current_plan_stops(plan)
+    from mandatory_waypoint_limit_fixture where waypoint_count = 20),
+   'current plan accepts twenty semantic waypoints with a false legacy marker'),
+  ((select not public.is_valid_current_plan_stops(plan)
+    from mandatory_waypoint_limit_fixture where waypoint_count = 21),
+   'current plan rejects twenty-one semantic waypoints with a false legacy marker'),
+  ((select public.is_valid_verified_collection_course(course)
+    from mandatory_waypoint_limit_fixture where waypoint_count = 20),
+   'complete collection accepts twenty semantic waypoints with a false legacy marker'),
+  ((select not public.is_valid_verified_collection_course(course)
+    from mandatory_waypoint_limit_fixture where waypoint_count = 21),
+   'complete collection rejects twenty-one semantic waypoints with a false legacy marker');
 
 set local role service_role;
 select public.stage_route_candidate_internal(

@@ -703,6 +703,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                 waypoints={waypoints}
                 onChange={updateWaypoints}
                 onStatus={setWaypointStatus}
+                onError={(message) => setNotice(message, "error")}
               />
               <p className="sr-only" role="status" aria-live="polite">{waypointStatus}</p>
             </section>

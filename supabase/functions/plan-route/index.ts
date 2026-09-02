@@ -3,7 +3,7 @@ import { corsHeaders, jsonResponse, safeErrorCode, safeErrorMessage, safeErrorSt
 import { requestKakaoRoute } from "../_shared/kakao-provider.ts";
 import { orchestrateRecommendedRoute } from "../_shared/route-orchestration.ts";
 import { legacyScheduleBoundary } from "../_shared/route-deadline.ts";
-import { parseRouteRequest, type RoutePointRequest } from "../_shared/route-request.ts";
+import { withValidatedRouteRequest, type RoutePointRequest } from "../_shared/route-request.ts";
 import { buildSafeRouteResponse } from "../_shared/route-response.ts";
 
 function limitFromEnv(name: string): number {
@@ -41,60 +41,62 @@ Deno.serve(async (request) => {
     const { supabase, user } = await requireMember(request);
     const verificationSecret = Deno.env.get("PLACE_VERIFICATION_SECRET");
     if (!verificationSecret) throw new Error("PLACE_VERIFICATION_NOT_CONFIGURED");
-    const input = await parseRouteRequest(await request.json(), verificationSecret);
-    const targetRevision = input.tripId ? await (async () => {
-      const { data, error } = await supabase
-        .from("trips")
-        .select("updated_at")
-        .eq("id", input.tripId)
-        .maybeSingle();
-      if (error || !data || typeof data.updated_at !== "string") throw new Error("INVALID_TRIP_TARGET");
-      return data.updated_at;
-    })() : null;
-    const apiKey = Deno.env.get("KAKAO_REST_API_KEY");
-    if (!apiKey) throw new Error("PROVIDER_NOT_CONFIGURED");
+    const route = await withValidatedRouteRequest(await request.json(), verificationSecret, async (input) => {
+      const targetRevision = input.tripId ? await (async () => {
+        const { data, error } = await supabase
+          .from("trips")
+          .select("updated_at")
+          .eq("id", input.tripId)
+          .maybeSingle();
+        if (error || !data || typeof data.updated_at !== "string") throw new Error("INVALID_TRIP_TARGET");
+        return data.updated_at;
+      })() : null;
+      const apiKey = Deno.env.get("KAKAO_REST_API_KEY");
+      if (!apiKey) throw new Error("PROVIDER_NOT_CONFIGURED");
 
-    const points = [input.origin, ...input.waypoints, input.destination];
-    const journey = await orchestrateRecommendedRoute(points, input.departureAt, {
-      now: Date.now,
-      limitFor: (operation) => limitFromEnv(
-        operation === "future_directions" ? "KAKAO_FUTURE_DAILY_LIMIT" : "KAKAO_CURRENT_DAILY_LIMIT"
-      ),
-      consumeBudget: (operation, hardLimit) => consumeBudget(user.id, "kakao", operation, hardLimit),
-      requestProvider: (chunk) => requestKakaoRoute({ ...chunk, apiKey }),
-    });
+      const points = [input.origin, ...input.waypoints, input.destination];
+      const journey = await orchestrateRecommendedRoute(points, input.departureAt, {
+        now: Date.now,
+        limitFor: (operation) => limitFromEnv(
+          operation === "future_directions" ? "KAKAO_FUTURE_DAILY_LIMIT" : "KAKAO_CURRENT_DAILY_LIMIT"
+        ),
+        consumeBudget: (operation, hardLimit) => consumeBudget(user.id, "kakao", operation, hardLimit),
+        requestProvider: (chunk) => requestKakaoRoute({ ...chunk, apiKey }),
+      });
 
-    const route = buildSafeRouteResponse({
-      candidate: { id: "recommended", label: "추천 경로", estimatedWinding: false },
-      ...journey,
+      const safeRoute = buildSafeRouteResponse({
+        candidate: { id: "recommended", label: "추천 경로", estimatedWinding: false },
+        ...journey,
+      });
+      const lunchStop = input.waypoints.find((point) => point.stopRole === "lunch") ?? null;
+      const dinnerStop = input.waypoints.find((point) => point.stopRole === "dinner") ?? null;
+      const legacyBoundary = legacyScheduleBoundary(input.departureAt);
+      const stagedPlan = {
+        title: `${input.origin.name} → ${input.destination.name}`,
+        serviceDate: input.serviceDate,
+        departureAt: input.departureAt,
+        // Compatibility only: the legacy persistence function still requires these
+        // undisplayed fields. Route eligibility is governed by the computed returnAt.
+        desiredReturnAt: legacyBoundary,
+        hardReturnAt: legacyBoundary,
+        tripId: input.tripId,
+        targetUpdatedAt: targetRevision,
+        origin: storagePoint(input.origin),
+        destination: storagePoint(input.destination),
+        lunchStop: lunchStop ? storagePoint(lunchStop) : null,
+        dinnerStop: dinnerStop ? storagePoint(dinnerStop) : null,
+        waypoints: input.waypoints.map(storagePoint),
+        selectedProfile: "recommended",
+      };
+      const { error: stageError } = await serviceClient().rpc("stage_route_candidate_internal", {
+        member_id: user.id,
+        target_planning_id: input.planningId,
+        staged_plan: stagedPlan,
+        staged_route: safeRoute,
+      });
+      if (stageError) throw new Error("ROUTE_PERSIST_FAILED");
+      return safeRoute;
     });
-    const lunchStop = input.waypoints.find((point) => point.stopRole === "lunch") ?? null;
-    const dinnerStop = input.waypoints.find((point) => point.stopRole === "dinner") ?? null;
-    const legacyBoundary = legacyScheduleBoundary(input.departureAt);
-    const stagedPlan = {
-      title: `${input.origin.name} → ${input.destination.name}`,
-      serviceDate: input.serviceDate,
-      departureAt: input.departureAt,
-      // Compatibility only: the legacy persistence function still requires these
-      // undisplayed fields. Route eligibility is governed by the computed returnAt.
-      desiredReturnAt: legacyBoundary,
-      hardReturnAt: legacyBoundary,
-      tripId: input.tripId,
-      targetUpdatedAt: targetRevision,
-      origin: storagePoint(input.origin),
-      destination: storagePoint(input.destination),
-      lunchStop: lunchStop ? storagePoint(lunchStop) : null,
-      dinnerStop: dinnerStop ? storagePoint(dinnerStop) : null,
-      waypoints: input.waypoints.map(storagePoint),
-      selectedProfile: "recommended",
-    };
-    const { error: stageError } = await serviceClient().rpc("stage_route_candidate_internal", {
-      member_id: user.id,
-      target_planning_id: input.planningId,
-      staged_plan: stagedPlan,
-      staged_route: route,
-    });
-    if (stageError) throw new Error("ROUTE_PERSIST_FAILED");
 
     return jsonResponse(route, 200, cors);
   } catch (error) {

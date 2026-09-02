@@ -125,10 +125,21 @@ describe("parseCollectionRows", () => {
     ["multiple lunch stops", [stopPoint("lunch-1", "lunch"), stopPoint("lunch-2", "lunch")]],
     ["multiple dinner stops", [stopPoint("dinner-1", "dinner"), stopPoint("dinner-2", "dinner")]],
     ["more than five rest stops", Array.from({ length: 6 }, (_, index) => stopPoint(`rest-${index}`, "rest"))],
-    ["more than twenty winding points", Array.from({ length: 21 }, (_, index) => ({ ...point, id: `winding-${index}` }))],
+    ["more than twenty semantic waypoints with false legacy markers", Array.from({ length: 21 }, (_, index) => ({ ...point, id: `waypoint-${index}`, winding: false }))],
     ["more than thirty total points", Array.from({ length: 31 }, (_, index) => ({ ...point, id: `point-${index}`, winding: false }))],
   ])("rejects a collection version with %s", (_label, points) => {
     expect(() => parseCollectionRows([collectionRow(points)])).toThrow("INVALID_COLLECTION_VERSION");
+  });
+
+  it("accepts twenty semantic waypoints and canonicalizes their legacy markers", () => {
+    const points = Array.from({ length: 20 }, (_, index) => ({
+      ...point,
+      id: `waypoint-${index}`,
+      winding: false,
+    }));
+    const parsed = parseCollectionRows([collectionRow(points)]);
+    expect(parsed[0].latestVersion.course.points).toHaveLength(20);
+    expect(parsed[0].latestVersion.course.points.every((item) => item.winding)).toBe(true);
   });
 
   it("keeps repeated physical places as distinct ordered occurrences", () => {

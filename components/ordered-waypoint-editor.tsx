@@ -21,6 +21,7 @@ type Props = {
   waypoints: EditableWaypoint[];
   onChange: (waypoints: EditableWaypoint[]) => void;
   onStatus: (message: string) => void;
+  onError: (message: string) => void;
 };
 
 export function OrderedWaypointEditor({
@@ -30,6 +31,7 @@ export function OrderedWaypointEditor({
   waypoints,
   onChange,
   onStatus,
+  onError,
 }: Props) {
   const [roleToAdd, setRoleToAdd] = useState<WaypointRole>("waypoint");
   const addButtonRef = useRef<HTMLButtonElement>(null);
@@ -45,7 +47,7 @@ export function OrderedWaypointEditor({
   function addWaypoint() {
     const error = roleAssignmentError(waypoints, roleToAdd);
     if (error) {
-      onStatus(error);
+      onError(error);
       return;
     }
     const id = crypto.randomUUID();
@@ -65,7 +67,7 @@ export function OrderedWaypointEditor({
     if (!current || current.role === role) return;
     const error = roleAssignmentError(waypoints, role, id);
     if (error) {
-      onStatus(error);
+      onError(error);
       return;
     }
     onChange(waypoints.map((waypoint) => waypoint.id === id
@@ -128,8 +130,9 @@ export function OrderedWaypointEditor({
                 />
                 {waypoint.role !== "waypoint" ? (
                   <label className="waypoint-dwell-field">
-                    <span>{roleLabel} 머무는 시간 · 분</span>
+                    <span>{index + 1}번째 {roleLabel} 머무는 시간 · 분</span>
                     <input
+                      aria-label={`${index + 1}번째 ${roleLabel} 머무는 시간 · 분`}
                       type="number"
                       min={1}
                       max={1440}
