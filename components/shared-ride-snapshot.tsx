@@ -68,15 +68,21 @@ export function buildSharedMapPoints(input: {
     }
     return "waypoint";
   };
+  // Current schemaVersion 3 routes are validated to traverse every selected
+  // occurrence in this exact order. Immutable legacy snapshots can contain a
+  // route that omits occurrences, so only those need the place-matching path.
+  const completeOrderedTraversal = input.routePoints.length === traversedWaypoints.length + 2;
   const routePoints = input.routePoints.map((point, index, all) => {
     const samePlaceWaypoints = index > 0 && index < all.length - 1
       ? traversedWaypoints.filter((waypoint) => !matchedWaypoints.has(waypoint) && sameSharedPlace(point, waypoint))
       : [];
     const remainingRouteOccurrences = all.slice(index, -1)
       .filter((routePoint) => sameSharedPlace(routePoint, point)).length;
-    const matchingWaypoint = remainingRouteOccurrences < samePlaceWaypoints.length
-      ? samePlaceWaypoints.find((waypoint) => !waypoint.winding) ?? samePlaceWaypoints[0]
-      : samePlaceWaypoints[0];
+    const matchingWaypoint = completeOrderedTraversal && index > 0 && index < all.length - 1
+      ? traversedWaypoints[index - 1]
+      : remainingRouteOccurrences < samePlaceWaypoints.length
+        ? samePlaceWaypoints.find((waypoint) => !waypoint.winding) ?? samePlaceWaypoints[0]
+        : samePlaceWaypoints[0];
     if (matchingWaypoint) matchedWaypoints.add(matchingWaypoint);
     let role: MapMarkerRole = "waypoint";
     if (index === 0) role = "origin";

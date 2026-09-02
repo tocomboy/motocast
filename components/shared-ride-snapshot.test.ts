@@ -46,6 +46,29 @@ describe("buildSharedMapPoints", () => {
     expect(points.some((point) => "nonTraversed" in point && point.nonTraversed)).toBe(false);
   });
 
+  it("matches a complete current route by authoritative occurrence order", () => {
+    const persistedLunch = {
+      ...lunch,
+      id: "waypoint-0",
+      longitude: lunch.longitude + 5e-10,
+      latitude: lunch.latitude - 5e-10,
+      position: 0,
+      kind: "stop" as const,
+      dwellMinutes: 60,
+      selected: true,
+      winding: false,
+    };
+    const points = buildSharedMapPoints({
+      routePoints: [origin, { ...lunch, stopRole: "lunch" as const }, destination],
+      lunchStop: { ...lunch, id: "trip-lunch" },
+      dinnerStop: null,
+      waypoints: [persistedLunch],
+    });
+
+    expect(points.map((point) => point.role)).toEqual(["origin", "lunch", "destination"]);
+    expect(points.some((point) => "nonTraversed" in point && point.nonTraversed)).toBe(false);
+  });
+
   it("keeps later stop roles when the selected route omits an earlier winding waypoint", () => {
     expect(buildSharedMapPoints({
       routePoints: [origin, lunch, rest, destination],
