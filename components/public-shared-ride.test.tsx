@@ -14,11 +14,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function stubWindow(token: string, replaceState: () => void) {
+function stubWindow(token: string, replaceState: (...args: [unknown, string, string]) => void) {
+  const location = { hash: `#${token}`, pathname: "/share", search: "" };
+  const hashChangeListeners = new Set<() => void>();
   vi.stubGlobal("window", {
-    location: { hash: `#${token}`, pathname: "/share", search: "" },
-    history: { replaceState },
+    location,
+    history: {
+      replaceState: (...args: [unknown, string, string]) => {
+        replaceState(...args);
+        location.hash = "";
+      },
+    },
+    addEventListener: (type: string, listener: () => void) => {
+      if (type === "hashchange") hashChangeListeners.add(listener);
+    },
+    removeEventListener: (type: string, listener: () => void) => {
+      if (type === "hashchange") hashChangeListeners.delete(listener);
+    },
   });
+  return (nextToken: string) => {
+    location.hash = `#${nextToken}`;
+    for (const listener of hashChangeListeners) listener();
+  };
 }
 
 async function renderSharedRide() {
@@ -85,6 +102,25 @@ describe("PublicSharedRide fragment handling", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(pageText(renderer)).toContain("공유 정보를 지금 불러올 수 없습니다");
+    await act(async () => renderer.unmount());
+  });
+
+  it("removes and resolves a new bearer after same-document hash navigation", async () => {
+    const replaceState = vi.fn();
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 404 }) as Response);
+    const navigateHash = stubWindow(validToken, replaceState);
+    vi.stubGlobal("fetch", fetchMock);
+    const renderer = await renderSharedRide();
+
+    const nextToken = "b".repeat(43);
+    await act(async () => navigateHash(nextToken));
+
+    expect(replaceState).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/shares/resolve", expect.objectContaining({
+      body: JSON.stringify({ token: nextToken }),
+    }));
+    expect(window.location.hash).toBe("");
     await act(async () => renderer.unmount());
   });
 });
