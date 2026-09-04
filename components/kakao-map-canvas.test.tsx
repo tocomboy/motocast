@@ -108,10 +108,14 @@ function installMaps({ throwOnLoad = false }: { throwOnLoad?: boolean } = {}) {
 async function mountMap(
   path?: typeof actualPath,
   mapPoints: Array<{ label: string; latitude: number; longitude: number; role?: MapMarkerRole; nonTraversed?: boolean }> = points,
+  showLegend = true,
 ) {
   let renderer!: ReactTestRenderer;
   await act(async () => {
-    renderer = create(<StrictMode><KakaoMapCanvas points={mapPoints} path={path} /></StrictMode>, rendererOptions);
+    renderer = create(
+      <StrictMode><KakaoMapCanvas points={mapPoints} path={path} showLegend={showLegend} /></StrictMode>,
+      rendererOptions,
+    );
   });
   return renderer;
 }
@@ -227,6 +231,19 @@ describe("KakaoMapCanvas", () => {
     expect(legend.findAllByType("li").map((item) => item.children.at(-1))).toEqual([
       "출발", "복귀", "점심", "저녁", "휴식", "경유",
     ]);
+    await act(async () => renderer.unmount());
+  });
+
+  it("lets the planner render the marker legend outside the map surface", async () => {
+    vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "test-public-key");
+    stubBrowser();
+    const maps = installMaps();
+    const renderer = await mountMap(actualPath, points, false);
+    await flush(maps.loadCallbacks);
+
+    expect(renderer.root.findAllByProps({ "aria-label": "지도 지점 표시 안내" })).toHaveLength(0);
+    expect(maps.Marker).toHaveBeenCalledTimes(points.length);
+    expect(maps.Polyline).toHaveBeenCalledTimes(1);
     await act(async () => renderer.unmount());
   });
 

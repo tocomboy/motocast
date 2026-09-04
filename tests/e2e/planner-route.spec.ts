@@ -8,7 +8,8 @@ test.describe("single recommended route", () => {
     await expect(page.locator(".candidate-strip")).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText("와인딩 추정");
     await expect(page.locator("body")).not.toContainText("최단 경로");
-    await expect(page.locator(".ride-summary h2")).toHaveText("추천 경로");
+    await expect(page.locator(".ride-summary h2")).toHaveText("경로 요약");
+    await expect(page.locator(".ride-summary").getByText("추천 경로", { exact: true })).toHaveCount(0);
     await expect(page.locator(".ride-summary")).toContainText("예상 복귀");
     await expect(page.locator(".ride-summary")).toContainText("정차");
   });

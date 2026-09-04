@@ -2,37 +2,17 @@ import { expect, test } from "@playwright/test";
 
 import { rawSharedRideSnapshotWithOmissions } from "../fixtures/shared-ride-snapshot";
 
-async function expectMapChromeNotToOverlap(page: import("@playwright/test").Page) {
+async function expectMapInformationOutsideMap(page: import("@playwright/test").Page) {
   await page.evaluate(() => document.fonts.ready);
-  await page.locator(".map-shell").evaluate((shell) => {
-    const legend = document.createElement("ul");
-    legend.className = "map-marker-legend";
-    legend.setAttribute("aria-label", "테스트 지도 지점 표시 안내");
-    legend.innerHTML = "<li>출발</li><li>복귀</li><li>점심</li><li>휴식</li><li>경유</li>";
-    shell.appendChild(legend);
-  });
-  const layout = await page.evaluate(() => {
-    const topbar = document.querySelector(".map-topbar")!.getBoundingClientRect();
-    const badges = [...document.querySelectorAll(".map-topbar .example-data-badge, .map-topbar .live-data-badge")]
-      .map((element) => element.getBoundingClientRect());
-    const legend = document.querySelector(".map-marker-legend")!.getBoundingClientRect();
-    const chrome = [topbar, ...badges];
-    return {
-      overlap: chrome.some((item) => (
-        item.left < legend.right && item.right > legend.left && item.top < legend.bottom && item.bottom > legend.top
-      )),
-      verticalGap: legend.top - Math.max(...chrome.map((item) => item.bottom)),
-    };
-  });
-  expect(layout.overlap).toBe(false);
-  expect(layout.verticalGap).toBeGreaterThanOrEqual(8);
-}
-
-async function expectRouteSummaryVisibleInsideMap(page: import("@playwright/test").Page) {
   const map = page.locator(".map-area");
+  const meta = page.locator(".route-map-meta");
+  const details = page.locator(".route-map-details");
+  const legend = details.getByRole("list", { name: "지도 지점 표시 안내" });
   const summary = page.locator(".ride-summary");
   const metrics = page.locator(".summary-metrics");
   await expect(map).toBeVisible();
+  await expect(meta).toBeVisible();
+  await expect(legend).toBeVisible();
   await expect(summary).toBeVisible();
   await expect(metrics).toBeVisible();
   await expect(metrics.locator("span").filter({ hasText: /주행$/ })).toBeVisible();
@@ -40,20 +20,44 @@ async function expectRouteSummaryVisibleInsideMap(page: import("@playwright/test
   await expect(metrics.locator("span").filter({ hasText: /예상 복귀$/ })).toBeVisible();
   const layout = await page.evaluate(() => {
     const mapBox = document.querySelector(".map-area")!.getBoundingClientRect();
+    const meta = document.querySelector(".route-map-meta")!;
+    const details = document.querySelector(".route-map-details")!;
+    const legend = details.querySelector(".map-marker-legend")!;
+    const metaBox = meta.getBoundingClientRect();
+    const detailsBox = details.getBoundingClientRect();
+    const legendBox = legend.getBoundingClientRect();
     const summaryBox = document.querySelector(".ride-summary")!.getBoundingClientRect();
-    const topbarBox = document.querySelector(".map-topbar")!.getBoundingClientRect();
     const overlaps = (left: DOMRect, right: DOMRect) => (
       left.left < right.right && left.right > right.left && left.top < right.bottom && left.bottom > right.top
     );
     return {
-      insideMap: summaryBox.left >= mapBox.left && summaryBox.right <= mapBox.right &&
-        summaryBox.top >= mapBox.top && summaryBox.bottom <= mapBox.bottom,
-      overlapsTopbar: overlaps(summaryBox, topbarBox),
+      mapContainsMeta: document.querySelector(".map-area")!.contains(meta),
+      mapContainsLegend: document.querySelector(".map-area")!.contains(legend),
+      mapContainsSummary: document.querySelector(".map-area")!.contains(document.querySelector(".ride-summary")!),
+      metaBeforeMap: metaBox.bottom <= mapBox.top + 1,
+      detailsAfterMap: detailsBox.top >= mapBox.bottom - 1,
+      metaOverlapsMap: overlaps(metaBox, mapBox),
+      legendOverlapsMap: overlaps(legendBox, mapBox),
+      summaryOverlapsMap: overlaps(summaryBox, mapBox),
+      mapHeight: mapBox.height,
       summaryHasNoInternalOverflow: summaryBox.width >= document.querySelector(".ride-summary")!.scrollWidth &&
         summaryBox.height >= document.querySelector(".ride-summary")!.scrollHeight,
     };
   });
-  expect(layout).toEqual({ insideMap: true, overlapsTopbar: false, summaryHasNoInternalOverflow: true });
+  expect(layout).toMatchObject({
+    mapContainsMeta: false,
+    mapContainsLegend: false,
+    mapContainsSummary: false,
+    metaBeforeMap: true,
+    detailsAfterMap: true,
+    metaOverlapsMap: false,
+    legendOverlapsMap: false,
+    summaryOverlapsMap: false,
+    summaryHasNoInternalOverflow: true,
+  });
+  expect(layout.mapHeight).toBeGreaterThanOrEqual(360);
+  await expect(summary.getByRole("heading", { name: "경로 요약" })).toHaveCount(1);
+  await expect(summary.getByText("추천 경로", { exact: true })).toHaveCount(0);
   await expect(page.locator(".candidate-card, .candidate-strip, .candidate-tab")).toHaveCount(0);
 }
 
@@ -67,15 +71,13 @@ test.describe("planner responsive shell", () => {
     await expect(page.getByLabel("추가할 종류")).toHaveValue("waypoint");
     await expect(page.getByLabel("추가할 종류")).toBeDisabled();
     await expect(page.getByText("추가한 경유지가 없습니다.", { exact: false })).toBeVisible();
-    await expect(page.locator(".ride-summary h2")).toHaveText("추천 경로");
-    await expectRouteSummaryVisibleInsideMap(page);
+    await expectMapInformationOutsideMap(page);
     await expect(page.getByRole("button", { name: "계획 수정" })).toBeHidden();
     await expect(page.locator("body")).not.toContainText("희망 복귀");
     await expect(page.locator("body")).not.toContainText("최종 복귀");
 
     const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(hasHorizontalOverflow).toBe(false);
-    await expectMapChromeNotToOverlap(page);
   });
 
   for (const viewport of [
@@ -109,13 +111,11 @@ test.describe("planner responsive shell", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(openButton).toBeFocused();
-    await expect(page.locator(".ride-summary h2")).toHaveText("추천 경로");
-    await expectRouteSummaryVisibleInsideMap(page);
+    await expectMapInformationOutsideMap(page);
     await expect(page.getByRole("heading", { name: "시간에 따른 구간 날씨" })).toBeVisible();
 
     const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(hasHorizontalOverflow).toBe(false);
-    await expectMapChromeNotToOverlap(page);
     });
   }
 

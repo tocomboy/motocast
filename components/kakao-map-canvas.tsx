@@ -56,7 +56,15 @@ function markerGroups(points: MapPoint[]) {
   return Array.from(groups.values());
 }
 
-export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: PathPoint[] }) {
+export function KakaoMapCanvas({
+  points,
+  path,
+  showLegend = true,
+}: {
+  points: MapPoint[];
+  path?: PathPoint[];
+  showLegend?: boolean;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appKey = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY;
   const geometryKey = JSON.stringify({ points, path: path ?? [] });
@@ -197,16 +205,16 @@ export function KakaoMapCanvas({ points, path }: { points: MapPoint[]; path?: Pa
     <div className="map-shell" aria-label="선택한 라이딩 경로 지도">
       <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert={!isReady} />
       <MapStatus state={state} actualRoute={Boolean(path?.length)} />
-      {isReady ? <MarkerLegend points={points} /> : null}
+      {isReady && showLegend ? <MapMarkerLegend points={points} /> : null}
       {!isReady ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
     </div>
   );
 }
 
-function MarkerLegend({ points }: { points: MapPoint[] }) {
+export function MapMarkerLegend({ points, inline = false }: { points: MapPoint[]; inline?: boolean }) {
   const roles = Array.from(new Set(points.map((point) => point.role ?? "waypoint")));
   return (
-    <ul className="map-marker-legend" aria-label="지도 지점 표시 안내">
+    <ul className={`map-marker-legend${inline ? " is-inline" : ""}`} aria-label="지도 지점 표시 안내">
       {roles.map((role) => (
         <li key={role}>
           <span className="map-marker-symbol" style={{ backgroundColor: markerAppearance[role].color }} aria-hidden="true">

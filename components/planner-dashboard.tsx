@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { CollectionManager } from "@/components/collection-manager";
-import { KakaoMapCanvas } from "@/components/kakao-map-canvas";
+import { KakaoMapCanvas, MapMarkerLegend } from "@/components/kakao-map-canvas";
 import { OrderedWaypointEditor } from "@/components/ordered-waypoint-editor";
 import { PlaceSearchField } from "@/components/place-search-field";
 import { ShareManager } from "@/components/share-manager";
@@ -762,25 +762,27 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         </aside>
 
         <section className="route-stage" aria-label="라이딩 계획 결과">
-          <div className="map-area">
-            <KakaoMapCanvas points={selectedMapPoints} path={selected.path} />
-            <div className="map-topbar">
-              <div className="map-badges">
-                <div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>
-                {!liveRoute ? <span className="example-data-badge">예시 데이터</span> : <span className="live-data-badge">{liveResultStale ? "이전 실제 경로" : "실제 경로"}</span>}
-              </div>
+          <div className="route-map-frame">
+            <div className="route-map-meta">
+              <div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>
+              {!liveRoute ? <span className="example-data-badge">예시 데이터</span> : <span className="live-data-badge">{liveResultStale ? "이전 실제 경로" : "실제 경로"}</span>}
+            </div>
+            <div className="map-area">
+              <KakaoMapCanvas points={selectedMapPoints} path={selected.path} showLegend={false} />
               <button className="map-control" type="button" aria-label="현재 위치로 이동">⌖</button>
             </div>
-            <div className="ride-summary">
-              <p>추천 경로</p>
-              <h2>{selected.label}</h2>
-              <div className="summary-metrics">
-                <span><strong>{selected.distanceKm}</strong> km</span>
-                <span><strong>{minutesLabel(timeline.rideMinutes)}</strong> 주행</span>
-                <span><strong>{minutesLabel(timeline.stopMinutes)}</strong> 정차</span>
-                <span><strong>{formatRideTime(displayedDepartureAt, timeline.returnAt)}</strong> 예상 복귀</span>
-              </div>
-              <div className="return-status safe">정차 포함 예상 복귀</div>
+            <div className="route-map-details">
+              <MapMarkerLegend points={selectedMapPoints} inline />
+              <section className="ride-summary" aria-labelledby="route-summary-heading">
+                <h2 id="route-summary-heading">경로 요약</h2>
+                <div className="summary-metrics">
+                  <span><strong>{selected.distanceKm}</strong> km</span>
+                  <span><strong>{minutesLabel(timeline.rideMinutes)}</strong> 주행</span>
+                  <span><strong>{minutesLabel(timeline.stopMinutes)}</strong> 정차</span>
+                  <span><strong>{formatRideTime(displayedDepartureAt, timeline.returnAt)}</strong> 예상 복귀</span>
+                </div>
+                <div className="return-status safe">정차 포함 예상 복귀</div>
+              </section>
             </div>
           </div>
 
