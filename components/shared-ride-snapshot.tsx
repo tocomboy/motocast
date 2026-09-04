@@ -1,4 +1,4 @@
-import { KakaoMapCanvas, MapOmissionList, type MapMarkerRole } from "@/components/kakao-map-canvas";
+import { KakaoMapCanvas, MapMarkerLegend, MapOmissionList, type MapMarkerRole } from "@/components/kakao-map-canvas";
 import { formatElapsedAge, formatKoreanDateTime, formatKoreanTime, formatRideTime } from "@/lib/planner/schedule";
 import { sharedSnapshotRoute, type SharedPlace, type SharedRideSnapshot, type SharedWaypoint } from "@/lib/sharing/contracts";
 import { weatherFailureLabel } from "@/lib/weather/status";
@@ -152,12 +152,15 @@ export function SharedRideSnapshotView({
       </section>
 
       <section className="shared-map" aria-label={`${preview ? "미리보기" : "공유된"} 라이딩 경로`}>
-        <KakaoMapCanvas points={points} path={path} />
+        <KakaoMapCanvas points={points} path={path} showLegend={false} />
+      </section>
+      <div className="shared-map-details">
+        <MapMarkerLegend points={points} inline />
         <div className="shared-map-summary">
           <strong>{snapshot.trip.origin.label} → {snapshot.trip.destination.label}</strong>
           <span>{Math.round(selected.totalDistanceMeters / 100) / 10} km · 약 {minutes(selected.totalDurationSeconds)}</span>
         </div>
-      </section>
+      </div>
       <MapOmissionList points={points} />
 
       <section className="shared-route-summary" aria-labelledby={`shared-route-${preview ? "preview" : "public"}`}>

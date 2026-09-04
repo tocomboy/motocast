@@ -763,6 +763,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         </aside>
 
         <section className="route-stage" aria-label="라이딩 계획 결과">
+          <h1 className="sr-only" hidden={!isCompact}>라이딩 계획 결과</h1>
           <div className="route-map-frame">
             <div className="route-map-meta">
               <div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>

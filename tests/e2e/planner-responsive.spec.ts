@@ -45,6 +45,9 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
       summaryScrollWidth: summary.scrollWidth,
       summaryClientHeight: summary.clientHeight,
       summaryScrollHeight: summary.scrollHeight,
+      summaryLabelFontSize: Number.parseFloat(getComputedStyle(summary.querySelector(".summary-metrics span")!).fontSize),
+      summaryValueFontSize: Number.parseFloat(getComputedStyle(summary.querySelector(".summary-metrics strong")!).fontSize),
+      summaryStatusFontSize: Number.parseFloat(getComputedStyle(summary.querySelector(".return-status")!).fontSize),
       summaryHasNoInternalOverflow: summary.clientWidth >= summary.scrollWidth &&
         summary.clientHeight >= summary.scrollHeight,
     };
@@ -61,9 +64,29 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
     summaryHasNoInternalOverflow: true,
   });
   expect(layout.mapHeight).toBeGreaterThanOrEqual(360);
+  expect(layout.summaryLabelFontSize).toBeGreaterThanOrEqual(14);
+  expect(layout.summaryValueFontSize).toBeGreaterThanOrEqual(16);
+  expect(layout.summaryStatusFontSize).toBeGreaterThanOrEqual(14);
   await expect(summary.getByRole("heading", { name: "경로 요약" })).toHaveCount(1);
   await expect(summary.getByText("추천 경로", { exact: true })).toHaveCount(0);
   await expect(page.locator(".candidate-card, .candidate-strip, .candidate-tab")).toHaveCount(0);
+}
+
+async function expectReadableWeatherTimeline(page: import("@playwright/test").Page) {
+  const layout = await page.locator(".timeline-row").evaluateAll((rows) => rows.map((row) => {
+    const chip = row.querySelector<HTMLElement>(".weather-chip")!;
+    const segment = row.querySelector<HTMLElement>(".segment-copy strong")!;
+    const rowBox = row.getBoundingClientRect();
+    const chipBox = chip.getBoundingClientRect();
+    return {
+      rowHasNoOverflow: row.scrollWidth <= row.clientWidth,
+      chipHasNoOverflow: chip.scrollWidth <= chip.clientWidth,
+      chipInsideRow: chipBox.left >= rowBox.left && chipBox.right <= rowBox.right + 1,
+      segmentFontSize: Number.parseFloat(getComputedStyle(segment).fontSize),
+    };
+  }));
+  expect(layout.every((item) => item.rowHasNoOverflow && item.chipHasNoOverflow && item.chipInsideRow)).toBe(true);
+  expect(layout.every((item) => item.segmentFontSize >= 14)).toBe(true);
 }
 
 test.describe("planner responsive shell", () => {
@@ -132,6 +155,8 @@ test.describe("planner responsive shell", () => {
     await expect(dialog).toBeHidden();
     await expect(openButton).toBeFocused();
     await expectMapInformationOutsideMap(page);
+    await expectReadableWeatherTimeline(page);
+    await expect(page.getByRole("heading", { level: 1, name: "라이딩 계획 결과" })).toHaveCount(1);
     await expect(page.getByRole("heading", { name: "시간에 따른 구간 날씨" })).toBeVisible();
 
     const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
@@ -161,10 +186,12 @@ test.describe("planner responsive shell", () => {
       await expect(items).toHaveCount(20);
       const layout = await notice.evaluate((element) => {
         const list = element.querySelector("ul")!;
-        const map = element.previousElementSibling!;
+        const map = element.parentElement!.querySelector(".shared-map")!;
+        const details = element.parentElement!.querySelector(".shared-map-details")!;
         return {
           parentIsSnapshot: element.parentElement?.classList.contains("shared-snapshot") ?? false,
-          previousSiblingIsMap: map.classList.contains("shared-map"),
+          detailsOutsideMap: !map.contains(details),
+          detailsAfterMap: details.getBoundingClientRect().top >= map.getBoundingClientRect().bottom - 1,
           noticeOutsideMap: !map.contains(element),
           noticeHasNoInternalOverflow: element.scrollHeight <= element.clientHeight,
           listHasNoInternalOverflow: list.scrollHeight <= list.clientHeight,
@@ -173,7 +200,8 @@ test.describe("planner responsive shell", () => {
       });
       expect(layout).toEqual({
         parentIsSnapshot: true,
-        previousSiblingIsMap: true,
+        detailsOutsideMap: true,
+        detailsAfterMap: true,
         noticeOutsideMap: true,
         noticeHasNoInternalOverflow: true,
         listHasNoInternalOverflow: true,
@@ -199,5 +227,26 @@ test.describe("planner responsive shell", () => {
       return (registration.active ?? registration.waiting ?? registration.installing)?.scriptURL ?? "";
     });
     expect(new URL(scriptUrl).pathname).toBe("/sw.js");
+  });
+
+  test("mobile recovery and support text remain readable and tappable", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.route("**/api/auth/kakao/cancel", (route) => route.fulfill({ status: 204 }));
+    await page.goto("/auth/kakao/callback#bad");
+    const recoveryLink = page.getByRole("link", { name: "로그인으로 돌아가기" });
+    await expect(recoveryLink).toBeVisible();
+    expect((await recoveryLink.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+    await page.goto("/login");
+    const footnote = page.locator(".login-footnote");
+    await expect(footnote).toBeVisible();
+    expect(await footnote.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(14);
+
+    await page.route("**/api/invites/accept", (route) => route.abort("failed"));
+    await page.goto(`/invite#${"a".repeat(43)}`);
+    const memberLogin = page.getByRole("link", { name: "기존 멤버 로그인" });
+    await expect(memberLogin).toBeVisible();
+    expect((await memberLogin.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await expect(page).not.toHaveURL(/#/);
   });
 });
