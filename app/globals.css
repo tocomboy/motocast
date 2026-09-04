@@ -1623,15 +1623,11 @@ button {
   .mobile-plan-button {
     background: var(--orange);
     border-radius: 999px;
-    bottom: max(18px, env(safe-area-inset-bottom));
-    box-shadow: 0 10px 30px rgba(24, 34, 29, 0.27);
-    color: white;
+    color: var(--ink);
     display: block;
     font-weight: 780;
-    padding: 13px 22px;
-    position: fixed;
-    right: 18px;
-    z-index: 45;
+    min-height: 44px;
+    padding: 10px 18px;
   }
 
   .panel-backdrop {

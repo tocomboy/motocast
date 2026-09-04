@@ -26,7 +26,8 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
     const metaBox = meta.getBoundingClientRect();
     const detailsBox = details.getBoundingClientRect();
     const legendBox = legend.getBoundingClientRect();
-    const summaryBox = document.querySelector(".ride-summary")!.getBoundingClientRect();
+    const summary = document.querySelector<HTMLElement>(".ride-summary")!;
+    const summaryBox = summary.getBoundingClientRect();
     const overlaps = (left: DOMRect, right: DOMRect) => (
       left.left < right.right && left.right > right.left && left.top < right.bottom && left.bottom > right.top
     );
@@ -40,8 +41,12 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
       legendOverlapsMap: overlaps(legendBox, mapBox),
       summaryOverlapsMap: overlaps(summaryBox, mapBox),
       mapHeight: mapBox.height,
-      summaryHasNoInternalOverflow: summaryBox.width >= document.querySelector(".ride-summary")!.scrollWidth &&
-        summaryBox.height >= document.querySelector(".ride-summary")!.scrollHeight,
+      summaryClientWidth: summary.clientWidth,
+      summaryScrollWidth: summary.scrollWidth,
+      summaryClientHeight: summary.clientHeight,
+      summaryScrollHeight: summary.scrollHeight,
+      summaryHasNoInternalOverflow: summary.clientWidth >= summary.scrollWidth &&
+        summary.clientHeight >= summary.scrollHeight,
     };
   });
   expect(layout).toMatchObject({
@@ -91,6 +96,21 @@ test.describe("planner responsive shell", () => {
 
     const openButton = page.getByRole("button", { name: "계획 수정" });
     await expect(openButton).toBeVisible();
+    const closedLayout = await page.evaluate(() => {
+      const header = document.querySelector(".app-header")!;
+      const button = document.querySelector(".mobile-plan-button")!;
+      const summary = document.querySelector(".ride-summary")!;
+      const buttonBox = button.getBoundingClientRect();
+      const summaryBox = summary.getBoundingClientRect();
+      return {
+        buttonInsideHeader: header.contains(button),
+        buttonOverlapsSummary: buttonBox.left < summaryBox.right && buttonBox.right > summaryBox.left
+          && buttonBox.top < summaryBox.bottom && buttonBox.bottom > summaryBox.top,
+        buttonHeight: buttonBox.height,
+      };
+    });
+    expect(closedLayout).toMatchObject({ buttonInsideHeader: true, buttonOverlapsSummary: false });
+    expect(closedLayout.buttonHeight).toBeGreaterThanOrEqual(44);
     await openButton.focus();
     await page.keyboard.press("Enter");
 

@@ -673,6 +673,7 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
             {connected ? "서비스 연결됨" : "데모 모드"}
           </span>
           {connected ? <Link className="ghost-button" href="/admin/invites">초대 관리</Link> : null}
+          <button ref={mobilePlanButtonRef} className="mobile-plan-button" type="button" onClick={() => setPlannerOpen(true)}>계획 수정</button>
         </div>
       </header>
 
@@ -850,7 +851,6 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
         </section>
       </div>
 
-      <button ref={mobilePlanButtonRef} className="mobile-plan-button" type="button" onClick={() => setPlannerOpen(true)}>계획 수정</button>
       {plannerOpen ? <button className="panel-backdrop" type="button" aria-label="계획 패널 닫기" onClick={closePlannerPanel} /> : null}
     </main>
   );
