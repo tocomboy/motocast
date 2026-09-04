@@ -155,6 +155,11 @@ test.describe("planner responsive shell", () => {
       ".section-label, .planner-form label > span, .selected-place strong, .selected-place small, .place-status, .time-estimate-note strong, .time-estimate-note small, .ordered-waypoint strong, .ordered-waypoint small, .toggle-row strong, .toggle-row small",
     ).evaluateAll((elements) => elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)));
     expect(plannerCopyFontSizes.every((fontSize) => fontSize >= 14)).toBe(true);
+    const visibleButtonHeights = await dialog.locator("button").evaluateAll((buttons) => buttons
+      .map((button) => button.getBoundingClientRect())
+      .filter((box) => box.width > 0 && box.height > 0)
+      .map((box) => box.height));
+    expect(visibleButtonHeights.every((height) => height >= 44)).toBe(true);
     const focusable = dialog.locator("input:not(:disabled), button:not(:disabled), [href], [tabindex]:not([tabindex='-1'])");
     const first = focusable.first();
     const last = focusable.last();
