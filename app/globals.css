@@ -213,7 +213,7 @@ button {
   align-items: center;
   color: var(--ink-soft);
   display: inline-flex;
-  font-size: 0.86rem;
+  font-size: 0.875rem;
   font-weight: 700;
   min-height: 44px;
   padding-block: 8px;
@@ -358,7 +358,7 @@ button {
   align-items: center;
   color: var(--ink-soft);
   display: flex;
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   font-weight: 800;
   gap: 9px;
   letter-spacing: 0.1em;
@@ -379,7 +379,7 @@ button {
 
 .planner-form label > span {
   color: var(--ink-soft);
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   font-weight: 720;
 }
 
@@ -417,7 +417,7 @@ button {
 
 .place-field > label > span {
   color: var(--ink-soft);
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   font-weight: 720;
 }
 
@@ -435,7 +435,7 @@ button {
   background: var(--ink);
   border-radius: 9px;
   color: white;
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   font-weight: 750;
   min-width: 58px;
   padding: 0 10px;
@@ -483,13 +483,13 @@ button {
 }
 
 .selected-place strong {
-  font-size: 0.74rem;
+  font-size: 0.875rem;
 }
 
 .selected-place small,
 .place-status {
   color: var(--ink-soft);
-  font-size: 0.64rem;
+  font-size: 0.875rem;
 }
 
 .selected-place button {
@@ -530,13 +530,13 @@ button {
 }
 
 .place-results strong {
-  font-size: 0.76rem;
+  font-size: 0.875rem;
 }
 
 .place-results span,
 .place-results small {
   color: var(--ink-soft);
-  font-size: 0.64rem;
+  font-size: 0.875rem;
 }
 
 .place-status {
@@ -575,12 +575,12 @@ button {
 
 .time-estimate-note strong {
   color: var(--ink);
-  font-size: 0.72rem;
+  font-size: 0.875rem;
 }
 
 .time-estimate-note small {
   color: var(--ink-soft);
-  font-size: 0.64rem;
+  font-size: 0.875rem;
   line-height: 1.45;
 }
 
@@ -617,7 +617,7 @@ button {
 .ordered-waypoint > span {
   color: var(--orange-deep);
   font-family: Georgia, serif;
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   font-weight: 700;
 }
 
@@ -633,8 +633,8 @@ button {
   white-space: nowrap;
 }
 
-.ordered-waypoint strong { font-size: 0.72rem; }
-.ordered-waypoint small { color: var(--ink-soft); font-size: 0.61rem; }
+.ordered-waypoint strong { font-size: 0.875rem; }
+.ordered-waypoint small { color: var(--ink-soft); font-size: 0.875rem; }
 
 .waypoint-actions {
   display: flex;
@@ -657,12 +657,15 @@ button {
 }
 
 .text-button {
+  align-items: center;
   background: none;
   color: var(--orange-deep);
-  font-size: 0.74rem;
+  display: inline-flex;
+  font-size: 0.875rem;
   font-weight: 750;
   justify-self: start;
-  padding: 2px 0;
+  min-height: 44px;
+  padding: 8px 0;
 }
 
 .toggle-row {
@@ -684,12 +687,12 @@ button {
 
 .toggle-row strong {
   color: var(--ink);
-  font-size: 0.78rem;
+  font-size: 0.875rem;
 }
 
 .toggle-row small {
   color: #747c77;
-  font-size: 0.66rem;
+  font-size: 0.875rem;
 }
 
 .toggle-row input {
@@ -886,7 +889,7 @@ button {
   background: rgba(255, 253, 248, 0.9);
   border-radius: 8px;
   display: flex;
-  font-size: 0.7rem;
+  font-size: 0.875rem;
   gap: 8px;
   justify-content: center;
   left: 50%;
@@ -944,7 +947,7 @@ button {
   align-items: center;
   color: var(--ink-soft);
   display: flex;
-  font-size: 0.66rem;
+  font-size: 0.875rem;
   font-weight: 750;
   gap: 5px;
 }
@@ -996,7 +999,7 @@ button {
   align-items: center;
   color: var(--ink-soft);
   display: flex;
-  font-size: 0.76rem;
+  font-size: 0.875rem;
   font-weight: 750;
   gap: 8px;
   min-width: 0;
@@ -1024,7 +1027,7 @@ button {
   border-radius: 9px;
   color: white;
   display: flex;
-  font-size: 0.7rem;
+  font-size: 0.875rem;
   gap: 10px;
   padding: 10px 13px;
 }
@@ -1040,7 +1043,7 @@ button {
   border: 1px solid rgba(24, 34, 29, 0.16);
   border-radius: 999px;
   color: var(--ink-soft);
-  font-size: 0.66rem;
+  font-size: 0.875rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   padding: 9px 11px;
@@ -1185,7 +1188,7 @@ button {
 
 .forecast-issued {
   color: #555d57;
-  font-size: 0.68rem;
+  font-size: 0.875rem;
 }
 
 .timeline-list {
@@ -1215,7 +1218,7 @@ button {
 .timeline-time span,
 .segment-copy span {
   color: #555d57;
-  font-size: 0.64rem;
+  font-size: 0.875rem;
 }
 
 .timeline-rail {
@@ -1273,7 +1276,7 @@ button {
 .weather-chip.unknown { background: #ececea; }
 
 .weather-word {
-  font-size: 0.68rem;
+  font-size: 0.875rem;
   font-weight: 750;
 }
 
@@ -1284,13 +1287,13 @@ button {
 
 .weather-chip small {
   color: #626b65;
-  font-size: 0.63rem;
+  font-size: 0.875rem;
   white-space: nowrap;
 }
 
 .risk-label {
   align-self: center;
-  font-size: 0.67rem;
+  font-size: 0.875rem;
   font-weight: 750;
   justify-self: end;
 }
@@ -1305,7 +1308,7 @@ button {
   background: #f1eee6;
   color: #646b66;
   display: flex;
-  font-size: 0.68rem;
+  font-size: 0.875rem;
   gap: 8px;
   margin-top: 15px;
   padding: 10px 12px;
@@ -1472,7 +1475,7 @@ button {
   background: rgba(244, 240, 231, 0.95);
   border-radius: 7px;
   color: var(--ink);
-  font-size: 0.7rem;
+  font-size: 0.875rem;
   padding: 9px 11px;
   position: absolute;
   z-index: 2;
@@ -1699,8 +1702,9 @@ textarea:focus-visible {
   border-radius: 9px;
   color: white;
   cursor: pointer;
-  font-size: 0.76rem;
+  font-size: 0.875rem;
   font-weight: 750;
+  min-height: 44px;
   padding: 10px 13px;
 }
 
@@ -1760,7 +1764,7 @@ textarea:focus-visible {
 .collection-create label > span,
 .issued-link label > span {
   color: var(--ink-soft);
-  font-size: 0.7rem;
+  font-size: 0.875rem;
   font-weight: 750;
 }
 
@@ -1806,14 +1810,14 @@ textarea:focus-visible {
 
 .collection-list strong,
 .share-link-list strong {
-  font-size: 0.78rem;
+  font-size: 0.875rem;
 }
 
 .collection-list span,
 .collection-list small,
 .share-link-list span {
   color: var(--ink-soft);
-  font-size: 0.68rem;
+  font-size: 0.875rem;
 }
 
 .collection-actions {
@@ -1830,7 +1834,8 @@ textarea:focus-visible {
   border: 1px solid var(--line);
   border-radius: 7px;
   cursor: pointer;
-  font-size: 0.68rem;
+  font-size: 0.875rem;
+  min-height: 44px;
   padding: 7px 8px;
 }
 
@@ -1840,7 +1845,7 @@ textarea:focus-visible {
 
 .manager-status {
   color: var(--ink-soft);
-  font-size: 0.7rem;
+  font-size: 0.875rem;
   line-height: 1.55;
   margin: 14px 0 0;
 }
@@ -1857,7 +1862,7 @@ textarea:focus-visible {
   background: #fff0e8;
   border-left: 3px solid var(--orange);
   display: grid;
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   gap: 3px;
   padding: 10px 12px;
 }
@@ -1897,14 +1902,14 @@ textarea:focus-visible {
 }
 
 .share-preview li {
-  font-size: 0.7rem;
+  font-size: 0.875rem;
   padding-left: 3px;
 }
 
 .share-preview li span {
   color: var(--ink-soft);
   display: block;
-  font-size: 0.64rem;
+  font-size: 0.875rem;
   margin-top: 2px;
 }
 
@@ -1918,7 +1923,7 @@ textarea:focus-visible {
   background: #edf1ed;
   border-radius: 8px;
   display: flex;
-  font-size: 0.68rem;
+  font-size: 0.875rem;
   justify-content: space-between;
   padding: 8px 9px;
 }
@@ -2071,7 +2076,7 @@ textarea:focus-visible {
 
 .shared-routes span,
 .shared-routes small {
-  font-size: 0.72rem;
+  font-size: 0.875rem;
 }
 
 .shared-legs,
@@ -2088,7 +2093,7 @@ textarea:focus-visible {
   background: rgba(255, 255, 255, 0.7);
   border-radius: 8px;
   display: grid;
-  font-size: 0.68rem;
+  font-size: 0.875rem;
   gap: 3px;
   padding: 8px;
 }
@@ -2100,7 +2105,7 @@ textarea:focus-visible {
 
 .shared-weather-state {
   color: var(--mint-deep);
-  font-size: 0.74rem;
+  font-size: 0.875rem;
   font-weight: 750;
 }
 

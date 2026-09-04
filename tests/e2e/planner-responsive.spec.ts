@@ -48,6 +48,9 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
       summaryLabelFontSize: Number.parseFloat(getComputedStyle(summary.querySelector(".summary-metrics span")!).fontSize),
       summaryValueFontSize: Number.parseFloat(getComputedStyle(summary.querySelector(".summary-metrics strong")!).fontSize),
       summaryStatusFontSize: Number.parseFloat(getComputedStyle(summary.querySelector(".return-status")!).fontSize),
+      mapCopyFontSizes: Array.from(document.querySelectorAll<HTMLElement>(
+        ".condition-banner, .example-data-badge, .live-data-badge, .map-marker-legend li",
+      )).map((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
       summaryHasNoInternalOverflow: summary.clientWidth >= summary.scrollWidth &&
         summary.clientHeight >= summary.scrollHeight,
     };
@@ -67,6 +70,7 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
   expect(layout.summaryLabelFontSize).toBeGreaterThanOrEqual(14);
   expect(layout.summaryValueFontSize).toBeGreaterThanOrEqual(16);
   expect(layout.summaryStatusFontSize).toBeGreaterThanOrEqual(14);
+  expect(layout.mapCopyFontSizes.every((fontSize) => fontSize >= 14)).toBe(true);
   await expect(summary.getByRole("heading", { name: "경로 요약" })).toHaveCount(1);
   await expect(summary.getByText("추천 경로", { exact: true })).toHaveCount(0);
   await expect(page.locator(".candidate-card, .candidate-strip, .candidate-tab")).toHaveCount(0);
@@ -83,10 +87,14 @@ async function expectReadableWeatherTimeline(page: import("@playwright/test").Pa
       chipHasNoOverflow: chip.scrollWidth <= chip.clientWidth,
       chipInsideRow: chipBox.left >= rowBox.left && chipBox.right <= rowBox.right + 1,
       segmentFontSize: Number.parseFloat(getComputedStyle(segment).fontSize),
+      copyFontSizes: Array.from(row.querySelectorAll<HTMLElement>(
+        ".timeline-time span, .segment-copy span, .weather-word, .weather-chip small, .risk-label",
+      )).map((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
     };
   }));
   expect(layout.every((item) => item.rowHasNoOverflow && item.chipHasNoOverflow && item.chipInsideRow)).toBe(true);
   expect(layout.every((item) => item.segmentFontSize >= 14)).toBe(true);
+  expect(layout.every((item) => item.copyFontSizes.every((fontSize) => fontSize >= 14))).toBe(true);
 }
 
 test.describe("planner responsive shell", () => {
@@ -143,6 +151,10 @@ test.describe("planner responsive shell", () => {
     await expect(dialog.getByLabel("추가할 종류")).toHaveValue("waypoint");
     await expect(dialog.getByLabel("추가할 종류")).toBeDisabled();
     await expect(dialog.getByText("복귀는 자동 계산", { exact: true })).toBeVisible();
+    const plannerCopyFontSizes = await dialog.locator(
+      ".section-label, .planner-form label > span, .selected-place strong, .selected-place small, .place-status, .time-estimate-note strong, .time-estimate-note small, .ordered-waypoint strong, .ordered-waypoint small, .toggle-row strong, .toggle-row small",
+    ).evaluateAll((elements) => elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)));
+    expect(plannerCopyFontSizes.every((fontSize) => fontSize >= 14)).toBe(true);
     const focusable = dialog.locator("input:not(:disabled), button:not(:disabled), [href], [tabindex]:not([tabindex='-1'])");
     const first = focusable.first();
     const last = focusable.last();
@@ -196,6 +208,9 @@ test.describe("planner responsive shell", () => {
           noticeHasNoInternalOverflow: element.scrollHeight <= element.clientHeight,
           listHasNoInternalOverflow: list.scrollHeight <= list.clientHeight,
           horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
+          readableShareCopy: Array.from(element.parentElement!.querySelectorAll<HTMLElement>(
+            ".map-marker-legend li, .map-omissions li, .shared-map-summary span, .shared-routes span, .shared-routes small, .shared-legs li, .shared-weather-list li, .shared-weather-state",
+          )).every((item) => Number.parseFloat(getComputedStyle(item).fontSize) >= 14),
         };
       });
       expect(layout).toEqual({
@@ -206,6 +221,7 @@ test.describe("planner responsive shell", () => {
         noticeHasNoInternalOverflow: true,
         listHasNoInternalOverflow: true,
         horizontalOverflow: false,
+        readableShareCopy: true,
       });
       await expect(items.last()).toBeVisible();
     });
