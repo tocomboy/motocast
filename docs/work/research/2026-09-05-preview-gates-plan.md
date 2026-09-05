@@ -1,5 +1,11 @@
 # Preview 잔여 검증과 Production 승격 준비
 
+> **최신 공유 차단 완료:** [실제 연결11 PASS](2026-09-06-negative-share-connected-proof.md)와 정확 정리 후속 PASS를 확보했다. missing/stale/expired 각2개의 실제 preview/publish 거절이며 합성 시험 자료를 사용했다. 아래 두 실패 실행은 이력으로 보존하고 모든 시험 자료는 정리됐다. 나머지 Kakao·공급자·예산·Production gate는 유지한다.
+
+> **최신 후속:** [잔여 gate·인터뷰 결정 목록](2026-09-06-preview-remaining-gates.md)에 현재 두 실사용 계정 보존과 증거 범위를 통합했다. 공유 차단 도구의 첫 연결 실행은 PASS3/FAIL2/NOT_RUN6이며, 시험 자료16행/Auth1개의 정확 정리 복구·별도 readback은 PASS다. 원래 실패는 보존하고 도구의 관리 연결 차이 수정·재검토를 진행한다. 해당6개 RPC와 Kakao/공급자/예산/Production 미완료 상태를 유지한다.
+
+> **최신 실행 완료 — 2026-09-06:** 사용자 승인 후 Preview 임시 Auth4개와 계획149사례를 실제 실행하여149 PASS/나머지 분류0, exact cleanup 후속1 PASS, 독립 evidence APPROVE B0/H0/M0/L0를 확보했다. 기존 public16테이블/Auth users 보호 지문 일치. [새 연결 증거](2026-09-06-preview-auth-connected-proof.md)를 우선하며 아래 승인 대기·149 NOT_RUN 표시는 과거 이력이다. Kakao/공급자·예산/negative 공유 및 Production은 여전히 미완료다. Vercel 최초API403은 공식CLI의 기존 세션 갱신으로 해소됐고 exact98afe02 READY 별칭을 재확인했다.
+
 2026-09-05. 전체 Goal은 진행 중이다. Preview 정상 흐름의 성공이나 Production 승인 대기는 전체 완료가 아니다.
 
 ## 실행 계획

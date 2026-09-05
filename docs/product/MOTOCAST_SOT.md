@@ -2,6 +2,8 @@
 
 Last verified: 2026-09-05 (Asia/Seoul)
 
+Verification addendum, 2026-09-06: approved temporary Auth/ownership checks passed149, and seeded missing/stale/naturally expired weather sharing checks passed11, each with exact cleanup readback and preserved real-user data. These are bounded Preview evidence, not full Kakao/provider/budget or Production completion. No confirmed product contract changed. [Sharing evidence and limits](../work/research/2026-09-06-negative-share-connected-proof.md), [remaining gates](../work/research/2026-09-06-preview-remaining-gates.md).
+
 This document is the single source of truth for MOTOCAST product, security, cost, and operations decisions. A `CONFIRMED` entry is binding. A `NEEDS_INTERVIEW` entry blocks only the affected slice and must fail closed. A `DEPRECATED` entry remains as decision history.
 
 ## Authority and change protocol
@@ -390,6 +392,12 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Interview history: On 2026-08-31 the user deferred every Production Supabase/Vercel change until the Preview gate is complete. The subsequent user instruction to retain the current Tokyo/Seoul regions resolves the region choice. Production deployment, credentials, migrations, and main promotion still require their separate post-Preview approval; region confirmation alone does not authorize those changes.
 
 ## Live-state snapshot
+
+### Latest connected Auth update — 2026-09-06 KST
+
+The user authorized four temporary Preview Auth fixtures and exact cleanup. Actual Auth/PostgREST/RPC execution passed149 cases (before70, after73, session/invite/cleanup6); all other result categories were0. Independent evidence review APPROVE B0/H0/M0/L0. Follow-up exact cleanup passed; fixture public/Auth rows were absent and nonfixture public16-table plus auth.users fingerprints matched. Existing real accounts were excluded from mutation scope. This proves CONNECTED_AUTH_FIXTURE_AND_SEEDED_CONTROL, not Kakao browser completion, provider failure, negative weather sharing, or full Preview readiness. See [connected evidence and remaining gates](../work/research/2026-09-06-preview-auth-connected-proof.md).
+
+Fetched develop98afe02 and its two existing exact-SHA CI runs remain successful. Edge versions remain weather12/plan11/others8. Vercel alias readback initially failed (missing local project binding, then API403). The stored access token had expired; cached official CLI59.11.7 refreshed the existing session through whoami. Subsequent team-scoped alias readback confirms dpl_HiueyMFkC1vL2NRfJncJNEst8ECm READY at exact98afe02. Historical deployment facts below are dated evidence. No new commit/push/deployment or Production change occurred during this verification.
 
 ### Latest verified update — 2026-09-05 12:38 UTC
 
