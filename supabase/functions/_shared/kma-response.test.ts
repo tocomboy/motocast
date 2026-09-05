@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parseKmaItems } from "./kma-response";
-import { KmaResponseValidationError, kmaResponseDiagnostic, weatherFailureKind } from "./weather-failure";
+import { KmaResponseValidationError, kmaBindingDiagnostic, kmaResponseDiagnostic, weatherFailureKind } from "./weather-failure";
 
 describe("parseKmaItems", () => {
   const expected = { baseDate: "20260831", baseTime: "1100", nx: 60, ny: 127, model: "short" as const };
@@ -16,6 +16,27 @@ describe("parseKmaItems", () => {
     fcstTime: "1200",
     fcstValue: "22",
   };
+
+  it("retains the original first error while summarizing the already-rejected response", async () => {
+    const error = await parse(new Response(JSON.stringify({ response: {
+      header: { resultCode: "00" }, body: { items: { item: [
+        { ...validItem, baseTime: "1110" }, { ...validItem, category: "fixture-private-detail", baseTime: "1120" }, null,
+      ] } },
+    } }))).catch((value: unknown) => value);
+    expect(error).toEqual(new KmaResponseValidationError("BASE_TIME_MISMATCH"));
+    expect(kmaResponseDiagnostic(error)).toBe("BASE_TIME_MISMATCH");
+    const diagnostic = kmaBindingDiagnostic(error);
+    expect(diagnostic).toHaveLength(1);
+    expect(diagnostic[0]).toContain("B1 COMPLETE VALID MULTIPLE");
+    expect(diagnostic[0]).not.toContain("fixture-private-detail");
+    expect(JSON.stringify(error)).not.toContain("B1");
+
+    const firstShape = await parse(new Response(JSON.stringify({ response: {
+      header: { resultCode: "00" }, body: { items: { item: [null, { ...validItem, baseTime: "1110" }] } },
+    } }))).catch((value: unknown) => value);
+    expect(firstShape).toEqual(new KmaResponseValidationError("ITEM_SHAPE"));
+    expect(kmaBindingDiagnostic(firstShape)).toEqual([]);
+  });
 
   it.each([
     { reason: "ITEM_SHAPE", item: null },

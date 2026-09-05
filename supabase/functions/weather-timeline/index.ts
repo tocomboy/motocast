@@ -12,7 +12,7 @@ import {
 import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
 import { parseWeatherRequest, type WeatherPoint, type WeatherRequest } from "../_shared/weather-request.ts";
 import { assertWeatherPointsMatch, weatherPointsFromStoredRoute } from "../_shared/weather-route.ts";
-import { kmaResponseDiagnostic, safeWeatherDiagnosticCode, weatherFailureKind } from "../_shared/weather-failure.ts";
+import { kmaBindingDiagnostic, kmaResponseDiagnostic, safeWeatherDiagnosticCode, weatherFailureKind } from "../_shared/weather-failure.ts";
 import { publicWeatherSnapshot } from "../_shared/weather-snapshot.ts";
 import { parseKmaItems } from "../_shared/kma-response.ts";
 
@@ -254,7 +254,7 @@ Deno.serve(async (request) => {
           const staleReason = safeErrorMessage(error);
           const failureKind = weatherFailureKind(error);
           await markSnapshotStale(memberId, stale.snapshotId, staleReason, failureKind);
-          console.warn("weather-timeline stale fallback", safeWeatherDiagnosticCode(error), kmaResponseDiagnostic(error));
+          console.warn("weather-timeline stale fallback", safeWeatherDiagnosticCode(error), kmaResponseDiagnostic(error), ...kmaBindingDiagnostic(error));
           return jsonResponse({
             ...publicWeatherSnapshot(stale),
             source: "snapshot",
@@ -268,7 +268,7 @@ Deno.serve(async (request) => {
         console.error("weather-timeline snapshot read failed");
       }
     }
-    console.error("weather-timeline failed", safeWeatherDiagnosticCode(error), kmaResponseDiagnostic(error));
+    console.error("weather-timeline failed", safeWeatherDiagnosticCode(error), kmaResponseDiagnostic(error), ...kmaBindingDiagnostic(error));
     return jsonResponse({ error: safeErrorMessage(error) }, safeErrorStatus(error), cors);
   }
 });

@@ -1,5 +1,6 @@
 import type { ForecastModel, KmaItem } from "./weather-forecast.ts";
-import { KmaResponseValidationError } from "./weather-failure.ts";
+import { attachKmaBindingDiagnostic, KmaResponseValidationError } from "./weather-failure.ts";
+import { summarizeKmaBinding } from "./kma-binding-diagnostic.ts";
 
 export type KmaResponseIdentity = {
   baseDate: string;
@@ -100,7 +101,14 @@ export async function parseKmaItems(response: Response, expected: KmaResponseIde
   }
   const items = providerResponse?.body?.items?.item;
   if (!Array.isArray(items) || items.length === 0) throw new Error("KMA_FORECAST_NOT_FOUND");
-  items.forEach((item) => assertKmaItem(item, expected));
+  try {
+    items.forEach((item) => assertKmaItem(item, expected));
+  } catch (error) {
+    if (error instanceof KmaResponseValidationError && error.reason.startsWith("BASE_")) {
+      attachKmaBindingDiagnostic(error, summarizeKmaBinding(items, expected));
+    }
+    throw error;
+  }
   const identities = new Set(items.map((item) => `${item.fcstDate}:${item.fcstTime}:${item.category}`));
   if (identities.size !== items.length) throw new KmaResponseValidationError("DUPLICATE_IDENTITY");
   return items;

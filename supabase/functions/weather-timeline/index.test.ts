@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { KmaResponseValidationError } from "../_shared/weather-failure";
+import { attachKmaBindingDiagnostic, KmaResponseValidationError } from "../_shared/weather-failure";
+import { summarizeKmaBinding } from "../_shared/kma-binding-diagnostic";
 
 const mocks = vi.hoisted(() => ({
   requireMember: vi.fn(), consumeBudget: vi.fn(), serviceClient: vi.fn(),
@@ -59,15 +60,17 @@ describe("deployed weather diagnostic boundary", () => {
     errorLog.mockRestore(); warnLog.mockRestore(); vi.unstubAllGlobals();
   });
 
-  it.each(["known", "foreign", "forged"])("keeps %s provider failure private with one budgeted call", async (kind) => {
+  it.each(["known", "foreign", "forged", "binding"])("keeps %s provider failure private with one budgeted call", async (kind) => {
     const error = kind === "foreign" ? new Error("fixture-private-detail") : new KmaResponseValidationError("MISSING_POP");
     if (kind === "forged") Object.assign(error, { reason: "fixture-private-detail" });
+    const binding = summarizeKmaBinding([], { baseDate: "20260905", baseTime: "0830", model: "ultra", nx: 60, ny: 127 });
+    if (kind === "binding" && error instanceof KmaResponseValidationError) attachKmaBindingDiagnostic(error, binding);
     mocks.parseKmaItems.mockRejectedValue(error);
     const response = await handler(request());
     const body = await response.json();
     expect(response.status).toBe(502);
     expect(body).toEqual({ error: "외부 서비스 요청에 실패했습니다. 기존 저장 계획은 유지됩니다." });
-    expect(errorLog).toHaveBeenCalledExactlyOnceWith("weather-timeline failed", kind === "foreign" ? "UNKNOWN" : "KMA_INVALID_RESPONSE", kind === "known" ? "MISSING_POP" : "UNKNOWN");
+    expect(errorLog).toHaveBeenCalledExactlyOnceWith("weather-timeline failed", kind === "foreign" ? "UNKNOWN" : "KMA_INVALID_RESPONSE", kind === "known" || kind === "binding" ? "MISSING_POP" : "UNKNOWN", ...(kind === "binding" ? [binding] : []));
     expect(JSON.stringify({ body, logs: errorLog.mock.calls })).not.toContain("fixture-private-detail");
     expect(mocks.consumeBudget).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -75,8 +78,11 @@ describe("deployed weather diagnostic boundary", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])("redacts stale fallback logs without changing snapshot/public failure semantics %#", async (foreign) => {
+  it.each(["known", "foreign", "binding"])("redacts stale fallback logs without changing snapshot/public failure semantics %s", async (kind) => {
+    const foreign = kind === "foreign";
     const error = foreign ? new Error("fixture-private-detail") : new KmaResponseValidationError("VALUE_CONTRACT");
+    const binding = summarizeKmaBinding([], { baseDate: "20260905", baseTime: "0830", model: "ultra", nx: 60, ny: 127 });
+    if (kind === "binding" && error instanceof KmaResponseValidationError) attachKmaBindingDiagnostic(error, binding);
     mocks.parseKmaItems.mockRejectedValue(error);
     mocks.snapshotRead.mockResolvedValueOnce({ data: null, error: null }).mockResolvedValueOnce({ data: {
       id: "fixture-snapshot", issued_at: "2026-09-04T23:30:00.000Z", valid_until: "2026-09-05T02:00:00.000Z",
@@ -86,7 +92,8 @@ describe("deployed weather diagnostic boundary", () => {
     const body = await response.json();
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ source: "snapshot", stale: true, failureKind: foreign ? "request" : "provider", staleReason: "외부 서비스 요청에 실패했습니다. 기존 저장 계획은 유지됩니다." });
-    expect(warnLog).toHaveBeenCalledExactlyOnceWith("weather-timeline stale fallback", foreign ? "UNKNOWN" : "KMA_INVALID_RESPONSE", foreign ? "UNKNOWN" : "VALUE_CONTRACT");
+    expect(warnLog).toHaveBeenCalledExactlyOnceWith("weather-timeline stale fallback", foreign ? "UNKNOWN" : "KMA_INVALID_RESPONSE", foreign ? "UNKNOWN" : "VALUE_CONTRACT", ...(kind === "binding" ? [binding] : []));
+    expect(JSON.stringify({ body, rpc: mocks.rpc.mock.calls })).not.toContain("B1");
     expect(errorLog).not.toHaveBeenCalled();
     expect(JSON.stringify({ body, logs: warnLog.mock.calls, rpc: mocks.rpc.mock.calls })).not.toContain("fixture-private-detail");
     expect(mocks.rpc).toHaveBeenCalledTimes(1);

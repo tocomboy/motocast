@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { KmaResponseValidationError, kmaResponseDiagnostic, safeWeatherDiagnosticCode, weatherFailureKind } from "./weather-failure";
+import { attachKmaBindingDiagnostic, KmaResponseValidationError, kmaBindingDiagnostic, kmaResponseDiagnostic, safeWeatherDiagnosticCode, weatherFailureKind } from "./weather-failure";
 
 describe("bounded weather diagnostics", () => {
+  it("does not accept forged diagnostic properties or serialize attached context", () => {
+    const error = new KmaResponseValidationError("BASE_TIME_MISMATCH");
+    Object.assign(error, { bindingDiagnostic: "fixture-private-detail" });
+    expect(kmaBindingDiagnostic(error)).toEqual([]);
+    attachKmaBindingDiagnostic(error, "fixture-private-detail");
+    expect(kmaBindingDiagnostic(error)).toEqual(["BINDING_UNKNOWN"]);
+    expect(kmaBindingDiagnostic(new Error("BASE_TIME_MISMATCH"))).toEqual([]);
+    expect(kmaBindingDiagnostic(null)).toEqual([]);
+  });
   it.each([
     "JSON_BODY", "OBJECT_SHAPE", "ITEM_SHAPE", "BASE_BINDING", "CATEGORY_SHAPE",
     "BASE_DATE_TYPE", "BASE_DATE_FORMAT", "BASE_DATE_MISMATCH", "BASE_DATE_NUMERIC_EQUIVALENT",

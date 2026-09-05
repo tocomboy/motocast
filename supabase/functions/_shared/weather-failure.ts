@@ -1,3 +1,5 @@
+import { safeKmaBindingDiagnostic } from "./kma-binding-diagnostic.ts";
+
 export type WeatherFailureKind = "provider" | "budget" | "configuration" | "persistence" | "request";
 
 const kmaValidationReasons = [
@@ -8,11 +10,22 @@ const kmaValidationReasons = [
   "MISSING_TEMPERATURE", "MISSING_POP", "MISSING_WSD", "MISSING_SKY", "MISSING_PTY",
 ] as const;
 type KmaValidationReason = typeof kmaValidationReasons[number];
+const bindingDiagnostics = new WeakMap<KmaResponseValidationError, string>();
 
 export class KmaResponseValidationError extends Error {
   constructor(readonly reason: KmaValidationReason) {
     super("KMA_INVALID_RESPONSE");
   }
+}
+
+export function attachKmaBindingDiagnostic(error: KmaResponseValidationError, diagnostic: string): void {
+  bindingDiagnostics.set(error, safeKmaBindingDiagnostic(diagnostic));
+}
+
+export function kmaBindingDiagnostic(error: unknown): string[] {
+  if (!(error instanceof KmaResponseValidationError)) return [];
+  const diagnostic = bindingDiagnostics.get(error);
+  return diagnostic === undefined ? [] : [safeKmaBindingDiagnostic(diagnostic)];
 }
 
 export function kmaResponseDiagnostic(error: unknown): string {
