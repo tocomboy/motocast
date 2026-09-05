@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { assertKakaoRouteMatchesPoints, assertKakaoSectionsContinuous, normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload } from "./kakao-route";
+import { assertKakaoRouteMatchesPoints, assertKakaoSectionsContinuous, normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload, routeResponseDiagnostic, RouteResponseValidationError } from "./kakao-route";
+import { safeErrorCode, safeErrorMessage, safeErrorStatus } from "./http";
 
 function payload() {
   return {
@@ -23,6 +24,40 @@ function payload() {
 }
 
 describe("normalizeKakaoRoutePayload", () => {
+  it.each([
+    ["SECTION_DISTANCE_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].distance -= 1; }],
+    ["SECTION_DURATION_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].duration -= 1; }],
+    ["ROUTE_DISTANCE_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].summary.distance += 1; }],
+    ["ROUTE_DURATION_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].summary.duration += 1; }],
+    ["ROAD_VERTEX_SHAPE", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].vertexes.pop(); }],
+    ["ROAD_VERTEX_RANGE", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].vertexes[0] = 0; }],
+    ["INTEGER_VALUE", (value: ReturnType<typeof payload>) => { value.routes[0].summary.duration = 0.5; }],
+    ["SUMMARY_POINT", (value: ReturnType<typeof payload>) => { value.routes[0].summary.origin.x = 0; }],
+    ["SECTION_ROADS", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads = []; }],
+    ["ROUTE_SECTIONS", (value: ReturnType<typeof payload>) => { value.routes[0].sections = []; }],
+    ["RESULT_CODE", (value: ReturnType<typeof payload>) => { value.routes[0].result_code = 9999; }],
+  ])("classifies %s without changing rejection or public response", (reason, mutate) => {
+    const value = payload();
+    mutate(value);
+    let caught: unknown;
+    try { normalizeKakaoRoutePayload(value); } catch (error) { caught = error; }
+    expect(caught).toBeInstanceOf(RouteResponseValidationError);
+    expect(routeResponseDiagnostic(caught)).toBe(reason);
+    expect(safeErrorCode(caught)).toBe("ROUTE_RESPONSE_INVALID");
+    expect(safeErrorStatus(caught)).toBe(502);
+    expect(safeErrorMessage(caught)).toBe("경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+  });
+
+  it("never treats a foreign error or a forged reason as a printable diagnostic", () => {
+    const privateDetail = "private provider URL/key/body must not be logged";
+    expect(routeResponseDiagnostic(new Error(privateDetail))).toBe("UNKNOWN");
+    expect(routeResponseDiagnostic({ reason: privateDetail })).toBe("UNKNOWN");
+    const forged = new RouteResponseValidationError("JSON_BODY");
+    Object.assign(forged, { reason: privateDetail });
+    expect(routeResponseDiagnostic(forged)).toBe("UNKNOWN");
+    expect(forged.message).toBe("INVALID_ROUTE_PROVIDER_RESPONSE");
+  });
+
   it("accepts a complete route with geometry", () => {
     expect(normalizeKakaoRoutePayload(payload()).summary.distance).toBe(12000);
   });
@@ -115,5 +150,10 @@ describe("normalizeKakaoRoutePayload", () => {
     expect(() => assertKakaoSectionsContinuous([first])).not.toThrow();
     expect(() => assertKakaoSectionsContinuous([second])).not.toThrow();
     expect(() => assertKakaoSectionsContinuous([first, second])).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+    try {
+      assertKakaoSectionsContinuous([first, second]);
+    } catch (error) {
+      expect(routeResponseDiagnostic(error)).toBe("SECTION_CONTINUITY");
+    }
   });
 });

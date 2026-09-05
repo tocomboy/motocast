@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { requestKakaoRoute, type KakaoRouteRequest } from "./kakao-provider";
 import type { RoutePointRequest } from "./route-request";
+import { routeResponseDiagnostic } from "./kakao-route";
 
 function point(id: string, longitude: number, latitude: number): RoutePointRequest {
   return {
@@ -132,7 +133,10 @@ describe("requestKakaoRoute", () => {
 
   it("rejects malformed successful responses as provider contract failures", async () => {
     const fetchImpl = vi.fn(async () => Response.json({ routes: [{ broken: true }] }));
-    await expect(requestKakaoRoute(request(), fetchImpl)).rejects.toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+    const error = await requestKakaoRoute(request(), fetchImpl).then(() => null, (error: unknown) => error);
+    expect(error).toMatchObject({ message: "INVALID_ROUTE_PROVIDER_RESPONSE" });
+    expect(routeResponseDiagnostic(error)).toBe("RESULT_CODE");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("classifies malformed JSON as an invalid provider response", async () => {
@@ -140,6 +144,9 @@ describe("requestKakaoRoute", () => {
       status: 200,
       headers: { "content-type": "application/json" },
     }));
-    await expect(requestKakaoRoute(request(), fetchImpl)).rejects.toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+    const error = await requestKakaoRoute(request(), fetchImpl).then(() => null, (error: unknown) => error);
+    expect(error).toMatchObject({ message: "INVALID_ROUTE_PROVIDER_RESPONSE" });
+    expect(routeResponseDiagnostic(error)).toBe("JSON_BODY");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

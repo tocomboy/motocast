@@ -1,4 +1,4 @@
-import { assertKakaoRouteMatchesPoints, normalizeKakaoRoutesPayload } from "./kakao-route.ts";
+import { assertKakaoRouteMatchesPoints, normalizeKakaoRoutesPayload, RouteResponseValidationError } from "./kakao-route.ts";
 import { applyMotorcycleRoutePolicy } from "./kakao-safety.ts";
 import type { RoutePointRequest } from "./route-request.ts";
 
@@ -61,7 +61,7 @@ export async function requestKakaoRoute(input: KakaoRouteRequest, fetchImpl: Fet
   try {
     payload = await response.json();
   } catch {
-    throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
+    throw new RouteResponseValidationError("JSON_BODY");
   }
   const routes = normalizeKakaoRoutesPayload(payload);
   const requestedPoints = [input.origin, ...input.waypoints, input.destination];
