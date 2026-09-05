@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { NormalizedKakaoRoute } from "./kakao-route";
+import { routeRequestDiagnostic, routeResponseDiagnostic, RouteResponseValidationError, type NormalizedKakaoRoute } from "./kakao-route";
 import { orchestrateRecommendedRoute, type RouteChunkRequest, type RouteOperation } from "./route-orchestration";
 import type { RoutePointRequest } from "./route-request";
 
@@ -72,6 +72,52 @@ function dependencies(now: number) {
 }
 
 describe("orchestrateRecommendedRoute", () => {
+  it.each([[1, "CURRENT_P0_P6_WAYPOINT"], [2, "FUTURE_P6_P7_DESTINATION"]])("labels waypoint-limit chunk %i without regrouping points", async (failedCall, expected) => {
+    const deps = dependencies(Date.parse("2026-09-01T00:00:00.000Z"));
+    deps.provider.mockImplementation(async (request) => {
+      if (deps.provider.mock.calls.length === failedCall) throw new RouteResponseValidationError("RESULT_CODE_106");
+      return providerResult(request);
+    });
+    const points = Array.from({ length: 8 }, (_, index) => point(index));
+    const error = await orchestrateRecommendedRoute(points, "2026-09-01T00:00:00.000Z", deps.value).then(() => null, (error: unknown) => error);
+    expect(routeRequestDiagnostic(error)).toBe(expected);
+    expect(deps.provider).toHaveBeenCalledTimes(failedCall);
+    expect(deps.budget).toHaveBeenCalledTimes(failedCall);
+  });
+
+  it("does not attach provider context or call the provider after budget refusal", async () => {
+    const deps = dependencies(Date.parse("2026-09-01T00:00:00.000Z"));
+    const refusal = new Error("API_DAILY_BUDGET_EXHAUSTED");
+    deps.budget.mockRejectedValue(refusal);
+    const error = await orchestrateRecommendedRoute([point(0), point(1)], "2026-09-01T00:00:00.000Z", deps.value).then(() => null, (error: unknown) => error);
+    expect(error).toBe(refusal);
+    expect(routeRequestDiagnostic(error)).toBe("UNKNOWN");
+    expect(deps.budget).toHaveBeenCalledTimes(1);
+    expect(deps.provider).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [1, "CURRENT_P0_P1_LUNCH"],
+    [2, "FUTURE_P1_P3_REST"],
+    [3, "FUTURE_P3_P4_DESTINATION"],
+  ])("identifies rejected chunk %i without retrying or changing budget order", async (failedCall, expected) => {
+    const deps = dependencies(Date.parse("2026-09-01T00:00:00.000Z"));
+    deps.provider.mockImplementation(async (request) => {
+      if (deps.provider.mock.calls.length === failedCall) throw new RouteResponseValidationError("RESULT_CODE_106");
+      return providerResult(request);
+    });
+    const points = [point(0), { ...point(1, 30), stopRole: "lunch" as const }, point(2), { ...point(3, 30), stopRole: "rest" as const }, point(4)];
+    const error = await orchestrateRecommendedRoute(points, "2026-09-01T00:00:00.000Z", deps.value).then(() => null, (error: unknown) => error);
+    expect(routeResponseDiagnostic(error)).toBe("RESULT_CODE_106");
+    expect(routeRequestDiagnostic(error)).toBe(expected);
+    expect(error).toMatchObject({ message: "INVALID_ROUTE_PROVIDER_RESPONSE" });
+    expect(deps.provider).toHaveBeenCalledTimes(failedCall);
+    expect(deps.budget).toHaveBeenCalledTimes(failedCall);
+    expect(deps.operations).toEqual(["directions", "future_directions", "future_directions"].slice(0, failedCall));
+    expect(deps.budget.mock.invocationCallOrder.every((order, index) => order < deps.provider.mock.invocationCallOrder[index])).toBe(true);
+    expect(JSON.stringify(error)).not.toContain("지점");
+  });
+
   it("preserves ordered stops, dwell and ETA while charging once per split provider call", async () => {
     const departureAt = "2026-09-01T00:04:00.000Z";
     const deps = dependencies(Date.parse("2026-09-01T00:00:00.000Z"));

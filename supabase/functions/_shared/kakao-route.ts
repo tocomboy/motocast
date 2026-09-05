@@ -38,8 +38,15 @@ const routeValidationReasons = [
 type RouteValidationReason = typeof routeValidationReasons[number];
 const allowedRouteValidationReasons = new Set<string>(routeValidationReasons);
 
+type RouteRequestDiagnosticContext = {
+  operation: "directions" | "future_directions";
+  fromPointIndex: number;
+  toPointIndex: number;
+  destinationRole: "destination" | "waypoint" | "lunch" | "dinner" | "rest";
+};
+
 export class RouteResponseValidationError extends Error {
-  constructor(readonly reason: RouteValidationReason) {
+  constructor(readonly reason: RouteValidationReason, readonly requestContext?: RouteRequestDiagnosticContext) {
     super("INVALID_ROUTE_PROVIDER_RESPONSE");
   }
 }
@@ -50,6 +57,22 @@ export function routeResponseDiagnostic(error: unknown): RouteValidationReason |
   if (!(error instanceof RouteResponseValidationError)) return "UNKNOWN";
   const reason = error.reason;
   return allowedRouteValidationReasons.has(reason) ? reason : "UNKNOWN";
+}
+
+// Only ordered occurrence positions (not place IDs/coordinates), a closed role,
+// and current/future mode may identify the rejected provider chunk in logs.
+export function routeRequestDiagnostic(error: unknown): string {
+  if (!(error instanceof RouteResponseValidationError) || !error.requestContext) return "UNKNOWN";
+  const { operation, fromPointIndex, toPointIndex, destinationRole } = error.requestContext;
+  if (
+    !["directions", "future_directions"].includes(operation) ||
+    !Number.isInteger(fromPointIndex) || fromPointIndex < 0 || fromPointIndex > 28 ||
+    !Number.isInteger(toPointIndex) || toPointIndex <= fromPointIndex || toPointIndex > 29 ||
+    toPointIndex - fromPointIndex > 6 ||
+    !["destination", "waypoint", "lunch", "dinner", "rest"].includes(destinationRole)
+  ) return "UNKNOWN";
+  const mode = operation === "directions" ? "CURRENT" : "FUTURE";
+  return `${mode}_P${fromPointIndex}_P${toPointIndex}_${destinationRole.toUpperCase()}`;
 }
 
 // Kakao documents result_code 1 as the standard directions response for

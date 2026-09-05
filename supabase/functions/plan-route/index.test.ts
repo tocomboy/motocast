@@ -37,7 +37,7 @@ describe("deployed plan-route diagnostic boundary", () => {
     expect(response.status).toBe(502);
     expect(Object.keys(body).sort()).toEqual(["code", "error"]);
     expect(body.code).toBe(expectedCode);
-    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", expectedCode, kind === "known" ? "SECTION_DURATION_TOTAL" : "UNKNOWN");
+    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", expectedCode, kind === "known" ? "SECTION_DURATION_TOTAL" : "UNKNOWN", "UNKNOWN");
     expect(JSON.stringify({ body, log: log.mock.calls })).not.toContain(privateDetail);
     expect(serviceClient).not.toHaveBeenCalled();
   });
@@ -58,7 +58,24 @@ describe("deployed plan-route diagnostic boundary", () => {
     const body = await response.json();
     expect(response.status).toBe(502);
     expect(body).toEqual({ code: "ROUTE_RESPONSE_INVALID", error: "경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." });
-    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", "ROUTE_RESPONSE_INVALID", reason);
+    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", "ROUTE_RESPONSE_INVALID", reason, "UNKNOWN");
+    expect(JSON.stringify({ body, log: log.mock.calls })).not.toContain("fixture-private-detail");
+    expect(serviceClient).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("keeps request context server-only and closes forged context %#", async (forged) => {
+    const error = new RouteResponseValidationError("RESULT_CODE_106", {
+      operation: "future_directions", fromPointIndex: 1, toPointIndex: 3, destinationRole: "rest",
+    });
+    if (forged) Object.assign(error, { requestContext: { destinationRole: "fixture-private-detail" } });
+    validation.mockRejectedValue(error);
+    const response = await handler(new Request("https://preview.example/functions/v1/plan-route", {
+      method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+    }));
+    const body = await response.json();
+    expect(response.status).toBe(502);
+    expect(body).toEqual({ code: "ROUTE_RESPONSE_INVALID", error: "경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." });
+    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", "ROUTE_RESPONSE_INVALID", "RESULT_CODE_106", forged ? "UNKNOWN" : "FUTURE_P1_P3_REST");
     expect(JSON.stringify({ body, log: log.mock.calls })).not.toContain("fixture-private-detail");
     expect(serviceClient).not.toHaveBeenCalled();
   });

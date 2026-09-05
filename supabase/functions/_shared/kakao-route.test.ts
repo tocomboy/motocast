@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assertKakaoRouteMatchesPoints, assertKakaoSectionsContinuous, normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload, routeResponseDiagnostic, RouteResponseValidationError } from "./kakao-route";
+import { assertKakaoRouteMatchesPoints, assertKakaoSectionsContinuous, normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload, routeRequestDiagnostic, routeResponseDiagnostic, RouteResponseValidationError } from "./kakao-route";
 import { safeErrorCode, safeErrorMessage, safeErrorStatus } from "./http";
 
 function payload() {
@@ -24,6 +24,26 @@ function payload() {
 }
 
 describe("normalizeKakaoRoutePayload", () => {
+  it("formats only bounded request positions and closed context labels", () => {
+    expect(routeRequestDiagnostic(new Error("fixture-private-detail"))).toBe("UNKNOWN");
+    expect(routeRequestDiagnostic(new RouteResponseValidationError("RESULT_CODE_106"))).toBe("UNKNOWN");
+    const context = { operation: "future_directions", fromPointIndex: 0, toPointIndex: 1, destinationRole: "lunch" } as const;
+    expect(routeRequestDiagnostic(new RouteResponseValidationError("RESULT_CODE_106", context))).toBe("FUTURE_P0_P1_LUNCH");
+    expect(routeRequestDiagnostic(new RouteResponseValidationError("RESULT_CODE_106", {
+      operation: "directions", fromPointIndex: 28, toPointIndex: 29, destinationRole: "destination",
+    }))).toBe("CURRENT_P28_P29_DESTINATION");
+    for (const patch of [
+      { operation: "fixture-private-detail" }, { destinationRole: "fixture-private-detail" },
+      { fromPointIndex: -1 }, { fromPointIndex: 0.5 }, { fromPointIndex: "0" },
+      { toPointIndex: 0 }, { toPointIndex: 30 }, { toPointIndex: 7 },
+      { toPointIndex: NaN }, { toPointIndex: Infinity }, { toPointIndex: "1" },
+    ]) {
+      const error = new RouteResponseValidationError("RESULT_CODE_106");
+      Object.assign(error, { requestContext: { ...context, ...patch } });
+      expect(routeRequestDiagnostic(error)).toBe("UNKNOWN");
+    }
+  });
+
   it.each([
     ["SECTION_DISTANCE_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].distance -= 1; }],
     ["SECTION_DURATION_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].duration -= 1; }],

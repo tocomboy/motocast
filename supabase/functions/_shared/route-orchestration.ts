@@ -1,5 +1,5 @@
 import { executeBudgetedProviderCall } from "./budgeted-call.ts";
-import { assertKakaoSectionsContinuous, type NormalizedKakaoRoute } from "./kakao-route.ts";
+import { assertKakaoSectionsContinuous, RouteResponseValidationError, type NormalizedKakaoRoute } from "./kakao-route.ts";
 import { assertRideUnder24Hours } from "./route-deadline.ts";
 import type { RoutePointRequest } from "./route-request.ts";
 
@@ -73,7 +73,21 @@ export async function orchestrateRecommendedRoute(
     };
     const selected = await executeBudgetedProviderCall(
       () => dependencies.consumeBudget(operation, hardLimit),
-      () => dependencies.requestProvider(chunkRequest),
+      async () => {
+        try {
+          return await dependencies.requestProvider(chunkRequest);
+        } catch (error) {
+          if (error instanceof RouteResponseValidationError) {
+            throw new RouteResponseValidationError(error.reason, {
+              operation,
+              fromPointIndex: cursor,
+              toPointIndex: endIndex,
+              destinationRole: endIndex === points.length - 1 ? "destination" : points[endIndex].stopRole ?? "waypoint",
+            });
+          }
+          throw error;
+        }
+      },
     );
     const chunkPoints = [points[cursor], ...via, points[endIndex]];
     if (selected.result.sections.length !== chunkPoints.length - 1) {
