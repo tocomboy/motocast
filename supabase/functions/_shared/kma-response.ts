@@ -1,4 +1,5 @@
 import type { ForecastModel, KmaItem } from "./weather-forecast.ts";
+import { KmaResponseValidationError } from "./weather-failure.ts";
 
 export type KmaResponseIdentity = {
   baseDate: string;
@@ -48,17 +49,15 @@ function validForecastValue(category: string, value: unknown, model: ForecastMod
   return true;
 }
 
-function validKmaItem(value: unknown, expected: KmaResponseIdentity): value is KmaItem {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+function assertKmaItem(value: unknown, expected: KmaResponseIdentity): asserts value is KmaItem {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new KmaResponseValidationError("ITEM_SHAPE");
   const item = value as Record<string, unknown>;
-  return item.baseDate === expected.baseDate && validKmaDate(item.baseDate) &&
-    item.baseTime === expected.baseTime && validKmaTime(item.baseTime) &&
-    typeof item.category === "string" && /^[A-Z0-9]{1,8}$/.test(item.category) &&
-    validKmaDate(item.fcstDate) &&
-    validKmaTime(item.fcstTime) &&
-    validForecastValue(item.category, item.fcstValue, expected.model) &&
-    item.nx === expected.nx &&
-    item.ny === expected.ny;
+  if (!(item.baseDate === expected.baseDate && validKmaDate(item.baseDate) &&
+    item.baseTime === expected.baseTime && validKmaTime(item.baseTime))) throw new KmaResponseValidationError("BASE_BINDING");
+  if (!(typeof item.category === "string" && /^[A-Z0-9]{1,8}$/.test(item.category))) throw new KmaResponseValidationError("CATEGORY_SHAPE");
+  if (!(validKmaDate(item.fcstDate) && validKmaTime(item.fcstTime))) throw new KmaResponseValidationError("FORECAST_IDENTITY");
+  if (!validForecastValue(item.category, item.fcstValue, expected.model)) throw new KmaResponseValidationError("VALUE_CONTRACT");
+  if (!(item.nx === expected.nx && item.ny === expected.ny)) throw new KmaResponseValidationError("GRID_BINDING");
 }
 
 export async function parseKmaItems(response: Response, expected: KmaResponseIdentity): Promise<KmaItem[]> {
@@ -67,10 +66,10 @@ export async function parseKmaItems(response: Response, expected: KmaResponseIde
   try {
     data = await response.json();
   } catch {
-    throw new Error("KMA_INVALID_RESPONSE");
+    throw new KmaResponseValidationError("JSON_BODY");
   }
   if (data === null || typeof data !== "object" || Array.isArray(data)) {
-    throw new Error("KMA_INVALID_RESPONSE");
+    throw new KmaResponseValidationError("OBJECT_SHAPE");
   }
   const payload = data as {
     response?: { header?: { resultCode?: string }; body?: { items?: { item?: KmaItem[] } } };
@@ -82,8 +81,8 @@ export async function parseKmaItems(response: Response, expected: KmaResponseIde
   }
   const items = providerResponse?.body?.items?.item;
   if (!Array.isArray(items) || items.length === 0) throw new Error("KMA_FORECAST_NOT_FOUND");
-  if (!items.every((item) => validKmaItem(item, expected))) throw new Error("KMA_INVALID_RESPONSE");
+  items.forEach((item) => assertKmaItem(item, expected));
   const identities = new Set(items.map((item) => `${item.fcstDate}:${item.fcstTime}:${item.category}`));
-  if (identities.size !== items.length) throw new Error("KMA_INVALID_RESPONSE");
+  if (identities.size !== items.length) throw new KmaResponseValidationError("DUPLICATE_IDENTITY");
   return items;
 }

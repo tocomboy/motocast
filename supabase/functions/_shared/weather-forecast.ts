@@ -1,3 +1,5 @@
+import { KmaResponseValidationError } from "./weather-failure.ts";
+
 export type ForecastModel = "ultra" | "short";
 
 export type KmaItem = {
@@ -147,8 +149,9 @@ export function validatedForecastValues(
   const required = model === "ultra"
     ? ["T1H", "POP", "WSD", "SKY", "PTY"]
     : ["TMP", "POP", "WSD", "SKY", "PTY"];
-  if (!required.every((category) => Object.hasOwn(values, category))) {
-    throw new Error("KMA_INVALID_RESPONSE");
+  const reasons = ["MISSING_TEMPERATURE", "MISSING_POP", "MISSING_WSD", "MISSING_SKY", "MISSING_PTY"] as const;
+  for (let index = 0; index < required.length; index += 1) {
+    if (!Object.hasOwn(values, required[index])) throw new KmaResponseValidationError(reasons[index]);
   }
   return values;
 }

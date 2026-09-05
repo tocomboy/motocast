@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parseKmaItems } from "./kma-response";
-import { weatherFailureKind } from "./weather-failure";
+import { KmaResponseValidationError, kmaResponseDiagnostic, weatherFailureKind } from "./weather-failure";
 
 describe("parseKmaItems", () => {
   const expected = { baseDate: "20260831", baseTime: "1100", nx: 60, ny: 127, model: "short" as const };
@@ -17,13 +17,38 @@ describe("parseKmaItems", () => {
     fcstValue: "22",
   };
 
+  it.each([
+    { reason: "ITEM_SHAPE", item: null },
+    { reason: "BASE_BINDING", item: { ...validItem, baseTime: "0800" } },
+    { reason: "CATEGORY_SHAPE", item: { ...validItem, category: "fixture-private-detail" } },
+    { reason: "FORECAST_IDENTITY", item: { ...validItem, fcstDate: "invalid" } },
+    { reason: "VALUE_CONTRACT", item: { ...validItem, fcstValue: "fixture-private-detail" } },
+    { reason: "GRID_BINDING", item: { ...validItem, nx: 1 } },
+  ] as const)("identifies $reason without returning rejected item data", async ({ reason, item }) => {
+    const error = await parse(new Response(JSON.stringify({
+      response: { header: { resultCode: "00" }, body: { items: { item: [item] } } },
+    }))).catch((value: unknown) => value);
+    expect(error).toEqual(new KmaResponseValidationError(reason));
+    expect(kmaResponseDiagnostic(error)).toBe(reason);
+  });
+
+  it.each([
+    { body: "not-json", reason: "JSON_BODY" },
+    { body: "null", reason: "OBJECT_SHAPE" },
+    { body: JSON.stringify({ response: { header: { resultCode: "00" }, body: { items: { item: [validItem, validItem] } } } }), reason: "DUPLICATE_IDENTITY" },
+  ] as const)("identifies envelope/duplicate $reason with the same rejection", async ({ body, reason }) => {
+    const error = await parse(new Response(body)).catch((value: unknown) => value);
+    expect(error).toEqual(new KmaResponseValidationError(reason));
+    expect(kmaResponseDiagnostic(error)).toBe(reason);
+  });
+
   it("classifies malformed provider JSON as a KMA response failure", async () => {
     await expect(parse(new Response("not-json"))).rejects.toThrow("KMA_INVALID_RESPONSE");
   });
 
   it.each(["null", "[]", '"unexpected"'])("classifies structurally invalid provider JSON %s", async (body) => {
     const error = await parse(new Response(body)).catch((reason: unknown) => reason);
-    expect(error).toEqual(new Error("KMA_INVALID_RESPONSE"));
+    expect(error).toEqual(new KmaResponseValidationError("OBJECT_SHAPE"));
     expect(weatherFailureKind(error)).toBe("provider");
   });
 
@@ -54,7 +79,7 @@ describe("parseKmaItems", () => {
   ])("rejects malformed successful forecast item: $label", async ({ value }) => {
     await expect(parse(new Response(JSON.stringify({
       response: { header: { resultCode: "00" }, body: { items: { item: [value] } } },
-    })))).rejects.toEqual(new Error("KMA_INVALID_RESPONSE"));
+    })))).rejects.toEqual(new KmaResponseValidationError(value === null ? "ITEM_SHAPE" : "BASE_BINDING"));
   });
 
   it.each([
@@ -70,16 +95,16 @@ describe("parseKmaItems", () => {
     { label: "negative wind", value: { ...validItem, category: "WSD", fcstValue: "-5" } },
     { label: "ultra-only precipitation code in short model", value: { ...validItem, category: "PTY", fcstValue: "5" } },
     { label: "ultra temperature in short model", value: { ...validItem, category: "T1H", fcstValue: "22" } },
-  ])("rejects forecast identity or semantic mismatch: $label", async ({ value }) => {
+  ])("rejects forecast identity or semantic mismatch: $label", async ({ label, value }) => {
     await expect(parse(new Response(JSON.stringify({
       response: { header: { resultCode: "00" }, body: { items: { item: [value] } } },
-    })))).rejects.toEqual(new Error("KMA_INVALID_RESPONSE"));
+    })))).rejects.toEqual(new KmaResponseValidationError(label === "wrong base" ? "BASE_BINDING" : label === "wrong grid" ? "GRID_BINDING" : "VALUE_CONTRACT"));
   });
 
   it("rejects duplicate category identity within a forecast time", async () => {
     await expect(parse(new Response(JSON.stringify({
       response: { header: { resultCode: "00" }, body: { items: { item: [validItem, validItem] } } },
-    })))).rejects.toEqual(new Error("KMA_INVALID_RESPONSE"));
+    })))).rejects.toEqual(new KmaResponseValidationError("DUPLICATE_IDENTITY"));
   });
 
   it("uses model-specific precipitation codes and accepts ordinary decimal values", async () => {
@@ -91,8 +116,8 @@ describe("parseKmaItems", () => {
 
     const parseUltra = (item: typeof validItem) => parseKmaItems(responseFor(item), { ...expected, model: "ultra" });
     await expect(parseUltra({ ...validItem, category: "PTY", fcstValue: "5" })).resolves.toHaveLength(1);
-    await expect(parseUltra({ ...validItem, category: "PTY", fcstValue: "4" })).rejects.toEqual(new Error("KMA_INVALID_RESPONSE"));
-    await expect(parseUltra({ ...validItem, category: "TMP", fcstValue: "22" })).rejects.toEqual(new Error("KMA_INVALID_RESPONSE"));
+    await expect(parseUltra({ ...validItem, category: "PTY", fcstValue: "4" })).rejects.toEqual(new KmaResponseValidationError("VALUE_CONTRACT"));
+    await expect(parseUltra({ ...validItem, category: "TMP", fcstValue: "22" })).rejects.toEqual(new KmaResponseValidationError("VALUE_CONTRACT"));
     await expect(parseUltra({ ...validItem, category: "T1H", fcstValue: "22" })).resolves.toHaveLength(1);
   });
 

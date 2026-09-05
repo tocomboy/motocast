@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { KmaResponseValidationError, kmaResponseDiagnostic } from "./weather-failure";
 
 import {
   conditionFrom,
@@ -12,6 +13,22 @@ import {
 
 describe("weather forecast boundaries", () => {
   const now = new Date("2026-08-31T00:00:00.000Z");
+
+  it.each(["ultra", "short"] as const)("identifies every missing required category in %s without accepting it", (model) => {
+    const categories = [model === "ultra" ? "T1H" : "TMP", "POP", "WSD", "SKY", "PTY"];
+    const reasons = ["MISSING_TEMPERATURE", "MISSING_POP", "MISSING_WSD", "MISSING_SKY", "MISSING_PTY"] as const;
+    const items = categories.map((category) => ({
+      baseDate: "20260831", baseTime: "1100", fcstDate: "20260831", fcstTime: "1200",
+      nx: 60, ny: 127, category, fcstValue: "1",
+    }));
+    for (const [index, category] of categories.entries()) {
+      let error: unknown;
+      try { validatedForecastValues(items.filter((item) => item.category !== category), { date: "20260831", time: "1200" }, model); }
+      catch (value) { error = value; }
+      expect(error).toEqual(new KmaResponseValidationError(reasons[index]));
+      expect(kmaResponseDiagnostic(error)).toBe(reasons[index]);
+    }
+  });
 
   it("uses ultra-short through the exact six-hour boundary", () => {
     expect(forecastWindow(new Date(now.getTime() + 6 * 60 * 60_000), now)).toBe("ultra");
