@@ -16,6 +16,21 @@ const staleResponse: WeatherTimelineResponse = {
 };
 
 describe("formatPlannerWeatherStatus", () => {
+  it.each([
+    ["2026-08-29T03:59:59.999Z", false],
+    ["2026-08-29T04:00:00.000Z", true],
+    ["2026-08-29T04:00:00.001Z", true],
+  ] as const)("aligns expiry text with the share cutoff at %s", (referenceTime, expired) => {
+    for (const stale of [false, true]) {
+      const response = { ...staleResponse, stale };
+      const status = formatPlannerWeatherStatus(response, referenceTime);
+      expect(status.expired).toBe(expired);
+      expect(status.header.includes("만료")).toBe(expired);
+      expect(status.notice.includes("만료")).toBe(expired);
+      expect(isFreshWeatherForSharing(response, referenceTime)).toBe(!stale && !expired);
+    }
+  });
+
   it("shows the full stored date, multi-day age, provider failure, and expiry together", () => {
     const status = formatPlannerWeatherStatus(staleResponse, "2026-08-31T03:30:00.000Z");
     expect(status.expired).toBe(true);

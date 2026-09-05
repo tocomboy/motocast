@@ -125,7 +125,7 @@ export function SharedRideSnapshotView({
     dinnerStop: snapshot.trip.dinnerStop,
   });
   const weatherExpired = snapshot.weather
-    ? new Date(snapshot.weather.validUntil).getTime() < new Date(referenceTime).getTime()
+    ? new Date(snapshot.weather.validUntil).getTime() <= new Date(referenceTime).getTime()
     : false;
   const weatherStale = snapshot.weather ? snapshot.weather.stale || weatherExpired : false;
 

@@ -107,7 +107,8 @@ function snapshot() {
 }
 
 test("renders model, outside-window, and stale states without changing route order", async ({ page }) => {
-  await page.clock.install({ time: new Date("2030-01-05T23:59:50.000Z") });
+  await page.clock.install({ time: new Date("2030-01-05T23:59:00.000Z") });
+  await page.clock.pauseAt(new Date("2030-01-05T23:59:30.000Z"));
   expect(() => parseSharedRideSnapshot(snapshot())).not.toThrow();
   await page.route("**/api/shares/resolve", async (request) => {
     await request.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ snapshot: snapshot() }) });
@@ -127,6 +128,8 @@ test("renders model, outside-window, and stale states without changing route ord
   await expect(page.locator(".shared-snapshot")).not.toContainText("와인딩 추정");
   await expect(page.locator(".shared-snapshot")).not.toContainText("최단");
   await expect(page.locator(".shared-weather-state")).toContainText("현재 기준 예보 유효기간 안쪽");
+  await page.clock.fastForward(30_000);
+  await expect(page.locator(".shared-weather-state")).toContainText("현재 기준 예보 유효기간 지남");
   await page.clock.fastForward(30_000);
   await expect(page.locator(".shared-weather-state")).toContainText("현재 기준 예보 유효기간 지남");
   await expect.poll(() => page.url()).not.toContain("#");

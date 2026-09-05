@@ -26,7 +26,7 @@ export function formatPlannerWeatherStatus(
   response: WeatherTimelineResponse,
   referenceTime: string,
 ): PlannerWeatherStatus {
-  const expired = new Date(response.validUntil).getTime() < new Date(referenceTime).getTime();
+  const expired = new Date(response.validUntil).getTime() <= new Date(referenceTime).getTime();
   const issued = `${formatKoreanDateTime(response.issuedAt)} 발행`;
   const stored = `${formatKoreanDateTime(response.generatedAt)} 저장 (${formatElapsedAge(response.generatedAt, referenceTime)})`;
   const staleLabel = weatherFailureLabel(response.failureKind);
