@@ -128,7 +128,7 @@ npm run lint && npm run typecheck && npm test && npm run test:e2e && npm run bui
 
 ## 남은 첫 버전 작업
 
-- 단일 추천 경로 수정분을 고정 SHA로 리뷰·재배포하고 실제 경로·날씨·저장·공유를 재검증
+- Preview 실제 계산의 `INVALID_ROUTE_PROVIDER_RESPONSE` 원인을 안전하게 진단한 뒤 경로·날씨·저장·공유를 재검증 (`840a8eb` UI 리뷰·배포·지도 화면 검증 완료, 전체 Preview 게이트는 미완료)
 - Preview의 초대 라이더, 회수 권한, 장소·경로·날씨·컬렉션·공유·budget 전체 브라우저 smoke test
 - 실제 Kakao/KMA 최소 호출, stale snapshot, 비용 한도 소진 검증
 - Preview 게이트 후 확정된 기존 리전을 유지하며 Production 구성·승격 승인, `develop → main` PR, Production 사용자 관점 검증
