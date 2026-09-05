@@ -53,7 +53,7 @@ export function latestForecastBase(model: ForecastModel, now: Date) {
   const serial = localSerial(now);
   if (model === "ultra") {
     if (serial.getUTCMinutes() < 45) serial.setUTCHours(serial.getUTCHours() - 1);
-    return formatBase(serial, "30");
+    return formatBase(serial, "00");
   }
 
   serial.setUTCMinutes(serial.getUTCMinutes() - 15);
@@ -145,7 +145,10 @@ export function validatedForecastValues(
   target: { date: string; time: string },
   model: ForecastModel,
 ) {
-  const values = closestForecast(items, target);
+  const eligibleItems = model === "ultra"
+    ? items.filter((item) => item.fcstDate === target.date && item.fcstTime === target.time)
+    : items;
+  const values = closestForecast(eligibleItems, target);
   const required = model === "ultra"
     ? ["T1H", "POP", "WSD", "SKY", "PTY"]
     : ["TMP", "POP", "WSD", "SKY", "PTY"];
