@@ -347,6 +347,33 @@ describe("temporary KMA binding probe", () => {
     });
   });
 
+  it.each(["first", "beyond-summary"])(
+    "stops invalid issuance identities %s without a comparison reservation",
+    async (position) => {
+      const providerFetch = vi.fn(async (input: URL) => {
+        const payload = await providerResponse(input).json();
+        const items = payload.response.body.items.item;
+        if (position === "first") {
+          items[0].baseDate = "20260904";
+          items[0].baseTime = "INVALID";
+        } else {
+          items[0].baseTime = "1630";
+          items[items.length - 1].baseTime = "INVALID";
+        }
+        return new Response(JSON.stringify(payload));
+      });
+      const result = await body(
+        await createProbeHandler(dependencies(providerFetch))(request()),
+      );
+      expect(result.run).toBe("STOPPED");
+      expect(result.stopReason).toBe("PROVIDER_FAILED");
+      expect(result.providerCalls).toBe(1);
+      expect(mocks.reserveBudget).toHaveBeenCalledTimes(1);
+      expect(providerFetch).toHaveBeenCalledTimes(1);
+      expect(result.results[0].parser.status).toBe("FAIL");
+    },
+  );
+
   it("caps the comparison at a third call even when every response mismatches", async () => {
     const providerFetch = vi.fn(async (input: URL) =>
       providerResponse(input, { mismatch: true })

@@ -378,11 +378,26 @@ function parserFailure(error: unknown): ParserResult {
 
 function isBindingMismatch(
   error: unknown,
-  returned: ReturnedIssuance[],
+  items: readonly unknown[],
+  requested: { date: string; time: string },
 ): boolean {
-  return error instanceof KmaResponseValidationError &&
-    ["BASE_DATE_MISMATCH", "BASE_TIME_MISMATCH"].includes(error.reason) &&
-    returned.some((identity) => "date" in identity);
+  if (
+    !(error instanceof KmaResponseValidationError) ||
+    !["BASE_DATE_MISMATCH", "BASE_TIME_MISMATCH"].includes(error.reason)
+  ) return false;
+  let mismatch = false;
+  for (const value of items) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return false;
+    }
+    const item = value as Record<string, unknown>;
+    if (issuanceMilliseconds(item.baseDate, item.baseTime) === null) {
+      return false;
+    }
+    mismatch ||= item.baseDate !== requested.date ||
+      item.baseTime !== requested.time;
+  }
+  return mismatch;
 }
 
 function authStop(error: unknown): StopReason {
@@ -503,7 +518,7 @@ export function createProbeHandler(overrides: Partial<ProbeDependencies> = {}) {
       const execute = async (
         model: ForecastModel,
         base: { date: string; time: string },
-      ): Promise<unknown> => {
+      ): Promise<{ error: unknown; bindingMismatch: boolean }> => {
         const expected: KmaResponseIdentity = {
           model,
           baseDate: base.date,
@@ -625,18 +640,19 @@ export function createProbeHandler(overrides: Partial<ProbeDependencies> = {}) {
           binding,
           parser,
         });
-        return error;
+        return {
+          error,
+          bindingMismatch: isBindingMismatch(error, items, base),
+        };
       };
 
       for (const entry of baseline) {
-        const error = await execute(entry.model, entry.base);
+        const { error, bindingMismatch } = await execute(
+          entry.model,
+          entry.base,
+        );
         if (error === null) continue;
-        if (
-          isBindingMismatch(
-            error,
-            output.results.at(-1)?.returnedIssuances ?? [],
-          )
-        ) {
+        if (bindingMismatch) {
           retry ??= {
             model: entry.model,
             base: previousBase(entry.model, entry.base),
@@ -647,14 +663,11 @@ export function createProbeHandler(overrides: Partial<ProbeDependencies> = {}) {
       }
 
       if (retry !== null) {
-        const error = await execute(retry.model, retry.base);
-        if (
-          error !== null &&
-          !isBindingMismatch(
-            error,
-            output.results.at(-1)?.returnedIssuances ?? [],
-          )
-        ) {
+        const { error, bindingMismatch } = await execute(
+          retry.model,
+          retry.base,
+        );
+        if (error !== null && !bindingMismatch) {
           throw new ProbeStop("PROVIDER_FAILED");
         }
       }
