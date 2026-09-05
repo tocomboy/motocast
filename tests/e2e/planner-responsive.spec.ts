@@ -237,6 +237,11 @@ test.describe("planner responsive shell", () => {
 
     const dialog = page.getByRole("dialog", { name: "라이딩 계획 편집" });
     await expect(dialog).toBeVisible();
+    // A translated ancestor can produce fractional DOMRect heights mid-transition.
+    // Measure settled geometry without relaxing the 44px touch-target contract.
+    await dialog.evaluate(async (element) => {
+      await Promise.all(element.getAnimations().map((animation) => animation.finished));
+    });
     await expect(dialog.getByLabel("출발", { exact: true })).toBeVisible();
     await expect(dialog.getByLabel("추가할 종류")).toHaveValue("waypoint");
     await expect(dialog.getByLabel("추가할 종류")).toBeDisabled();
@@ -245,11 +250,16 @@ test.describe("planner responsive shell", () => {
       ".section-label, .planner-form label > span, .selected-place strong, .selected-place small, .place-status, .time-estimate-note strong, .time-estimate-note small, .ordered-waypoint strong, .ordered-waypoint small, .toggle-row strong, .toggle-row small",
     ).evaluateAll((elements) => elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)));
     expect(plannerCopyFontSizes.every((fontSize) => fontSize >= 14)).toBe(true);
-    const visibleButtonHeights = await dialog.locator("button").evaluateAll((buttons) => buttons
-      .map((button) => button.getBoundingClientRect())
-      .filter((box) => box.width > 0 && box.height > 0)
-      .map((box) => box.height));
-    expect(visibleButtonHeights.every((height) => height >= 44)).toBe(true);
+    const visibleButtons = await dialog.locator("button").evaluateAll((buttons) => buttons
+      .map((button) => ({
+        name: button.getAttribute("aria-label") ?? button.textContent?.trim(),
+        className: button.className,
+        width: button.getBoundingClientRect().width,
+        height: button.getBoundingClientRect().height,
+      }))
+      .filter((button) => button.width > 0 && button.height > 0));
+    expect(visibleButtons.length).toBeGreaterThan(0);
+    expect(visibleButtons.filter((button) => button.height < 44)).toEqual([]);
     const focusable = dialog.locator("input:not(:disabled), button:not(:disabled), [href], [tabindex]:not([tabindex='-1'])");
     const first = focusable.first();
     const last = focusable.last();
