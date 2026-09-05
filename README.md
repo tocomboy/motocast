@@ -134,7 +134,6 @@ npm run lint && npm run typecheck && npm test && npm run test:e2e && npm run bui
 
 ## 남은 첫 버전 작업
 
-- 실측으로 확인한 초단기 정시 요청 교정의 검토·Preview 적용과 날씨·컬렉션·공유 재검증 (정확 일치 유지, 전체 Preview 게이트 미완료)
-- Preview의 초대 라이더, 회수 권한, 장소·경로·날씨·컬렉션·공유·budget 전체 브라우저 smoke test
-- 실제 Kakao/KMA 최소 호출, stale snapshot, 비용 한도 소진 검증
+- Preview의 초대 로그인과 관리자/다른 라이더/회원 자격 회수 경계 검증 (정상 경로·날씨·컬렉션·공유 흐름은 통과)
+- Preview의 공급자 실패·오래된 저장본 표시·비용 한도 소진 시나리오 검증
 - Preview 게이트 후 확정된 기존 리전을 유지하며 Production 구성·승격 승인, `develop → main` PR, Production 사용자 관점 검증
