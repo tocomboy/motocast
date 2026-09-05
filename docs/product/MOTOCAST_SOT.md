@@ -391,6 +391,13 @@ When sources conflict, record the evidence here, explain user-visible and securi
 
 ## Live-state snapshot
 
+### Latest verified update — 2026-09-05 12:38 UTC
+
+- Preview product `4f324854874181b9e139c5d163d7368bf3861fa5` aligns planner/shared expiry display with the existing strict share cutoff. Fixed-SHA independent APPROVE B0/H0/M0/L0, PR #23 CI `33966249264`, develop CI `33966431080`, and exact-SHA Preview READY are complete. Writer Vitest528 PASS, local Chromium20 PASS/2 existing connected SKIP, and deployed UI with an injected share response1 PASS/2 DESELECTED remain separate evidence categories.
+- Existing KMA normal connected1 PASS and exact cleanup remain reusable; weather-timeline v12 and every other Edge version/settings are unchanged. New actual access-boundary11 PASS and read-only ACL-subset103 PASS do not close full invitation/Kakao/A-B/revoked/nonmember, stale/provider-failure, or exhausted-budget gates. Preview role counts are active admin1/rider1; the existing rider is not assumed to be a test-owned identity.
+- Actual Production Web differs from the remote main ref: `motocast-three.vercel.app` resolves to READY Production deployment `dpl_7c5UdGv4VWcs4k1YwHNERhQZVuH8`, Git source **develop/201e1ec12c967da57fb671fad294cf1d05b9d56c**; remote main remains **d0134ed93d7e0d8aed1123c5d693c665bbe646e8**. The configured Production branch is main. Historical “Production/main d0134ed” wording below establishes only the Git ref, not the running Web identity. Record this OPS-003 live-state conflict in the eventual Production interview before changing its affected slice; no Production repair or promotion is authorized by this readback.
+- Production Tokyo remains ACTIVE_HEALTHY with three migrations through20260830212000 and three v3 Edge Functions; Preview Seoul has eleven migrations and five functions. Regions are unchanged. Full evidence and remaining requirements: [expiry release](../work/research/2026-09-05-preview-expiry-release.md), [gate matrix](../work/research/2026-09-05-preview-gates-plan.md), [Production packet](../work/research/2026-09-05-production-promotion-packet.md). Overall Preview/Production completion is still pending.
+
 This snapshot is evidence, not a permanent decision. Re-read live state before promotion.
 
 ### Verified 2026-08-31

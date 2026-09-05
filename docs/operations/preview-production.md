@@ -2,6 +2,14 @@
 
 This runbook implements `OPS-002`, `OPS-004`, `OPS-005`, and `OPS-007` from `docs/product/MOTOCAST_SOT.md`. It records project references and secret ownership, never secret values.
 
+## Latest readback and remaining gates — 2026-09-05 12:38 UTC
+
+Preview product `4f324854874181b9e139c5d163d7368bf3861fa5` is deployed and independently approved. PR #23 exact-head CI `33966249264` and develop CI `33966431080` succeeded; settled GitHub/Vercel deployment/check/status counts were zero before the unchanged `0b23aea` base fast-forward. Vercel `dpl_7KPdHQbCddRPsKWbK9hA1TKhFTWj` and the actual develop alias match this SHA. The display now expires at `validUntil`, matching the existing sharing cutoff. Edge versions remain weather-timeline12, plan-route11, and the other three8. The deployed UI expiry check passed with an injected share response; it is not provider-failure or server share-expiry proof.
+
+The current Production alias `motocast-three.vercel.app` resolves to `dpl_7c5UdGv4VWcs4k1YwHNERhQZVuH8`, READY, target Production, Git source **develop/201e1ec12c967da57fb671fad294cf1d05b9d56c**. Remote main remains **d0134ed93d7e0d8aed1123c5d693c665bbe646e8**. These are different facts. Historical statements below combining “Production/main d0134ed” do not prove the deployed Production Web SHA. This existing lineage conflict with OPS-003 is recorded for the concrete Production approval interview; neither the alias nor Production was changed. The configured Production branch is main, but changing that setting in the past did not establish a new main deployment.
+
+Production Supabase remains Tokyo and has three applied migrations through `20260830212000`, eleven public tables, and search-places/plan-route/weather-timeline v3. It must not be treated as empty. Preview remains Seoul with all eleven migrations. Read-only access checks passed11 and the current ACL subset passed103; actual A/B/revoked/nonmember login and provider/budget failure gates remain open. See [current release evidence](../work/research/2026-09-05-preview-expiry-release.md), [gate matrix](../work/research/2026-09-05-preview-gates-plan.md), and [unapproved Production packet](../work/research/2026-09-05-production-promotion-packet.md). Older sections are chronological evidence, not the current overall completion state.
+
 ## Environment boundary
 
 | Environment | Supabase project | Region | Vercel deployment | Access boundary |

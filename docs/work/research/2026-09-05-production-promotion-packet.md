@@ -4,7 +4,7 @@
 
 ## 후보와 사용자 영향
 
-- 현재 배포 기준 `0b23aeabe48e25f1f52b8e00109d49f0c18761d2`, KMA 제품 `8bd887802a9578de5469e70ac1495440559f2682`. 정확한 만료 표시 수정의 고정 SHA 검토/CI/Preview 배포 이후 후보를 교체한다. 최종 승격 SHA는 모든 Preview gate를 충족한 develop로 고정하며 현재는 미확정이다.
+- 현재 Preview 제품 후보 `4f324854874181b9e139c5d163d7368bf3861fa5`, KMA 제품 `8bd887802a9578de5469e70ac1495440559f2682`. 정확한 만료 표시 수정의 고정 SHA 검토/CI/Preview 배포를 완료했다. 문서 전용 후속은 비Markdown 동일성과 exact-head CI/배포를 별도 기록한다. 최종 승격 SHA는 모든 Preview gate를 충족한 develop로 고정하며 현재는 미확정이다.
 - 현재 main `d0134ed93d7e0d8aed1123c5d693c665bbe646e8`과 비교하면 단일 이륜차 안전 경로, 혼합 경유·정차 순서, 완전한 컬렉션, 승인 후 불변 공유/회수, 이메일 없는 Kakao OIDC, 신뢰된 저장 RPC와 KMA 교정이 포함된다. KMA 교정 하나만 배포하는 승격이 아니다.
 - 라이더는 초대로 가입하고 선택한 모든 지점을 지나는 한 경로와 구간 날씨를 저장·공유한다. 예보가 없거나 오래되거나 만료되면 새 공유는 거절한다. 기존 schemaVersion1/2/3 불변 공유와 과거 경로의 읽기 호환성을 유지한다.
 - Web·Edge·DB가 결합된 변경이므로 운영 점검 시간 동안 신규 계산·저장·공유 발행을 멈추고 백업과 순차 배포를 진행해야 한다. 점검 방식/시간과 해당 구간 사용자 영향은 승인안에 함께 확정한다.
@@ -22,6 +22,8 @@
 
 Production에는 현재 public table11개가 있다. 이를 빈 DB로 취급하지 않으며 실제 사용자 자료를 Preview로 복사하지 않는다. 최초 migration 파일의 초대 check는 과거 변경됐으므로 이미 적용된 버전을 재실행하지 않고 현재 physical constraint와 후속 hardening의 보정 결과를 dry-run/복구 시험에서 확인한다.
 
+**운영 계보 충돌 — 승인 전 인터뷰 필요:** 표의 main Production은 설정값이다. 실제 `motocast-three.vercel.app`은 `dpl_7c5UdGv4VWcs4k1YwHNERhQZVuH8`의 과거 develop/`201e1ec12c967da57fb671fad294cf1d05b9d56c`를 가리킨다. remote main `d0134ed`와 다르며, 기존 운영 문서의 두 값을 합친 표현은 이 readback으로 정정한다. 실제 운영 배포를 보존한 채, 최종 승인 인터뷰에서 이 출발점과 승인된 develop→main 배포로의 전환을 명시해야 한다. 현 상태를 main에서 검증된 운영이라고 주장하거나 지금 별칭만 바꾸지 않는다.
+
 ## 설정 이름과 소유권
 
 | 소유 위치 | 설정 이름 | 확정·검증할 값의 의미 |
@@ -36,7 +38,7 @@ Production에는 현재 public table11개가 있다. 이를 빈 DB로 취급하�
 | Supabase Production | KAKAO_LOCAL_DAILY_LIMIT, KAKAO_CURRENT_DAILY_LIMIT, KAKAO_FUTURE_DAILY_LIMIT, KMA_DAILY_LIMIT | 승인된 양의 정수, 공급자 무료 한도 이하 |
 | Supabase/Kakao 콘솔 | Kakao provider, email optional, OIDC, scope/redirect | openid/profile_nickname/profile_image만, account_email 없음 |
 
-현재 Vercel에는 세 public 이름만 존재한다. develop 전용 override와 기존 공통 preview/production 항목이 함께 있으며 이름 조회는 실제 값 귀속 검증이 아니다. 운영 설정은 승인 후 값의 비공개 비교와 배포 bundle 점검을 완료한다. Production Kakao callback은 `https://obodvbyzptxeehgpcpkd.supabase.co/functions/v1/kakao-oidc/callback`으로 고정한다. 실제 Web origin은 배포 프로젝트의 Production alias를 읽어 확정하며 새 도메인을 추정하지 않는다.
+현재 Vercel에는 세 public 이름만 존재한다. develop 전용 override와 기존 공통 preview/production 항목이 함께 있으며 이름 조회는 실제 값 귀속 검증이 아니다. 운영 설정은 승인 후 값의 비공개 비교와 배포 bundle 점검을 완료한다. Production Kakao callback은 `https://obodvbyzptxeehgpcpkd.supabase.co/functions/v1/kakao-oidc/callback`으로 고정한다. 확인한 Production Web origin은 `https://motocast-three.vercel.app`이며 최종 승인/배포 직전에 alias 결속을 다시 읽는다.
 
 ## 비용과 접근 경계
 
@@ -65,4 +67,4 @@ Production에는 현재 public table11개가 있다. 이를 빈 DB로 취급하�
 
 ## 미확정 항목
 
-최종 후보SHA, 모든 Preview 계정·실패·예산 gate, Production 변수 값 귀속, 실제 무료 quota와 초기 숫자, Production alias/콘솔 설정, 백업·복구 검증 및 점검시간이 아직 확정되지 않았다. 이 항목이 남은 문서를 배포 가능한 최종 승인안으로 표현하지 않는다. Production 구성/배포/승격/실제 사용자 검증은 모두 NOT_RUN이다.
+최종 후보SHA, 모든 Preview 계정·실패·예산 gate, Production 변수 값 귀속, 실제 무료 quota와 초기 숫자, 콘솔 설정, 백업·복구 검증 및 점검시간이 아직 확정되지 않았다. Production alias의 기존 develop 배포 계보는 위와 같이 확인했으며 전환은 승인 인터뷰 대상이다. 이 항목이 남은 문서를 배포 가능한 최종 승인안으로 표현하지 않는다. Production 구성/배포/승격/실제 사용자 검증은 모두 NOT_RUN이다.
