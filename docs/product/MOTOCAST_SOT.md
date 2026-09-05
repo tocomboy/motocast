@@ -473,10 +473,10 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 
 ### Incomplete
 
-- Diagnose the current Preview `plan-route` HTTP `502` / `INVALID_ROUTE_PROVIDER_RESPONSE` without weakening validation, then complete the connected route/weather/collection/share gate. The `840a8eb` UI-only fixed review, CI and deployment, and read-only actual-map layout gate are complete.
+- Deployed `0738f76` identifies the original route failure as `RESULT_CODE_106 FUTURE_P1_P3_REST`; changing only the test rest lets route calculation, finalization and the actual map succeed. Diagnose the subsequent `KMA_INVALID_RESPONSE` with closed validation-branch evidence, without weakening route/weather acceptance or repeating arbitrary place changes. Fix the post-push CI panel-animation measurement race and verify the corrected fixed SHA. The earlier UI review and read-only actual-map layout gate remain complete.
 - Connected browser verification of invitation login and revoked-member denial; direct OIDC and first-admin bootstrap are complete.
 - AUTH-003 migrations and sensitive RPC ACLs are live and independently approved; full OAuth and A/B/admin/revoked connected tests remain pending.
-- Connected route/weather/collection/share verification for deployed UI SHA `840a8eb`, plus all Production tests. The earlier `57cfa83` connected success and local DB suites remain historical evidence, not a substitute for the two current connected failures.
+- Complete connected route/weather/collection/share verification after the `0738f76` original-input route failure and rest-only comparison weather failure, plus all Production tests. The original run created no trip/collection/share; the comparison's exact test trip was cleaned up and collection/share were not reached. Historical `57cfa83` success and local DB suites do not substitute for these current failures or authorize Production promotion.
 - After the remaining Preview smoke succeeds, obtain approval for the concrete Production configuration and promotion, then deploy from `main`. `OPS-008` already confirms the existing regions; do not reopen that choice. Runtime alignment, Preview variable isolation, and Preview-only deployment protection are configured; Production remains untouched.
 
 ## Deprecated decisions
