@@ -53,7 +53,26 @@ function assertKmaItem(value: unknown, expected: KmaResponseIdentity): asserts v
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new KmaResponseValidationError("ITEM_SHAPE");
   const item = value as Record<string, unknown>;
   if (!(item.baseDate === expected.baseDate && validKmaDate(item.baseDate) &&
-    item.baseTime === expected.baseTime && validKmaTime(item.baseTime))) throw new KmaResponseValidationError("BASE_BINDING");
+    item.baseTime === expected.baseTime && validKmaTime(item.baseTime))) {
+    // Classify only an already-rejected binding. Numeric equivalence is evidence,
+    // never coercion or permission to accept a non-string provider field.
+    if (!(item.baseDate === expected.baseDate && validKmaDate(item.baseDate))) {
+      if (typeof item.baseDate === "number" && Number.isInteger(item.baseDate) &&
+        validKmaDate(expected.baseDate) && String(item.baseDate) === expected.baseDate) {
+        throw new KmaResponseValidationError("BASE_DATE_NUMERIC_EQUIVALENT");
+      }
+      if (typeof item.baseDate !== "string") throw new KmaResponseValidationError("BASE_DATE_TYPE");
+      if (!validKmaDate(item.baseDate)) throw new KmaResponseValidationError("BASE_DATE_FORMAT");
+      throw new KmaResponseValidationError("BASE_DATE_MISMATCH");
+    }
+    if (typeof item.baseTime === "number" && Number.isInteger(item.baseTime) &&
+      validKmaTime(expected.baseTime) && String(item.baseTime).padStart(4, "0") === expected.baseTime) {
+      throw new KmaResponseValidationError("BASE_TIME_NUMERIC_EQUIVALENT");
+    }
+    if (typeof item.baseTime !== "string") throw new KmaResponseValidationError("BASE_TIME_TYPE");
+    if (!validKmaTime(item.baseTime)) throw new KmaResponseValidationError("BASE_TIME_FORMAT");
+    throw new KmaResponseValidationError("BASE_TIME_MISMATCH");
+  }
   if (!(typeof item.category === "string" && /^[A-Z0-9]{1,8}$/.test(item.category))) throw new KmaResponseValidationError("CATEGORY_SHAPE");
   if (!(validKmaDate(item.fcstDate) && validKmaTime(item.fcstTime))) throw new KmaResponseValidationError("FORECAST_IDENTITY");
   if (!validForecastValue(item.category, item.fcstValue, expected.model)) throw new KmaResponseValidationError("VALUE_CONTRACT");

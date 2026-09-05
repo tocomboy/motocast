@@ -5,6 +5,8 @@ import { KmaResponseValidationError, kmaResponseDiagnostic, safeWeatherDiagnosti
 describe("bounded weather diagnostics", () => {
   it.each([
     "JSON_BODY", "OBJECT_SHAPE", "ITEM_SHAPE", "BASE_BINDING", "CATEGORY_SHAPE",
+    "BASE_DATE_TYPE", "BASE_DATE_FORMAT", "BASE_DATE_MISMATCH", "BASE_DATE_NUMERIC_EQUIVALENT",
+    "BASE_TIME_TYPE", "BASE_TIME_FORMAT", "BASE_TIME_MISMATCH", "BASE_TIME_NUMERIC_EQUIVALENT",
     "FORECAST_IDENTITY", "VALUE_CONTRACT", "GRID_BINDING", "DUPLICATE_IDENTITY",
     "MISSING_TEMPERATURE", "MISSING_POP", "MISSING_WSD", "MISSING_SKY", "MISSING_PTY",
   ] as const)("keeps %s server-only with the original error message", (reason) => {

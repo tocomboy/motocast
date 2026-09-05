@@ -19,7 +19,7 @@ describe("parseKmaItems", () => {
 
   it.each([
     { reason: "ITEM_SHAPE", item: null },
-    { reason: "BASE_BINDING", item: { ...validItem, baseTime: "0800" } },
+    { reason: "BASE_TIME_MISMATCH", item: { ...validItem, baseTime: "0800" } },
     { reason: "CATEGORY_SHAPE", item: { ...validItem, category: "fixture-private-detail" } },
     { reason: "FORECAST_IDENTITY", item: { ...validItem, fcstDate: "invalid" } },
     { reason: "VALUE_CONTRACT", item: { ...validItem, fcstValue: "fixture-private-detail" } },
@@ -30,6 +30,39 @@ describe("parseKmaItems", () => {
     }))).catch((value: unknown) => value);
     expect(error).toEqual(new KmaResponseValidationError(reason));
     expect(kmaResponseDiagnostic(error)).toBe(reason);
+  });
+
+  it.each([
+    { field: "baseDate", value: undefined, reason: "BASE_DATE_TYPE" },
+    { field: "baseDate", value: null, reason: "BASE_DATE_TYPE" },
+    { field: "baseDate", value: {}, reason: "BASE_DATE_TYPE" },
+    { field: "baseDate", value: 20260830, reason: "BASE_DATE_TYPE" },
+    { field: "baseDate", value: "20260230", reason: "BASE_DATE_FORMAT" },
+    { field: "baseDate", value: "fixture-private-detail", reason: "BASE_DATE_FORMAT" },
+    { field: "baseDate", value: "20260830", reason: "BASE_DATE_MISMATCH" },
+    { field: "baseDate", value: 20260831, reason: "BASE_DATE_NUMERIC_EQUIVALENT" },
+    { field: "baseTime", value: undefined, reason: "BASE_TIME_TYPE" },
+    { field: "baseTime", value: null, reason: "BASE_TIME_TYPE" },
+    { field: "baseTime", value: {}, reason: "BASE_TIME_TYPE" },
+    { field: "baseTime", value: 800, reason: "BASE_TIME_TYPE" },
+    { field: "baseTime", value: "2460", reason: "BASE_TIME_FORMAT" },
+    { field: "baseTime", value: "fixture-private-detail", reason: "BASE_TIME_FORMAT" },
+    { field: "baseTime", value: "0800", reason: "BASE_TIME_MISMATCH" },
+    { field: "baseTime", value: 1100, reason: "BASE_TIME_NUMERIC_EQUIVALENT" },
+  ] as const)("keeps rejected base case %# bounded", async ({ field, value, reason }) => {
+    const error = await parse(new Response(JSON.stringify({ response: {
+      header: { resultCode: "00" }, body: { items: { item: [{ ...validItem, [field]: value }] } },
+    } }))).catch((error: unknown) => error);
+    expect(error).toEqual(new KmaResponseValidationError(reason));
+    expect(kmaResponseDiagnostic(error)).toBe(reason);
+    expect(JSON.stringify(error)).not.toContain("fixture-private-detail");
+  });
+
+  it("identifies lost numeric leading zeros without accepting them", async () => {
+    const error = await parseKmaItems(new Response(JSON.stringify({ response: {
+      header: { resultCode: "00" }, body: { items: { item: [{ ...validItem, baseTime: 830 }] } },
+    } })), { ...expected, baseTime: "0830" }).catch((error: unknown) => error);
+    expect(error).toEqual(new KmaResponseValidationError("BASE_TIME_NUMERIC_EQUIVALENT"));
   });
 
   it.each([
@@ -76,10 +109,10 @@ describe("parseKmaItems", () => {
     { label: "invalid date", value: { baseDate: "20260230", baseTime: "1200", category: "TMP", fcstDate: "20260901", fcstTime: "1300", fcstValue: "22", nx: 60, ny: 127 } },
     { label: "invalid time", value: { baseDate: "20260901", baseTime: "2460", category: "TMP", fcstDate: "20260901", fcstTime: "1300", fcstValue: "22", nx: 60, ny: 127 } },
     { label: "non-string value", value: { baseDate: "20260901", baseTime: "1200", category: "TMP", fcstDate: "20260901", fcstTime: "1300", fcstValue: 22, nx: 60, ny: 127 } },
-  ])("rejects malformed successful forecast item: $label", async ({ value }) => {
+  ])("rejects malformed successful forecast item: $label", async ({ label, value }) => {
     await expect(parse(new Response(JSON.stringify({
       response: { header: { resultCode: "00" }, body: { items: { item: [value] } } },
-    })))).rejects.toEqual(new KmaResponseValidationError(value === null ? "ITEM_SHAPE" : "BASE_BINDING"));
+    })))).rejects.toEqual(new KmaResponseValidationError(value === null ? "ITEM_SHAPE" : label === "empty object" ? "BASE_DATE_TYPE" : label === "invalid date" ? "BASE_DATE_FORMAT" : "BASE_DATE_MISMATCH"));
   });
 
   it.each([
@@ -98,7 +131,7 @@ describe("parseKmaItems", () => {
   ])("rejects forecast identity or semantic mismatch: $label", async ({ label, value }) => {
     await expect(parse(new Response(JSON.stringify({
       response: { header: { resultCode: "00" }, body: { items: { item: [value] } } },
-    })))).rejects.toEqual(new KmaResponseValidationError(label === "wrong base" ? "BASE_BINDING" : label === "wrong grid" ? "GRID_BINDING" : "VALUE_CONTRACT"));
+    })))).rejects.toEqual(new KmaResponseValidationError(label === "wrong base" ? "BASE_TIME_MISMATCH" : label === "wrong grid" ? "GRID_BINDING" : "VALUE_CONTRACT"));
   });
 
   it("rejects duplicate category identity within a forecast time", async () => {
