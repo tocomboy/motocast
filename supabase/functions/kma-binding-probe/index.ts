@@ -12,7 +12,6 @@ import {
 } from "../_shared/kma-binding-diagnostic.ts";
 import {
   kmaResponseDiagnostic,
-  KmaResponseValidationError,
   safeWeatherDiagnosticCode,
 } from "../_shared/weather-failure.ts";
 import {
@@ -22,7 +21,7 @@ import {
 
 const TAG = "KMA_BINDING_PROBE_V1" as const;
 const EXPECTED_SUPABASE_URL = "https://lehjmbgfpoemqcwxowbx.supabase.co";
-const MAX_PROVIDER_CALLS = 3;
+const MAX_PROVIDER_CALLS = 2;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_SCANNED_ITEMS = 1000;
 const PROVIDER_TIMEOUT_MS = 8_000;
@@ -38,8 +37,8 @@ const PROBE_CONFIG: ProbeConfig = {
   memberHash:
     "a6ba3a6a5c1324ea22748f610127cab2ba8fef08ac8f1a1dabcb0db5edca0a13",
   capabilityHash:
-    "51e55983ffc871b932f599a089e11c13a9209c0697696560e3e12cc0723ea996",
-  expiresAt: "2026-09-05T12:11:03.059Z",
+    "9559b1e71b072b52e1f4cdda1c606f9183a63aab22c5cf207a2634fc39cb1649",
+  expiresAt: "2026-09-05T12:59:00.382Z",
   grid: { nx: 60, ny: 127 },
 };
 
@@ -376,30 +375,6 @@ function parserFailure(error: unknown): ParserResult {
   };
 }
 
-function isBindingMismatch(
-  error: unknown,
-  items: readonly unknown[],
-  requested: { date: string; time: string },
-): boolean {
-  if (
-    !(error instanceof KmaResponseValidationError) ||
-    !["BASE_DATE_MISMATCH", "BASE_TIME_MISMATCH"].includes(error.reason)
-  ) return false;
-  let mismatch = false;
-  for (const value of items) {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) {
-      return false;
-    }
-    const item = value as Record<string, unknown>;
-    if (issuanceMilliseconds(item.baseDate, item.baseTime) === null) {
-      return false;
-    }
-    mismatch ||= item.baseDate !== requested.date ||
-      item.baseTime !== requested.time;
-  }
-  return mismatch;
-}
-
 function authStop(error: unknown): StopReason {
   if (error instanceof Error && error.message === "AUTH_REQUIRED") {
     return "AUTH_REQUIRED";
@@ -499,11 +474,13 @@ export function createProbeHandler(overrides: Partial<ProbeDependencies> = {}) {
       const key = configuredKey(dependencies.env("KMA_APIHUB_KEY"));
       const limit = configuredLimit(dependencies.env("KMA_DAILY_LIMIT"));
       const baseNow = new Date(capturedNow);
-      const target = forecastTarget(new Date(capturedNow + 3 * 60 * 60_000));
-      const baseline = (["ultra", "short"] as const).map((model) => ({
-        model,
-        base: latestForecastBase(model, baseNow),
-      }));
+      const target = forecastTarget(new Date(capturedNow + 60 * 60_000));
+      const latestUltra = latestForecastBase("ultra", baseNow);
+      const candidate = {
+        date: latestUltra.date,
+        time: `${latestUltra.time.slice(0, 2)}00`,
+      };
+      const baseline = [candidate, previousBase("ultra", candidate)];
       output = {
         tag: TAG,
         run: "COMPLETE",
@@ -511,14 +488,10 @@ export function createProbeHandler(overrides: Partial<ProbeDependencies> = {}) {
         budgetReservationFailures: 0,
         results: [],
       };
-      let retry:
-        | { model: ForecastModel; base: { date: string; time: string } }
-        | null = null;
-
       const execute = async (
-        model: ForecastModel,
         base: { date: string; time: string },
-      ): Promise<{ error: unknown; bindingMismatch: boolean }> => {
+      ): Promise<unknown> => {
+        const model = "ultra" as const;
         const expected: KmaResponseIdentity = {
           model,
           baseDate: base.date,
@@ -628,7 +601,13 @@ export function createProbeHandler(overrides: Partial<ProbeDependencies> = {}) {
             parserResponse(raw, response.status),
             expected,
           );
-          validatedForecastValues(parsed, target, model);
+          validatedForecastValues(
+            parsed.filter((item) =>
+              item.fcstDate === target.date && item.fcstTime === target.time
+            ),
+            target,
+            model,
+          );
         } catch (value) {
           error = value;
           parser = parserFailure(value);
@@ -640,36 +619,12 @@ export function createProbeHandler(overrides: Partial<ProbeDependencies> = {}) {
           binding,
           parser,
         });
-        return {
-          error,
-          bindingMismatch: isBindingMismatch(error, items, base),
-        };
+        return error;
       };
 
-      for (const entry of baseline) {
-        const { error, bindingMismatch } = await execute(
-          entry.model,
-          entry.base,
-        );
-        if (error === null) continue;
-        if (bindingMismatch) {
-          retry ??= {
-            model: entry.model,
-            base: previousBase(entry.model, entry.base),
-          };
-          continue;
-        }
-        throw new ProbeStop("PROVIDER_FAILED");
-      }
-
-      if (retry !== null) {
-        const { error, bindingMismatch } = await execute(
-          retry.model,
-          retry.base,
-        );
-        if (error !== null && !bindingMismatch) {
-          throw new ProbeStop("PROVIDER_FAILED");
-        }
+      for (const base of baseline) {
+        const error = await execute(base);
+        if (error !== null) throw new ProbeStop("PROVIDER_FAILED");
       }
       return jsonResponse(output);
     } catch (error) {

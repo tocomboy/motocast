@@ -90,7 +90,12 @@ describe("temporary KMA binding probe", () => {
 
   function providerResponse(
     url: URL,
-    options: { mismatch?: boolean; resultCode?: string } = {},
+    options: {
+      mismatch?: boolean;
+      resultCode?: string;
+      forecastDate?: string;
+      forecastTime?: string;
+    } = {},
   ) {
     const model = url.pathname.endsWith("getUltraSrtFcst") ? "ultra" : "short";
     const baseDate = url.searchParams.get("base_date")!;
@@ -112,8 +117,8 @@ describe("temporary KMA binding probe", () => {
       baseDate,
       baseTime,
       category,
-      fcstDate: "20260905",
-      fcstTime: "2100",
+      fcstDate: options.forecastDate ?? "20260905",
+      fcstTime: options.forecastTime ?? "1900",
       fcstValue,
       nx: 60,
       ny: 127,
@@ -266,11 +271,13 @@ describe("temporary KMA binding probe", () => {
     expect(providerFetch).not.toHaveBeenCalled();
   });
 
-  it("makes exactly two budgeted baseline calls and passes the real parsers", async () => {
+  it("makes exactly two budgeted whole-hour ultra calls and passes the real parsers", async () => {
+    const actualUrls: URL[] = [];
     const providerFetch = vi.fn(async (input: URL, init: RequestInit) => {
       expect(init).toMatchObject({ method: "GET", redirect: "error" });
       expect(init.signal).toBeInstanceOf(AbortSignal);
       expect(input.toString()).toContain(encodeURIComponent(privateValue));
+      actualUrls.push(input);
       return providerResponse(input);
     });
     const output = await body(
@@ -284,12 +291,12 @@ describe("temporary KMA binding probe", () => {
       results: [
         {
           model: "ultra",
-          requested: { date: "20260905", time: "1730" },
+          requested: { date: "20260905", time: "1700" },
           parser: { status: "PASS" },
         },
         {
-          model: "short",
-          requested: { date: "20260905", time: "1700" },
+          model: "ultra",
+          requested: { date: "20260905", time: "1600" },
           parser: { status: "PASS" },
         },
       ],
@@ -304,29 +311,47 @@ describe("temporary KMA binding probe", () => {
     expect(mocks.reserveBudget.mock.calls.map((call) => call.slice(1))).toEqual(
       [
         ["kma", "ultra_forecast", 17],
-        ["kma", "short_forecast", 17],
+        ["kma", "ultra_forecast", 17],
       ],
     );
+    expect(actualUrls.map((url) => ({
+      path: url.pathname,
+      date: url.searchParams.get("base_date"),
+      time: url.searchParams.get("base_time"),
+    }))).toEqual([
+      {
+        path: "/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtFcst",
+        date: "20260905",
+        time: "1700",
+      },
+      {
+        path: "/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtFcst",
+        date: "20260905",
+        time: "1600",
+      },
+    ]);
   });
 
-  it("queries the mismatched model's immediately previous regular issue after both baselines", async () => {
+  it("stops on a first-call binding mismatch without a second reservation", async () => {
     const providerFetch = vi.fn(async (input: URL) =>
-      providerResponse(input, {
-        mismatch: providerFetch.mock.calls.length === 1,
-      })
+      providerResponse(input, { mismatch: true })
     );
     const output = await body(
       await createProbeHandler(dependencies(providerFetch))(request()),
     );
-    expect(output.run).toBe("COMPLETE");
-    expect(output.providerCalls).toBe(3);
-    expect(output.results).toHaveLength(3);
+    expect(output).toMatchObject({
+      run: "STOPPED",
+      stopReason: "PROVIDER_FAILED",
+      providerCalls: 1,
+    });
+    expect(mocks.reserveBudget).toHaveBeenCalledTimes(1);
+    expect(providerFetch).toHaveBeenCalledTimes(1);
     expect(output.results[0]).toMatchObject({
       model: "ultra",
-      requested: { date: "20260905", time: "1730" },
+      requested: { date: "20260905", time: "1700" },
       returnedIssuances: [{
         date: "20260905",
-        time: "1630",
+        time: "1600",
         deltaMinutes: -60,
       }],
       parser: {
@@ -335,16 +360,56 @@ describe("temporary KMA binding probe", () => {
         reason: "BASE_TIME_MISMATCH",
       },
     });
+  });
+
+  it("stops after the second call fails without a third reservation", async () => {
+    const providerFetch = vi.fn(async (input: URL) =>
+      providerResponse(input, {
+        resultCode: providerFetch.mock.calls.length === 2 ? "03" : "00",
+      })
+    );
+    const output = await body(
+      await createProbeHandler(dependencies(providerFetch))(request()),
+    );
+    expect(output).toMatchObject({
+      run: "STOPPED",
+      stopReason: "PROVIDER_FAILED",
+      providerCalls: 2,
+    });
+    expect(mocks.reserveBudget).toHaveBeenCalledTimes(2);
+    expect(providerFetch).toHaveBeenCalledTimes(2);
+    expect(output.results).toHaveLength(2);
     expect(output.results[1]).toMatchObject({
-      model: "short",
-      requested: { time: "1700" },
-      parser: { status: "PASS" },
+      requested: { date: "20260905", time: "1600" },
+      parser: { status: "FAIL" },
     });
-    expect(output.results[2]).toMatchObject({
-      model: "ultra",
-      requested: { date: "20260905", time: "1630" },
-      parser: { status: "PASS" },
+  });
+
+  it("stops when the exact target is absent instead of accepting a nearest forecast", async () => {
+    const providerFetch = vi.fn(async (input: URL) => {
+      const payload = await providerResponse(input).json();
+      for (const item of payload.response.body.items.item) {
+        item.fcstTime = "2000";
+      }
+      return new Response(JSON.stringify(payload));
     });
+    const output = await body(
+      await createProbeHandler(dependencies(providerFetch))(request()),
+    );
+    expect(output).toMatchObject({
+      run: "STOPPED",
+      stopReason: "PROVIDER_FAILED",
+      providerCalls: 1,
+      results: [{
+        parser: {
+          status: "FAIL",
+          code: "KMA_FORECAST_NOT_FOUND",
+          reason: "UNKNOWN",
+        },
+      }],
+    });
+    expect(mocks.reserveBudget).toHaveBeenCalledTimes(1);
+    expect(providerFetch).toHaveBeenCalledTimes(1);
   });
 
   it.each(["first", "beyond-summary"])(
@@ -374,17 +439,29 @@ describe("temporary KMA binding probe", () => {
     },
   );
 
-  it("caps the comparison at a third call even when every response mismatches", async () => {
-    const providerFetch = vi.fn(async (input: URL) =>
-      providerResponse(input, { mismatch: true })
-    );
+  it("uses the prior Seoul date for an early-morning whole-hour candidate", async () => {
+    const actualUrls: URL[] = [];
+    const providerFetch = vi.fn(async (input: URL) => {
+      actualUrls.push(input);
+      return providerResponse(input, {
+        forecastDate: "20260906",
+        forecastTime: "0100",
+      });
+    });
     const output = await body(
-      await createProbeHandler(dependencies(providerFetch))(request()),
+      await createProbeHandler({
+        ...dependencies(providerFetch),
+        now: () => Date.parse("2026-09-05T15:20:00.000Z"),
+      })(request()),
     );
-    expect(output).toMatchObject({ run: "COMPLETE", providerCalls: 3 });
-    expect(output.results).toHaveLength(3);
-    expect(providerFetch).toHaveBeenCalledTimes(3);
-    expect(mocks.reserveBudget).toHaveBeenCalledTimes(3);
+    expect(output).toMatchObject({ run: "COMPLETE", providerCalls: 2 });
+    expect(actualUrls.map((url) => ({
+      date: url.searchParams.get("base_date"),
+      time: url.searchParams.get("base_time"),
+    }))).toEqual([
+      { date: "20260905", time: "2300" },
+      { date: "20260905", time: "2200" },
+    ]);
   });
 
   it.each(["timeout", "redirect"])(
