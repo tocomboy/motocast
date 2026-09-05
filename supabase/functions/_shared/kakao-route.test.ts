@@ -35,7 +35,7 @@ describe("normalizeKakaoRoutePayload", () => {
     ["SUMMARY_POINT", (value: ReturnType<typeof payload>) => { value.routes[0].summary.origin.x = 0; }],
     ["SECTION_ROADS", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads = []; }],
     ["ROUTE_SECTIONS", (value: ReturnType<typeof payload>) => { value.routes[0].sections = []; }],
-    ["RESULT_CODE", (value: ReturnType<typeof payload>) => { value.routes[0].result_code = 9999; }],
+    ["RESULT_CODE_UNDOCUMENTED", (value: ReturnType<typeof payload>) => { value.routes[0].result_code = 9999; }],
   ])("classifies %s without changing rejection or public response", (reason, mutate) => {
     const value = payload();
     mutate(value);
@@ -56,6 +56,26 @@ describe("normalizeKakaoRoutePayload", () => {
     Object.assign(forged, { reason: privateDetail });
     expect(routeResponseDiagnostic(forged)).toBe("UNKNOWN");
     expect(forged.message).toBe("INVALID_ROUTE_PROVIDER_RESPONSE");
+  });
+
+  it.each([
+    ...[101, 102, 103, 104, 105, 106, 107, 201, 202, 203, 204, 205, 206, 207, 301, 302, 303, 304]
+      .map((code) => ({ code, reason: `RESULT_CODE_${code}` })),
+    ...[2, -1, 108, 200, 305, 9999, Number.MAX_SAFE_INTEGER]
+      .map((code) => ({ code, reason: "RESULT_CODE_UNDOCUMENTED" })),
+    ...[undefined, null, "101", "fixture-private-detail", false, {}, [], 1.5, NaN, Infinity]
+      .map((code) => ({ code, reason: "RESULT_CODE_SHAPE" })),
+  ])("rejects result-code case %# with only its fixed diagnostic", ({ code, reason }) => {
+    let caught: unknown;
+    try {
+      normalizeKakaoRoutePayload({ routes: [{ result_code: code, result_msg: "fixture-private-detail" }] });
+    } catch (error) { caught = error; }
+    expect(caught).toBeInstanceOf(RouteResponseValidationError);
+    expect(routeResponseDiagnostic(caught)).toBe(reason);
+    expect(safeErrorStatus(caught)).toBe(502);
+    expect(safeErrorCode(caught)).toBe("ROUTE_RESPONSE_INVALID");
+    expect(safeErrorMessage(caught)).toBe("경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    expect(JSON.stringify(caught)).not.toContain("fixture-private-detail");
   });
 
   it("accepts a complete route with geometry", () => {

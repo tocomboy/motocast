@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RouteResponseValidationError } from "../_shared/kakao-route";
+import { normalizeKakaoRoutePayload, RouteResponseValidationError } from "../_shared/kakao-route";
 
 const validation = vi.hoisted(() => vi.fn());
 const serviceClient = vi.hoisted(() => vi.fn());
@@ -39,6 +39,27 @@ describe("deployed plan-route diagnostic boundary", () => {
     expect(body.code).toBe(expectedCode);
     expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", expectedCode, kind === "known" ? "SECTION_DURATION_TOTAL" : "UNKNOWN");
     expect(JSON.stringify({ body, log: log.mock.calls })).not.toContain(privateDetail);
+    expect(serviceClient).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { code: 101, reason: "RESULT_CODE_101" },
+    { code: 104, reason: "RESULT_CODE_104" },
+    { code: 107, reason: "RESULT_CODE_107" },
+    { code: 9999, reason: "RESULT_CODE_UNDOCUMENTED" },
+    { code: "fixture-private-detail", reason: "RESULT_CODE_SHAPE" },
+  ])("keeps parsed result-code case %# server-only", async ({ code, reason }) => {
+    validation.mockImplementation(async () => normalizeKakaoRoutePayload({
+      routes: [{ result_code: code, result_msg: "fixture-private-detail" }],
+    }));
+    const response = await handler(new Request("https://preview.example/functions/v1/plan-route", {
+      method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+    }));
+    const body = await response.json();
+    expect(response.status).toBe(502);
+    expect(body).toEqual({ code: "ROUTE_RESPONSE_INVALID", error: "경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." });
+    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", "ROUTE_RESPONSE_INVALID", reason);
+    expect(JSON.stringify({ body, log: log.mock.calls })).not.toContain("fixture-private-detail");
     expect(serviceClient).not.toHaveBeenCalled();
   });
 });

@@ -16,10 +16,22 @@ export type NormalizedKakaoRoute = {
 type KakaoSummaryPoint = { longitude: number; latitude: number };
 type RequestedPoint = { longitude: number; latitude: number };
 
+// Closed labels for the published result-code table, not provider messages.
+// https://developers.kakaomobility.com/guide/navi-api/reference
+const kakaoResultCodeReasons = {
+  101: "RESULT_CODE_101", 102: "RESULT_CODE_102", 103: "RESULT_CODE_103",
+  104: "RESULT_CODE_104", 105: "RESULT_CODE_105", 106: "RESULT_CODE_106",
+  107: "RESULT_CODE_107", 201: "RESULT_CODE_201", 202: "RESULT_CODE_202",
+  203: "RESULT_CODE_203", 204: "RESULT_CODE_204", 205: "RESULT_CODE_205",
+  206: "RESULT_CODE_206", 207: "RESULT_CODE_207", 301: "RESULT_CODE_301",
+  302: "RESULT_CODE_302", 303: "RESULT_CODE_303", 304: "RESULT_CODE_304",
+} as const;
+
 const routeValidationReasons = [
   "JSON_BODY", "OBJECT_SHAPE", "INTEGER_VALUE", "SUMMARY_POINT", "ROAD_VERTEX_SHAPE",
   "ROAD_VERTEX_RANGE", "SECTION_ROADS", "SECTION_DISTANCE_TOTAL", "SECTION_DURATION_TOTAL",
-  "ROAD_CONTINUITY", "ROUTES_SHAPE", "RESULT_CODE", "SUMMARY_WAYPOINTS", "ROUTE_SECTIONS",
+  "ROAD_CONTINUITY", "ROUTES_SHAPE", "RESULT_CODE_SHAPE", "RESULT_CODE_UNDOCUMENTED",
+  ...Object.values(kakaoResultCodeReasons), "SUMMARY_WAYPOINTS", "ROUTE_SECTIONS",
   "ROUTE_DISTANCE_TOTAL", "ROUTE_DURATION_TOTAL", "REQUEST_POINT_COUNT", "SUMMARY_POINT_SNAP",
   "GEOMETRY_POINT_SNAP", "SECTION_CONTINUITY",
 ] as const;
@@ -135,9 +147,12 @@ export function normalizeKakaoRoutesPayload(value: unknown): NormalizedKakaoRout
   }
   return payload.routes.map((value) => {
     const route = record(value);
-    if (!Number.isInteger(route.result_code)) throw new RouteResponseValidationError("RESULT_CODE");
+    if (!Number.isInteger(route.result_code)) throw new RouteResponseValidationError("RESULT_CODE_SHAPE");
     if (KAKAO_NO_ROUTE_RESULT_CODES.has(Number(route.result_code))) throw new Error("SAFE_ROUTE_NOT_FOUND");
-    if (route.result_code !== 0) throw new RouteResponseValidationError("RESULT_CODE");
+    if (route.result_code !== 0) {
+      const reason = kakaoResultCodeReasons[route.result_code as keyof typeof kakaoResultCodeReasons];
+      throw new RouteResponseValidationError(reason ?? "RESULT_CODE_UNDOCUMENTED");
+    }
     const rawSummary = record(route.summary);
     if (!Array.isArray(rawSummary.waypoints)) throw new RouteResponseValidationError("SUMMARY_WAYPOINTS");
     const summary = {

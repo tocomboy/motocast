@@ -135,7 +135,7 @@ describe("requestKakaoRoute", () => {
     const fetchImpl = vi.fn(async () => Response.json({ routes: [{ broken: true }] }));
     const error = await requestKakaoRoute(request(), fetchImpl).then(() => null, (error: unknown) => error);
     expect(error).toMatchObject({ message: "INVALID_ROUTE_PROVIDER_RESPONSE" });
-    expect(routeResponseDiagnostic(error)).toBe("RESULT_CODE");
+    expect(routeResponseDiagnostic(error)).toBe("RESULT_CODE_SHAPE");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
