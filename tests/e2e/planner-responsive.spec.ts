@@ -53,6 +53,8 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
       )).map((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
       summaryHasNoInternalOverflow: summary.clientWidth >= summary.scrollWidth &&
         summary.clientHeight >= summary.scrollHeight,
+      detailsHaveNoInternalOverflow: details.scrollWidth <= details.clientWidth,
+      summaryInsideStage: summaryBox.right <= document.querySelector(".route-stage")!.getBoundingClientRect().right + 1,
     };
   });
   expect(layout).toMatchObject({
@@ -65,6 +67,8 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
     legendOverlapsMap: false,
     summaryOverlapsMap: false,
     summaryHasNoInternalOverflow: true,
+    detailsHaveNoInternalOverflow: true,
+    summaryInsideStage: true,
   });
   expect(layout.mapHeight).toBeGreaterThanOrEqual(360);
   expect(layout.summaryLabelFontSize).toBeGreaterThanOrEqual(14);
@@ -98,6 +102,90 @@ async function expectReadableWeatherTimeline(page: import("@playwright/test").Pa
 }
 
 test.describe("planner responsive shell", () => {
+  test("intermediate desktop widths keep all route facts unclipped", async ({ page }) => {
+    await page.goto("/");
+    for (const width of [821, 900, 901, 957, 958, 1000, 1120, 1121]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expectMapInformationOutsideMap(page);
+    }
+  });
+
+  test("shared renderer fits the narrow owner-preview container", async ({ page }) => {
+    const snapshot = structuredClone(rawSharedRideSnapshotWithOmissions(0));
+    snapshot.trip.origin.label = "공개출발지긴이름".repeat(5);
+    await page.route("**/api/shares/resolve", (route) => route.fulfill({
+      status: 200, contentType: "application/json", body: JSON.stringify({ snapshot }),
+    }));
+    await page.goto(`/share#${"a".repeat(43)}`);
+    await expect(page.locator(".shared-snapshot")).toBeVisible();
+    const markup = await page.locator(".shared-snapshot").evaluate((element) => element.outerHTML);
+    await page.goto("/");
+    // Exercise the production snapshot renderer inside the owner page's nesting.
+    // Only the layout shell is a fixture; this does not claim connected sharing.
+    await page.locator(".route-stage").evaluate((stage, html) => {
+      const management = document.createElement("div");
+      management.className = "management-grid";
+      const manager = document.createElement("section");
+      manager.className = "share-manager";
+      const preview = document.createElement("div");
+      preview.className = "share-preview";
+      preview.innerHTML = html;
+      manager.append(preview);
+      management.append(manager);
+      stage.append(management);
+    }, markup);
+    for (const width of [320, 390, 820, 901, 950, 1000, 1050, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate(() => document.fonts.ready);
+      const layout = await page.locator(".shared-map-details").evaluate((details) => {
+        const legend = details.querySelector<HTMLElement>(".map-marker-legend")!;
+        const summary = details.querySelector<HTMLElement>(".shared-map-summary")!;
+        const summaryBox = summary.getBoundingClientRect();
+        const items = Array.from(legend.querySelectorAll("li"));
+        return {
+          itemCount: items.length,
+          noOverflow: [details, legend, summary].every((item) => item.scrollWidth <= item.clientWidth),
+          noOverlap: items.every((item) => {
+            const box = item.getBoundingClientRect();
+            return box.right <= summaryBox.left || box.left >= summaryBox.right ||
+              box.bottom <= summaryBox.top || box.top >= summaryBox.bottom;
+          }),
+        };
+      });
+      expect(layout.itemCount).toBeGreaterThan(0);
+      expect(layout).toMatchObject({ noOverflow: true, noOverlap: true });
+    }
+  });
+
+  test("primary action remains readable on hover and keyboard focus", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/");
+    const action = page.locator(".primary-button").first();
+    await expect(action).toBeVisible();
+    const contrast = () => action.evaluate((element) => {
+      const luminance = (color: string) => {
+        const values = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map((value) => {
+          const channel = value / 255;
+          return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+        });
+        return values[0] * 0.2126 + values[1] * 0.7152 + values[2] * 0.0722;
+      };
+      const style = getComputedStyle(element);
+      const text = luminance(style.color);
+      const background = luminance(style.backgroundColor);
+      return (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05);
+    });
+    expect(await contrast()).toBeGreaterThanOrEqual(4.5);
+    await action.hover();
+    await action.evaluate(async (element) => { await Promise.all(element.getAnimations().map((animation) => animation.finished)); });
+    expect(await contrast()).toBeGreaterThanOrEqual(4.5);
+    await page.mouse.move(0, 0);
+    await action.focus();
+    await expect(action).toBeFocused();
+    await action.evaluate(async (element) => { await Promise.all(element.getAnimations().map((animation) => animation.finished)); });
+    expect(await contrast()).toBeGreaterThanOrEqual(4.5);
+  });
+
   test("desktop keeps the plan and single recommended route visible", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/");

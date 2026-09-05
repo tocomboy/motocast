@@ -378,14 +378,14 @@ When sources conflict, record the evidence here, explain user-visible and securi
 
 #### OPS-008 — Production Supabase region
 
-- Status: `NEEDS_INTERVIEW`
-- Decision: Choose whether the current Production project remains in AWS `ap-northeast-1` (Tokyo) or is replaced with a Seoul `ap-northeast-2` project before real rider data is accepted.
+- Status: `CONFIRMED`
+- Decision: Keep the current Production project in AWS `ap-northeast-1` (Tokyo) and the isolated Preview project in Seoul `ap-northeast-2`. No region replacement or migration is required for this release.
 - Rationale: Live readback corrected an earlier mistaken region label: `ap-northeast-1` is Tokyo, not Seoul. Preview is already isolated in Seoul. Replacing Production now minimizes migration risk but requires recreating or repurposing one of the two Free projects; keeping Tokyo avoids project replacement but retains Japan data residency and modest additional latency.
 - User impact: Core behavior is the same; the choice changes data location, expected latency, and the operational work needed before launch.
 - Affected: Supabase Production project, Vercel Production variables, Kakao OAuth redirects, secrets, migrations, backup and cutover plan.
 - Verification: explicit user decision, project region readback, empty/pre-cutover data audit, and final Production project reference evidence.
 - Recorded: 2026-08-30.
-- Interview update: On 2026-08-31 the user explicitly deferred every Production Supabase/Vercel change until the Preview gate is complete. The decision remains `NEEDS_INTERVIEW`; neither hosted Production project nor its data may be reset, migrated, or reconfigured in the Preview phase.
+- Interview history: On 2026-08-31 the user deferred every Production Supabase/Vercel change until the Preview gate is complete. The subsequent user instruction to retain the current Tokyo/Seoul regions resolves the region choice. Production deployment, credentials, migrations, and main promotion still require their separate post-Preview approval; region confirmation alone does not authorize those changes.
 
 ## Live-state snapshot
 
@@ -442,6 +442,7 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 
 ### Implemented but not production-verified
 
+- UI follow-up review on 2026-09-05: fixed `e8ffc06` was rejected with UI `MEDIUM 3` (primary-action hover contrast, route-summary clipping at 821–957px, and nested share-preview legend overlap at 901–1000px) plus Operations `MEDIUM 1` (the already-decided regions still marked unresolved). The local correction uses available-width grids and wrapping, readable enabled-button hover text, and the confirmed `OPS-008` decision without authorizing Production changes. Writer verification passes lint, typecheck, Vitest `55 files / 348 tests`, five Deno entrypoints, the build, and Chromium `20 PASS / 2 connected SKIP`. Earlier starts retain `SETUP_OR_IMPORT_FAILURE 3`: sandbox webServer, registry DNS, and a Playwright/React JSX-transform conflict in the initial new test; corrected runs pass. The nested layout test reuses the actual public snapshot renderer inside the owner preview's CSS nesting; it does not establish connected ShareManager behavior. Same-reviewer fixed-SHA delta approval, hosted CI, and connected Preview evidence are still required. The baseline's inert `현재 위치로 이동` button is a separate existing limitation, not a regression introduced by this slice.
 - Responsive PWA shell and Kakao map canvas; the fail-loud map SDK timeout, exact-host place URL normalization, road-geometry-only rendering, lettered color-independent role markers, and accessible legend are reviewed and deployed. Authenticated Preview smoke confirmed winding, lunch, rest, origin, and return markers at mobile width; the full viewport matrix remains covered by deterministic browser tests until the remaining connected smoke completes.
 - Supabase browser/server client scaffolding plus an email-free Kakao OIDC start/callback/consume flow. The flow requests only `openid`, `profile_nickname`, and `profile_image`, validates signed state, hashed nonce, and app-origin browser binding, transports tokens through an encrypted two-minute one-time handoff rather than a request URL, and completes the Supabase session with Kakao ID-token verification. The trusted-HTTPS correction is deployed and the real first-admin Preview login succeeds.
 - Invitation, membership, collection, trip, cache, weather snapshot, share, and budget schema with initial RLS.
@@ -464,9 +465,8 @@ This snapshot is evidence, not a permanent decision. Re-read live state before p
 - Fixed-SHA review, CI-only PR, and Preview deployment/smoke of the current local map-information and mobile-readability follow-up.
 - Connected browser verification of invitation login and revoked-member denial; direct OIDC and first-admin bootstrap are complete.
 - AUTH-003 migrations and sensitive RPC ACLs are live and independently approved; full OAuth and A/B/admin/revoked connected tests remain pending.
-- Resolving `OPS-008` for the Production Supabase region before real rider data is accepted.
 - Hosted CI and connected Preview tests for the current local UI-only candidate, plus all Production tests. The deployed `57cfa83` Preview release and its local fresh-migration, RLS/RPC, and concurrency suites are GREEN.
-- After the remaining Preview smoke succeeds, a new `OPS-008` interview and then a `main`-origin Production deployment. Runtime alignment, Preview variable isolation, and Preview-only deployment protection are configured; Production remains untouched.
+- After the remaining Preview smoke succeeds, obtain approval for the concrete Production configuration and promotion, then deploy from `main`. `OPS-008` already confirms the existing regions; do not reopen that choice. Runtime alignment, Preview variable isolation, and Preview-only deployment protection are configured; Production remains untouched.
 
 ## Deprecated decisions
 
