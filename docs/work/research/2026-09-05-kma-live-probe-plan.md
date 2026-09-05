@@ -14,7 +14,7 @@
 ## 진단 계약
 
 - Preview 프로젝트 URL, 고정 활성 테스트 회원 해시, 임의 capability의 SHA-256, 절대 만료시각을 고정한 소스에서만 실행한다. JWT 검증을 끄지 않는다. capability 원문과 갱신된 로그인은 owner-private `/tmp`에만 존재하며 기존 인증 파일을 덮어쓰지 않는다.
-- POST만, query/body/Origin 거절, CORS 없음, no-store 응답. 회원·capability·프로젝트·만료 검증 실패에는 budget/provider 호출 0회다.
+- POST만, query/비어 있지 않은 body/Origin 거절, CORS 없음, no-store 응답. 실제 Deno HTTP가 빈 POST도 스트림으로 전달하므로 최대 1초·네 번의 읽기 안에서 데이터 없이 종료된 본문만 허용한다. 초기 회원·capability·프로젝트·만료 검증 실패에는 budget/provider 호출 0회다. 예산 예약 성공 뒤 만료되면 이미 소비한 예약은 유지하고 provider 호출만 차단하며 환불하지 않는다.
 - 공개 고정 격자에서 같은 기준 현재 시각의 정규 ultra/short를 각각 1회 요청한다. 유효한 발표시각 불일치가 나온 첫 모델만 직전 정규 발표로 한 번 비교한다. 중간 발표시각을 역으로 넣거나 제품 fallback을 구현하지 않는다.
 - 매 fetch 앞에 기존 실제 `consumeBudget`과 현재 `KMA_DAILY_LIMIT`을 사용한다. 새 operation, 가짜 budget, 한도 축소, 예약 환불은 없다. 네트워크 timeout 8초, redirect/자동 retry/추가 페이지 0회, 응답 읽기 상한 2MiB, 진단 배열 최대 1,000개다.
 - 기존 strict parser와 필수 항목 검증을 그대로 실행한다. 출력은 고정 상태·모델, 형식/달력을 검증한 요청 및 최대 두 반환 발표시각, 관계, B1, 닫힌 오류 이유로 제한한다. 비밀·전체 URL·원문·날씨 값·위치·회원 정보·임의 오류 문자열을 응답/로그/결과 파일에 기록하지 않는다.
@@ -35,3 +35,7 @@
 - 비공개 실행기 타입 검사 및 가짜 I/O를 사용한 실행기 회귀 `7 PASS / 0 FAIL`. single dispatch, 스트림 상한, 필드 유출 차단, 잘못된 JWT 설정의 소유 함수 정리, 소유권 변경 시 보존, 재전송 금지, 자격 파일 실패의 안전한 처리를 확인했다.
 - 실행기 독립 보안 delta review APPROVE `B0/H0/M0/L0`. 초기 MEDIUM 3건(읽기 상한·요청 필드·정리 순서)과 LOW 1건(오류 처리 밖 자격 파일 읽기)은 해소했다. 실행기 SHA-256 `2d40790913910af4ba77b027b4246308f8eb3135419a51d12c81584bb7009dda`. 서버 함수의 고정 SHA 승인은 별도다.
 - 현재까지 실제 KMA 호출·임시 함수 배포·DB/Production 변경은 NOT_RUN이며 이전 날씨 오류가 고쳐졌다고 주장하지 않는다.
+
+### 실제 HTTP 전송 경계 보완
+
+중단 후 재개하면서 lead가 실제 localhost Deno 서버로 빈 POST를 보냈다. 본문은 null이 아닌 스트림이고 0바이트 청크 뒤 종료되므로 기존 `request.body !== null` 조건이 정상 진단 요청도 차단했다. 종료된 writer의 두 파일 책임은 lead가 회수해 데이터 없는 본문만 제한 시간·읽기 횟수 안에서 허용하도록 수정했다. 실제 handler와 가짜 인증/예산/provider를 조합한 native HTTP 검사는 첫 수정에서 FAIL 1(0바이트 청크 처리 누락), 최종 PASS 1이었다. 최종 결과는 실제 빈 POST 스트림에서 합성 예약/조회 각각 2회, 실제 KMA 호출 0회다. 추가 회귀를 포함한 집중 테스트는 최종 19 PASS이고 Deno check도 PASS다. 기존 예산 예약 후 만료 설명 LOW는 예약 유지/provider 0으로 정정했다.

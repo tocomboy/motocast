@@ -395,6 +395,33 @@ function authStop(error: unknown): StopReason {
   return "AUTH_FAILED";
 }
 
+async function assertEmptyRequestBody(request: Request): Promise<void> {
+  if (request.body === null) return;
+  const reader = request.body.getReader();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new ProbeStop("BODY_NOT_ALLOWED")), 1000);
+    });
+    // Native Deno may yield one zero-byte chunk before closing an empty POST.
+    // Bound empty chunks as well as elapsed time to avoid an endless producer.
+    for (let chunks = 0; chunks < 4; chunks += 1) {
+      const next = await Promise.race([reader.read(), deadline]);
+      if (next.done) return;
+      if (next.value.byteLength > 0) throw new ProbeStop("BODY_NOT_ALLOWED");
+    }
+    throw new ProbeStop("BODY_NOT_ALLOWED");
+  } catch {
+    throw new ProbeStop("BODY_NOT_ALLOWED");
+  } finally {
+    clearTimeout(timer);
+    // A rejected body is already observable; cancellation must not extend the
+    // request-read deadline if a client-controlled stream never settles.
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
 export function createProbeHandler(overrides: Partial<ProbeDependencies> = {}) {
   const dependencies: ProbeDependencies = {
     authenticate: requireMember,
@@ -412,7 +439,7 @@ export function createProbeHandler(overrides: Partial<ProbeDependencies> = {}) {
     try {
       if (request.method !== "POST") throw new ProbeStop("METHOD_NOT_ALLOWED");
       if (request.url.includes("?")) throw new ProbeStop("QUERY_NOT_ALLOWED");
-      if (request.body !== null) throw new ProbeStop("BODY_NOT_ALLOWED");
+      await assertEmptyRequestBody(request);
       if (request.headers.has("origin")) {
         throw new ProbeStop("ORIGIN_NOT_ALLOWED");
       }

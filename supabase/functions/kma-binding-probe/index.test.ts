@@ -135,7 +135,7 @@ describe("temporary KMA binding probe", () => {
   it.each([
     ["method", () => request(endpoint, { method: "GET" })],
     ["query", () => request(`${endpoint}?unexpected=1`)],
-    ["body", () => request(endpoint, { body: "" })],
+    ["body", () => request(endpoint, { body: "x" })],
     [
       "origin",
       () =>
@@ -154,6 +154,55 @@ describe("temporary KMA binding probe", () => {
       expect(providerFetch).not.toHaveBeenCalled();
     },
   );
+
+  it("accepts an empty incoming HTTP body stream and still uses the real parser", async () => {
+    const providerFetch = vi.fn(async (input: URL) => providerResponse(input));
+    const incoming = request(endpoint, {
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array());
+          controller.close();
+        },
+      }),
+      duplex: "half",
+    } as RequestInit);
+    expect(incoming.body).not.toBeNull();
+    const result = await body(
+      await createProbeHandler(dependencies(providerFetch))(incoming),
+    );
+    expect(result.run).toBe("COMPLETE");
+    expect(providerFetch).toHaveBeenCalledTimes(2);
+    expect(
+      result.results.every((entry: { parser: { status: string } }) =>
+        entry.parser.status === "PASS"
+      ),
+    ).toBe(true);
+  });
+
+  it("bounds an incoming body stream that never finishes before authentication", async () => {
+    vi.useFakeTimers();
+    let cancelled = false;
+    try {
+      const providerFetch = vi.fn();
+      const incoming = request(endpoint, {
+        body: new ReadableStream({
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        duplex: "half",
+      } as RequestInit);
+      const pending = createProbeHandler(dependencies(providerFetch))(incoming);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect((await body(await pending)).stopReason).toBe("BODY_NOT_ALLOWED");
+      expect(cancelled).toBe(true);
+      expect(mocks.authenticate).not.toHaveBeenCalled();
+      expect(mocks.reserveBudget).not.toHaveBeenCalled();
+      expect(providerFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("denies project, expiry, member, and capability gates without consuming budget", async () => {
     const cases = [
