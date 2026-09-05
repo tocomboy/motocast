@@ -178,7 +178,7 @@ button {
   color: var(--ink);
   font-weight: 750;
   padding: 13px 18px;
-  transition: background 160ms ease, transform 160ms ease;
+  transition: transform 160ms ease;
 }
 
 .primary-button:hover:not(:disabled) {

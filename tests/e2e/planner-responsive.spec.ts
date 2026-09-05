@@ -177,9 +177,11 @@ test.describe("planner responsive shell", () => {
     });
     expect(await contrast()).toBeGreaterThanOrEqual(4.5);
     await action.hover();
+    expect(await contrast()).toBeGreaterThanOrEqual(4.5);
     await action.evaluate(async (element) => { await Promise.all(element.getAnimations().map((animation) => animation.finished)); });
     expect(await contrast()).toBeGreaterThanOrEqual(4.5);
     await page.mouse.move(0, 0);
+    expect(await contrast()).toBeGreaterThanOrEqual(4.5);
     await action.focus();
     await expect(action).toBeFocused();
     await action.evaluate(async (element) => { await Promise.all(element.getAnimations().map((animation) => animation.finished)); });
