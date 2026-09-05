@@ -1,6 +1,6 @@
 # KMA 초단기 정시 요청 교정
 
-2026-09-05. **READY: 승인된 근거 기준과 PASS 2 실측에 따른 한정 구현.** [실측](2026-09-05-kma-hour-observation.md)에서 초단기 19:00/18:00 요청·응답과 정확 목표 예보의 필수 값 검증이 통과했다. 사용자 승인과 독립 설계를 토대로 lead가 다음 계약을 채택했다. 공식 공급자 내부 구현을 확정한 것은 아니며 운영 중 불일치는 계속 거절한다.
+2026-09-05. **완료: 승인된 한정 교정의 Preview 배포와 실제 연결 검증 PASS.** [실측](2026-09-05-kma-hour-observation.md)에서 초단기 19:00/18:00 요청·응답과 정확 목표 예보의 필수 값 검증이 통과했다. 사용자 승인과 독립 설계를 토대로 lead가 다음 계약을 채택했다. 공식 공급자 내부 구현을 확정한 것은 아니며 운영 중 불일치는 계속 거절한다.
 
 ## 목표 계약
 
@@ -15,7 +15,8 @@
 
 1. **완료:** writer는 _shared/weather-forecast.ts와 그 테스트, 새 weather-timeline/issuance-selection.test.ts만 수정했고 책임을 종료했다. lead는 임시 진단 소스를 제거하고 정본·README·운영·실측 기록을 동기화했다. 기존 사용자 .gitignore와 다른 handoff/조사 파일은 보존한다. 현재 작업에 해당하는 이전 미커밋 날씨 상태 문서의 변경은 검토할 후보에 포함한다.
 2. **완료:** 집중 3 files / 28 PASS, FAIL/ERROR/SKIP 0. :45·월/연도 이월·+6h±1ms·exact 목표/누락/필수 값·단기 3시간 최근접 보존과 실제 handler의 URL/파서/저장 발표 일치 및 실패 시 신규 성공 쓰기 0을 확인했다.
-3. **진행:** 소유 3파일의 source-copy SHA-256 동일, 전체 59 files / 525 PASS, FAIL/pending/todo 0, lint/typecheck/Deno 5/build PASS, Chromium 20 PASS / connected SKIP 2. 임시 probe 23개 테스트를 제거하고 제품 회귀 10개를 추가해 이전 538에서 525가 됐다. 실패 테스트 skip/xfail로 수치를 줄이지 않았다. 최초 Deno 실행은 DNS EAI_AGAIN으로 SETUP_OR_IMPORT_FAILURE 1, 명시적 네트워크 재실행은 PASS다. Edge 파일 직접 ESLint는 ignore 경고 3개로 미검사이며 Deno 검증과 구분한다. 전체 필수 검사에 동일 lockfile/설치 dependencies를 재사용했다. 이제 고정 SHA 독립 정확성·데이터/운영 검토를 진행한다.
-4. **대기:** 비배포 review 브랜치 exact-head CI/무배포 조건을 확인한 후 weather-timeline만 명시적 Preview에 배포한다. origin/develop base 불변을 확인하고 검토 SHA로 fast-forward한 뒤 Preview Web/함수 상태를 대조한다. 같은 공개 입력의 실제 날씨·컬렉션·공유·회수 검증과 정확 소유 자원 정리를 완료한다. 실패하면 관련 원인을 수정·재검증한다.
+3. **완료:** 소유 3파일의 source-copy SHA-256 동일, 전체 59 files / 525 PASS, FAIL/pending/todo 0, lint/typecheck/Deno 5/build PASS, Chromium 20 PASS / connected SKIP 2. 임시 probe 23개 테스트를 제거하고 제품 회귀 10개를 추가해 이전 538에서 525가 됐다. 실패 테스트 skip/xfail로 수치를 줄이지 않았다. 최초 Deno 실행은 DNS EAI_AGAIN으로 SETUP_OR_IMPORT_FAILURE 1, 명시적 네트워크 재실행은 PASS다. Edge 파일 직접 ESLint는 ignore 경고 3개로 미검사이며 Deno 검증과 구분한다. 전체 필수 검사에 동일 lockfile/설치 dependencies를 재사용했다. 고정 SHA8bd8878 독립 검토 APPROVE B0/H0/M0/L1이며 LOW 문서 상태 표현은 후속 문서 동기화에서 해결했다.
+4. **완료:** PR #21/run33963499094 exact-head CI와 정착 후 무배포0을 확인했다. Preview weather-timeline v12 배포 뒤 unchanged f6ec59c에서 8bd8878로 fast-forward했고 develop CI33963674030와 Preview READY를 확인했다. 동일 공개 입력 실제 연결은 1 PASS/실패·오류·skip·retry0으로 날씨·컬렉션·공유·회수·재발행 및 정확 소유 정리를 완료했다. [배포 기록](2026-09-05-kma-hour-correction-release.md)의 한계를 포함해 읽는다.
+5. **진행:** 문서 전용 동기화의 비문서 tree 동일성, 고정 SHA delta review, CI와 Preview Web readback을 마친다. 새 제품 변경이나 공급자 재호출은 없다.
 
 Production, DB schema, 비밀 설정, 예산 한도·예약 환불, 유료 API, 모델 자동 대체, 오프셋 허용은 범위 밖이다. 새 실측이 계약을 반박하거나 필수 검증/소유권/정리가 실패하면 해당 단계의 원인을 해결하기 전 배포를 진행하지 않는다. Production은 별도 구체적인 승인과 검증이 필요하다.
