@@ -48,5 +48,10 @@ enabled = false
 [functions.kakao-oidc]
 verify_jwt = false
 
+# Temporary, explicitly deployed Preview recovery; remove before Production promotion.
+[functions.preview-secret-recovery-953494d4]
+verify_jwt = true
+entrypoint = "./functions/preview-secret-recovery/index.ts"
+
 [analytics]
 enabled = false

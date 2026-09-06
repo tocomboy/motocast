@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && node --test scripts/preview-secret-recovery.test.mjs",
     "test:e2e": "playwright test",
     "test:e2e:preview": "playwright test",
     "test:e2e:auth": "node tests/e2e/auth.setup.mjs"
