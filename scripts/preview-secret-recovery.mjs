@@ -12,7 +12,7 @@ export const PREVIEW_PROJECT = Object.freeze({
   name: "MOTOCAST_Preview",
   region: "ap-northeast-2",
   supabaseUrl: "https://lehjmbgfpoemqcwxowbx.supabase.co",
-  functionName: "preview-secret-recovery-953494d4",
+  functionName: "preview-secret-recovery-f3b3f3d5",
 });
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");

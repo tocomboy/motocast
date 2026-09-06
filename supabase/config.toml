@@ -49,7 +49,7 @@ enabled = false
 verify_jwt = false
 
 # Temporary, explicitly deployed Preview recovery; remove before Production promotion.
-[functions.preview-secret-recovery-953494d4]
+[functions.preview-secret-recovery-f3b3f3d5]
 verify_jwt = true
 entrypoint = "./functions/preview-secret-recovery/index.ts"
 

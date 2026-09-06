@@ -58,3 +58,17 @@ Exa 공식 조사에서 [KMA 이용안내](https://apihub.kma.go.kr/apiInfo.do)�
 별도 로컬 운영 실행기는 고정 SHA의 config/entry/handler/pin 바이트를 배포 직전 대조하고, source hash를 변경 가능한 작업 트리가 아닌 해당 커밋에서 산출한다. 정리 재시도는 매번 새 배타적 다운로드 디렉터리와 현재 ID/version/source를 사용한다. 첫 운영 검토의 MEDIUM2(같은 HEAD의 dirty 배포 허용, 실패 후 고정 증거 디렉터리 충돌)는 수정했고 합성 회귀3 PASS/구문 PASS를 확인했다. 운영 코드 hash와 최종 reviewer 판정은 실제 실행 journal에 결속한다. 원격 작업은 아직 NOT_RUN이다.
 
 수정 후 전체 필수 baseline 재실행: npmci/lint/typecheck/Deno6/Chromium 설치/build/diff PASS, Vitest552 PASS/Node7 PASS/Chromium20 PASS·기존 connected2 SKIP. FAIL/ERROR/DESELECTED/XFAIL/SETUP_OR_IMPORT_FAILURE=0, 실행 전후 소스 동일. 운영 실행기 `ce7bf1bef3d68db083649c1f93fe8cdc330d57ae78ab833f209137628da4741e` delta review는 두 지적 RESOLVED, B0/H0/M0/L0 PASS. 제품 만료 지적은 이 문서가 포함된 다음 고정 SHA로 재검토한다.
+
+## 첫 연결 실행과 정확 정리 — 실패 이력 유지
+
+고정38435a74735031198dbcad25313599ec1650d10b는 독립 보안 delta PASS/B0H0M0L0, PR26 CI34007787696 및 develop CI34007970412 exactSHA success였다. review 브랜치의 GitHub Deployment/Vercel check/status0과 실제Vercel 후보배포0을 정착 후 확인한 뒤, 기준16e9a63 불변에서 같은 SHA로 FF했다. 실제 Preview 별칭은 dpl_JN7jJq4i9MBPGM3ZqwPyZ4gggyjw READY/38435a7, GitHub Deployment6288523005/status17885986491 success, 인증HTTP/보안헤더 PASS였다. 사용자 .gitignore 및 기존 미추적파일10개의 바이트를 보존했다.
+
+임시 함수953494d4의 version1/JWTtrue/실제소스3개=고정커밋 바이트 확인 후 첫 hosted 검증에서 비로그인401 PASS, 익명 role403(예상401) FAIL이 발생했다. 이어지는 잘못된 challenge/Origin/암호화 회수는 NOT_RUN이다. finally의 정확 source/ID/version 대조 후 함수 DELETE·별도부재조회·기존5함수/두설정 불변은 PASS다. 원문 회수파일은 생성되지 않았고 공급자/실사용 자료 mutation0이다. 정리 성공은 앞선 실패를 바꾸지 않는다.
+
+최초 실행기는 실패의 예상·실제 상태를 별도로 남기지 못했으므로 두 HTTP 상태는 기존 해당 시험 함수 로그의 제한 SELECT로 다시 확인했다. 인증 헤더/본문/원시 URL/실사용 로그는 읽지 않았다. 로그 API의 offset형식 시각은400 ERROR였고 UTC Z 형식의 기존 필드 SQL 조회로 해결했다.
+
+Exa로 확인한 [Supabase 공식 routing 문서](https://supabase.com/docs/guides/functions/routing)는 함수 내부 경로가 함수 이름을 접두사로 사용함을 명시한다. 기존 로컬 내부HTTP 검사는 gateway 전체 경로만 사용하여 이 플랫폼 변환을 입증하지 못했다. 따라서 고정 호스트에서 정확한 외부 `/functions/v1/<고정함수>`와 내부 `/<고정함수>` 두 경로만 수용하도록 수정한다. 추가 경로/query/Origin/타호스트/port 거절과 service-role·challenge·만료 검증은 유지한다. 실제403의 상세 오류 본문은 당시 보존하지 않았으므로 내부 경로 원인은 공식 계약·코드에 근거한 진단이며 수정 후 연결에서 확인해야 한다. 익명401 기대를403으로 낮추지 않는다.
+
+두 번째 시도는 새 고유 함수명 f3b3f3d5와 별도 owner-private 증거 디렉터리를 사용한다. 수신자와 기존 만료시각은 그대로이며 원래 개인키·challenge·실패·정리 증거를 보존한다. 운영 실행기60d8f087a40da7f45f47e959edc358871b5b12f887bb0dc21fa4a8f152142cf4는 사례별 예상/실제HTTP와 고정 허용 오류코드만 배타 파일에 기록하며 임의 응답 본문은 기록하지 않는다. 정리 회귀3 PASS/구문 PASS, 고정 후보 baseline·독립 delta·CI·무배포·배포·재연결은 순서대로 수행한다.
+
+두 번째 후보 전체 baseline: npmci/lint/typecheck/Deno6/Chromium설치/build/diff PASS, Vitest556 PASS/Node7 PASS/Chromium20 PASS·기존connected2 SKIP, 최종FAIL/ERROR/DESELECTED/XFAIL/SETUP_OR_IMPORT_FAILURE=0 및 소스전후불변. focused 초기 beforeAll pin 참조의 setup실패는 고정합성프로젝트 상수로 수정하여 해소했다. 고정 SHA 독립 delta review는 다음 단계다.

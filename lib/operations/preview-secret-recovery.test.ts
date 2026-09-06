@@ -9,8 +9,9 @@ import {
 
 const crypto = webcrypto as unknown as Crypto;
 const now = 2_000_000_000_000;
-const supabaseUrl = "https://abcdefghijklmnopqrst.supabase.co";
-const functionName = "preview-secret-recovery-953494d4";
+const projectRef = "abcdefghijklmnopqrst";
+const supabaseUrl = `https://${projectRef}.supabase.co`;
+const functionName = "preview-secret-recovery-f3b3f3d5";
 const challenge = Buffer.alloc(32, 7).toString("base64url");
 const serviceRole = "synthetic-service-role.jwt.value";
 const values = {
@@ -88,7 +89,7 @@ beforeAll(async () => {
   }, true, ["wrapKey", "unwrapKey"]);
   const spki = new Uint8Array(await crypto.subtle.exportKey("spki", keyPair.publicKey));
   pin = {
-    projectRef: "abcdefghijklmnopqrst",
+    projectRef,
     supabaseUrl,
     functionName,
     buildId: "11111111-1111-4111-8111-111111111111",
@@ -146,6 +147,9 @@ describe("Preview secret recovery handler", () => {
 
   it.each([
     ["foreign project URL", { url: `https://zzzzzzzzzzzzzzzzzzzz.supabase.co/functions/v1/${functionName}` }, 403],
+    ["foreign runtime function", { url: `http://${projectRef}.supabase.co/${functionName}-foreign` }, 403],
+    ["missing runtime function", { url: `http://${projectRef}.supabase.co/` }, 403],
+    ["additional runtime path", { url: `http://${projectRef}.supabase.co/${functionName}/extra` }, 403],
     ["query string", { url: `${supabaseUrl}/functions/v1/${functionName}?recipient=foreign` }, 403],
     ["Origin", { headers: { authorization: `Bearer ${serviceRole}`, "content-type": "application/json", origin: supabaseUrl } }, 403],
     ["null Origin", { headers: { authorization: `Bearer ${serviceRole}`, "content-type": "application/json", origin: "null" } }, 403],
@@ -177,6 +181,31 @@ describe("Preview secret recovery handler", () => {
     }));
     expect(response.status).toBe(200);
     expect((await response.json()).version).toBe(1);
+  });
+
+  it("routes the documented runtime path to service-role encryption and anonymous authentication", async () => {
+    const runtimeUrl = `http://${pin.projectRef}.supabase.co/${functionName}`;
+    const serviceResponse = await createRecoveryHandler(pin, runtime())(request({ url: runtimeUrl }));
+    const payload = await serviceResponse.json() as {
+      version: number;
+      iv: string;
+      wrappedKey: string;
+      ciphertext: string;
+    };
+    expect(serviceResponse.status).toBe(200);
+    expect(Object.keys(payload)).toEqual(["version", "iv", "wrappedKey", "ciphertext"]);
+    expect(JSON.parse(await decrypt(payload, keyPair.privateKey))).toEqual(values);
+
+    const anonymousRuntime = runtime();
+    const anonymousResponse = await createRecoveryHandler(pin, anonymousRuntime)(request({
+      url: runtimeUrl,
+      headers: { "content-type": "application/json" },
+    }));
+    expect(anonymousResponse.status).toBe(401);
+    expect(await anonymousResponse.json()).toEqual({ error: "RECOVERY_AUTHORIZATION_INVALID" });
+    expect(anonymousRuntime.getEnv.mock.calls.map(([name]) => name)).toEqual([
+      "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY",
+    ]);
   });
 
   it.each([

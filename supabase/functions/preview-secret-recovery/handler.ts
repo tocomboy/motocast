@@ -90,7 +90,7 @@ function validatePinShape(pin: RecoveryPin): void {
   if (
     !/^[a-z]{20}$/.test(pin.projectRef) ||
     pin.supabaseUrl !== `https://${pin.projectRef}.supabase.co` ||
-    pin.functionName !== "preview-secret-recovery-953494d4" ||
+    pin.functionName !== "preview-secret-recovery-f3b3f3d5" ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(pin.buildId) ||
     !Number.isSafeInteger(pin.notBefore) ||
     !Number.isSafeInteger(pin.expiresAt) ||
@@ -217,13 +217,17 @@ function validateRequestUrl(request: Request, pin: RecoveryPin): void {
   } catch {
     fail(403, "RECOVERY_PROJECT_MISMATCH");
   }
+  const allowedPaths = [
+    `/functions/v1/${pin.functionName}`,
+    `/${pin.functionName}`,
+  ];
   if (
     (url.protocol !== "http:" && url.protocol !== "https:") ||
     url.hostname !== `${pin.projectRef}.supabase.co` ||
     url.port !== "" ||
     url.username !== "" ||
     url.password !== "" ||
-    url.pathname !== `/functions/v1/${pin.functionName}` ||
+    !allowedPaths.includes(url.pathname) ||
     url.search !== "" ||
     url.hash !== ""
   ) fail(403, "RECOVERY_PROJECT_MISMATCH");

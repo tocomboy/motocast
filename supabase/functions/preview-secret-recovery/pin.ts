@@ -2,7 +2,7 @@
 export const RECOVERY_PIN = {
   "projectRef": "lehjmbgfpoemqcwxowbx",
   "supabaseUrl": "https://lehjmbgfpoemqcwxowbx.supabase.co",
-  "functionName": "preview-secret-recovery-953494d4",
+  "functionName": "preview-secret-recovery-f3b3f3d5",
   "buildId": "953494d4-9a1d-4d55-b479-63a733641342",
   "notBefore": 1788660798365,
   "expiresAt": 1788682398365,
