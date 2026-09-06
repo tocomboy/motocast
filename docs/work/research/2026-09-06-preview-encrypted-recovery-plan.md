@@ -50,3 +50,11 @@ Exa 공식 조사에서 [KMA 이용안내](https://apihub.kma.go.kr/apiInfo.do)�
 초기 개발 검증의 Vitest 1 FAIL(헤더 공백의 Request 정규화), Node 실행 설정 오류, Deno 네트워크 설치 오류는 최종 PASS와 별개 이력으로 남긴다. 실제 헤더에 보존되는 틀린 바이트를 검증하여 거절 계약을 유지했고, CLI 진입점과 정확한 저장소 경계 검사를 바로잡았다. lead 대조에서 발견한 관리 API의 `value` 해시 필드, 내부 HTTP ingress, 불완전 파일 정리 오류 보고, 고유 함수 이름 결속도 수정 후 위 최종 baseline으로 재검증했다. assertion 완화나 신규 skip/xfail은 없다.
 
 다음 상태는 **고정 SHA 독립 검토 대기**다. 이 문서와 임시 도구의 리뷰/CI PASS는 두 개의 남은 실제 장애 gate나 Production 승인을 대신하지 않는다.
+
+## 독립 검토 수정 라운드
+
+첫 고정 aee77525687e54d801395d30d719aeceee55dc8d의 독립 보안 검토는 B0/H0/M1/L0이었다. 만료 직전에 들어와 본문 또는 암호화 처리 중 만료되는 요청이 성공할 수 있다는 지적을 반영했다. 실제 시계를 대상 환경변수 읽기 직전과 성공 응답 직전에 재검사하며, 두 advancing-clock 회귀 사례를 추가해 handler24 PASS를 확인했다. 최초 finding은 최종 고정 SHA delta review에서 별도 판정한다.
+
+별도 로컬 운영 실행기는 고정 SHA의 config/entry/handler/pin 바이트를 배포 직전 대조하고, source hash를 변경 가능한 작업 트리가 아닌 해당 커밋에서 산출한다. 정리 재시도는 매번 새 배타적 다운로드 디렉터리와 현재 ID/version/source를 사용한다. 첫 운영 검토의 MEDIUM2(같은 HEAD의 dirty 배포 허용, 실패 후 고정 증거 디렉터리 충돌)는 수정했고 합성 회귀3 PASS/구문 PASS를 확인했다. 운영 코드 hash와 최종 reviewer 판정은 실제 실행 journal에 결속한다. 원격 작업은 아직 NOT_RUN이다.
+
+수정 후 전체 필수 baseline 재실행: npmci/lint/typecheck/Deno6/Chromium 설치/build/diff PASS, Vitest552 PASS/Node7 PASS/Chromium20 PASS·기존 connected2 SKIP. FAIL/ERROR/DESELECTED/XFAIL/SETUP_OR_IMPORT_FAILURE=0, 실행 전후 소스 동일. 운영 실행기 `ce7bf1bef3d68db083649c1f93fe8cdc330d57ae78ab833f209137628da4741e` delta review는 두 지적 RESOLVED, B0/H0/M0/L0 PASS. 제품 만료 지적은 이 문서가 포함된 다음 고정 SHA로 재검토한다.

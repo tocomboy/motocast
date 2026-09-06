@@ -31,7 +31,8 @@ function request(overrides: {
   url?: string;
   method?: string;
   headers?: Record<string, string>;
-  body?: string;
+  body?: BodyInit;
+  duplex?: "half";
 } = {}): Request {
   return new Request(overrides.url ?? `${supabaseUrl}/functions/v1/${functionName}`, {
     method: overrides.method ?? "POST",
@@ -40,7 +41,8 @@ function request(overrides: {
       "content-type": "application/json",
     },
     body: overrides.method === "GET" ? undefined : overrides.body ?? JSON.stringify({ challenge }),
-  });
+    ...(overrides.duplex ? { duplex: overrides.duplex } : {}),
+  } as RequestInit);
 }
 
 function runtime(environmentOverrides: Record<string, string | undefined> = {}) {
@@ -184,6 +186,61 @@ describe("Preview secret recovery handler", () => {
     const response = await createRecoveryHandler(pin, { ...runtime(), ...clock })(request());
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: code });
+  });
+
+  it("rechecks expiry after a delayed request body before reading either target", async () => {
+    let currentTime = now;
+    const stream = new TransformStream<Uint8Array, Uint8Array>();
+    const writer = stream.writable.getWriter();
+    const testRuntime = { ...runtime(), now: () => currentTime };
+    const responsePromise = createRecoveryHandler(pin, testRuntime)(request({
+      body: stream.readable,
+      duplex: "half",
+    }));
+
+    await Promise.resolve();
+    currentTime = pin.expiresAt;
+    await writer.write(new TextEncoder().encode(JSON.stringify({ challenge })));
+    await writer.close();
+
+    const response = await responsePromise;
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "RECOVERY_WINDOW_EXPIRED" });
+    expect(testRuntime.getEnv.mock.calls.map(([name]) => name)).toEqual([
+      "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY",
+    ]);
+  });
+
+  it("rechecks expiry after encryption and returns no ciphertext", async () => {
+    let currentTime = now;
+    const subtle = new Proxy(crypto.subtle, {
+      get(target, property) {
+        if (property === "encrypt") {
+          return async (...args: Parameters<SubtleCrypto["encrypt"]>) => {
+            const ciphertext = await target.encrypt(...args);
+            currentTime = pin.expiresAt;
+            return ciphertext;
+          };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const delayedCrypto = {
+      subtle,
+      getRandomValues: crypto.getRandomValues.bind(crypto),
+      randomUUID: crypto.randomUUID.bind(crypto),
+    } as Crypto;
+    const testRuntime = { ...runtime(), now: () => currentTime, crypto: delayedCrypto };
+
+    const response = await createRecoveryHandler(pin, testRuntime)(request());
+    const body = await response.json();
+    expect(response.status).toBe(403);
+    expect(body).toEqual({ error: "RECOVERY_WINDOW_EXPIRED" });
+    expect(body).not.toHaveProperty("ciphertext");
+    expect(testRuntime.getEnv.mock.calls.map(([name]) => name)).toEqual([
+      "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "KMA_APIHUB_KEY", "KMA_DAILY_LIMIT",
+    ]);
   });
 
   it("rejects an overlong configured window and noncanonical request JSON", async () => {

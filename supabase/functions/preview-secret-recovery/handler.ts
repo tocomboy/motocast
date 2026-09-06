@@ -229,6 +229,14 @@ function validateRequestUrl(request: Request, pin: RecoveryPin): void {
   ) fail(403, "RECOVERY_PROJECT_MISMATCH");
 }
 
+function validateRecoveryWindow(pin: RecoveryPin, now: () => number): void {
+  const currentTime = now();
+  if (!Number.isSafeInteger(currentTime) || currentTime + CLOCK_MARGIN_MS < pin.notBefore) {
+    fail(403, "RECOVERY_WINDOW_INACTIVE");
+  }
+  if (currentTime >= pin.expiresAt) fail(403, "RECOVERY_WINDOW_EXPIRED");
+}
+
 export function createRecoveryHandler(pin: RecoveryPin, runtime: RecoveryRuntime) {
   return async (request: Request): Promise<Response> => {
     try {
@@ -236,11 +244,8 @@ export function createRecoveryHandler(pin: RecoveryPin, runtime: RecoveryRuntime
       const runtimeCrypto = runtime.crypto ?? globalThis.crypto;
       if (!runtimeCrypto?.subtle) fail(500, "RECOVERY_CONFIGURATION_INVALID");
 
-      const now = (runtime.now ?? Date.now)();
-      if (!Number.isSafeInteger(now) || now + CLOCK_MARGIN_MS < pin.notBefore) {
-        fail(403, "RECOVERY_WINDOW_INACTIVE");
-      }
-      if (now >= pin.expiresAt) fail(403, "RECOVERY_WINDOW_EXPIRED");
+      const now = runtime.now ?? Date.now;
+      validateRecoveryWindow(pin, now);
       validateRequestUrl(request, pin);
       if (request.headers.has("origin")) fail(403, "RECOVERY_ORIGIN_REJECTED");
       if (request.method !== "POST") fail(405, "RECOVERY_METHOD_NOT_ALLOWED");
@@ -268,6 +273,7 @@ export function createRecoveryHandler(pin: RecoveryPin, runtime: RecoveryRuntime
       }
 
       const recipient = await validateRecipient(runtimeCrypto, pin);
+      validateRecoveryWindow(pin, now);
       const apiHubKey = runtime.getEnv(TARGET_NAMES[0]);
       const dailyLimit = runtime.getEnv(TARGET_NAMES[1]);
       if (typeof apiHubKey !== "string" || typeof dailyLimit !== "string") {
@@ -293,13 +299,14 @@ export function createRecoveryHandler(pin: RecoveryPin, runtime: RecoveryRuntime
           plaintext,
         ),
       ]);
-
-      return new Response(JSON.stringify({
+      const responseBody = JSON.stringify({
         version: 1,
         iv: encodeBase64(iv),
         wrappedKey: encodeBase64(wrappedKey),
         ciphertext: encodeBase64(ciphertext),
-      }), { status: 200, headers: SAFE_HEADERS });
+      });
+      validateRecoveryWindow(pin, now);
+      return new Response(responseBody, { status: 200, headers: SAFE_HEADERS });
     } catch (error) {
       if (error instanceof RecoveryRequestError) return jsonError(error.status, error.code);
       return jsonError(500, "RECOVERY_INTERNAL_FAILURE");
