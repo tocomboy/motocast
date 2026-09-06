@@ -19,7 +19,7 @@ Exa 공식 조사에서 [KMA 이용안내](https://apihub.kma.go.kr/apiInfo.do)�
 
 서버는 고정 프로젝트·함수·공개키·build ID·6시간 이하 유효기간·challenge 해시에 결속된다. `verify_jwt=true`에 더해 정확한 legacy service-role Bearer를 검증한다. 일반 회원/익명/타 프로젝트 JWT, Origin 헤더, query string, 잘못된 메서드·본문·challenge, 만료 정각 이후는 거절한다. 요청이 변수 이름·공개키·목적지·만료를 지정할 수 없다.
 
-인증과 환경 결속에는 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`만 읽는다. 인증 뒤 내보낼 원문은 `KMA_APIHUB_KEY`, `KMA_DAILY_LIMIT` 두 문자열뿐이다. 환경 전체 열거, DB/provider/fetch, 로그 출력은 금지한다. 원문·다이제스트·인증 헤더·challenge를 응답에 노출하지 않는다. 새 AES-GCM 키와 IV로 암호화하고 고정 RSA-OAEP 공개키로 AES 키를 감싼다. 암호문은 고정 실행 메타데이터와 인증 결합하며 응답은 no-store다. 오류는 고정 코드만 반환한다.
+환경 결속에는 `SUPABASE_URL`만 읽는다. 인증은 실행별 비공개 challenge를 HMAC 키로 사용하여 정확한 관리 선택 service-role Bearer 하나를 공개 `serviceRoleBinding`에 결속한다. 런타임 `SUPABASE_SERVICE_ROLE_KEY`는 읽지 않는다. 인증 뒤 내보낼 원문은 `KMA_APIHUB_KEY`, `KMA_DAILY_LIMIT` 두 문자열뿐이다. 환경 전체 열거, DB/provider/fetch, 로그 출력은 금지한다. 원문·다이제스트·인증 헤더·challenge를 응답에 노출하지 않는다. 새 AES-GCM 키와 IV로 암호화하고 고정 RSA-OAEP 공개키로 AES 키를 감싼다. 암호문은 고정 실행 메타데이터와 인증 결합하며 응답은 no-store다. 오류는 고정 코드만 반환한다.
 
 무상태 함수는 모든 isolate에 걸친 1회성을 보장하지 않는다. 같은 challenge의 재호출도 유효기간 안에서 같은 수신자 공개키에만 암호화할 수 있다. 클라이언트는 자동 재시도하지 않으며 응답 유실은 정리 의무를 남긴다. 암호문·개인키·복호화 자료는 저장소 밖 Linux 소유자 전용 디렉터리0700/파일0600에 배타적으로 보관한다. symlink·덮어쓰기·리디렉션은 거절하고 정확한 원문 바이트를 trim/숫자 변환 없이 대조한다.
 
@@ -72,3 +72,19 @@ Exa로 확인한 [Supabase 공식 routing 문서](https://supabase.com/docs/guid
 두 번째 시도는 새 고유 함수명 f3b3f3d5와 별도 owner-private 증거 디렉터리를 사용한다. 수신자와 기존 만료시각은 그대로이며 원래 개인키·challenge·실패·정리 증거를 보존한다. 운영 실행기60d8f087a40da7f45f47e959edc358871b5b12f887bb0dc21fa4a8f152142cf4는 사례별 예상/실제HTTP와 고정 허용 오류코드만 배타 파일에 기록하며 임의 응답 본문은 기록하지 않는다. 정리 회귀3 PASS/구문 PASS, 고정 후보 baseline·독립 delta·CI·무배포·배포·재연결은 순서대로 수행한다.
 
 두 번째 후보 전체 baseline: npmci/lint/typecheck/Deno6/Chromium설치/build/diff PASS, Vitest556 PASS/Node7 PASS/Chromium20 PASS·기존connected2 SKIP, 최종FAIL/ERROR/DESELECTED/XFAIL/SETUP_OR_IMPORT_FAILURE=0 및 소스전후불변. focused 초기 beforeAll pin 참조의 setup실패는 고정합성프로젝트 상수로 수정하여 해소했다. 고정 SHA 독립 delta review는 다음 단계다.
+
+## 두 번째 연결과 인증 기준 진단
+
+고정f2d87b738375f39f020241549e3fc1fd5c26ffa5는 독립 delta B0H0M0L0 PASS, PR27 CI34008578872/develop34008853549 exactSHA success, 정착후 GitHub deploy/Vercelcheck/status0·실제Vercel후보0 확인후 unchanged38435a7에서같은SHA FF했다. 실제별칭 dpl_AKEQq6McSaYTfJ1QiHuEi4z3S7JV READY·인증HTTP/보안헤더PASS다.
+
+hosted denial4 PASS: 비로그인401, 익명role401/RECOVERY_AUTHORIZATION_INVALID, 잘못된challenge403/RECOVERY_CHALLENGE_INVALID, Origin403/RECOVERY_ORIGIN_REJECTED. 그뒤 회수요청은401 FAIL이었고 원본파일미생성이다. exact source/ID/version삭제·별도부재·기존함수/설정불변은PASS. 이전경로결함은해소됐으나회수gate를PASS로바꾸지않는다.
+
+공식 [관리 API 키 조회](https://supabase.com/docs/reference/api/v1-get-project-api-keys)와 [환경변수 문서](https://supabase.com/docs/guides/functions/secrets)를 Exa로 대조했다. 값출력없이기본조회와reveal=true의선택키가같고 legacyHS256/기대한role·project·유효기간·서명형식임을확인했다. 선택키hash와원격기본SUPABASE_SERVICE_ROLE_KEY 메타데이터hash는일치하지않았다. 같은Node클라이언트와선택키로기존weatherGET을한번보내gateway통과405/METHOD_NOT_ALLOWED를확인했다. 이GET은코드상인증사용자조회·예산·provider전에종료되어provider0/자료mutation0이다. 기존기본키나JWT설정을고치지않는다. R2응답상세오류는보존되지않아401전체를암호화오류로부르지않는다.
+
+독립architect의실행별HMAC설계를lead가국소수정READY로채택했다. `serviceRoleBinding = HMAC-SHA256(decodedChallenge32, UTF8(JSON.stringify([domain, projectRef, functionName, buildId, exactServiceRoleJwt])))`이며domain은고정motocast-preview-recovery-service-role-v1이다. 태그는pin마지막필드와암호문AAD에포함하고자기HMAC메시지에는넣지않는다. 고정credential SHA나JWT/challenge원문을커밋하지않는다. 서버는기존challenge검증후Bearer의HMAC를상수시간비교하고불일치401/대상값조회0을유지한다. 클라이언트는선택키의결속을POST전검사해불일치시요청0/파일0으로끝낸다. 다른service키·일반역할을허용하는fallback이나role주장만읽는방식은없다. `verify_jwt=true`, 프로젝트·경로·Origin·수신자·만료보호는그대로다.
+
+R3 새고유함수147b2d57·새challenge/build·기존수신자/만료로준비했고기존증거는보존했다. 구현·필수baseline·고정delta검토·비배포CI·실제무배포·sameSHA배포·연결·정리순서를다시적용한다. 기존실사용계정/자료·공급자·KMA설정·main/Production변경은0이다.
+
+R3 동결 소스 전체 baseline: npm ci/lint/typecheck/Deno2.9.6 6개/Chromium 설치/build/diff PASS, Vitest560 PASS, Node8 PASS, Chromium20 PASS·기존 connected2 SKIP. FAIL/ERROR/DESELECTED/XFAIL/SETUP_OR_IMPORT_FAILURE=0, 실행 전후 소스 동일. R3 실제 회수와 두 장애 gate는 NOT_RUN이다. 실행별 HMAC는 새로운 인증 경계이므로 고정 SHA에서 새 독립 보안 검토를 받는다.
+
+로컬 운영 실행기 R3 SHA256 `81fbf25016386151b36e2cd21747de73fa73b1a31a40554fbc8299762567ca09`, 영속 복원본 보관 실행기 R3 SHA256 `969337ebf927adc0b6e212c8c5dcb3beb860a8bbcef70fb679b16a71e29ba068`도 별도 검토 대상으로 결속한다. 전자는 정확한 임시 함수·고정 소스·설정 불변과 finally 정리를, 후자는 원문 hash 대조·소유자 전용 배타 파일·상위 디렉터리까지 fsync 후 재조회만 수행한다. 인증 회수 실패는 숫자 HTTP 상태와 고정 허용 오류 코드만 보존한다.

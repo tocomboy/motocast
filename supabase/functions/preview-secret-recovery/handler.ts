@@ -8,6 +8,7 @@ export type RecoveryPin = {
   recipientSpki: string;
   recipientFingerprint: string;
   challengeSha256: string;
+  serviceRoleBinding: string;
 };
 
 type RecoveryRuntime = {
@@ -85,12 +86,13 @@ function validatePinShape(pin: RecoveryPin): void {
     "recipientSpki",
     "recipientFingerprint",
     "challengeSha256",
+    "serviceRoleBinding",
   ])) fail(500, "RECOVERY_CONFIGURATION_INVALID");
 
   if (
     !/^[a-z]{20}$/.test(pin.projectRef) ||
     pin.supabaseUrl !== `https://${pin.projectRef}.supabase.co` ||
-    pin.functionName !== "preview-secret-recovery-f3b3f3d5" ||
+    pin.functionName !== "preview-secret-recovery-147b2d57" ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(pin.buildId) ||
     !Number.isSafeInteger(pin.notBefore) ||
     !Number.isSafeInteger(pin.expiresAt) ||
@@ -98,7 +100,8 @@ function validatePinShape(pin: RecoveryPin): void {
     pin.expiresAt - pin.notBefore > MAX_LIFETIME_MS + CLOCK_MARGIN_MS ||
     typeof pin.recipientSpki !== "string" ||
     !validHexSha256(pin.recipientFingerprint) ||
-    !validHexSha256(pin.challengeSha256)
+    !validHexSha256(pin.challengeSha256) ||
+    !validHexSha256(pin.serviceRoleBinding)
   ) fail(500, "RECOVERY_CONFIGURATION_INVALID");
 }
 
@@ -113,6 +116,7 @@ export function recoveryPinAad(pin: RecoveryPin): Uint8Array {
     recipientSpki: pin.recipientSpki,
     recipientFingerprint: pin.recipientFingerprint,
     challengeSha256: pin.challengeSha256,
+    serviceRoleBinding: pin.serviceRoleBinding,
   }));
 }
 
@@ -186,6 +190,42 @@ function constantTimeEqual(left: Uint8Array, right: Uint8Array): boolean {
 async function sha256(runtimeCrypto: Crypto, value: string | Uint8Array): Promise<Uint8Array> {
   const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
   return new Uint8Array(await runtimeCrypto.subtle.digest("SHA-256", bytes.slice().buffer as ArrayBuffer));
+}
+
+function hexToBytes(value: string): Uint8Array {
+  const bytes = new Uint8Array(value.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+async function computeServiceRoleBinding(
+  runtimeCrypto: Crypto,
+  challenge: string,
+  pin: RecoveryPin,
+  bearerJwt: string,
+): Promise<Uint8Array> {
+  const challengeBytes = decodeBase64(challenge.replace(/-/g, "+").replace(/_/g, "/") + "=");
+  const key = await runtimeCrypto.subtle.importKey(
+    "raw",
+    challengeBytes.slice().buffer as ArrayBuffer,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const message = new TextEncoder().encode(JSON.stringify([
+    "motocast-preview-recovery-service-role-v1",
+    pin.projectRef,
+    pin.functionName,
+    pin.buildId,
+    bearerJwt,
+  ]));
+  return new Uint8Array(await runtimeCrypto.subtle.sign(
+    "HMAC",
+    key,
+    message.buffer as ArrayBuffer,
+  ));
 }
 
 async function validateRecipient(runtimeCrypto: Crypto, pin: RecoveryPin): Promise<CryptoKey> {
@@ -262,17 +302,12 @@ export function createRecoveryHandler(pin: RecoveryPin, runtime: RecoveryRuntime
       if (challengeDigest !== pin.challengeSha256) fail(403, "RECOVERY_CHALLENGE_INVALID");
 
       const configuredUrl = runtime.getEnv("SUPABASE_URL");
-      const serviceRole = runtime.getEnv("SUPABASE_SERVICE_ROLE_KEY");
-      if (configuredUrl !== pin.supabaseUrl || typeof serviceRole !== "string" || serviceRole.length === 0) {
-        fail(500, "RECOVERY_CONFIGURATION_INVALID");
-      }
+      if (configuredUrl !== pin.supabaseUrl) fail(500, "RECOVERY_CONFIGURATION_INVALID");
       const authorization = request.headers.get("authorization");
       const presented = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
-      const [presentedDigest, expectedDigest] = await Promise.all([
-        sha256(runtimeCrypto, presented),
-        sha256(runtimeCrypto, serviceRole),
-      ]);
-      if (!authorization || presented.length === 0 || !constantTimeEqual(presentedDigest, expectedDigest)) {
+      const presentedBinding = await computeServiceRoleBinding(runtimeCrypto, challenge, pin, presented);
+      if (!authorization || presented.length === 0 ||
+          !constantTimeEqual(presentedBinding, hexToBytes(pin.serviceRoleBinding))) {
         fail(401, "RECOVERY_AUTHORIZATION_INVALID");
       }
 

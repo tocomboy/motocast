@@ -11,9 +11,10 @@ const crypto = webcrypto as unknown as Crypto;
 const now = 2_000_000_000_000;
 const projectRef = "abcdefghijklmnopqrst";
 const supabaseUrl = `https://${projectRef}.supabase.co`;
-const functionName = "preview-secret-recovery-f3b3f3d5";
+const functionName = "preview-secret-recovery-147b2d57";
 const challenge = Buffer.alloc(32, 7).toString("base64url");
 const serviceRole = "synthetic-service-role.jwt.value";
+const roleClaimOnlyToken = `synthetic.${Buffer.from(JSON.stringify({ role: "service_role" })).toString("base64url")}.signature`;
 const values = {
   KMA_APIHUB_KEY: "  합성-API-키\n두 번째 줄  ",
   KMA_DAILY_LIMIT: " 0020 \t",
@@ -26,6 +27,28 @@ let pin: RecoveryPin;
 async function sha256Hex(value: string | Uint8Array): Promise<string> {
   const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
   return Buffer.from(await crypto.subtle.digest("SHA-256", bytes.slice().buffer as ArrayBuffer)).toString("hex");
+}
+
+async function serviceRoleBindingHex(
+  challengeValue: string,
+  pinValue: Pick<RecoveryPin, "projectRef" | "functionName" | "buildId">,
+  bearerJwt: string,
+): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    Buffer.from(challengeValue, "base64url"),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const message = new TextEncoder().encode(JSON.stringify([
+    "motocast-preview-recovery-service-role-v1",
+    pinValue.projectRef,
+    pinValue.functionName,
+    pinValue.buildId,
+    bearerJwt,
+  ]));
+  return Buffer.from(await crypto.subtle.sign("HMAC", key, message)).toString("hex");
 }
 
 function request(overrides: {
@@ -49,7 +72,6 @@ function request(overrides: {
 function runtime(environmentOverrides: Record<string, string | undefined> = {}) {
   const environment: Record<string, string | undefined> = {
     SUPABASE_URL: supabaseUrl,
-    SUPABASE_SERVICE_ROLE_KEY: serviceRole,
     ...values,
     ...environmentOverrides,
   };
@@ -88,7 +110,7 @@ beforeAll(async () => {
     name: "RSA-OAEP", modulusLength: 3072, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256",
   }, true, ["wrapKey", "unwrapKey"]);
   const spki = new Uint8Array(await crypto.subtle.exportKey("spki", keyPair.publicKey));
-  pin = {
+  const basePin = {
     projectRef,
     supabaseUrl,
     functionName,
@@ -98,6 +120,10 @@ beforeAll(async () => {
     recipientSpki: Buffer.from(spki).toString("base64"),
     recipientFingerprint: await sha256Hex(spki),
     challengeSha256: await sha256Hex(challenge),
+  };
+  pin = {
+    ...basePin,
+    serviceRoleBinding: await serviceRoleBindingHex(challenge, basePin, serviceRole),
   };
 });
 
@@ -118,11 +144,12 @@ describe("Preview secret recovery handler", () => {
     expect(Buffer.from(payload.iv, "base64")).toHaveLength(12);
     expect(JSON.parse(await decrypt(payload, keyPair.privateKey))).toEqual(values);
     expect(testRuntime.getEnv.mock.calls.map(([name]) => name)).toEqual([
-      "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "KMA_APIHUB_KEY", "KMA_DAILY_LIMIT",
+      "SUPABASE_URL", "KMA_APIHUB_KEY", "KMA_DAILY_LIMIT",
     ]);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(JSON.stringify(payload)).not.toContain(serviceRole);
     expect(JSON.stringify(payload)).not.toContain(challenge);
+    expect(JSON.stringify(payload)).not.toContain(pin.serviceRoleBinding);
     expect(JSON.stringify(payload)).not.toContain(values.KMA_APIHUB_KEY);
     expect(JSON.stringify(payload)).not.toContain(values.KMA_DAILY_LIMIT);
   });
@@ -131,6 +158,8 @@ describe("Preview secret recovery handler", () => {
     ["missing", undefined],
     ["anonymous", "Bearer synthetic-anon.jwt.value"],
     ["foreign user", "Bearer synthetic-user.jwt.value"],
+    ["unbound runtime service role", "Bearer synthetic-runtime-service.jwt.value"],
+    ["role claim only", `Bearer ${roleClaimOnlyToken}`],
     ["wrong scheme", `Basic ${serviceRole}`],
     ["extra bearer bytes", `Bearer ${serviceRole}x`],
   ])("rejects %s authorization before reading target values", async (_label, authorization) => {
@@ -141,8 +170,58 @@ describe("Preview secret recovery handler", () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: "RECOVERY_AUTHORIZATION_INVALID" });
     expect(testRuntime.getEnv.mock.calls.map(([name]) => name)).toEqual([
-      "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_URL",
     ]);
+  });
+
+  it("accepts the bound JWT without reading the runtime service-role variable", async () => {
+    const environment: Record<string, string | undefined> = { SUPABASE_URL: supabaseUrl, ...values };
+    const getEnv = vi.fn((name: string) => {
+      if (name === "SUPABASE_SERVICE_ROLE_KEY") throw new Error("synthetic runtime key detail");
+      return environment[name];
+    });
+    const response = await createRecoveryHandler(pin, { getEnv, now: () => now, crypto })(request());
+    expect(response.status).toBe(200);
+    expect(getEnv.mock.calls.map(([name]) => name)).toEqual([
+      "SUPABASE_URL", "KMA_APIHUB_KEY", "KMA_DAILY_LIMIT",
+    ]);
+  });
+
+  it("rejects stale bindings after challenge, project, build, or function changes and malformed tags", async () => {
+    const otherChallenge = Buffer.alloc(32, 9).toString("base64url");
+    const changedChallengePin = { ...pin, challengeSha256: await sha256Hex(otherChallenge) };
+    const challengeResponse = await createRecoveryHandler(changedChallengePin, runtime())(request({
+      body: JSON.stringify({ challenge: otherChallenge }),
+    }));
+    expect(challengeResponse.status).toBe(401);
+
+    const otherProjectRef = "bcdefghijklmnopqrstu";
+    const otherSupabaseUrl = `https://${otherProjectRef}.supabase.co`;
+    const changedProjectPin = { ...pin, projectRef: otherProjectRef, supabaseUrl: otherSupabaseUrl };
+    const projectResponse = await createRecoveryHandler(
+      changedProjectPin,
+      runtime({ SUPABASE_URL: otherSupabaseUrl }),
+    )(request({ url: `${otherSupabaseUrl}/functions/v1/${functionName}` }));
+    expect(projectResponse.status).toBe(401);
+
+    const changedBuildPin = { ...pin, buildId: "22222222-2222-4222-8222-222222222222" };
+    const buildResponse = await createRecoveryHandler(changedBuildPin, runtime())(request());
+    expect(buildResponse.status).toBe(401);
+
+    const changedFunctionPin = { ...pin, functionName: "preview-secret-recovery-00000000" };
+    const functionResponse = await createRecoveryHandler(changedFunctionPin, runtime())(request());
+    expect(functionResponse.status).toBe(500);
+    expect(await functionResponse.json()).toEqual({ error: "RECOVERY_CONFIGURATION_INVALID" });
+
+    const malformedBindingResponse = await createRecoveryHandler(
+      { ...pin, serviceRoleBinding: "not-a-binding" },
+      runtime(),
+    )(request());
+    expect(malformedBindingResponse.status).toBe(500);
+    expect(await malformedBindingResponse.json()).toEqual({ error: "RECOVERY_CONFIGURATION_INVALID" });
+    expect([challengeResponse, projectResponse, buildResponse].every(
+      (response) => response.status === 401,
+    )).toBe(true);
   });
 
   it.each([
@@ -204,7 +283,7 @@ describe("Preview secret recovery handler", () => {
     expect(anonymousResponse.status).toBe(401);
     expect(await anonymousResponse.json()).toEqual({ error: "RECOVERY_AUTHORIZATION_INVALID" });
     expect(anonymousRuntime.getEnv.mock.calls.map(([name]) => name)).toEqual([
-      "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_URL",
     ]);
   });
 
@@ -236,7 +315,7 @@ describe("Preview secret recovery handler", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: "RECOVERY_WINDOW_EXPIRED" });
     expect(testRuntime.getEnv.mock.calls.map(([name]) => name)).toEqual([
-      "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_URL",
     ]);
   });
 
@@ -268,7 +347,7 @@ describe("Preview secret recovery handler", () => {
     expect(body).toEqual({ error: "RECOVERY_WINDOW_EXPIRED" });
     expect(body).not.toHaveProperty("ciphertext");
     expect(testRuntime.getEnv.mock.calls.map(([name]) => name)).toEqual([
-      "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "KMA_APIHUB_KEY", "KMA_DAILY_LIMIT",
+      "SUPABASE_URL", "KMA_APIHUB_KEY", "KMA_DAILY_LIMIT",
     ]);
   });
 
@@ -319,6 +398,8 @@ describe("Preview secret recovery handler", () => {
     await expect(decrypt(tampered, keyPair.privateKey)).rejects.toThrow();
     await expect(decrypt(payload, wrongKeyPair.privateKey)).rejects.toThrow();
     await expect(decrypt(payload, keyPair.privateKey, { ...pin, buildId: "22222222-2222-4222-8222-222222222222" }))
+      .rejects.toThrow();
+    await expect(decrypt(payload, keyPair.privateKey, { ...pin, serviceRoleBinding: "0".repeat(64) }))
       .rejects.toThrow();
   });
 });

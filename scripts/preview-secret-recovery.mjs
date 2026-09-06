@@ -5,14 +5,14 @@ import { lstat, open, realpath, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createPrivateKey, createPublicKey, webcrypto } from "node:crypto";
+import { createPrivateKey, createPublicKey, timingSafeEqual, webcrypto } from "node:crypto";
 
 export const PREVIEW_PROJECT = Object.freeze({
   ref: "lehjmbgfpoemqcwxowbx",
   name: "MOTOCAST_Preview",
   region: "ap-northeast-2",
   supabaseUrl: "https://lehjmbgfpoemqcwxowbx.supabase.co",
-  functionName: "preview-secret-recovery-f3b3f3d5",
+  functionName: "preview-secret-recovery-147b2d57",
 });
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -23,12 +23,29 @@ const MAX_RECOVERY_BYTES = 16 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_LIFETIME_MS = 6 * 60 * 60 * 1_000;
 const CLOCK_MARGIN_MS = 60_000;
+const RECOVERY_HANDLER_CODES = new Set([
+  "RECOVERY_CONFIGURATION_INVALID",
+  "RECOVERY_WINDOW_INACTIVE",
+  "RECOVERY_WINDOW_EXPIRED",
+  "RECOVERY_PROJECT_MISMATCH",
+  "RECOVERY_ORIGIN_REJECTED",
+  "RECOVERY_METHOD_NOT_ALLOWED",
+  "RECOVERY_CONTENT_TYPE_INVALID",
+  "RECOVERY_REQUEST_TOO_LARGE",
+  "RECOVERY_REQUEST_INVALID",
+  "RECOVERY_CHALLENGE_INVALID",
+  "RECOVERY_AUTHORIZATION_INVALID",
+  "RECOVERY_TARGET_MISSING",
+  "RECOVERY_INTERNAL_FAILURE",
+]);
 
 export class RecoveryFailure extends Error {
-  constructor(category) {
+  constructor(category, details = {}) {
     super(category);
     this.name = "RecoveryFailure";
     this.category = category;
+    this.httpStatus = details.httpStatus;
+    this.handlerCode = details.handlerCode;
   }
 }
 
@@ -126,7 +143,7 @@ function validHexSha256(value) {
 export function validateRecoveryPin(value, now = Date.now()) {
   const keys = [
     "projectRef", "supabaseUrl", "functionName", "buildId", "notBefore", "expiresAt",
-    "recipientSpki", "recipientFingerprint", "challengeSha256",
+    "recipientSpki", "recipientFingerprint", "challengeSha256", "serviceRoleBinding",
   ];
   if (!value || typeof value !== "object" || Array.isArray(value) || !exactKeys(value, keys)) {
     reject("PIN_INVALID");
@@ -143,6 +160,7 @@ export function validateRecoveryPin(value, now = Date.now()) {
     typeof value.recipientSpki !== "string" ||
     !validHexSha256(value.recipientFingerprint) ||
     !validHexSha256(value.challengeSha256) ||
+    !validHexSha256(value.serviceRoleBinding) ||
     !Number.isSafeInteger(now) ||
     now + CLOCK_MARGIN_MS < value.notBefore ||
     now >= value.expiresAt
@@ -161,6 +179,7 @@ export function recoveryPinAad(pin) {
     recipientSpki: pin.recipientSpki,
     recipientFingerprint: pin.recipientFingerprint,
     challengeSha256: pin.challengeSha256,
+    serviceRoleBinding: pin.serviceRoleBinding,
   }));
 }
 
@@ -188,6 +207,39 @@ export function validateChallenge(challenge, pin) {
     if (Buffer.from(digest).toString("hex") !== pin.challengeSha256) reject("CHALLENGE_INVALID");
     return challenge;
   });
+}
+
+export async function validateServiceRoleBinding(pin, challenge, bearerJwt, cryptoImpl = webcrypto) {
+  if (typeof bearerJwt !== "string" || bearerJwt.length === 0) reject("SERVICE_ROLE_BINDING_MISMATCH");
+  const challengeBytes = decodeCanonicalBase64(
+    challenge.replace(/-/g, "+").replace(/_/g, "/") + "=",
+    "SERVICE_ROLE_BINDING_MISMATCH",
+  );
+  try {
+    const key = await cryptoImpl.subtle.importKey(
+      "raw",
+      challengeBytes,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const message = new TextEncoder().encode(JSON.stringify([
+      "motocast-preview-recovery-service-role-v1",
+      pin.projectRef,
+      pin.functionName,
+      pin.buildId,
+      bearerJwt,
+    ]));
+    const actual = Buffer.from(await cryptoImpl.subtle.sign("HMAC", key, message));
+    const expected = Buffer.from(pin.serviceRoleBinding, "hex");
+    if (expected.length !== 32 || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      reject("SERVICE_ROLE_BINDING_MISMATCH");
+    }
+    return true;
+  } catch (error) {
+    if (error instanceof RecoveryFailure) throw error;
+    reject("SERVICE_ROLE_BINDING_MISMATCH");
+  }
 }
 
 export async function decryptRecoveryPayload(responseValue, pin, privateKeyPem, cryptoImpl = webcrypto) {
@@ -325,8 +377,8 @@ export function validateMetadataUnchanged(before, after) {
   return true;
 }
 
-async function readBoundedResponse(response, maximumBytes, category) {
-  if (!response || response.status < 200 || response.status >= 300 || !response.body) reject(category);
+async function readBoundedJsonBody(response, maximumBytes, category) {
+  if (!response?.body) reject(category);
   const reader = response.body.getReader();
   const chunks = [];
   let length = 0;
@@ -359,8 +411,39 @@ async function requestJson(fetchImpl, url, init, maximumBytes, category) {
   } catch {
     reject(category);
   }
-  if (response.status >= 300 && response.status < 400) reject(category);
-  return readBoundedResponse(response, maximumBytes, category);
+  if (response.status < 200 || response.status >= 300) reject(category);
+  return readBoundedJsonBody(response, maximumBytes, category);
+}
+
+async function requestRecoveryJson(fetchImpl, url, init) {
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      ...init,
+      redirect: "manual",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch {
+    reject("RECOVERY_REQUEST_FAILED");
+  }
+  if (response.status >= 200 && response.status < 300) {
+    return readBoundedJsonBody(response, MAX_RECOVERY_BYTES, "RECOVERY_REQUEST_FAILED");
+  }
+
+  let handlerCode = "UNKNOWN";
+  try {
+    const body = await readBoundedJsonBody(response, MAX_RECOVERY_BYTES, "RECOVERY_REQUEST_FAILED");
+    if (body && typeof body === "object" && !Array.isArray(body) && exactKeys(body, ["error"]) &&
+        RECOVERY_HANDLER_CODES.has(body.error)) handlerCode = body.error;
+  } catch {
+    // The diagnostic remains fixed and does not expose malformed or oversized response data.
+  }
+  throw new RecoveryFailure("RECOVERY_REQUEST_FAILED", {
+    httpStatus: Number.isInteger(response.status) && response.status >= 100 && response.status <= 599
+      ? response.status
+      : null,
+    handlerCode,
+  });
 }
 
 async function managementRead(fetchImpl, token, suffix) {
@@ -466,7 +549,8 @@ export async function recoverPreviewSecrets(privateDirectory, dependencies = {})
   const secretsBefore = selectSecretMetadata(secretsBeforeRaw);
   const serviceRole = selectLegacyServiceRole(apiKeys);
 
-  const encrypted = await requestJson(fetchImpl,
+  await validateServiceRoleBinding(pin, challenge, serviceRole);
+  const encrypted = await requestRecoveryJson(fetchImpl,
     `${PREVIEW_PROJECT.supabaseUrl}/functions/v1/${PREVIEW_PROJECT.functionName}`,
     {
       method: "POST",
@@ -478,8 +562,6 @@ export async function recoverPreviewSecrets(privateDirectory, dependencies = {})
       },
       body: JSON.stringify({ challenge }),
     },
-    MAX_RECOVERY_BYTES,
-    "RECOVERY_REQUEST_FAILED",
   );
   const recovered = await decryptRecoveryPayload(encrypted, pin, privateKeyPem);
   await validateRecoveredDigests(recovered, secretsBefore);
@@ -516,7 +598,14 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
     (receipt) => process.stdout.write(`${JSON.stringify(receipt)}\n`),
     (error) => {
       const category = error instanceof RecoveryFailure ? error.category : "INTERNAL_FAILURE";
-      process.stderr.write(`${JSON.stringify({ ok: false, category })}\n`);
+      const receipt = { ok: false, category };
+      if (error instanceof RecoveryFailure && category === "RECOVERY_REQUEST_FAILED") {
+        receipt.httpStatus = Number.isInteger(error.httpStatus) && error.httpStatus >= 100 && error.httpStatus <= 599
+          ? error.httpStatus
+          : null;
+        receipt.handlerCode = RECOVERY_HANDLER_CODES.has(error.handlerCode) ? error.handlerCode : "UNKNOWN";
+      }
+      process.stderr.write(`${JSON.stringify(receipt)}\n`);
       process.exitCode = 1;
     },
   );

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -20,11 +20,13 @@ import {
   validateProject,
   validateRelease,
   validateRecoveredDigests,
+  validateServiceRoleBinding,
   readPrivateFile,
 } from "./preview-secret-recovery.mjs";
 
 const encoder = new TextEncoder();
 const now = 2_000_000_000_000;
+const legacyServiceRole = "synthetic.header.signature";
 const secretValues = {
   KMA_APIHUB_KEY: "  합성 키\n두 번째 줄  ",
   KMA_DAILY_LIMIT: " 0020\t",
@@ -38,6 +40,24 @@ async function temporaryDirectory(prefix = "motocast-recovery-test-") {
 
 async function sha256Hex(value) {
   return Buffer.from(await webcrypto.subtle.digest("SHA-256", encoder.encode(value))).toString("hex");
+}
+
+async function serviceRoleBindingHex(challenge, pin, bearerJwt) {
+  const key = await webcrypto.subtle.importKey(
+    "raw",
+    Buffer.from(challenge, "base64url"),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const message = encoder.encode(JSON.stringify([
+    "motocast-preview-recovery-service-role-v1",
+    pin.projectRef,
+    pin.functionName,
+    pin.buildId,
+    bearerJwt,
+  ]));
+  return Buffer.from(await webcrypto.subtle.sign("HMAC", key, message)).toString("hex");
 }
 
 function privateKeyPem(der) {
@@ -54,7 +74,7 @@ async function syntheticFixture() {
   }, true, ["wrapKey", "unwrapKey"]);
   const challenge = Buffer.alloc(32, 13).toString("base64url");
   const spki = Buffer.from(await webcrypto.subtle.exportKey("spki", keyPair.publicKey));
-  const pin = {
+  const basePin = {
     projectRef: PREVIEW_PROJECT.ref,
     supabaseUrl: PREVIEW_PROJECT.supabaseUrl,
     functionName: PREVIEW_PROJECT.functionName,
@@ -64,6 +84,10 @@ async function syntheticFixture() {
     recipientSpki: spki.toString("base64"),
     recipientFingerprint: Buffer.from(await webcrypto.subtle.digest("SHA-256", spki)).toString("hex"),
     challengeSha256: await sha256Hex(challenge),
+  };
+  const pin = {
+    ...basePin,
+    serviceRoleBinding: await serviceRoleBindingHex(challenge, basePin, legacyServiceRole),
   };
   const aesKey = await webcrypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]);
   const iv = webcrypto.getRandomValues(new Uint8Array(12));
@@ -75,6 +99,7 @@ async function syntheticFixture() {
     keyPair,
     wrongKeyPair,
     challenge,
+    serviceRole: legacyServiceRole,
     pin,
     pem: privateKeyPem(await webcrypto.subtle.exportKey("pkcs8", keyPair.privateKey)),
     wrongPem: privateKeyPem(await webcrypto.subtle.exportKey("pkcs8", wrongKeyPair.privateKey)),
@@ -148,6 +173,34 @@ test("decrypt authenticates ciphertext, private key, and ordered pin metadata", 
     { ...fixture.pin, buildId: "22222222-2222-4222-8222-222222222222" },
     fixture.pem,
   ), "DECRYPTION_FAILED");
+  await assertCategory(decryptRecoveryPayload(
+    fixture.encrypted,
+    { ...fixture.pin, serviceRoleBinding: "0".repeat(64) },
+    fixture.pem,
+  ), "DECRYPTION_FAILED");
+});
+
+test("service-role binding covers the challenge, JWT, project, function, and build", async () => {
+  const fixture = await syntheticFixture();
+  assert.equal(await validateServiceRoleBinding(
+    fixture.pin,
+    fixture.challenge,
+    fixture.serviceRole,
+  ), true);
+  const mismatches = [
+    [fixture.pin, Buffer.alloc(32, 14).toString("base64url"), fixture.serviceRole],
+    [fixture.pin, fixture.challenge, "other.header.signature"],
+    [{ ...fixture.pin, projectRef: "bcdefghijklmnopqrstu" }, fixture.challenge, fixture.serviceRole],
+    [{ ...fixture.pin, functionName: "preview-secret-recovery-00000000" }, fixture.challenge, fixture.serviceRole],
+    [{ ...fixture.pin, buildId: "22222222-2222-4222-8222-222222222222" }, fixture.challenge, fixture.serviceRole],
+    [{ ...fixture.pin, serviceRoleBinding: "malformed" }, fixture.challenge, fixture.serviceRole],
+  ];
+  for (const [pin, challenge, bearerJwt] of mismatches) {
+    await assertCategory(
+      validateServiceRoleBinding(pin, challenge, bearerJwt),
+      "SERVICE_ROLE_BINDING_MISMATCH",
+    );
+  }
 });
 
 test("raw UTF-8 digest and metadata drift checks fail closed", async () => {
@@ -239,19 +292,57 @@ test("full client flow uses only pinned reads and one recovery POST before exclu
     { name: "UNRELATED", updated_at: "fixed-c", value: "0".repeat(64) },
   ];
   const calls = [];
+  let selectedServiceRole = "mismatched.header.signature";
+  let recoveryFailure = null;
   const fetchImpl = async (url, init) => {
     calls.push({ url, init });
-    const value = String(url).includes("/functions/v1/")
-      ? fixture.encrypted
+    const recoveryRequest = String(url).includes("/functions/v1/");
+    const value = recoveryRequest
+      ? recoveryFailure?.body ?? fixture.encrypted
       : String(url).endsWith(`/functions/${PREVIEW_PROJECT.functionName}`)
         ? { id: release.expectedFunction.id, version: 7, verify_jwt: true, slug: PREVIEW_PROJECT.functionName }
         : String(url).endsWith("/secrets")
           ? metadata
           : String(url).endsWith("/api-keys")
-            ? [{ name: "service_role", api_key: "synthetic.header.signature" }]
+            ? [{ name: "service_role", api_key: selectedServiceRole }]
             : { id: PREVIEW_PROJECT.ref, name: PREVIEW_PROJECT.name, region: PREVIEW_PROJECT.region };
-    return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify(value), {
+      status: recoveryRequest && recoveryFailure ? recoveryFailure.status : 200,
+      headers: { "content-type": "application/json" },
+    });
   };
+
+  await assertCategory(recoverPreviewSecrets(directory, {
+    fetchImpl, homeDirectory: home, now: () => now,
+  }), "SERVICE_ROLE_BINDING_MISMATCH");
+  assert.equal(calls.filter(({ init }) => init.method === "POST").length, 0);
+  await assert.rejects(access(path.join(directory, "recovery.json")), { code: "ENOENT" });
+
+  calls.length = 0;
+  selectedServiceRole = fixture.serviceRole;
+  recoveryFailure = { status: 401, body: { error: "RECOVERY_AUTHORIZATION_INVALID" } };
+  await assert.rejects(recoverPreviewSecrets(directory, {
+    fetchImpl, homeDirectory: home, now: () => now,
+  }), (error) => error instanceof RecoveryFailure &&
+    error.category === "RECOVERY_REQUEST_FAILED" &&
+    error.httpStatus === 401 &&
+    error.handlerCode === "RECOVERY_AUTHORIZATION_INVALID");
+  assert.equal(calls.filter(({ init }) => init.method === "POST").length, 1);
+  await assert.rejects(access(path.join(directory, "recovery.json")), { code: "ENOENT" });
+
+  calls.length = 0;
+  recoveryFailure = { status: 502, body: { error: "synthetic private response detail" } };
+  await assert.rejects(recoverPreviewSecrets(directory, {
+    fetchImpl, homeDirectory: home, now: () => now,
+  }), (error) => error instanceof RecoveryFailure &&
+    error.category === "RECOVERY_REQUEST_FAILED" &&
+    error.httpStatus === 502 &&
+    error.handlerCode === "UNKNOWN");
+  assert.equal(calls.filter(({ init }) => init.method === "POST").length, 1);
+  await assert.rejects(access(path.join(directory, "recovery.json")), { code: "ENOENT" });
+
+  calls.length = 0;
+  recoveryFailure = null;
 
   const receipt = await recoverPreviewSecrets(directory, {
     fetchImpl, homeDirectory: home, now: () => now,
@@ -273,8 +364,8 @@ test("full client flow uses only pinned reads and one recovery POST before exclu
   const post = calls.find(({ init }) => init.method === "POST");
   assert.equal(post.url, `${PREVIEW_PROJECT.supabaseUrl}/functions/v1/${PREVIEW_PROJECT.functionName}`);
   assert.deepEqual(JSON.parse(post.init.body), { challenge: fixture.challenge });
-  assert.equal(post.init.headers.authorization, "Bearer synthetic.header.signature");
-  assert.equal(post.init.headers.apikey, "synthetic.header.signature");
+  assert.equal(post.init.headers.authorization, `Bearer ${fixture.serviceRole}`);
+  assert.equal(post.init.headers.apikey, fixture.serviceRole);
   assert.equal(calls.filter(({ init }) => init.method === "GET").every(
     ({ init }) => init.headers["user-agent"] === "motocast-bounded-fixture/1.0",
   ), true);
