@@ -1,6 +1,6 @@
 # MOTOCAST verification and review rules
 
-This document extends, and never weakens, the global `/home/tocomboy/.codex/AGENTS.md` verification and review baseline. It is the single source of truth for MOTOCAST writer verification, independent review, finding closure, and deployment gates.
+This document extends the active Codex home's global `AGENTS.md` verification baseline. It is the single source of truth for MOTOCAST writer verification, lead-owned review, finding closure, and deployment gates. The personal routing source owns model allocation; this project does not duplicate a model matrix.
 
 ## 1. Evidence and result taxonomy
 
@@ -96,22 +96,28 @@ Additional required suites by boundary:
 
 ## 4. Commit and fixed-SHA review boundary
 
-Independent review is performed against a fixed commit SHA, not a moving branch name. Before review:
+The lead reviews the fixed candidate commit SHA, not a moving branch name. Before final review:
 
 1. Writer verification is recorded.
 2. The lead reads the exact committed changed set.
 3. The commit contains no user-owned `.gitignore` or unrelated changes unless explicitly included and reviewed.
-4. The lead provides a compact review capsule with Decision IDs, invariants, file scope, acceptance criteria, and verification evidence.
+4. The lead checks Decision IDs, invariants, file scope, acceptance criteria, and reusable verification evidence directly.
 
-## 5. Independent reviewer separation
+## 5. Lead-owned design and review
 
-Use a read-only reviewer subagent for non-trivial multi-file work and every high-risk change involving authentication, authorization, RLS, tokens, migrations, transactions, concurrency, budgets, route safety, secret boundaries, GitHub protection, or Production settings.
+The lead directly performs root-cause analysis, design, alternative comparison,
+dependency and scope decisions, code review, integration and final verification
+judgment. Uncertain multi-module designs stay with the lead until concrete.
+High-risk authentication, authorization, RLS, tokens, migrations, transactions,
+concurrency, budgets, route safety, secrets and operations require deeper lead
+review and real validation, without additional design or reviewer agents.
 
-- Explicitly set `fork_turns="none"` by default.
-- The reviewer reads repository files and the fixed SHA directly.
-- The reviewer does not edit, commit, push, deploy, or mutate external settings.
-- The writer never reviews their own work as the independent approval.
-- The lead owns canonical decisions, conflict resolution, final verification, and user reporting.
+- Delegate only fixed-design code changes and related tests to the sole writer permitted by personal routing.
+- Default to `fork_turns="none"` with owned files, fixed design, acceptance criteria and exact verification commands.
+- The writer may inspect local code and repair test failures within the accepted design; product/architecture/scope/prerequisite/acceptance changes return to the lead.
+- Do not delegate design or independent review under any role name, use other models/roles, or fall back to lead code implementation.
+- Writer tests are execution evidence. The lead reuses valid evidence and directly handles review-only, short lookup, explanation and planning requests.
+- Do not describe lead review or writer self-checks as independent approval. Existing required checks and operational authorization remain in force.
 
 Required review axes:
 
@@ -140,8 +146,8 @@ Rules:
 - Any `BLOCKER` or `HIGH` stops merge and Production deployment.
 - A `MEDIUM` is fixed now or receives an explicit recorded follow-up decision.
 - A `LOW` may remain but is disclosed.
-- The writer fixes findings and reruns affected plus baseline verification.
-- A reviewer evaluates the new fixed SHA and labels each finding `RESOLVED`, `STILL_OPEN`, or `REGRESSED`.
+- The writer fixes findings and reruns affected verification; valid baseline evidence is reused unless invalidated or required by a mandatory gate.
+- The lead evaluates the new fixed SHA and labels each finding `RESOLVED`, `STILL_OPEN`, or `REGRESSED`.
 - If the same root cause survives two correction rounds, reconsider the design, narrow the scope, or interview the user instead of expanding tests indefinitely.
 
 ## 7. Preview gate
@@ -165,7 +171,7 @@ A same-repository `develop -> main` PR may merge only when:
 - No in-scope `NEEDS_INTERVIEW` remains.
 - Changed set and fixed SHA are recorded.
 - Writer verification is GREEN with exact taxonomy.
-- Required independent correctness and specialist reviews are complete.
+- The lead's required correctness, security, data integrity and other applicable review axes are complete.
 - `BLOCKER=0` and `HIGH=0`.
 - GitHub `verify` and `develop-only` are GREEN.
 - The actual Vercel Preview context is stable and GREEN.
@@ -196,7 +202,7 @@ The final release report includes:
 - Product completion status and remaining blockers.
 - Decision IDs and interview outcomes, including deprecated decisions.
 - Fixed SHA, PR, CI runs, Vercel deployment ID/URL, and Supabase migration/function readback.
-- Writer and independent review results by axis.
+- Writer execution evidence and lead review results by axis.
 - Exact counts for pass/fail/error/skip/deselected/xfail/setup-or-import-failure/not-run.
 - Remaining findings and operational next actions.
 
