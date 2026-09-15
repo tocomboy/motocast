@@ -2,6 +2,8 @@
 
 Last verified: 2026-09-05 (Asia/Seoul)
 
+Verification addendum, 2026-09-15: existing-admin Kakao browser login and the actual Preview route/weather/collection/share/revoke path passed. Controlled active-provider401 and internal-budget exhaustion verified stale/no-snapshot UI handling and sharing denial; original key/limit restoration, live recovery and exact test cleanup passed with existing data preserved. Production schema/functions and the authorized two-user data transfer are complete, while Production web promotion and its separate product gate remain NOT_RUN. This adds execution evidence without changing a product contract. [Current evidence and limits](../work/research/2026-09-15-production-user-migration-plan.md).
+
 Verification addendum, 2026-09-06: approved temporary Auth/ownership checks passed149, and seeded missing/stale/naturally expired weather sharing checks passed11, each with exact cleanup readback and preserved real-user data. These are bounded Preview evidence, not full Kakao/provider/budget or Production completion. No confirmed product contract changed. [Sharing evidence and limits](../work/research/2026-09-06-negative-share-connected-proof.md), [remaining gates](../work/research/2026-09-06-preview-remaining-gates.md).
 
 This document is the single source of truth for MOTOCAST product, security, cost, and operations decisions. A `CONFIRMED` entry is binding. A `NEEDS_INTERVIEW` entry blocks only the affected slice and must fail closed. A `DEPRECATED` entry remains as decision history.

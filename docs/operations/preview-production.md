@@ -2,7 +2,13 @@
 
 This runbook implements `OPS-002`, `OPS-004`, `OPS-005`, and `OPS-007` from `docs/product/MOTOCAST_SOT.md`. It records project references and secret ownership, never secret values.
 
-## Latest connected verification — 2026-09-06 KST
+## Latest connected verification — 2026-09-15 KST
+
+At unchanged product SHA73f14a4, actual existing-admin Kakao login, map, public-place search, motorcycle route persistence, KMA weather, collection save, share preview/publication/read/revoke and revoked-link denial passed. During the approved Preview write pause, only the new test snapshot was aged; temporary internal budget exhaustion blocked further KMA consumption while displaying the older forecast and disabling sharing. A temporary invalid Preview KMA key produced actual provider401 responses, proving both stale-snapshot display and no-matching-snapshot failure. The original key and limit1000 passed restoration readback, followed by a successful live forecast. These controlled failures are not spontaneous provider incidents. The first timestamp fixture used unsupported microsecond precision; correction to the existing millisecond contract passed without product changes.
+
+Exact test trip/collection cleanup and every pre-existing application row hash passed. Revoked-share and retry/execution audit rows remain intentionally; no existing account or user data was removed. Edge logs contained lifecycle66 and the four intended weather failures, with unexpected messages0. Other-rider/new-signup user reports remain distinct from this admin browser evidence. Production web promotion and Production product gates remain NOT_RUN. See the [current execution record](../work/research/2026-09-15-production-user-migration-plan.md).
+
+## Previous connected verification — 2026-09-06 KST
 
 The final negative-weather sharing run passed11, followed by exact cleanup readback PASS and an unchanged nonfixture fingerprint. Missing, stale, and naturally expired seeded weather each caused the actual Preview preview/publish RPCs to reject sharing. This closes the six bounded database cases; it does not prove active-provider failure, budget exhaustion, Kakao browser completion, or Production readiness. [Final connected evidence](../work/research/2026-09-06-negative-share-connected-proof.md). The two failed earlier runs below remain preserved history; all their test resources were cleaned.
 
