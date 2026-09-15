@@ -31,6 +31,8 @@ Keep Auth users, rider data, provider secrets and budget ledgers isolated betwee
 
 ## Vercel project
 
+2026-09-15 subsequent provider-sharing decision: the user approved use of Kakao app 1561641 in both environments and a lead-selected 90% Production / 10% Preview quota allocation. This adds an explicit exception for that app's provider credentials; it does not share the Supabase projects, OIDC state secrets, place-verification secrets or usage ledgers. Applied daily caps are Production/Preview: keyword search 90,000/10,000; current directions 9,000/1,000; future directions 4,500/500. KMA allocation awaits actual account quota confirmation and must divide its allowance across both forecast operations. Kakao monthly totals and browser map SDK usage remain provider-level shared limits. No paid API or billing setup was enabled.
+
 Project: `tocomboys-projects/motocast`.
 
 - Production Branch: `main`.
