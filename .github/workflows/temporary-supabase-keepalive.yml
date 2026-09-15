@@ -1,0 +1,31 @@
+name: Temporary Supabase keepalive
+
+on:
+  schedule:
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-supabase-keepalive
+  cancel-in-progress: false
+
+jobs:
+  keepalive:
+    name: Check temporary Supabase projects
+    if: ${{ vars.MOTOCAST_TEMP_KEEPALIVE_ENABLED == 'true' && github.repository == 'tocomboy/motocast' && github.ref == 'refs/heads/develop' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run anonymous database responsiveness checks
+        env:
+          MOTOCAST_TEMP_KEEPALIVE_PREVIEW_ENABLED: ${{ vars.MOTOCAST_TEMP_KEEPALIVE_PREVIEW_ENABLED }}
+          MOTOCAST_TEMP_KEEPALIVE_PRODUCTION_ENABLED: ${{ vars.MOTOCAST_TEMP_KEEPALIVE_PRODUCTION_ENABLED }}
+          MOTOCAST_TEMP_KEEPALIVE_PREVIEW_PUBLISHABLE_KEY: ${{ secrets.MOTOCAST_TEMP_KEEPALIVE_PREVIEW_PUBLISHABLE_KEY }}
+          MOTOCAST_TEMP_KEEPALIVE_PRODUCTION_PUBLISHABLE_KEY: ${{ secrets.MOTOCAST_TEMP_KEEPALIVE_PRODUCTION_PUBLISHABLE_KEY }}
+        run: python3 scripts/temporary_keepalive/check.py

@@ -2,6 +2,10 @@
 
 This runbook implements `OPS-002`, `OPS-004`, `OPS-005`, and `OPS-007` from `docs/product/MOTOCAST_SOT.md`. It records project references and secret ownership, never secret values.
 
+## Removable Free-plan keepalive
+
+The user approved a daily 04:00 Asia/Seoul cloud job on 2026-09-15. Its fixed environment targets, Actions-only public key copies, activation evidence, per-target switches, and mandatory removal on plan/environment changes are isolated in [Temporary Supabase Free keepalive](temporary-supabase-keepalive.md). This is operational infrastructure with its own retirement procedure, not a product feature or uptime guarantee.
+
 ## Production rollout — 2026-09-15 KST
 
 PR41 promoted the verified candidate through develop→main; main89977ef and Production dpl_8ebLxXkN3RxdEdodYWK4kHxfPeJo are READY at the public alias. The initial real login exposed NULL Auth string placeholders omitted by the transfer operator. An exact-two-user, identity-bound transaction normalized only empty/null placeholders while proving other Auth and application fields unchanged. Actual administrator Kakao login, map, existing share history and live route/weather then passed. The operator now explicitly initializes nine empty fields and verifies them before commit; actual isolated DB regression18 PASS includes injected-NULL rollback. No session/token value is copied. Other-rider login and the remaining Production product checks remain separately tracked in the [execution record](../work/research/2026-09-15-production-user-migration-plan.md). Historical NOT_RUN entries below describe their earlier checkpoints.

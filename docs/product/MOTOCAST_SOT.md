@@ -374,6 +374,8 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Verification: documented restore/readback drill using non-production data and dashboard/CLI log access.
 - Confirmed: 2026-08-30.
 
+Temporary operations amendment to OPS-006, confirmed by the user 2026-09-15: run a removable daily 04:00 Asia/Seoul GitHub Actions job against the two existing Supabase Free projects, using only each project's publishable key and read-only anonymous database RPC calls. This reduces inactivity-pause risk without promising uninterrupted service, mutating user data, or consuming Kakao/KMA quotas. Keep the implementation/configuration outside product runtime code, provide environment-specific stop switches, and remove it when a plan/environment change makes it unnecessary. The user performing such a change must follow the [separate lifecycle and removal record](../operations/temporary-supabase-keepalive.md); no billing-management access or automatic plan detection is added. This amendment supersedes passive acceptance of pauses only for this bounded mitigation, preserving manual availability checks and other free-plan limitations.
+
 #### OPS-007 — Preview data isolation
 
 - Status: `CONFIRMED`

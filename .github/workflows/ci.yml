@@ -38,6 +38,8 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Verify temporary Supabase keepalive safety
+        run: python3 -m unittest discover -s scripts/temporary_keepalive -p 'test_*.py'
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run lint
