@@ -1,5 +1,21 @@
 # Production 배포와 기존 두 사용자 데이터 이전
 
+## 현재 상태 — 기상청 실제 한도 확인·반영 완료
+
+- 기상청 API허브의 로그인된 마이페이지 내부 프레임에서 개인 계정의 일간 한도 **20,000회·5GB**를 직접 확인했다. 확인 시 화면 사용량은0회·0.00000GB였다. 이전에는 내부 프레임을 놓쳐 계정 한도를 확인하지 못했으며, 아래 로그인 대기 기록은 당시 이력이다.
+- `KMA_DAILY_LIMIT`는 `ultra_forecast`와 `short_forecast`에 각각 적용된다. Production은 종류별9,000회(합계18,000회), Preview는 종류별1,000회(합계2,000회)로 저장하고 저장 다이제스트 일치와 다른 비밀 설정 보존을 확인했다. 적용 전 양쪽의 오늘 KMA 장부는0행/0회여서 기존 장부 변경은 필요하지 않았다.
+- **5GB는 공급자 계정 공용 한도**다. 앱은 전송 용량을 집계하거나 환경별로 예약하지 않는다. 90:10은 호출 횟수 배분이며 용량·카카오 월간·지도 SDK 가용성을 보장하지 않는다. 유료 사용은 활성화하지 않았다.
+- 사용자 승인 범위의 두 계정·소유 데이터 이전과 운영 schema·함수·공급자 설정은 완료됐다. Preview 쓰기 중지는 유지한다. 현재 Preview 브라우저가 Vercel 로그인 화면이므로 실제 접속 검증은 로그인 후 진행한다. KMA 로그인은 더 이상 대기 조건이 아니다.
+- 남은 순서: 현재 후보의 Preview 접속·잔여 실패 경계 검증 → 문서 후보 및 exact-SHA CI 확인 → 기존 develop→main PR41 승격 → main 배포·운영 실제 이용 검증. Production 웹 배포와 운영 제품 gate는 **NOT_RUN**이며, 과거 로컬/Preview 성공을 운영 통과로 대신하지 않는다.
+
+## 2026-09-15 두 계정 실제 이전 완료
+
+- 고정0e2669c40c2974798fba1d77793ee5be8c8d7f9d의 PR42 CI34955712529 PASS, CI-only GitHub Deployments0/Vercel checks0 확인 후 수정한 `--apply` 실행이 exit0으로 완료됐다. 단일 transaction 내부 내용·권한 검증과 commit 후 source/target snapshot 비교 모두 PASS다.
+- Production 결과는 users2/identities2/profiles2/memberships2, 활성admin1/rider1, invitations2, collections1/versions3, trips7/waypoints15/route_cache7/weather9/shares14, drafts0/runs45/save_operations8이다. 최종 snapshot SHA2563bc4e51a67d11f23734c389482902547f21cbe627bedff8ca409d24d7e1b222e. Preview 원본과 모든 이전 대상 내용이 일치한다. 새 원문 파일·백업·세션·refresh-token 복사는 없다.
+- PR42 MERGED 및 develop exact-SHA fast-forward 완료. 새 Preview dpl_5iCqM98YKzWxpAa46pd7o1wBT72b READY, develop/0e2669c 일치. PR41은 동일 후보의 Draft 상태로 실제 이전 완료와 남은 조건을 갱신했다. 새 Production 웹 배포·실제 사용자 로그인/제품 검증은 아직 NOT_RUN이다.
+- 기상청 계정 탭을 직접 확인했으나 로그아웃·빈 로그인 입력 상태다. 로그인 창을 열고 사용자 로그인만 요청했다. 직접 계정 한도 확인은 로그인 후 재개한다. KMA 한도 확인 전 main을 병합하지 않았다. Preview 쓰기 중지 결정은 유지하며, 운영 전환 안내 전 새 데이터를 원본에 추가하지 않도록 한다.
+- 아래 최초413 실패와 수정 기록은 완료 전 이력으로 보존한다. 원격 최신 실행 상태는 [PR41](https://github.com/tocomboy/motocast/pull/41)과 Notion 배포 기록에 반영했다.
+
 ## 2026-09-15 실제 이전 재개와 전송 경로 보완
 
 - 사용자가 이전 중 Preview 저장·수정·가입 중지가 가능하다고 확인했다. 기상청 한도는 직접 확인하도록 요청했으나 실제 탭은 로그아웃·빈 로그인 입력 상태여서 로그인 창을 다시 열고 사용자에게 로그인만 요청했다.
@@ -45,9 +61,9 @@ Production 공급자 REST/KMA/origin/place 설정과 Auth site/callback/Kakao cl
 
 ## 계획과 진행
 
-1. **일부 완료:** 현재 두 환경, 이전 대상, 공유 카카오 앱 연결, 카카오 무료 한도·90:10 적용 완료. KMA 계정 한도만 대기.
+1. **완료:** 현재 두 환경, 이전 대상, 공유 카카오 앱 연결, 카카오·기상청 실제 한도와 호출 수90:10 적용·저장 확인.
 2. **완료:** 최신 develop의 임시 복구 기능 제거9파일. 단위528 PASS, 브라우저20 PASS/연결 전용2 SKIP, lint/typecheck/Deno5/build PASS. 기존 사용자 작업 트리는 보존. PR39의 고정14e5c13 CI·develop 반영·Preview READY 확인.
-3. **진행 중:** 같은 Kakao 신원을 쓰는 연결 방식 확정. 실제 DB upgrade 검증 후 Production schema·함수·공급자 설정 적용 완료. 백업 없이 메모리 내 데이터 이전 도구 보완·검수 중이며 실제 사용자 DML은 대기.
+3. **완료:** 같은 Kakao 신원을 쓰는 연결 방식과 실제 DB upgrade 검증, Production schema·함수·설정 적용, 백업 없는 메모리 내 두 사용자 데이터 이전 및 commit 후 전체 내용·역할 일치 검증.
 4. **대기:** 최종 후보 검수·CI·Preview 확인 후 같은 저장소 develop → main PR로 Production 배포.
 5. **대기:** main 배포 SHA·별칭, Vercel 무로그인 접근, 두 계정 및 역할·데이터, 신규 초대, 경로·날씨·공유·차단 경계의 실제 검증과 최종 기록.
 
@@ -77,7 +93,7 @@ Production 공급자 REST/KMA/origin/place 설정과 Auth site/callback/Kakao cl
 
 ## 현재 남은 외부 조건
 
-카카오 개발자 콘솔 로그인 요청을 전달했다. 로그인 후 기존 Production 앱 유무, Preview와의 앱 구분, redirect/domain/OIDC/무료 quota를 확인한다. 앱 공유나 기존 앱의 용도 변경이 필요하면 기존 환경 격리와 사용자 로그인에 미치는 차이만 별도 결정한다. 배포 승인 자체를 다시 묻지 않는다.
+카카오 운영 callback/domain 저장·재조회와 기상청 실제 계정 한도 확인을 완료했다. 현재 별도로 필요한 로그인은 Preview 접속 보호용 Vercel 로그인이다. 기존 계정 삭제·회수 없이 실제 로그인·제품 동작을 검증하며, 남은 공급자 실패·예산 차단 검증은 실제 무료 쿼터를 고갈시키지 않는 조건으로 수행한다. 배포 승인 자체를 다시 묻지 않는다.
 
 ## 근거
 
@@ -86,4 +102,4 @@ Production 공급자 REST/KMA/origin/place 설정과 Auth site/callback/Kakao cl
 - [Supabase Auth 사용자 이전](https://supabase.com/docs/guides/troubleshooting/migrating-auth-users-between-projects)
 - [Kakao 앱별 사용자 식별자](https://developers.kakao.com/docs/ko/kakaologin/group-app)
 
-이 문서는 준비 및 결정 기록이며 배포·데이터 이전 성공 증거가 아니다.
+이 문서는 현재 실행 결과와 역사적 준비·실패 기록을 함께 보존한다. 두 사용자 데이터 이전은 위 commit 후 일치 증거로 완료됐으며 Production 웹 배포·운영 제품 검증 완료와 구분한다.
