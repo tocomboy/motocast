@@ -380,6 +380,8 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Verification: distinct project references and environment-name ownership readback, schema/function parity, Preview test identity, fail-closed local/arbitrary-HTTPS/Production test targets, private non-symlink state file, and negative checks showing no Production data is reachable.
 - Confirmed by user interview: 2026-08-30.
 
+- Interview update, 2026-09-15: The user approved Production deployment and a one-time transfer of the existing administrator and rider with their owned data from Preview to Production, and reported successful new signup and existing-user access. This narrowly supersedes the cross-environment user-data copy prohibition for these two users. Preserve ownership, roles and source Preview data; do not infer permission for ongoing synchronization, raw session transfer, provider-key reuse or budget-ledger copying. The user explicitly declined backups and accepted transfer-failure risk. No backup/export file is created; in-memory transfer, source preservation, atomic failure handling and required identity/data validation remain mandatory. See the [current execution plan](../work/research/2026-09-15-production-user-migration-plan.md). User-reported login success is distinct from new agent execution evidence.
+
 #### OPS-008 — Production Supabase region
 
 - Status: `CONFIRMED`

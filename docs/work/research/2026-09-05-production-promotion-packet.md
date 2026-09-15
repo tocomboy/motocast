@@ -1,3 +1,5 @@
+> 2026-09-15 update: Production deployment and the existing two users' data transfer are now user-approved. The user explicitly declined backup creation and accepted transfer-failure risk. Historical approval/backup prerequisites below are superseded only within that scope by the [current execution plan](2026-09-15-production-user-migration-plan.md); required verification and source preservation remain. Production execution is not yet complete.
+
 # Production 승격 준비안 — 아직 승인 요청 단계 아님
 
 2026-09-05. Preview의 계정별 인증·실패·예산 연결 gate가 남아 있다. 이 문서는 미리 준비 가능한 배포 범위와 운영 절차이며 Production 변경 승인을 받은 문서가 아니다. 전체 완료 상태는 [Preview 계획과 증거](2026-09-05-preview-gates-plan.md)를 따른다.

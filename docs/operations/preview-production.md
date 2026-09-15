@@ -27,7 +27,7 @@ Production Supabase remains Tokyo and has three applied migrations through `2026
 | Preview | `lehjmbgfpoemqcwxowbx` (`MOTOCAST_Preview`) | Seoul `ap-northeast-2` | `develop` Preview | Vercel Authentication plus MOTOCAST test invitation |
 | Production | `obodvbyzptxeehgpcpkd` (`motocast`) | Tokyo `ap-northeast-1`, retained under `OPS-008` | `main` Production | MOTOCAST invitation and Kakao login only |
 
-Never copy Auth users, memberships, trips, collections, shares, provider secrets, budget ledgers, or production backups between these projects. Migrations and Edge Function source are the only shared artifacts.
+Keep Auth users, rider data, provider secrets and budget ledgers isolated between projects. The user-approved 2026-09-15 one-time transfer of the existing administrator and rider and their owned data is the only user-data exception; follow the [execution plan](../work/research/2026-09-15-production-user-migration-plan.md). The user explicitly declined backups. Preserve source Preview data and use in-memory transfer with atomic failure handling and identity/ownership validation; do not create a backup/export file or copy sessions, provider keys or budget ledgers under this exception. Migrations and Edge Function source remain shared release artifacts.
 
 ## Vercel project
 
