@@ -12,7 +12,10 @@ import unittest
 import urllib.error
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
+
+import production_transfer_transport as transport
 
 
 SCRIPT = Path(__file__).with_name("production-user-transfer.py")
@@ -86,6 +89,42 @@ class LocalDatabaseAdapter:
             "external_kakao_client_id": "synthetic-client-id",
         }
 
+    def import_snapshot(self, project_ref: str, sql: str):
+        if project_ref != LOCAL_REF:
+            raise AssertionError("unexpected local project ref")
+        if not sql.startswith("begin;\n"):
+            raise AssertionError("unexpected import SQL")
+        environment = os.environ.copy()
+        environment["PGPASSWORD"] = "postgres"
+        completed = subprocess.run(
+            [
+                "psql",
+                "-X",
+                "-q",
+                "-t",
+                "-A",
+                "-h",
+                "127.0.0.1",
+                "-p",
+                DB_PORT,
+                "-U",
+                "supabase_admin",
+                "-d",
+                "postgres",
+                "-v",
+                "ON_ERROR_STOP=1",
+            ],
+            input="begin;\nset local role postgres;\n" + sql[len("begin;\n") :],
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=90,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise transfer.TransferError("LOCAL_IMPORT_FAILED")
+
 
 def table_value(metadata, table, rows):
     columns = list(transfer.projection_for(table, metadata))
@@ -106,7 +145,7 @@ def synthetic_snapshot(metadata):
             "last_sign_in_at": FIXTURE_TIME,
             "raw_app_meta_data": {"provider": "kakao", "providers": ["kakao"]},
             "raw_user_meta_data": {
-                "name": "O'Brien $transfer$ $transfer_1$; DROP TABLE auth.users; --",
+                "name": "O'Brien $transfer$ $transfer_1$; DROP TABLE auth.users; --\n\\q\nretained",
                 "number": Decimal("12345678901234567.8901234567890123456789"),
             },
             "created_at": FIXTURE_TIME,
@@ -279,7 +318,7 @@ class ProductionUserTransferTests(unittest.TestCase):
         transfer.require_target_empty(cls.adapter.query_value(LOCAL_REF, transfer.build_count_sql()))
 
         seed = synthetic_snapshot(cls.metadata)
-        cls.adapter.query_value(LOCAL_REF, transfer.build_import_sql(seed, cls.metadata))
+        cls.adapter.import_snapshot(LOCAL_REF, transfer.build_import_sql(seed, cls.metadata))
         cls.snapshot = transfer.validate_source_snapshot(
             cls.adapter.query_value(LOCAL_REF, transfer.build_snapshot_sql(cls.metadata)),
             cls.metadata,
@@ -304,7 +343,7 @@ class ProductionUserTransferTests(unittest.TestCase):
         user = self.snapshot["tables"]["auth.users"]["rows"][0]
         self.assertEqual(
             user["raw_user_meta_data"]["name"],
-            "O'Brien $transfer$ $transfer_1$; DROP TABLE auth.users; --",
+            "O'Brien $transfer$ $transfer_1$; DROP TABLE auth.users; --\n\\q\nretained",
         )
         self.assertIsInstance(user["raw_user_meta_data"]["number"], Decimal)
         self.assertEqual(
@@ -355,12 +394,14 @@ class ProductionUserTransferTests(unittest.TestCase):
         self.assertIn(
             "O''Brien $transfer$ $transfer_1$; DROP TABLE auth.users; --", sql
         )
+        self.assertIn("\\q", sql)
         self.assertIn("Route ''); DROP TABLE public.trips; --", sql)
         self.assertEqual(sql.count("drop table"), 0)
         self.assertIn("DROP TABLE", sql)
         self.assertIn("do $transfer_2$", sql)
         self.assertEqual(sql.count("$transfer_2$"), 2)
         self.assertIn("12345678901234567.8901234567890123456789", sql)
+        self.assertLess(sql.rindex("select jsonb_build_object("), sql.rindex("commit"))
 
     def test_canonical_json_rejects_lossy_or_nonfinite_numbers(self):
         exact = Decimal("12345678901234567.8901234567890123456789")
@@ -375,15 +416,15 @@ class ProductionUserTransferTests(unittest.TestCase):
             "update public.profiles set nickname = 'injected mismatch' "
             f"where id = {transfer.sql_literal(FIXTURE_USERS[0])}::uuid;"
         )
-        with self.assertRaisesRegex(transfer.TransferError, "LOCAL_QUERY_FAILED"):
-            self.adapter.query_value(
+        with self.assertRaisesRegex(transfer.TransferError, "LOCAL_IMPORT_FAILED"):
+            self.adapter.import_snapshot(
                 LOCAL_REF, transfer.build_import_sql(self.snapshot, self.metadata, injected)
             )
         counts = self.adapter.query_value(LOCAL_REF, transfer.build_count_sql())
         self.assertEqual(set(counts.values()), {0})
 
     def test_successful_import_role_identity_and_collision_rejects_unchanged(self):
-        self.adapter.query_value(
+        self.adapter.import_snapshot(
             LOCAL_REF, transfer.build_import_sql(self.snapshot, self.metadata)
         )
         imported = transfer.validate_source_snapshot(
@@ -420,6 +461,24 @@ select jsonb_build_object(
         )
         self.assertEqual(transfer.digest(unchanged), before)
 
+    def test_large_import_uses_stdin_and_preserves_exact_payload(self):
+        large = copy.deepcopy(self.snapshot)
+        large["tables"]["auth.users"]["rows"][0]["raw_user_meta_data"]["blob"] = (
+            "x" * 3_300_000
+        )
+        sql = transfer.build_import_sql(large, self.metadata)
+        self.assertGreater(len(sql.encode("utf-8")), 3_250_000)
+        self.adapter.import_snapshot(LOCAL_REF, sql)
+        imported = transfer.validate_source_snapshot(
+            self.adapter.query_value(LOCAL_REF, transfer.build_snapshot_sql(self.metadata)),
+            self.metadata,
+        )
+        transfer.require_same_snapshot(large, imported, "TEST_LARGE_IMPORT_MISMATCH")
+        self.assertEqual(
+            len(imported["tables"]["auth.users"]["rows"][0]["raw_user_meta_data"]["blob"]),
+            3_300_000,
+        )
+
     def test_source_drift_uses_only_sanitized_code(self):
         changed = copy.deepcopy(self.snapshot)
         changed["tables"]["public.profiles"]["rows"][0]["nickname"] = "drifted"
@@ -444,14 +503,15 @@ select jsonb_build_object(
                     "external_kakao_client_id": "same-client",
                 }
 
+            def import_snapshot(inner_self, project_ref, sql):
+                inner_self.import_attempted = True
+                raise AssertionError("import must not run after source drift")
+
             def query_value(inner_self, project_ref, sql):
                 if sql == transfer.build_metadata_sql():
                     return self.metadata
                 if sql == transfer.build_count_sql():
                     return {table: 0 for table in transfer.TABLES}
-                if sql.startswith("begin;"):
-                    inner_self.import_attempted = True
-                    raise AssertionError("import must not run after source drift")
                 if project_ref == transfer.SOURCE_REF:
                     inner_self.source_reads += 1
                     return self.snapshot if inner_self.source_reads == 1 else changed
@@ -481,16 +541,16 @@ select jsonb_build_object(
                     "external_kakao_client_id": "same-client",
                 }
 
+            def import_snapshot(inner_self, project_ref, sql):
+                inner_self.write_attempts += 1
+                if inner_self.failure == "transport":
+                    raise transfer.TransferError("MANAGEMENT_TRANSPORT_ERROR")
+
             def query_value(inner_self, project_ref, sql):
                 if sql == transfer.build_metadata_sql():
                     return self.metadata
                 if sql == transfer.build_count_sql():
                     return {table: 0 for table in transfer.TABLES}
-                if sql.startswith("begin;"):
-                    inner_self.write_attempts += 1
-                    if inner_self.failure == "transport":
-                        raise transfer.TransferError("MANAGEMENT_TRANSPORT_ERROR")
-                    return {table: len(self.snapshot["tables"][table]["rows"]) for table in transfer.TABLES}
                 if project_ref == transfer.TARGET_REF:
                     inner_self.target_snapshot_reads += 1
                     if inner_self.failure == "response":
@@ -550,6 +610,152 @@ select jsonb_build_object(
             {"number": Decimal("12345678901234567.8901234567890123456789")},
         )
         self.assertIsInstance(snapshot["number"], Decimal)
+
+    def test_target_transport_binds_pooler_tls_environment_and_stdin(self):
+        requests = []
+        calls = []
+
+        def management_request(method, path, payload):
+            requests.append((method, path, payload))
+            if path.endswith("/config/database/pooler"):
+                return [
+                    {
+                        "database_type": "PRIMARY",
+                        "pool_mode": "transaction",
+                        "db_host": "aws-0-ap-northeast-2.pooler.supabase.com",
+                        "db_port": 6543,
+                        "db_name": "postgres",
+                        "db_user": f"postgres.{transfer.TARGET_REF}",
+                    }
+                ]
+            return {"role": "cli_login_role", "password": "private-password", "ttl_seconds": 300}
+
+        def runner(arguments, **kwargs):
+            calls.append((arguments, kwargs))
+            return SimpleNamespace(returncode=0, stdout="private output", stderr="private error")
+
+        sql = "begin;\nselect 'payload';\ncommit"
+        transport.execute_target_import(
+            management_request,
+            transfer.TARGET_REF,
+            sql,
+            runner=runner,
+            inherited_environment={"PATH": "/usr/bin", "PGOPTIONS": "unsafe", "PGHOST": "wrong"},
+        )
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[1][2], {"read_only": False})
+        self.assertEqual(len(calls), 1)
+        arguments, kwargs = calls[0]
+        self.assertEqual(arguments, list(transport.PSQL_ARGUMENTS))
+        self.assertNotIn("-c", arguments)
+        self.assertNotIn("-f", arguments)
+        self.assertNotIn(sql, arguments)
+        self.assertEqual(
+            kwargs["input"], "begin;\nset local role postgres;\nselect 'payload';\ncommit"
+        )
+        environment = kwargs["env"]
+        self.assertEqual(environment["PATH"], "/usr/bin")
+        self.assertNotIn("PGOPTIONS", environment)
+        self.assertEqual(environment["PGHOST"], "aws-0-ap-northeast-2.pooler.supabase.com")
+        self.assertEqual(environment["PGPORT"], "6543")
+        self.assertEqual(environment["PGDATABASE"], "postgres")
+        self.assertEqual(environment["PGUSER"], f"cli_login_role.{transfer.TARGET_REF}")
+        self.assertEqual(environment["PGPASSWORD"], "private-password")
+        self.assertEqual(environment["PGSSLMODE"], "verify-full")
+        self.assertEqual(environment["PGSSLROOTCERT"], str(transport.CERTIFICATE_PATH))
+        self.assertEqual(environment["PGCONNECT_TIMEOUT"], "15")
+        self.assertEqual(environment["PGCLIENTENCODING"], "UTF8")
+        self.assertTrue(kwargs["capture_output"])
+        self.assertEqual(kwargs["timeout"], 90)
+
+    def test_target_transport_rejects_invalid_contract_before_psql(self):
+        valid_pooler = {
+            "database_type": "PRIMARY",
+            "pool_mode": "transaction",
+            "db_host": "aws-0-ap-northeast-2.pooler.supabase.com",
+            "db_port": 6543,
+            "db_name": "postgres",
+            "db_user": f"postgres.{transfer.TARGET_REF}",
+        }
+
+        cases = (
+            ([valid_pooler | {"db_host": "good.pooler.supabase.com/evil"}], {"role": "cli", "password": "p", "ttl_seconds": 300}),
+            ([valid_pooler, valid_pooler.copy()], {"role": "cli", "password": "p", "ttl_seconds": 300}),
+            ([valid_pooler | {"db_user": "postgres.wrong"}], {"role": "cli", "password": "p", "ttl_seconds": 300}),
+            ([valid_pooler], {"role": "cli", "password": "p", "ttl_seconds": 299}),
+        )
+        for poolers, login in cases:
+            with self.subTest(poolers=poolers, login=login):
+                calls = []
+
+                def request(method, path, payload):
+                    return poolers if path.endswith("/pooler") else login
+
+                with self.assertRaises(transport.ImportTransportError):
+                    transport.execute_target_import(
+                        request,
+                        transfer.TARGET_REF,
+                        "begin;\ncommit",
+                        runner=lambda *args, **kwargs: calls.append((args, kwargs)),
+                    )
+                self.assertEqual(calls, [])
+
+        management_calls = []
+        with self.assertRaisesRegex(transport.ImportTransportError, "TARGET_IMPORT_SQL_INVALID"):
+            transport.execute_target_import(
+                lambda *args: management_calls.append(args),
+                transfer.TARGET_REF,
+                "select 1",
+            )
+        self.assertEqual(management_calls, [])
+        with self.assertRaisesRegex(transport.ImportTransportError, "TARGET_POOLER_CONFIG_INVALID"):
+            transport.execute_target_import(
+                lambda *args: management_calls.append(args),
+                "wrong-project-ref",
+                "begin;\ncommit",
+            )
+        self.assertEqual(management_calls, [])
+
+    def test_target_transport_psql_failures_are_sanitized_and_not_retried(self):
+        def management_request(method, path, payload):
+            if path.endswith("/config/database/pooler"):
+                return [
+                    {
+                        "database_type": "PRIMARY",
+                        "pool_mode": "transaction",
+                        "db_host": "aws-0-ap-northeast-2.pooler.supabase.com",
+                        "db_port": 6543,
+                        "db_name": "postgres",
+                        "db_user": f"postgres.{transfer.TARGET_REF}",
+                    }
+                ]
+            return {"role": "cli_login_role", "password": "secret", "ttl_seconds": 300}
+
+        for failure, code in (
+            (SimpleNamespace(returncode=1, stdout="rows", stderr="password SQL UUID"), "TARGET_IMPORT_PSQL_FAILED"),
+            (subprocess.TimeoutExpired(["psql"], 90, output="rows", stderr="password SQL UUID"), "TARGET_IMPORT_PSQL_TIMEOUT"),
+        ):
+            with self.subTest(code=code):
+                attempts = []
+
+                def runner(*args, **kwargs):
+                    attempts.append(1)
+                    if isinstance(failure, BaseException):
+                        raise failure
+                    return failure
+
+                with self.assertRaises(transport.ImportTransportError) as captured:
+                    transport.execute_target_import(
+                        management_request,
+                        transfer.TARGET_REF,
+                        "begin;\ncommit",
+                        runner=runner,
+                    )
+                self.assertEqual(captured.exception.code, code)
+                self.assertEqual(str(captured.exception), code)
+                self.assertEqual(attempts, [1])
+                self.assertNotIn("password", str(captured.exception))
+                self.assertNotIn("UUID", str(captured.exception))
 
     def test_auth_config_gate_requires_same_nonempty_kakao_client(self):
         valid = {

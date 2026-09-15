@@ -1,5 +1,15 @@
 # Production 배포와 기존 두 사용자 데이터 이전
 
+## 2026-09-15 실제 이전 재개와 전송 경로 보완
+
+- 사용자가 이전 중 Preview 저장·수정·가입 중지가 가능하다고 확인했다. 기상청 한도는 직접 확인하도록 요청했으나 실제 탭은 로그아웃·빈 로그인 입력 상태여서 로그인 창을 다시 열고 사용자에게 로그인만 요청했다.
+- 후보17a65e4의 최초 `--apply`는 Management API HTTP413으로 종료됐다. 오류 코드는 쓰기 결과 불명확으로 분류했고 자동 재시도하지 않았다. 후속 읽기 전용 preflight와 별도 COUNT로 Production의 대상15테이블 모두0임을 확인했다. 원본 여행·컬렉션·공유 등 앱 내용 digest는 이전 준비 시점과 동일하다. Auth 시각 필드는 바뀌어 새 manifest를 사용한다.
+- 요청 JSON 실제 크기는3,248,910bytes다. 복제된 원본 JSON을 별도 저장하지 않으면서 원자 처리를 유지하려고, Management API의 일괄 SQL 전송만 `psql` 표준입력의 단일 DB transaction으로 교체한다. source snapshot·target metadata·전후 검증은 기존 Management 조회를 유지한다.
+- 공식 Management API의 PRIMARY pooler 설정과5분 만료 CLI login role을 사용한다. 실제 role은 postgres MEMBER이나 NOINHERIT이므로 transaction 안의 SET LOCAL ROLE postgres가 필요함을 읽기 전용 rollback 검사로 확인했다. 사용자/운영자 권한을 새로 부여하는 GRANT나 인증서 검증 해제는 없다.
+- 기본 시스템 CA로는 인증서 검증이 실패했다. Supabase Studio 공식 소스가 지정한 공개 prod-ca-2021.crt를 전용 certificate 경로에 받아 `verify-full`로 연결을 검증했다. 공개 인증서 SHA256700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7. 이 파일에는 사용자 데이터나 비밀키가 없으며 백업을 만들지 않는 결정과 구분한다.
+- 전송 수정 lead 검수 PASS. 실제 격리 PostgreSQL17.6.1.166:55434에서3.3MB 이상 stdin 전송·commit·내용/소수/메타명령 형태 문자열 보존, 오류 rollback, 충돌 무변경, TLS·대상·환경·TTL 검사 등17 PASS/0 FAIL/0 ERROR/0 SKIP. 최초 확장 검사14 PASS/3 FAIL은 이전 오류 코드 기대값과 PSQL 안의 SQL 문자열을 오인한 assertion을 고쳐 해결했다. 최종15테이블 행0과 DB healthy를 확인했다. psql14.24/Python3.10.12, 설치 변경 없음. 제품 소스는17a65e4와 동일하므로 기존 baseline을 재사용한다.
+- 고정 파일 SHA256: operator a0651bae661579d67862d42919afed2f5a7b5c9861799a7538dce9203206d12c, transport99a8ab56f75947f734d95bc56db68442292fe5528710355c2cd80142ac889aa5, tests c3b829e8bf507c3c3a30ff2fffd541ea391c924766f17039a65640cd6d6595f8. 계정 이전과 main 배포는 후속 실행이며 현재 완료가 아니다. [Draft PR41](https://github.com/tocomboy/motocast/pull/41)은17a65e4 기준 verify/develop-only/Vercel PASS 상태이며 수정 후보 검증 후 갱신한다.
+
 ## 2026-09-15 재개 결정과 검증
 
 - 사용자가 기존 Preview 카카오 앱을 공유하는 방향에서 실제 공급자 한도에 맞춘 증액과 Preview 할당 비율의 자율 결정을 승인했다. 운영 90% / Preview 10%로 결정한다. 앱 1561641이 계정의 카카오맵 무료 쿼터 대상이며 지도 ON, 카카오맵 유료 사용 OFF를 콘솔에서 확인했다. 이후 활성화한 앱에는 무료 지도 쿼터가 없으므로 별도 운영 앱 권고를 수정했다.

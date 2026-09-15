@@ -14,6 +14,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Protocol
 
+from production_transfer_transport import ImportTransportError, execute_target_import
+
 
 SOURCE_REF = "lehjmbgfpoemqcwxowbx"
 TARGET_REF = "obodvbyzptxeehgpcpkd"
@@ -110,6 +112,8 @@ class QueryAdapter(Protocol):
 
     def auth_config(self, project_ref: str) -> dict[str, Any]: ...
 
+    def import_snapshot(self, project_ref: str, sql: str) -> None: ...
+
 
 class ManagementApi:
     """Minimal no-retry adapter for the Supabase Management API."""
@@ -164,6 +168,12 @@ class ManagementApi:
         if not isinstance(response, dict):
             raise TransferError("AUTH_CONFIG_SHAPE_INVALID")
         return response
+
+    def import_snapshot(self, project_ref: str, sql: str) -> None:
+        try:
+            execute_target_import(self._request, project_ref, sql)
+        except ImportTransportError as error:
+            raise TransferError(error.code) from None
 
 
 def canonical_json(value: Any) -> str:
@@ -605,8 +615,8 @@ lock table {lock_tables} in share row exclusive mode;
 {chr(10).join(inserts)}
 {injected_sql}
 {_dollar_quoted_do(verification_body)}
-commit;
-select jsonb_build_object({','.join(result_pairs)}) as counts
+select jsonb_build_object({','.join(result_pairs)}) as counts;
+commit
 """.strip()
 
 
@@ -664,7 +674,7 @@ def run_operator(adapter: QueryAdapter, migrations_dir: Path, apply: bool) -> di
     require_same_snapshot(source_snapshot, source_before_import, "SOURCE_DRIFT_BEFORE_IMPORT")
 
     try:
-        adapter.query_value(TARGET_REF, build_import_sql(source_snapshot, target_metadata))
+        adapter.import_snapshot(TARGET_REF, build_import_sql(source_snapshot, target_metadata))
         target_after = validate_source_snapshot(
             adapter.query_value(TARGET_REF, build_snapshot_sql(target_metadata)), target_metadata
         )
