@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 
+import { ReleaseFooter } from "@/components/release-footer";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
 
 import "./globals.css";
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="ko">
       <body>
         {children}
+        <ReleaseFooter />
         <ServiceWorkerRegistration />
       </body>
     </html>

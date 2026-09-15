@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { InviteManager } from "@/components/invite-manager";
+import { ReleaseAnnouncement } from "@/components/release-announcement";
 import { hasPublicSupabaseEnv } from "@/lib/supabase/env";
 import { createServerSupabase } from "@/lib/supabase/server";
 
@@ -31,6 +32,7 @@ export default async function AdminInvitesPage() {
         <Link className="text-link" href="/">계획 화면으로 돌아가기</Link>
       </nav>
       <InviteManager />
+      <ReleaseAnnouncement key={user.id} />
     </main>
   );
 }
