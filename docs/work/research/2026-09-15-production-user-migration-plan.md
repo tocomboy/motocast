@@ -1,5 +1,15 @@
 # Production 배포와 기존 두 사용자 데이터 이전
 
+## Production 승격과 Auth 빈 문자열 보정
+
+- PR44의 고정013f3b0 CI34961939760 및 배포 없는 review branch 확인 뒤 develop에 동일 SHA를 반영했다. 후속CI34962161606/34962165791·develop-only34962239986·Vercel PASS 후 승인된 PR41을 main으로 merge했다. main89977ef7147177cab43fe54f7f8de16a69646972와 후보 tree diff0, Production dpl_8ebLxXkN3RxdEdodYWK4kHxfPeJo READY 및 운영 별칭 일치다.
+- 최초 운영 Kakao 로그인은 실패했다. Auth 로그에서 `confirmation_token`의 NULL을 문자열로 읽을 수 없다는 오류를 확인했다. 이전 대상 projection에서 인증 값 복제를 제외했으나 GoTrue가 요구하는 빈 문자열 초기화도 빠진 회귀다. 이전 시 선택한 앱 데이터와 신원 projection의 일치 PASS를 실제 로그인 성공으로 확대하지 않았기 때문에 운영 로그인 검사에서 발견했다.
+- Preview 두 사용자의 인증 보조 문자열9개는 모두 빈 문자열이며 Production의5개는 NULL,4개는 빈 문자열이었다. 원본·대상 UUID2개 및 카카오 신원 매핑 일치,9개 칸에 실제 값 없음, 다른 auth 필드와13개 앱 테이블 해시 보존을 검사한 transaction으로 해당 두 행의 NULL만 빈 문자열로 보정했다. 계정 삭제·재생성·실제 인증 토큰/세션 복제·기존 값 덮어쓰기는 없다. 이후 실제 관리자 운영 Kakao 로그인·지도·기존 공유 조회 PASS다.
+- 이전 도구는 auth.users에 아홉 고정 빈 문자열을 명시적으로 넣고 commit 전 모두 빈 문자열인지 검사하도록 수정했다. source snapshot projection과 원문 비복제 계약은 유지한다. 실제 격리 PostgreSQL17.6.1.166:55434에서 정상2행 초기화 및 NULL 주입 전체 rollback을 포함한18 PASS/0 FAIL/0 ERROR/0 SKIP, 최종15테이블0행, retained DB healthy다. 독립 테스트 목록으로 필드 계약을 검사하며 lead 검수 PASS, 제품·Edge·transport 변경은 없다.
+- 공개 HTTP200, Vercel 로그인으로 우회되지 않음, HSTS/nosniff/referrer/permissions 헤더 PASS. 로그인 후 DOM에서 실제로 로드한 공개 JS11개를 확인해 Production Supabase 연결 있음·Preview 연결 없음·서버 KMA 키와 secret-key prefix 없음을 확인했다. 로그인 전 JS8개만으로는 환경 연결 문자열이 나타나지 않았고, 처음 헤더 키 대소문자 조회를 잘못해 미검출한 값은 정규화 후 확인했다.
+- 신규 운영 실제 경로·예보 저장은 PASS이며 컬렉션·공유·예산·정리 검증을 진행한다. 사용자에게 기존 라이더 로그인을 요청했으나 현재 서버상 최근 운영 로그인 역할은admin뿐이어서 다른 계정 사용 가능 여부를 확인한다. 두 실사용 계정의 역할 변경·회수·재가입 시험은 하지 않는다. 전체 Production gate 완료 여부는 후속 실제 증거로 판정한다.
+- 원인 근거: [Supabase Auth NULL confirmation_token 진단](https://supabase.com/docs/guides/troubleshooting/scan-error-on-column-confirmation_token-converting-null-to-string-is-unsupported-during-auth-login-a0c686). 코드 보완과 이후 결과는 기존 운영 승격의 필수 수정 범위이며 새 운영 배포 승인을 반복 요청하지 않는다.
+
 ## 최신 실행 — Preview 실제 로그인·정상·실패 경계 확인
 
 - 제품이 동일한73f14a41cdd78aa13ce63e649de01132ea0a7648에서 Vercel 로그인 후 기존 카카오 세션을 통한 앱 로그인 완료를 직접 관찰했다. 이번 로그인 역할은admin이며 지도 준비·기존 공유 기록 조회 PASS다. 다른 라이더 및 최초 가입은 기존 사용자 확인 근거와 구분한다.
