@@ -2,6 +2,10 @@
 
 This runbook implements `OPS-002`, `OPS-004`, `OPS-005`, and `OPS-007` from `docs/product/MOTOCAST_SOT.md`. It records project references and secret ownership, never secret values.
 
+## Production rollout — 2026-09-15 KST
+
+PR41 promoted the verified candidate through develop→main; main89977ef and Production dpl_8ebLxXkN3RxdEdodYWK4kHxfPeJo are READY at the public alias. The initial real login exposed NULL Auth string placeholders omitted by the transfer operator. An exact-two-user, identity-bound transaction normalized only empty/null placeholders while proving other Auth and application fields unchanged. Actual administrator Kakao login, map, existing share history and live route/weather then passed. The operator now explicitly initializes nine empty fields and verifies them before commit; actual isolated DB regression18 PASS includes injected-NULL rollback. No session/token value is copied. Other-rider login and the remaining Production product checks remain separately tracked in the [execution record](../work/research/2026-09-15-production-user-migration-plan.md). Historical NOT_RUN entries below describe their earlier checkpoints.
+
 ## Latest connected verification — 2026-09-15 KST
 
 At unchanged product SHA73f14a4, actual existing-admin Kakao login, map, public-place search, motorcycle route persistence, KMA weather, collection save, share preview/publication/read/revoke and revoked-link denial passed. During the approved Preview write pause, only the new test snapshot was aged; temporary internal budget exhaustion blocked further KMA consumption while displaying the older forecast and disabling sharing. A temporary invalid Preview KMA key produced actual provider401 responses, proving both stale-snapshot display and no-matching-snapshot failure. The original key and limit1000 passed restoration readback, followed by a successful live forecast. These controlled failures are not spontaneous provider incidents. The first timestamp fixture used unsupported microsecond precision; correction to the existing millisecond contract passed without product changes.

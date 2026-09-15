@@ -33,6 +33,17 @@ FIXTURE_USERS = (
     "92000000-0000-0000-0000-000000000002",
 )
 FIXTURE_TIME = "2026-09-15T00:00:00+00:00"
+EXPECTED_AUTH_USER_EMPTY_FIELDS = (
+    "encrypted_password",
+    "confirmation_token",
+    "recovery_token",
+    "email_change_token_new",
+    "email_change",
+    "email_change_token_current",
+    "reauthentication_token",
+    "phone_change",
+    "phone_change_token",
+)
 
 
 class LocalDatabaseAdapter:
@@ -423,6 +434,18 @@ class ProductionUserTransferTests(unittest.TestCase):
         counts = self.adapter.query_value(LOCAL_REF, transfer.build_count_sql())
         self.assertEqual(set(counts.values()), {0})
 
+    def test_injected_null_auth_empty_field_rolls_back_to_zero(self):
+        injected = (
+            "update auth.users set confirmation_token = null "
+            f"where id = {transfer.sql_literal(FIXTURE_USERS[0])}::uuid;"
+        )
+        with self.assertRaisesRegex(transfer.TransferError, "LOCAL_IMPORT_FAILED"):
+            self.adapter.import_snapshot(
+                LOCAL_REF, transfer.build_import_sql(self.snapshot, self.metadata, injected)
+            )
+        counts = self.adapter.query_value(LOCAL_REF, transfer.build_count_sql())
+        self.assertEqual(set(counts.values()), {0})
+
     def test_successful_import_role_identity_and_collision_rejects_unchanged(self):
         self.adapter.import_snapshot(
             LOCAL_REF, transfer.build_import_sql(self.snapshot, self.metadata)
@@ -449,6 +472,27 @@ select jsonb_build_object(
         self.assertEqual(
             role_identity,
             {"users": 2, "identities": 2, "identity_users": 2, "active_admins": 1, "active_riders": 1},
+        )
+        empty_fields = self.adapter.query_value(
+            LOCAL_REF,
+            "select jsonb_build_object("
+            + ",".join(
+                (
+                    transfer.sql_literal(field),
+                    f"(select count(*) from auth.users where {transfer.quote_identifier(field)} = '')",
+                )[index]
+                for field in EXPECTED_AUTH_USER_EMPTY_FIELDS
+                for index in (0, 1)
+            )
+            + ") as result",
+        )
+        self.assertEqual(
+            transfer.AUTH_USER_EMPTY_FIELDS,
+            EXPECTED_AUTH_USER_EMPTY_FIELDS,
+        )
+        self.assertEqual(
+            empty_fields,
+            {field: 2 for field in EXPECTED_AUTH_USER_EMPTY_FIELDS},
         )
 
         with self.assertRaisesRegex(transfer.TransferError, "TARGET_NOT_EMPTY"):

@@ -64,6 +64,17 @@ AUTH_USERS_OMITTED = frozenset(
         "deleted_at",
     }
 )
+AUTH_USER_EMPTY_FIELDS = (
+    "encrypted_password",
+    "confirmation_token",
+    "recovery_token",
+    "email_change_token_new",
+    "email_change",
+    "email_change_token_current",
+    "reauthentication_token",
+    "phone_change",
+    "phone_change_token",
+)
 AUTH_IDENTITIES_COLUMNS = (
     "id",
     "provider_id",
@@ -575,11 +586,19 @@ def build_import_sql(snapshot: dict[str, Any], metadata: dict[str, Any], injecte
     for table in TABLES:
         columns = projection_for(table, metadata)
         quoted_columns = ", ".join(quote_identifier(column) for column in columns)
+        insert_columns = columns
+        selected_values = quoted_columns
+        if table == "auth.users":
+            insert_columns += AUTH_USER_EMPTY_FIELDS
+            selected_values += ", " + ", ".join("''" for _ in AUTH_USER_EMPTY_FIELDS)
+        quoted_insert_columns = ", ".join(
+            quote_identifier(column) for column in insert_columns
+        )
         rows = snapshot["tables"][table]["rows"]
         rows_literal = sql_literal(canonical_json(rows))
         inserts.append(
-            f"insert into {quote_table(table)} ({quoted_columns}) "
-            f"select {quoted_columns} from jsonb_populate_recordset(null::{quote_table(table)}, {rows_literal}::jsonb);"
+            f"insert into {quote_table(table)} ({quoted_insert_columns}) "
+            f"select {selected_values} from jsonb_populate_recordset(null::{quote_table(table)}, {rows_literal}::jsonb);"
         )
         verifies.append(
             f"if {_ordered_rows_sql(table, columns)} is distinct from {rows_literal}::jsonb then "
@@ -594,8 +613,15 @@ def build_import_sql(snapshot: dict[str, Any], metadata: dict[str, Any], injecte
     raise exception 'TRANSFER_TARGET_NOT_EMPTY';
   end if;
 end"""
+    empty_field_mismatch = " or ".join(
+        f"{quote_identifier(field)} is distinct from ''"
+        for field in AUTH_USER_EMPTY_FIELDS
+    )
     verification_body = f"""begin
   {chr(10).join(verifies)}
+  if exists (select 1 from auth.users where {empty_field_mismatch}) then
+    raise exception 'TRANSFER_AUTH_EMPTY_FIELDS_MISMATCH';
+  end if;
   if (select count(*) from auth.users) <> 2
      or (select count(*) from auth.identities) <> 2
      or (select count(*) from public.profiles) <> 2
