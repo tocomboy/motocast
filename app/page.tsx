@@ -1,16 +1,19 @@
 import { redirect } from "next/navigation";
 
 import { PlannerDashboard } from "@/components/planner-dashboard";
+import { ReleaseAnnouncement } from "@/components/release-announcement";
 import { hasPublicSupabaseEnv } from "@/lib/supabase/env";
 import { createServerSupabase } from "@/lib/supabase/server";
 
 export default async function HomePage() {
   const connected = hasPublicSupabaseEnv();
+  let announcementIdentity = "demo";
 
   if (connected) {
     const supabase = await createServerSupabase();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect("/login");
+    announcementIdentity = user.id;
 
     const { data: membership } = await supabase
       .from("memberships")
@@ -21,5 +24,10 @@ export default async function HomePage() {
     if (!membership) redirect("/login?error=not_invited");
   }
 
-  return <PlannerDashboard connected={connected} />;
+  return (
+    <>
+      <PlannerDashboard connected={connected} />
+      <ReleaseAnnouncement key={announcementIdentity} />
+    </>
+  );
 }

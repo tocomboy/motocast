@@ -401,6 +401,16 @@ Operational clarification for OPS-007, 2026-09-15: The user subsequently approve
 - Recorded: 2026-08-30.
 - Interview history: On 2026-08-31 the user deferred every Production Supabase/Vercel change until the Preview gate is complete. The subsequent user instruction to retain the current Tokyo/Seoul regions resolves the region choice. Production deployment, credentials, migrations, and main promotion still require their separate post-Preview approval; region confirmation alone does not authorize those changes.
 
+#### RELEASE-001 — Versioned user updates
+
+- Status: `CONFIRMED`
+- Decision: Use SemVer-based product versions and concise Korean, user-facing release notes. Keep package and release-data versions aligned. A public `/updates` page contains only curated product summaries, and a shared footer links the version to that page. On the first authenticated application visit after an update, show a dismissible, mobile-compatible summary once per active member and version, with server-side atomic persistence across devices and concurrent tabs. Each member has an independent record. Re-reading the page never resets the record.
+- Rationale: Riders should understand meaningful changes without reading development history or repeatedly dismissing the same announcement.
+- User impact: Show only the latest version's 2–4 meaningful changes automatically; prior notes remain available on demand. Close controls and Escape remain available. A display reservation records first access; retry of the same presentation is idempotent. A lost response or closed tab does not prove the rider read the message.
+- Affected: package version, release data, public updates page, application announcement component, same-origin claim endpoint, owner-bound `release_announcements` table and authenticated claim function. No role grants, user migration, route/weather or sharing contract changes.
+- Verification: package/lockfile/latest-note consistency, user A/B separation, repeat/new-version/concurrent claims, anonymous/revoked/non-member denial, no direct table access, Strict Mode and detached-request behavior, desktop/mobile dismissal and navigation. Keep local, actual DB and hosted evidence distinct.
+- Confirmed: User requested version conventions, concise updates, PR merge and Production deployment on 2026-09-16, then added one-time per-user mobile popup requirements. Details: [version and release-note rules](../rules/versioning-and-release-notes.md).
+
 ## Live-state snapshot
 
 ### Latest connected Auth update — 2026-09-06 KST
