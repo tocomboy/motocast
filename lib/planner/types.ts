@@ -12,6 +12,7 @@ export type RoutePoint = Coordinate & {
   dwellMinutes: number;
   selected: boolean;
   winding?: boolean;
+  stopRole?: "lunch" | "dinner" | "rest";
 };
 
 export type WeatherSnapshot = {
@@ -20,6 +21,11 @@ export type WeatherSnapshot = {
   precipitationProbability: number | null;
   windSpeedMps: number | null;
   issuedAt: string;
+  retrievedAt?: string;
+  model?: "ultra" | "short";
+  status?: "forecast" | "outside-window" | "unavailable";
+  stale?: boolean;
+  staleReason?: string;
 };
 
 export type PlannedSegment = {
@@ -28,6 +34,8 @@ export type PlannedSegment = {
   to: RoutePoint;
   distanceKm: number;
   rideMinutes: number;
+  departureAt?: string;
+  arrivalAt?: string;
   weather: WeatherSnapshot;
 };
 
@@ -38,14 +46,13 @@ export type TimelineSegment = PlannedSegment & {
 };
 
 export type RouteCandidate = {
-  id: "balanced" | "winding" | "short";
+  id: "recommended";
   label: string;
   description: string;
   distanceKm: number;
   rideMinutes: number;
   stopMinutes: number;
   returnAt: string;
-  fitsDesiredReturn: boolean;
-  fitsHardReturn: boolean;
+  path?: Coordinate[];
   segments: PlannedSegment[];
 };

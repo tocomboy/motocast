@@ -10,7 +10,10 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:preview": "playwright test",
+    "test:e2e:auth": "node tests/e2e/auth.setup.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.10.0",
@@ -20,15 +23,18 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/node": "26.4.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
+    "@types/react-test-renderer": "19.1.0",
     "eslint": "^9.39.1",
     "eslint-config-next": "16.3.3",
+    "react-test-renderer": "19.2.8",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
   },
   "engines": {
-    "node": ">=20.9.0"
+    "node": "20.x"
   }
 }

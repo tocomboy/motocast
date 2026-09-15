@@ -37,7 +37,7 @@ export function InviteManager() {
   }
 
   const inviteUrl = invite && typeof window !== "undefined"
-    ? `${window.location.origin}/invite/${invite.invite_token}`
+    ? `${window.location.origin}/invite#${invite.invite_token}`
     : "";
 
   async function copyInvite() {

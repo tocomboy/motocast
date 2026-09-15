@@ -40,7 +40,8 @@ create table if not exists public.invitations (
   consumed_at timestamptz,
   revoked_at timestamptz,
   check (expires_at > created_at),
-  check ((consumed_by is null) = (consumed_at is null))
+  constraint invitations_consumption_consistent
+    check (consumed_by is null or consumed_at is not null)
 );
 
 create table if not exists public.riding_collections (

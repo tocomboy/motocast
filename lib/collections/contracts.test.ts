@@ -1,0 +1,172 @@
+import { describe, expect, it } from "vitest";
+
+import { parseCollectionRows } from "./contracts";
+
+const point = {
+  id: "123",
+  label: "유명산",
+  kakaoPlaceId: "123",
+  verificationToken: "a".repeat(43),
+  name: "유명산",
+  address: "경기 가평군",
+  roadAddress: null,
+  longitude: 127.5,
+  latitude: 37.5,
+  kind: "pass-through",
+  dwellMinutes: 0,
+  selected: true,
+  winding: true,
+};
+const endpoint = {
+  kakaoPlaceId: "endpoint",
+  verificationToken: "b".repeat(43),
+  name: "팔당역",
+  address: "경기 남양주시",
+  roadAddress: null,
+  longitude: 127.2,
+  latitude: 37.5,
+};
+
+function collectionRow(points: unknown[]) {
+  return {
+    id: "collection-1",
+    title: "북한강",
+    description: "",
+    updated_at: "2026-08-31T00:00:00.000Z",
+    collection_versions: [{
+      id: "v1",
+      version_number: 1,
+      created_at: "2026-08-31T00:00:00.000Z",
+      origin: endpoint,
+      destination: { ...endpoint, kakaoPlaceId: "destination" },
+      points,
+    }],
+  };
+}
+
+function stopPoint(id: string, stopRole: "lunch" | "dinner" | "rest") {
+  return {
+    ...point,
+    id,
+    kind: stopRole === "rest" ? "optional" : "stop",
+    dwellMinutes: 30,
+    winding: false,
+    stopRole,
+  };
+}
+
+describe("parseCollectionRows", () => {
+  it("selects the latest immutable version", () => {
+    const parsed = parseCollectionRows([{
+      id: "collection-1",
+      title: "북한강",
+      description: "아침 코스",
+      updated_at: "2026-08-31T00:00:00.000Z",
+      collection_versions: [
+        { id: "v1", version_number: 1, created_at: "2026-08-30T00:00:00.000Z", origin: endpoint, destination: { ...endpoint, kakaoPlaceId: "destination" }, points: [point] },
+        { id: "v2", version_number: 2, created_at: "2026-08-31T00:00:00.000Z", origin: endpoint, destination: { ...endpoint, kakaoPlaceId: "destination" }, points: [{ ...point, label: "유명산 입구" }] },
+      ],
+    }]);
+    expect(parsed[0].latestVersion).toMatchObject({ number: 2 });
+  });
+
+  it("rejects a point whose verification proof is malformed", () => {
+    expect(() => parseCollectionRows([{
+      id: "collection-1",
+      title: "북한강",
+      description: "",
+      updated_at: "2026-08-31T00:00:00.000Z",
+      collection_versions: [{ id: "v1", version_number: 1, created_at: "2026-08-31T00:00:00.000Z", origin: endpoint, destination: { ...endpoint, kakaoPlaceId: "destination" }, points: [{ ...point, verificationToken: "short" }] }],
+    }])).toThrow();
+  });
+
+  it("rejects persisted winding points that also carry stop semantics", () => {
+    expect(() => parseCollectionRows([{
+      id: "collection-1",
+      title: "북한강",
+      description: "",
+      updated_at: "2026-08-31T00:00:00.000Z",
+      collection_versions: [{
+        id: "v1",
+        version_number: 1,
+        created_at: "2026-08-31T00:00:00.000Z",
+        origin: endpoint,
+        destination: { ...endpoint, kakaoPlaceId: "destination" },
+        points: [{ ...point, kind: "stop", dwellMinutes: 60, stopRole: "lunch" }],
+      }],
+    }])).toThrow("INVALID_COLLECTION_POINT");
+  });
+
+  it.each([
+    { selected: false },
+    { kind: "pass-through", dwellMinutes: 30, winding: false },
+    { kind: "optional", dwellMinutes: 30, winding: false },
+    { kind: "stop", dwellMinutes: 60, winding: false },
+    { stopRole: null },
+  ])("rejects a persisted occurrence with route-incompatible semantics %#", (overrides) => {
+    expect(() => parseCollectionRows([{
+      id: "collection-1",
+      title: "북한강",
+      description: "",
+      updated_at: "2026-08-31T00:00:00.000Z",
+      collection_versions: [{
+        id: "v1",
+        version_number: 1,
+        created_at: "2026-08-31T00:00:00.000Z",
+        origin: endpoint,
+        destination: { ...endpoint, kakaoPlaceId: "destination" },
+        points: [{ ...point, ...overrides }],
+      }],
+    }])).toThrow("INVALID_COLLECTION_POINT");
+  });
+
+  it.each([
+    ["duplicate occurrence IDs", [{ ...point, id: "same" }, { ...point, id: "same" }]],
+    ["multiple lunch stops", [stopPoint("lunch-1", "lunch"), stopPoint("lunch-2", "lunch")]],
+    ["multiple dinner stops", [stopPoint("dinner-1", "dinner"), stopPoint("dinner-2", "dinner")]],
+    ["more than five rest stops", Array.from({ length: 6 }, (_, index) => stopPoint(`rest-${index}`, "rest"))],
+    ["more than twenty semantic waypoints with false legacy markers", Array.from({ length: 21 }, (_, index) => ({ ...point, id: `waypoint-${index}`, winding: false }))],
+    ["more than thirty total points", Array.from({ length: 31 }, (_, index) => ({ ...point, id: `point-${index}`, winding: false }))],
+  ])("rejects a collection version with %s", (_label, points) => {
+    expect(() => parseCollectionRows([collectionRow(points)])).toThrow("INVALID_COLLECTION_VERSION");
+  });
+
+  it("accepts twenty semantic waypoints and canonicalizes their legacy markers", () => {
+    const points = Array.from({ length: 20 }, (_, index) => ({
+      ...point,
+      id: `waypoint-${index}`,
+      winding: false,
+    }));
+    const parsed = parseCollectionRows([collectionRow(points)]);
+    expect(parsed[0].latestVersion.course.points).toHaveLength(20);
+    expect(parsed[0].latestVersion.course.points.every((item) => item.winding)).toBe(true);
+  });
+
+  it("keeps repeated physical places as distinct ordered occurrences", () => {
+    const parsed = parseCollectionRows([{
+      id: "collection-1",
+      title: "반복 코스",
+      description: "",
+      updated_at: "2026-08-31T00:00:00.000Z",
+      collection_versions: [{
+        id: "v1",
+        version_number: 1,
+        created_at: "2026-08-31T00:00:00.000Z",
+        origin: endpoint,
+        destination: { ...endpoint, kakaoPlaceId: "destination" },
+        points: [{ ...point, id: "first" }, { ...point, id: "second" }],
+      }],
+    }]);
+    expect(parsed[0].latestVersion.course.points.map((item) => item.id)).toEqual(["first", "second"]);
+  });
+
+  it("ignores Preview-era waypoint-only versions without pretending they are complete courses", () => {
+    expect(parseCollectionRows([{
+      id: "legacy",
+      title: "경유지만 있던 컬렉션",
+      description: "",
+      updated_at: "2026-08-31T00:00:00.000Z",
+      collection_versions: [{ id: "v1", version_number: 1, created_at: "2026-08-31T00:00:00.000Z", points: [point] }],
+    }])).toEqual([]);
+  });
+});

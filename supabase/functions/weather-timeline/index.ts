@@ -1,28 +1,41 @@
-import { consumeBudget, requireMember } from "../_shared/auth.ts";
-import { corsHeaders, jsonResponse, safeErrorMessage } from "../_shared/http.ts";
+import { consumeBudget, requireMember, serviceClient } from "../_shared/auth.ts";
+import {
+  conditionFrom,
+  forecastTarget,
+  forecastWindow,
+  gridFromCoordinates,
+  issuedAtIso,
+  latestForecastBase,
+  type ForecastModel,
+  validatedForecastValues,
+} from "../_shared/weather-forecast.ts";
+import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
+import { parseWeatherRequest, type WeatherPoint, type WeatherRequest } from "../_shared/weather-request.ts";
+import { assertWeatherPointsMatch, weatherPointsFromStoredRoute } from "../_shared/weather-route.ts";
+import { kmaBindingDiagnostic, kmaResponseDiagnostic, safeWeatherDiagnosticCode, weatherFailureKind } from "../_shared/weather-failure.ts";
+import { publicWeatherSnapshot } from "../_shared/weather-snapshot.ts";
+import { parseKmaItems } from "../_shared/kma-response.ts";
 
-type WeatherPoint = {
-  id: string;
-  label: string;
-  longitude: number;
-  latitude: number;
-  eta: string;
+type MemberClient = Awaited<ReturnType<typeof requireMember>>["supabase"];
+
+type ForecastResult = {
+  values: Record<string, string>;
+  base: { date: string; time: string };
 };
 
-type KmaItem = {
-  baseDate: string;
-  baseTime: string;
-  category: string;
-  fcstDate: string;
-  fcstTime: string;
-  fcstValue: string;
-  nx: number;
-  ny: number;
-};
-
-type ForecastModel = "ultra" | "short";
-
-const VILLAGE_BASE_HOURS = [2, 5, 8, 11, 14, 17, 20, 23];
+type TimelineForecast = WeatherPoint & (
+  | { status: "outside-window"; reason: "FORECAST_WINDOW_EXCEEDED" }
+  | {
+    status: "forecast";
+    model: ForecastModel;
+    grid: { nx: number; ny: number };
+    issuedAt: string;
+    condition: "clear" | "cloudy" | "rain" | "snow" | "unknown";
+    temperatureC: number | null;
+    precipitationProbability: number | null;
+    windSpeedMps: number | null;
+  }
+);
 
 function parseLimit() {
   const value = Number(Deno.env.get("KMA_DAILY_LIMIT"));
@@ -30,137 +43,61 @@ function parseLimit() {
   return value;
 }
 
-function parsePoints(value: unknown): WeatherPoint[] {
-  if (!value || typeof value !== "object" || !Array.isArray((value as { points?: unknown }).points)) {
-    throw new Error("INVALID_REQUEST");
+async function weatherRequestHash(request: WeatherRequest) {
+  const payload = new TextEncoder().encode(JSON.stringify({
+    candidateProfile: request.candidateProfile,
+    points: request.points.map(({ id, longitude, latitude, eta }) => ({ id, longitude, latitude, eta })),
+  }));
+  const digest = await crypto.subtle.digest("SHA-256", payload);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function canonicalRouteRequest(supabase: MemberClient, request: WeatherRequest): Promise<WeatherRequest> {
+  const { data, error } = await supabase
+    .from("route_cache")
+    .select("summary")
+    .eq("trip_id", request.tripId)
+    .eq("profile", request.candidateProfile)
+    .maybeSingle();
+  if (error) throw new Error("WEATHER_PERSIST_FAILED");
+  if (!data) throw new Error("INVALID_WEATHER_ROUTE");
+  const points = weatherPointsFromStoredRoute(data.summary, request.candidateProfile);
+  assertWeatherPointsMatch(request.points, points);
+  return { ...request, points };
+}
+
+async function readSnapshot(
+  supabase: MemberClient,
+  request: WeatherRequest,
+  requestHash: string,
+  freshOnly: boolean,
+) {
+  let query = supabase
+    .from("weather_snapshots")
+    .select("id,issued_at,valid_until,created_at,segments,stale_observed_at,stale_reason,stale_failure_kind")
+    .eq("trip_id", request.tripId)
+    .eq("candidate_profile", request.candidateProfile)
+    .eq("request_hash", requestHash)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (freshOnly) {
+    query = query
+      .gte("created_at", new Date(Date.now() - 20 * 60_000).toISOString())
+      .is("stale_observed_at", null);
   }
-  const points = (value as { points: unknown[] }).points;
-  if (points.length === 0 || points.length > 40) throw new Error("INVALID_POINTS");
-  return points.map((raw, index) => {
-    if (!raw || typeof raw !== "object") throw new Error("INVALID_POINT");
-    const point = raw as Partial<WeatherPoint>;
-    const eta = new Date(point.eta ?? "");
-    if (
-      typeof point.longitude !== "number" || point.longitude < 124 || point.longitude > 132 ||
-      typeof point.latitude !== "number" || point.latitude < 32 || point.latitude > 39.5 ||
-      Number.isNaN(eta.getTime()) || eta.getTime() < Date.now() - 60 * 60_000
-    ) throw new Error("INVALID_POINT");
-    return {
-      id: typeof point.id === "string" ? point.id.slice(0, 100) : `point-${index}`,
-      label: typeof point.label === "string" ? point.label.slice(0, 160) : `지점 ${index + 1}`,
-      longitude: point.longitude,
-      latitude: point.latitude,
-      eta: eta.toISOString(),
-    };
-  });
-}
-
-function kstParts(date: Date) {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  });
-  return Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
-}
-
-function localSerial(date: Date) {
-  const parts = kstParts(date);
-  return new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute)));
-}
-
-function formatBase(serial: Date, minute: string) {
-  const year = serial.getUTCFullYear().toString().padStart(4, "0");
-  const month = (serial.getUTCMonth() + 1).toString().padStart(2, "0");
-  const day = serial.getUTCDate().toString().padStart(2, "0");
-  const hour = serial.getUTCHours().toString().padStart(2, "0");
-  return { date: `${year}${month}${day}`, time: `${hour}${minute}` };
-}
-
-function latestBase(model: ForecastModel, now: Date) {
-  const serial = localSerial(now);
-  if (model === "ultra") {
-    if (serial.getUTCMinutes() < 45) serial.setUTCHours(serial.getUTCHours() - 1);
-    return formatBase(serial, "30");
-  }
-
-  serial.setUTCMinutes(serial.getUTCMinutes() - 15);
-  const currentHour = serial.getUTCHours();
-  const chosen = [...VILLAGE_BASE_HOURS].reverse().find((hour) => hour <= currentHour);
-  if (chosen === undefined) {
-    serial.setUTCDate(serial.getUTCDate() - 1);
-    serial.setUTCHours(23);
-  } else {
-    serial.setUTCHours(chosen);
-  }
-  return formatBase(serial, "00");
-}
-
-function forecastTarget(eta: Date) {
-  const serial = localSerial(eta);
-  if (serial.getUTCMinutes() >= 30) serial.setUTCHours(serial.getUTCHours() + 1);
-  serial.setUTCMinutes(0);
-  return formatBase(serial, "00");
-}
-
-function gridFromCoordinates(latitude: number, longitude: number) {
-  const RE = 6371.00877;
-  const GRID = 5.0;
-  const SLAT1 = 30.0;
-  const SLAT2 = 60.0;
-  const OLON = 126.0;
-  const OLAT = 38.0;
-  const XO = 43;
-  const YO = 136;
-  const DEGRAD = Math.PI / 180.0;
-  const re = RE / GRID;
-  const slat1 = SLAT1 * DEGRAD;
-  const slat2 = SLAT2 * DEGRAD;
-  const olon = OLON * DEGRAD;
-  const olat = OLAT * DEGRAD;
-  let sn = Math.tan(Math.PI * 0.25 + slat2 * 0.5) / Math.tan(Math.PI * 0.25 + slat1 * 0.5);
-  sn = Math.log(Math.cos(slat1) / Math.cos(slat2)) / Math.log(sn);
-  let sf = Math.tan(Math.PI * 0.25 + slat1 * 0.5);
-  sf = Math.pow(sf, sn) * Math.cos(slat1) / sn;
-  let ro = Math.tan(Math.PI * 0.25 + olat * 0.5);
-  ro = re * sf / Math.pow(ro, sn);
-  let ra = Math.tan(Math.PI * 0.25 + latitude * DEGRAD * 0.5);
-  ra = re * sf / Math.pow(ra, sn);
-  let theta = longitude * DEGRAD - olon;
-  if (theta > Math.PI) theta -= 2.0 * Math.PI;
-  if (theta < -Math.PI) theta += 2.0 * Math.PI;
-  theta *= sn;
+  const { data, error } = await query.maybeSingle();
+  if (error) throw new Error("WEATHER_PERSIST_FAILED");
+  if (!data || !Array.isArray(data.segments)) return null;
   return {
-    nx: Math.floor(ra * Math.sin(theta) + XO + 0.5),
-    ny: Math.floor(ro - ra * Math.cos(theta) + YO + 0.5),
+    snapshotId: String(data.id),
+    issuedAt: String(data.issued_at),
+    validUntil: String(data.valid_until),
+    generatedAt: String(data.created_at),
+    forecasts: data.segments,
+    staleObservedAt: data.stale_observed_at === null ? null : String(data.stale_observed_at),
+    staleReason: data.stale_reason === null ? null : String(data.stale_reason),
+    failureKind: data.stale_failure_kind === null ? null : String(data.stale_failure_kind),
   };
-}
-
-function conditionFrom(values: Record<string, string>) {
-  const precipitation = Number(values.PTY ?? 0);
-  if ([3, 7].includes(precipitation)) return "snow";
-  if (precipitation > 0) return "rain";
-  const sky = Number(values.SKY ?? 0);
-  if (sky >= 3) return "cloudy";
-  if (sky === 1) return "clear";
-  return "unknown";
-}
-
-function closestForecast(items: KmaItem[], target: { date: string; time: string }) {
-  const groups = new Map<string, KmaItem[]>();
-  for (const item of items) {
-    const key = `${item.fcstDate}${item.fcstTime}`;
-    groups.set(key, [...(groups.get(key) ?? []), item]);
-  }
-  const targetKey = `${target.date}${target.time}`;
-  const closestKey = [...groups.keys()].sort((a, b) => Math.abs(Number(a) - Number(targetKey)) - Math.abs(Number(b) - Number(targetKey)))[0];
-  if (!closestKey) throw new Error("KMA_FORECAST_NOT_FOUND");
-  const selected = groups.get(closestKey) ?? [];
-  return Object.fromEntries(selected.map((item) => [item.category, item.fcstValue]));
 }
 
 async function fetchForecast(input: {
@@ -169,8 +106,9 @@ async function fetchForecast(input: {
   ny: number;
   apiKey: string;
   target: { date: string; time: string };
-}) {
-  const base = latestBase(input.model, new Date());
+  now: Date;
+}): Promise<ForecastResult> {
+  const base = latestForecastBase(input.model, input.now);
   const operation = input.model === "ultra" ? "getUltraSrtFcst" : "getVilageFcst";
   const url = new URL(`https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/${operation}`);
   url.searchParams.set("pageNo", "1");
@@ -182,15 +120,95 @@ async function fetchForecast(input: {
   url.searchParams.set("ny", String(input.ny));
   url.searchParams.set("authKey", input.apiKey);
 
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("KMA_REQUEST_FAILED");
-  const data = await response.json() as {
-    response?: { header?: { resultCode?: string }; body?: { items?: { item?: KmaItem[] } } };
-  };
-  if (data.response?.header?.resultCode !== "00") throw new Error("KMA_REQUEST_FAILED");
-  const items = data.response.body?.items?.item;
-  if (!Array.isArray(items) || items.length === 0) throw new Error("KMA_FORECAST_NOT_FOUND");
-  return { values: closestForecast(items, input.target), base, operation };
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+  } catch {
+    throw new Error("KMA_REQUEST_FAILED");
+  }
+  const items = await parseKmaItems(response, {
+    baseDate: base.date,
+    baseTime: base.time,
+    nx: input.nx,
+    ny: input.ny,
+    model: input.model,
+  });
+  return { values: validatedForecastValues(items, input.target, input.model), base };
+}
+
+async function fetchTimeline(memberId: string, points: WeatherPoint[], apiKey: string | null): Promise<TimelineForecast[]> {
+  const now = new Date();
+  const cache = new Map<string, ForecastResult>();
+  const forecasts: TimelineForecast[] = [];
+
+  for (const point of points) {
+    const eta = new Date(point.eta);
+    const window = forecastWindow(eta, now);
+    if (window === "outside-window") {
+      forecasts.push({ ...point, status: "outside-window", reason: "FORECAST_WINDOW_EXCEEDED" });
+      continue;
+    }
+    if (!apiKey) throw new Error("PROVIDER_NOT_CONFIGURED");
+
+    const model = window;
+    const { nx, ny } = gridFromCoordinates(point.latitude, point.longitude);
+    const target = forecastTarget(eta);
+    const cacheKey = `${model}:${nx}:${ny}:${target.date}:${target.time}`;
+    let forecast = cache.get(cacheKey);
+    if (!forecast) {
+      await consumeBudget(memberId, "kma", model === "ultra" ? "ultra_forecast" : "short_forecast", parseLimit());
+      forecast = await fetchForecast({ model, nx, ny, apiKey, target, now });
+      cache.set(cacheKey, forecast);
+    }
+    const temperature = model === "ultra" ? forecast.values.T1H : forecast.values.TMP;
+    forecasts.push({
+      ...point,
+      status: "forecast",
+      model,
+      grid: { nx, ny },
+      issuedAt: issuedAtIso(forecast.base),
+      condition: conditionFrom(forecast.values),
+      temperatureC: temperature === undefined ? null : Number(temperature),
+      precipitationProbability: forecast.values.POP === undefined ? null : Number(forecast.values.POP),
+      windSpeedMps: forecast.values.WSD === undefined ? null : Number(forecast.values.WSD),
+    });
+  }
+  return forecasts;
+}
+
+async function persistSnapshot(
+  memberId: string,
+  request: WeatherRequest,
+  requestHash: string,
+  forecasts: TimelineForecast[],
+  generatedAt: string,
+) {
+  const issueTimes = forecasts.flatMap((forecast) => forecast.status === "forecast" ? [Date.parse(forecast.issuedAt)] : []);
+  const oldestIssue = issueTimes.length ? Math.min(...issueTimes) : Date.parse(generatedAt);
+  const lastEta = Math.max(...request.points.map((point) => Date.parse(point.eta)));
+  const validUntil = new Date(Math.max(lastEta + 60 * 60_000, oldestIssue + 60 * 60_000)).toISOString();
+  const { error } = await serviceClient().rpc("insert_weather_snapshot_internal", {
+    member_id: memberId,
+    target_trip_id: request.tripId,
+    target_candidate_profile: request.candidateProfile,
+    target_issued_at: new Date(oldestIssue).toISOString(),
+    target_valid_until: validUntil,
+    target_segments: forecasts,
+    target_request_hash: requestHash,
+    target_created_at: generatedAt,
+  });
+  if (error) throw new Error("WEATHER_PERSIST_FAILED");
+  return validUntil;
+}
+
+async function markSnapshotStale(memberId: string, snapshotId: string, reason: string, failureKind: ReturnType<typeof weatherFailureKind>) {
+  const { error } = await serviceClient().rpc("mark_weather_snapshot_stale_internal", {
+    member_id: memberId,
+    target_snapshot_id: snapshotId,
+    safe_reason: reason,
+    safe_failure_kind: failureKind,
+  });
+  if (error) throw new Error("WEATHER_PERSIST_FAILED");
 }
 
 Deno.serve(async (request) => {
@@ -199,50 +217,58 @@ Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   if (request.method !== "POST") return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405, cors);
 
+  let supabase: MemberClient | null = null;
+  let memberId: string | null = null;
+  let weatherRequest: WeatherRequest | null = null;
+  let requestHash: string | null = null;
   try {
-    const { supabase } = await requireMember(request);
-    const points = parsePoints(await request.json());
-    const apiKey = Deno.env.get("KMA_APIHUB_KEY");
-    if (!apiKey) throw new Error("PROVIDER_NOT_CONFIGURED");
-    const fiveDays = 5 * 24 * 60 * 60_000;
-    const sixHours = 6 * 60 * 60_000;
-    const now = Date.now();
-    const cache = new Map<string, Awaited<ReturnType<typeof fetchForecast>>>();
-    const forecasts = [];
+    const member = await requireMember(request);
+    supabase = member.supabase;
+    memberId = member.user.id;
+    weatherRequest = await canonicalRouteRequest(supabase, parseWeatherRequest(await request.json()));
+    requestHash = await weatherRequestHash(weatherRequest);
 
-    for (const point of points) {
-      const eta = new Date(point.eta);
-      if (eta.getTime() - now > fiveDays) {
-        forecasts.push({ ...point, status: "draft", reason: "FORECAST_WINDOW_EXCEEDED" });
-        continue;
-      }
-      const model: ForecastModel = eta.getTime() - now <= sixHours ? "ultra" : "short";
-      const { nx, ny } = gridFromCoordinates(point.latitude, point.longitude);
-      const target = forecastTarget(eta);
-      const cacheKey = `${model}:${nx}:${ny}:${target.date}:${target.time}`;
-      let forecast = cache.get(cacheKey);
-      if (!forecast) {
-        await consumeBudget(supabase, "kma", model === "ultra" ? "ultra_forecast" : "short_forecast", parseLimit());
-        forecast = await fetchForecast({ model, nx, ny, apiKey, target });
-        cache.set(cacheKey, forecast);
-      }
-      const temperature = forecast.values.T1H ?? forecast.values.TMP;
-      forecasts.push({
-        ...point,
-        status: "forecast",
-        model,
-        grid: { nx, ny },
-        issuedAtKst: `${forecast.base.date}${forecast.base.time}`,
-        condition: conditionFrom(forecast.values),
-        temperatureC: temperature === undefined ? null : Number(temperature),
-        precipitationProbability: forecast.values.POP === undefined ? null : Number(forecast.values.POP),
-        windSpeedMps: forecast.values.WSD === undefined ? null : Number(forecast.values.WSD),
-      });
+    const cached = await readSnapshot(supabase, weatherRequest, requestHash, true);
+    if (cached) {
+      return jsonResponse({ ...publicWeatherSnapshot(cached), source: "cache", stale: false }, 200, cors);
     }
 
-    return jsonResponse({ generatedAt: new Date().toISOString(), forecasts }, 200, cors);
+    const generatedAt = new Date().toISOString();
+    const forecasts = await fetchTimeline(memberId, weatherRequest.points, Deno.env.get("KMA_APIHUB_KEY") ?? null);
+    const validUntil = await persistSnapshot(memberId, weatherRequest, requestHash, forecasts, generatedAt);
+    const issueTimes = forecasts.flatMap((forecast) => forecast.status === "forecast" ? [forecast.issuedAt] : []);
+    return jsonResponse({
+      generatedAt,
+      issuedAt: issueTimes.sort()[0] ?? generatedAt,
+      validUntil,
+      source: "live",
+      stale: false,
+      staleObservedAt: null,
+      forecasts,
+    }, 200, cors);
   } catch (error) {
-    console.error("weather-timeline failed", error instanceof Error ? error.message : "unknown error");
-    return jsonResponse({ error: safeErrorMessage(error) }, 400, cors);
+    if (supabase && memberId && weatherRequest && requestHash) {
+      try {
+        const stale = await readSnapshot(supabase, weatherRequest, requestHash, false);
+        if (stale) {
+          const staleReason = safeErrorMessage(error);
+          const failureKind = weatherFailureKind(error);
+          await markSnapshotStale(memberId, stale.snapshotId, staleReason, failureKind);
+          console.warn("weather-timeline stale fallback", safeWeatherDiagnosticCode(error), kmaResponseDiagnostic(error), ...kmaBindingDiagnostic(error));
+          return jsonResponse({
+            ...publicWeatherSnapshot(stale),
+            source: "snapshot",
+            stale: true,
+            staleReason,
+            failureKind,
+            staleObservedAt: new Date().toISOString(),
+          }, 200, cors);
+        }
+      } catch {
+        console.error("weather-timeline snapshot read failed");
+      }
+    }
+    console.error("weather-timeline failed", safeWeatherDiagnosticCode(error), kmaResponseDiagnostic(error), ...kmaBindingDiagnostic(error));
+    return jsonResponse({ error: safeErrorMessage(error) }, safeErrorStatus(error), cors);
   }
 });

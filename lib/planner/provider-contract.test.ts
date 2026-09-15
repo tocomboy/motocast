@@ -1,0 +1,266 @@
+import { describe, expect, it } from "vitest";
+
+import { parseSafeRecommendedRoute, parseSafeRouteCandidateSet, parseSafeRouteResponse, ProviderContractError, routeResponseFingerprint } from "./provider-contract";
+import { buildSafeRouteResponse } from "../../supabase/functions/_shared/route-response";
+import type { RoutePoint } from "./types";
+
+const point = (id: string): RoutePoint => ({
+  id,
+  label: id,
+  latitude: 37.5,
+  longitude: 127.1,
+  kind: "pass-through",
+  dwellMinutes: 0,
+  selected: true,
+});
+
+function response() {
+  return buildSafeRouteResponse({
+    candidate: { id: "balanced", label: "균형", estimatedWinding: false },
+    totalDistanceMeters: 12000,
+    totalDurationSeconds: 1800,
+    returnAt: "2026-08-31T00:30:00.000Z",
+    legs: [
+      {
+        from: point("origin"),
+        to: point("destination"),
+        via: [],
+        departureAt: "2026-08-31T00:00:00.000Z",
+        arrivalAt: "2026-08-31T00:30:00.000Z",
+        dwellMinutes: 0,
+        distanceMeters: 12000,
+        durationSeconds: 1800,
+        providerRequestNumber: 1,
+        sections: [
+          {
+            distance: 12000,
+            duration: 1800,
+            roads: [{ name: "지방도", distance: 12000, duration: 1800, vertexes: [127.1, 37.5, 127.2, 37.6] }],
+          },
+        ],
+        forecastTraffic: true,
+      },
+    ],
+  });
+}
+
+describe("parseSafeRouteResponse", () => {
+  it("accepts an explicitly motorcycle-safe response", () => {
+    expect(parseSafeRouteResponse(response()).safety).toEqual({
+      vehicle: "motorcycle",
+      motorwayExcluded: true,
+      fallbackUsed: false,
+    });
+  });
+
+  it("requires estimated winding routes to be labeled honestly", () => {
+    expect(() => parseSafeRouteResponse({
+      ...response(),
+      candidate: { id: "winding", label: "와인딩", estimatedWinding: true },
+    })).toThrowError(new ProviderContractError("INVALID_ROUTE_CANDIDATE"));
+  });
+
+  it.each([
+    ["passenger car", { vehicle: "car", motorwayExcluded: true, fallbackUsed: false }],
+    ["motorway allowed", { vehicle: "motorcycle", motorwayExcluded: false, fallbackUsed: false }],
+    ["fallback used", { vehicle: "motorcycle", motorwayExcluded: true, fallbackUsed: true }],
+  ])("rejects unsafe evidence: %s", (_label, safety) => {
+    expect(() => parseSafeRouteResponse({ ...response(), safety })).toThrowError(
+      new ProviderContractError("UNSAFE_ROUTE_RESPONSE"),
+    );
+  });
+
+  it("rejects empty route legs instead of treating them as success", () => {
+    expect(() => parseSafeRouteResponse({ ...response(), legs: [] })).toThrowError(
+      new ProviderContractError("INVALID_ROUTE_LEGS"),
+    );
+  });
+
+  it("rejects malformed geometry", () => {
+    const value = response();
+    value.legs[0].sections[0].roads[0].vertexes = [127.1, 37.5, Number.NaN, 37.6];
+    expect(() => parseSafeRouteResponse(value)).toThrowError(
+      new ProviderContractError("INVALID_ROUTE_GEOMETRY"),
+    );
+  });
+
+  it("rejects odd geometry coordinate pairs", () => {
+    const value = response();
+    value.legs[0].sections[0].roads[0].vertexes = [127.1, 37.5, 127.2];
+    expect(() => parseSafeRouteResponse(value)).toThrowError(
+      new ProviderContractError("INVALID_ROUTE_GEOMETRY"),
+    );
+  });
+
+  it("rejects discontinuous leg time and endpoint sequences", () => {
+    const value = response();
+    const destination = point("destination");
+    value.legs[0].to = { ...point("middle"), dwellMinutes: 10 };
+    value.legs[0].dwellMinutes = 10;
+    value.legs.push({
+      ...value.legs[0],
+      from: point("different-middle"),
+      to: destination,
+      departureAt: "2026-08-31T00:20:00.000Z",
+      arrivalAt: "2026-08-31T00:30:00.000Z",
+      dwellMinutes: 0,
+      durationSeconds: 600,
+      distanceMeters: 4000,
+      sections: [{
+        distance: 4000,
+        duration: 600,
+        roads: [{ name: "지방도", distance: 4000, duration: 600, vertexes: [127.2, 37.6, 127.3, 37.7] }],
+      }],
+    });
+    value.totalDistanceMeters = 16000;
+    value.totalDurationSeconds = 3000;
+    expect(() => parseSafeRouteResponse(value)).toThrowError(
+      new ProviderContractError("DISCONTINUOUS_ROUTE_LEGS"),
+    );
+  });
+
+  it("rejects totals that do not match the accepted legs", () => {
+    expect(() => parseSafeRouteResponse({ ...response(), totalDurationSeconds: 60 })).toThrowError(
+      new ProviderContractError("INVALID_ROUTE_TOTALS"),
+    );
+  });
+
+  it("rejects a leg whose timestamps hide a longer provider duration", () => {
+    const value = response();
+    value.legs[0].arrivalAt = "2026-08-31T00:01:00.000Z";
+    value.returnAt = value.legs[0].arrivalAt;
+    expect(() => parseSafeRouteResponse(value)).toThrowError(
+      new ProviderContractError("INVALID_ROUTE_TOTALS"),
+    );
+  });
+
+  it("rejects an empty successful geometry", () => {
+    const value = response();
+    value.legs[0].sections = [];
+    expect(() => parseSafeRouteResponse(value)).toThrowError(
+      new ProviderContractError("INVALID_ROUTE_GEOMETRY"),
+    );
+  });
+
+  it("rejects section and road totals that disagree with the leg", () => {
+    const value = response();
+    value.legs[0].sections[0].roads[0].distance = 11000;
+    expect(() => parseSafeRouteResponse(value)).toThrowError(
+      new ProviderContractError("INVALID_ROUTE_TOTALS"),
+    );
+  });
+
+  it("rejects disconnected adjacent roads", () => {
+    const value = response();
+    value.legs[0].sections[0].roads = [
+      { name: "앞", distance: 6000, duration: 900, vertexes: [127.1, 37.5, 127.15, 37.55] },
+      { name: "뒤", distance: 6000, duration: 900, vertexes: [127.18, 37.58, 127.2, 37.6] },
+    ];
+    expect(() => parseSafeRouteResponse(value)).toThrow("DISCONTINUOUS_ROUTE_GEOMETRY");
+  });
+});
+
+describe("parseSafeRecommendedRoute", () => {
+  it("accepts exactly the single recommended route identity", () => {
+    const recommended = response();
+    recommended.candidate = { id: "recommended", label: "추천 경로", estimatedWinding: false };
+    expect(parseSafeRecommendedRoute(recommended).candidate.id).toBe("recommended");
+    expect(() => parseSafeRecommendedRoute(response())).toThrow("INVALID_RECOMMENDED_ROUTE_RESPONSE");
+  });
+
+  it("rejects automatic winding semantics on the recommended route", () => {
+    expect(() => parseSafeRouteResponse({
+      ...response(),
+      candidate: { id: "recommended", label: "와인딩 추정", estimatedWinding: true },
+    })).toThrow("INVALID_ROUTE_CANDIDATE");
+  });
+
+  it("preserves occurrence-specific stop roles and rejects conflicting semantics", () => {
+    const recommended = response();
+    recommended.candidate = { id: "recommended", label: "추천 경로", estimatedWinding: false };
+    recommended.legs[0].to = {
+      ...recommended.legs[0].to,
+      kind: "stop",
+      dwellMinutes: 60,
+      stopRole: "lunch",
+    };
+    recommended.legs[0].dwellMinutes = 60;
+    recommended.totalDurationSeconds += 3600;
+    recommended.returnAt = "2026-08-31T01:30:00.000Z";
+    expect(parseSafeRecommendedRoute(recommended).legs[0].to.stopRole).toBe("lunch");
+
+    const invalid = structuredClone(recommended);
+    invalid.legs[0].to.kind = "optional";
+    expect(() => parseSafeRecommendedRoute(invalid)).toThrow("INVALID_ROUTE_POINT");
+
+    const zeroDwell = structuredClone(recommended);
+    zeroDwell.legs[0].to.dwellMinutes = 0;
+    expect(() => parseSafeRecommendedRoute(zeroDwell)).toThrow("INVALID_ROUTE_POINT");
+  });
+});
+
+describe("parseSafeRouteCandidateSet", () => {
+  it("retains the expected candidate identity when one response is malformed", () => {
+    const balanced = response();
+    balanced.legs[0].sections = [];
+    expect(() => parseSafeRouteCandidateSet([balanced, response(), response()])).toThrow("INVALID_BALANCED_ROUTE_RESPONSE");
+  });
+
+  it("requires each candidate identity exactly once in request order", () => {
+    const balanced = response();
+    const winding = structuredClone(balanced);
+    winding.candidate = { id: "winding", label: "와인딩 추정", estimatedWinding: true };
+    winding.legs[0].sections[0].roads[0].vertexes = [127.1, 37.5, 127.25, 37.65];
+    const short = structuredClone(balanced);
+    short.candidate = { id: "short", label: "최단", estimatedWinding: false };
+    short.legs[0].sections[0].roads[0].vertexes = [127.1, 37.5, 127.3, 37.7];
+    expect(parseSafeRouteCandidateSet([balanced, winding, short])).toHaveLength(3);
+    expect(() => parseSafeRouteCandidateSet([balanced, balanced, short])).toThrow("INVALID_ROUTE_CANDIDATE_SET");
+  });
+
+  it("rejects route identities that draw the same geometry", () => {
+    const balanced = response();
+    balanced.legs[0].sections[0].roads[0].vertexes = [127.1, 37.5, 127.15, 37.55, 127.2, 37.6];
+    const winding = structuredClone(balanced);
+    winding.candidate = { id: "winding", label: "와인딩 추정", estimatedWinding: true };
+    winding.legs[0].sections[0].roads = [
+      { name: "앞", distance: 6000, duration: 900, vertexes: [127.1, 37.5, 127.15, 37.55] },
+      { name: "뒤", distance: 6000, duration: 900, vertexes: [127.15, 37.55, 127.2, 37.6] },
+    ];
+    const short = structuredClone(balanced);
+    short.candidate = { id: "short", label: "최단", estimatedWinding: false };
+    expect(() => parseSafeRouteCandidateSet([balanced, winding, short])).toThrow("DUPLICATE_ROUTE_CANDIDATES");
+  });
+
+  it("retains identity differences at unsampled interior vertices", () => {
+    const balanced = response();
+    const dense = Array.from({ length: 52 }, (_, index) => (
+      index % 2 === 0 ? 127.1 + index / 1000 : 37.5 + index / 1000
+    ));
+    balanced.legs[0].sections[0].roads[0].vertexes = dense;
+    const winding = structuredClone(balanced);
+    winding.candidate = { id: "winding", label: "와인딩 추정", estimatedWinding: true };
+    winding.legs[0].sections[0].roads[0].vertexes[2] += 0.0005;
+    const short = structuredClone(balanced);
+    short.candidate = { id: "short", label: "최단", estimatedWinding: false };
+    short.legs[0].sections[0].roads[0].vertexes[6] += 0.0005;
+
+    expect(parseSafeRouteCandidateSet([balanced, winding, short])).toHaveLength(3);
+  });
+
+  it("uses decimal half-up microdegrees at the six-place tie boundary", () => {
+    const tie = response();
+    tie.legs[0].sections[0].roads[0].vertexes = [127.05, 37.5, 127.0500005, 37.6];
+    const rounded = structuredClone(tie);
+    rounded.legs[0].sections[0].roads[0].vertexes = [127.05, 37.5, 127.050001, 37.6];
+    expect(routeResponseFingerprint(parseSafeRouteResponse(tie)))
+      .toBe(routeResponseFingerprint(parseSafeRouteResponse(rounded)));
+
+    const belowTie = structuredClone(tie);
+    belowTie.legs[0].sections[0].roads[0].vertexes = [127.05, 37.5, 127.05000049, 37.6];
+    const roundedDown = structuredClone(tie);
+    roundedDown.legs[0].sections[0].roads[0].vertexes = [127.05, 37.5, 127.05, 37.6];
+    expect(routeResponseFingerprint(parseSafeRouteResponse(belowTie)))
+      .toBe(routeResponseFingerprint(parseSafeRouteResponse(roundedDown)));
+  });
+});

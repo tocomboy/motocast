@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 
 import { publicSupabaseEnv } from "./env";
 
-export async function createServerSupabase() {
+export async function createServerSupabase(onSetCookieNames?: (names: string[]) => void) {
   const cookieStore = await cookies();
   const { url, publishableKey } = publicSupabaseEnv();
 
@@ -13,6 +13,7 @@ export async function createServerSupabase() {
         return cookieStore.getAll();
       },
       setAll(items) {
+        onSetCookieNames?.(items.map(({ name }) => name));
         try {
           items.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
         } catch {

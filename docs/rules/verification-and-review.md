@@ -1,0 +1,209 @@
+# MOTOCAST verification and review rules
+
+This document extends the active Codex home's global `AGENTS.md` verification baseline. It is the single source of truth for MOTOCAST writer verification, lead-owned review, finding closure, and deployment gates. The personal routing source owns model allocation; this project does not duplicate a model matrix.
+
+## 1. Evidence and result taxonomy
+
+Never claim completion or GREEN without executed evidence on the exact changed set or fixed commit SHA. Record each command and scenario as one of:
+
+- `PASS`
+- `FAIL`
+- `ERROR`
+- `SKIP`
+- `DESELECTED`
+- `XFAIL`
+- `SETUP_OR_IMPORT_FAILURE`
+- `NOT_RUN`
+
+A focused, mocked, docs-only, local, or shared-baseline result cannot be generalized to a broader gate. Do not weaken assertions or add skips/xfails to hide a failure.
+
+## 2. Decision-to-change traceability
+
+For each logical slice, record:
+
+1. Applicable Decision IDs from `docs/product/MOTOCAST_SOT.md`.
+2. Owned and changed files, schema objects, and external settings.
+3. Expected normal, error, boundary, and state-transition behavior.
+4. Commands and live scenarios executed.
+5. Exact result counts and anything not run.
+
+Any `NEEDS_INTERVIEW` decision blocks completion of its affected slice. It does not block independent safe work.
+
+## 3. Writer verification
+
+After each logical implementation unit:
+
+1. Search the impact surface before editing and re-read changed files afterward.
+2. Confirm the changed set contains no unrelated or user-owned changes.
+3. Run `git diff --check`.
+4. Run the narrow unit/integration tests appropriate to the slice.
+5. Run the repository baseline before committing:
+
+```bash
+npm ci
+npm run lint
+npm run typecheck
+npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts supabase/functions/save-collection/index.ts supabase/functions/kakao-oidc/index.ts
+npm test
+npx playwright install chromium
+npm run test:e2e
+npm run build
+git diff --check
+```
+
+The deterministic Playwright suite runs Chromium headless with one worker and zero retries through the same `npm run test:e2e` command locally and in CI. It builds and starts a fresh keyless production server, refuses existing-server reuse, and may intercept only deterministic browser contracts; it never substitutes for the connected Preview gate. This production-mode browser run verifies actual service-worker registration. `npm run test:e2e:preview` requires the exact approved develop Preview origin in `MOTOCAST_E2E_BASE_URL` and a `MOTOCAST_E2E_STORAGE_STATE` bound to that origin and Preview Supabase project; missing, loopback, arbitrary HTTPS, and Production targets fail before tests start. The one-time `npm run test:e2e:auth` helper enforces the same environment binding and atomically writes state plus nonsecret metadata in a repository-external, owner-private WSL/Linux directory without printing cookies or tokens. Native Windows authenticated runs fail before browser launch because this workflow cannot prove owner-only NTFS ACLs. Every authenticated Preview test disables screenshot, trace, and video because browser network artifacts can contain session or share bearer credentials. Unauthenticated local failures retain artifacts only on failure, and CI uploads that local path for three days.
+
+The live route/collection/share scenario requires explicit `MOTOCAST_E2E_LIVE_MUTATIONS=1` plus five runtime-only test queries for origin, destination, lunch, rest, and waypoint (`MOTOCAST_E2E_WAYPOINT_QUERY`; the old winding variable is accepted only as a temporary test-run alias). Use publicly known places rather than the user's private schedule or location, and never commit the queries as fixtures. It creates only timestamped test-owned resources, waits until the browser has actually emitted each mutation request, then records a fail-loud cleanup obligation before awaiting or interpreting its response. A non-2xx response never clears that obligation. The test captures the nonsecret trip, collection, or share ID from a successful provider response before any later UI assertion and targets only that exact ID during cleanup. It adds lunch first, then a mandatory waypoint, moves that waypoint above and back below lunch, adds rest, and proves that the non-regrouped UI, first provider request, collection reapplication, second provider request, and share preview all preserve `lunch → waypoint → rest`. It also changes an actual item role through allowed and duplicate-rejected transitions, verifies the role-specific dwell default and visible focused error, and checks add/move/remove focus plus unique dwell labels. After saving the complete course, it changes a rest dwell and must prove that entry through that exact collection card's `공유 준비` restores the saved value and mixed-role order without issuing a route, finalization, weather, preview, or publish request. After explicit calculation it observes exactly one new route request, finalization, fresh route-bound weather request, and preview request; publication count remains zero until the rider explicitly publishes. At 320, 390, 820, and 1440 pixels it checks that the waypoint cards and owner collection/share surfaces remain visible and unclipped; the connected mobile path additionally covers the 0–5 rest boundary, dwell, cross-role move, remove, and focused readable error notice. It verifies revoke and reissue without putting raw share URLs in assertion output. A dedicated `afterEach` hook gets a separate 240-second timeout budget. Its three bounded worst-case cleanup paths total 180 seconds, leaving 60 seconds for page lifecycle and hook bookkeeping while it revokes the active share and deletes the exact collection and owned trip aggregate even when the test body times out. An unknown mutation outcome, an unavailable exact ID after an observed request, or cleanup failure is itself a test failure and is never reported as a clean run. The `delete_owned_trip` RPC is authenticated, active-member-only, exact-owner-only, and cascades only the selected owner's trip children and preview capabilities; issued immutable share snapshots remain independent. Never put those queries, a storage-state path inside the repository, or generated share URLs in tracked fixtures or reports.
+
+Connected Supabase checks use explicit files so a restricted linked test role is not mistaken for a full fixture-capable environment:
+
+```bash
+npx --yes supabase@2.116.0 test db --linked supabase/tests/database/live_acl_readback.test.sql
+```
+
+`auth_rls_budget.test.sql` creates rollback-only `auth.users` fixtures and must run against a local disposable Supabase database or another explicitly disposable fixture-capable database. A linked role that cannot write `auth.users` is `SETUP/IMPORT FAILURE`, not a product assertion failure and not broad RLS GREEN.
+
+The full local database boundary uses the repository `supabase/config.toml` and explicit suites:
+
+```bash
+npx --yes supabase@2.116.0 start --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+npx --yes supabase@2.116.0 test db --local supabase/tests/database/auth_rls_budget.test.sql supabase/tests/database/live_acl_readback.test.sql supabase/tests/database/plan_collection_share.test.sql
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/collection_version_concurrency.test.sql
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/invite_budget_concurrency.test.sql
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/route_finalization_concurrency.test.sql
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/recommended_route_concurrency.test.sql
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/kakao_oidc_handoff.test.sql
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f supabase/tests/database/optional_meal_route.test.sql
+```
+
+Before a fresh migration proof, confirm that the target is exactly the disposable local database at `127.0.0.1:54322` and obtain explicit approval for its reset. A reset of either hosted project is prohibited by this workflow.
+
+The two-connection collection, invitation/budget, legacy route-finalization, recommended route stage/finalization, and OIDC-handoff suites require the disposable local `supabase_admin` role because PostgreSQL restricts `dblink` credential forwarding for non-superusers. The tests install `dblink` only in the `extensions` schema so it cannot pollute the public service-role function allowlist. They must never target a hosted project. Record them separately from the rollback-only RLS/RPC suite.
+
+6. Scan staged and tracked changes for secrets, invitation/share tokens, real rider locations, and schedules without printing secret values.
+7. Record `NOT_RUN` checks and the exact blocker.
+
+Additional required suites by boundary:
+
+- Auth/RLS: administrator, Rider A, Rider B, revoked member, authenticated non-member, anonymous; service-role direct DML denial on every application table, exact seven-function service-role allowlist, and migration-role future-table/function default-ACL probes. Kakao OIDC additionally proves no `account_email` scope, exact allowlisted return target, signed state, hashed nonce, app-origin HttpOnly browser binding, encrypted single-use handoff, replay/concurrency and foreign-browser denial before session/invitation mutation, advancing-clock expiry, both RPCs' complete role matrix, handoff-table RLS, nonce/access-token propagation, full-attribute binding-cookie cleanup, and one non-aborted completion request across React Strict Mode effect replay. Every verified provider/configuration/exchange/persistence failure returns to the HMAC-authenticated initiating origin, including when it is not the first allowed origin and when provider credentials disappear after start; state-secret/allowlist recovery is independent of provider credentials. An unauthenticated return origin is never guessed. Execute the injected production callback handler for provider denial, missing provider credentials, exchange failure, persistence failure, and unauthenticated failure. Execute the production request handler with an internal-HTTP Edge request and prove that its authorize redirect and token POST body use the exact same trusted HTTPS callback derived from `SUPABASE_URL`; helper-only URL assertions do not satisfy this regression gate. Render the actual callback component under Strict Mode and prove completion fetch `1`, abort `0`, and late redirect `0` after navigation or unmount. A delayed client must not claim server cancellation after mutation starts, and a late response cannot redirect or update a callback screen after it detaches.
+- Invitations: create, invalid, expiry, revoke, same-origin JSON acceptance, cross-site/non-JSON denial without cookie, same-user idempotency, distinct-user concurrency.
+- Collections and sharing: browser/Edge/DB point-semantic and aggregate parity, including explicit-null role denial, unique occurrence IDs, one lunch, one dinner, at most five rests, at most twenty mandatory pass-through waypoints, and at most thirty total points; repeated physical places remain valid under distinct occurrence IDs. Verify exact and concurrent save-operation retry without duplicate versions; changed-payload operation-ID rejection; preview, publish, immutable source edit, revoke, reissue, unknown/revoked token, cross-user management denial, and previously emitted schemaVersion 1 fixture compatibility. Both preview and publish must rebuild on the server and reject missing, stale, or `validUntil <= clock_timestamp()` weather; the database clock must advance inside the transaction, and publication also rejects weather that became stale after preview. A collection-card share entry must apply the complete origin/destination/ordered-point course, complete fresh route and unexpired route-bound weather persistence, open the concise route-and-weather preview exactly once across React Strict Mode replay, and still require a separate explicit publish action. Route-input edits, collection application, and every new calculation invalidate the prior preview request and approval session, including when the same trip ID becomes eligible again, without remounting or reloading the independent share-link history. Overlapping link-history reads must let only the latest-started request update the list or error status. A ready-to-expired weather transition must hide prior approval state and announce the blocked state through the existing live status.
+- Budget: missing, zero, below limit, exact limit, exhausted, concurrent calls, Seoul date rollover, provider failure decision.
+- Routes: exactly one recommended result for new plans; provider request interception on current/future/split calls; fixed `priority=RECOMMEND`, `car_type=7`, `avoid=motorway`, `roadevent=0`, detailed geometry and no `alternatives`; trusted-clock rejection of past departure before budget/provider work with the exact boundary accepted; one mixed-role waypoint editor with add/type-change/dwell/move/remove and exact request-order proof; lunch omitted/selected and dinner omitted/selected, including an endpoint-only direct route; 0/1/5 ordered rests accepted and 6 rejected, with repeated physical places preserved by distinct occurrence IDs across route, ETA, weather, collections, sharing, and markers; documented no-route result classification versus malformed/unknown provider responses, plus safe UI categories for no-route, temporary provider, budget/configuration, invalid response, persistence, and input errors; mandatory zero-dwell pass-through validation and the maximum of twenty enforced before provider budget consumption; every selected point preserved in the visible order without role regrouping; `0.005` requested-point snapping separated from `0.0002` actual road continuity within and across split legs; durable plan/route hash binding, authenticated target-trip identity plus `updated_at` revision binding, wrong-target and stale-update rejection, and final-save revalidation; total waypoint boundaries; midnight-crossing expected return; exact 24-hour exclusion; no passenger-car or straight-line fallback; legacy three-route read compatibility.
+- Legacy writer compatibility: exact-three drafts may finalize only with a null target as a new trip. A non-null legacy target fails with `LEGACY_TRIP_UPDATE_UNSUPPORTED` before aggregate mutation because the old staged payload does not bind target identity/revision. Existing three-route plans and immutable schemaVersion 1/2 shares remain readable.
+- Weather: six-hour and five-day exact boundaries, grid conversion, cache deduplication and exact cache response shape, structured provider/budget/configuration/persistence/request failure kinds, malformed provider JSON, exact requested base/grid binding, duplicate item rejection, finite and category-bounded displayed values, bounded HTTP/result-code-only diagnostics with no key, URL, response body, or provider message, complete-or-empty stale DB metadata, snapshot success/failure/stale/no-snapshot, independently advancing multi-day age and simultaneous failure/expiry display. Connected live tests derive a future Seoul departure instead of relying on the application's static default time.
+- Browser/PWA: 320x800, 390x844, 820x1180, and 1440x900 layouts; no candidate-selection cards or tabs; keyboard/focus/labels, loading/error/stale/live, single route-derived expected return, ordered add/move/remove controls for 0–5 rests, and role-labelled map markers. Critical planner, map, collection, share, and weather text remains readable at every viewport; weather condition uses text plus a non-color shape; warning/error notices use distinct severity, accessible roles, and focus behavior. After browser fonts settle, planner safety/data status, the role legend, route metrics, and the mobile plan-edit control remain outside the map with no overlap at every required viewport; approval-preview and public-share role legends and route facts also remain in unclipped normal flow after the map. All twenty legacy route-omission notices remain in unclipped normal flow even during map SDK error. The omission boundary must render the production `SharedRideSnapshotView` or public share page rather than a manually assembled DOM, and must prove no internal overflow before scrolling. Manifest/service-worker update, Kakao road geometry, and authenticated provider smoke remain separate evidence.
+
+## 4. Commit and fixed-SHA review boundary
+
+The lead reviews the fixed candidate commit SHA, not a moving branch name. Before final review:
+
+1. Writer verification is recorded.
+2. The lead reads the exact committed changed set.
+3. The commit contains no user-owned `.gitignore` or unrelated changes unless explicitly included and reviewed.
+4. The lead checks Decision IDs, invariants, file scope, acceptance criteria, and reusable verification evidence directly.
+
+## 5. Lead-owned design and review
+
+The lead directly performs root-cause analysis, design, alternative comparison,
+dependency and scope decisions, code review, integration and final verification
+judgment. Uncertain multi-module designs stay with the lead until concrete.
+High-risk authentication, authorization, RLS, tokens, migrations, transactions,
+concurrency, budgets, route safety, secrets and operations require deeper lead
+review and real validation, without additional design or reviewer agents.
+
+- Delegate only fixed-design code changes and related tests to the sole writer permitted by personal routing.
+- Default to `fork_turns="none"` with owned files, fixed design, acceptance criteria and exact verification commands.
+- The writer may inspect local code and repair test failures within the accepted design; product/architecture/scope/prerequisite/acceptance changes return to the lead.
+- Do not delegate design or independent review under any role name, use other models/roles, or fall back to lead code implementation.
+- Writer tests are execution evidence. The lead reuses valid evidence and directly handles review-only, short lookup, explanation and planning requests.
+- Do not describe lead review or writer self-checks as independent approval. Existing required checks and operational authorization remain in force.
+
+Required review axes:
+
+- Correctness: normal/error/boundary/state transitions, regressions, no success-masking fallback.
+- Security: Auth, RLS bypass, token handling, cross-user access, XSS/SQL injection, validation, secret/error exposure.
+- Data integrity: migrations, foreign keys/delete rules, transactions, concurrency, atomic budgets, rowcount/write drops, time precision.
+- Route safety: `car_type=7`, `avoid=motorway`, every split/future call, no passenger-car fallback, and the less-than-24-hour computed-return boundary without a same-calendar-day restriction.
+- Operations: develop/Preview and main/Production lineage, environment ownership, checks, quotas, outage readability.
+- UI/accessibility: responsive layout, keyboard/focus/labels, safe errors, loading/error/stale, non-color cues, demo/live distinction.
+
+## 6. Findings and closure
+
+Each finding contains:
+
+- Severity: `BLOCKER`, `HIGH`, `MEDIUM`, or `LOW`.
+- Exact file and location or external setting.
+- Violated Decision ID or invariant.
+- Reproducible failure scenario.
+- User/security/data/operations impact.
+- Minimum correction direction.
+
+Unsupported style preferences are not findings.
+
+Rules:
+
+- Any `BLOCKER` or `HIGH` stops merge and Production deployment.
+- A `MEDIUM` is fixed now or receives an explicit recorded follow-up decision.
+- A `LOW` may remain but is disclosed.
+- The writer fixes findings and reruns affected verification; valid baseline evidence is reused unless invalidated or required by a mandatory gate.
+- The lead evaluates the new fixed SHA and labels each finding `RESOLVED`, `STILL_OPEN`, or `REGRESSED`.
+- If the same root cause survives two correction rounds, reconsider the design, narrow the scope, or interview the user instead of expanding tests indefinitely.
+
+## 7. Preview gate
+
+For the exact `develop` SHA:
+
+- Before any hosted Preview mutation, push the reviewed SHA only to a slash-free `review-*` branch that is explicitly disabled in `vercel.json`, open a CI-only PR to `develop`, and prove after webhook settlement that the exact SHA has zero GitHub Deployments and zero Vercel checks. The PR workflow must explicitly check out the PR head SHA, fail when `git rev-parse HEAD` differs, and read back the completed run's `head_sha`; GitHub's synthetic merge ref does not prove the reviewed release commit. A branch name containing `/`, a canceled deployment, or an unverified assumption about glob precedence does not satisfy this gate.
+- Keep the CI-only PR unmerged while applying the Preview database migration and exact-SHA Edge Functions. Immediately before Web release, require `origin/develop` to remain the reviewed PR base, then fast-forward it to the exact reviewed SHA. A merge, squash, or rebase commit is a different SHA and requires its own verification/review unless exact commit and tree equivalence are independently established and recorded.
+- Vercel deployment is `Ready` and identified as Preview from `develop`.
+- Build has no errors; HTTP/security headers are verified.
+- Preview uses non-Production test identities/data and does not expose Production-only secrets.
+- Test invite and Kakao redirect/callback, admin/rider/revoked access, place search, the single recommended route, ETA/weather, collections, share publish/revoke, provider error, exhausted budget, stale snapshot, mobile/desktop, and runtime logs.
+- Record any protected-access mechanism without exposing bypass tokens.
+
+Preview is not GREEN merely because the Vercel build status is Ready.
+
+## 8. Main PR gate
+
+A same-repository `develop -> main` PR may merge only when:
+
+- No in-scope `NEEDS_INTERVIEW` remains.
+- Changed set and fixed SHA are recorded.
+- Writer verification is GREEN with exact taxonomy.
+- The lead's required correctness, security, data integrity and other applicable review axes are complete.
+- `BLOCKER=0` and `HIGH=0`.
+- GitHub `verify` and `develop-only` are GREEN.
+- The actual Vercel Preview context is stable and GREEN.
+- Preview smoke and secret scans are GREEN.
+- Product SoT, verification rules, README, schema, and operations are synchronized.
+
+Add the exact Vercel status context to main protection only after it is observed reliably on a real main-target promotion PR. Never pre-register an absent or unstable context.
+
+## 9. Production gate
+
+After main merge, separately verify:
+
+- Production deploys the main merge SHA and matches GitHub Deployment metadata.
+- Vercel reports `Ready`; Production URL and security headers respond as intended.
+- Vercel Deployment Protection matches `OPS-005`.
+- A test invitation and Kakao login complete end-to-end.
+- Admin/rider/revoked authorization, a minimal real route/weather plan, save/collection/share/revoke, and budget hard stop pass.
+- Runtime logs contain no unexpected error or secret.
+- Vercel and Supabase environment-name ownership matches `OPS-002`/`OPS-004`.
+- GitHub protection/default branch, local/remote branches, and worktree are read back.
+
+Local or Preview success never substitutes for a failed or untested Production gate. Rollback requires an exact target, user/data impact, recovery plan, and required approval.
+
+## 10. Release evidence record
+
+The final release report includes:
+
+- Product completion status and remaining blockers.
+- Decision IDs and interview outcomes, including deprecated decisions.
+- Fixed SHA, PR, CI runs, Vercel deployment ID/URL, and Supabase migration/function readback.
+- Writer execution evidence and lead review results by axis.
+- Exact counts for pass/fail/error/skip/deselected/xfail/setup-or-import-failure/not-run.
+- Remaining findings and operational next actions.
+
+The Goal is complete only after the Production gate succeeds for an invited rider and the live systems match the product SoT.

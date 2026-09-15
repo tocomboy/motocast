@@ -7,8 +7,6 @@ export type TimelineResult = {
   returnAt: string;
   rideMinutes: number;
   stopMinutes: number;
-  fitsDesiredReturn: boolean;
-  fitsHardReturn: boolean;
 };
 
 function asValidDate(value: string, field: string): Date {
@@ -21,20 +19,12 @@ function asValidDate(value: string, field: string): Date {
 
 export function buildTimeline(input: {
   departureAt: string;
-  desiredReturnAt: string;
-  hardReturnAt: string;
   segments: PlannedSegment[];
 }): TimelineResult {
   const departure = asValidDate(input.departureAt, "departureAt");
-  const desiredReturn = asValidDate(input.desiredReturnAt, "desiredReturnAt");
-  const hardReturn = asValidDate(input.hardReturnAt, "hardReturnAt");
-
-  if (desiredReturn > hardReturn) {
-    throw new Error("desiredReturnAt must not be later than hardReturnAt");
-  }
 
   let cursor = departure;
-  let rideMinutes = 0;
+  let rideMilliseconds = 0;
   let stopMinutes = 0;
 
   const segments = input.segments.map((segment) => {
@@ -45,12 +35,21 @@ export function buildTimeline(input: {
       throw new Error(`segment ${segment.id} must have a non-negative dwell duration`);
     }
 
-    const segmentDeparture = cursor;
-    const arrival = new Date(segmentDeparture.getTime() + segment.rideMinutes * MINUTE_MS);
+    const exactDeparture = segment.departureAt ? asValidDate(segment.departureAt, `segment ${segment.id} departureAt`) : null;
+    const exactArrival = segment.arrivalAt ? asValidDate(segment.arrivalAt, `segment ${segment.id} arrivalAt`) : null;
+    if ((exactDeparture === null) !== (exactArrival === null)) {
+      throw new Error(`segment ${segment.id} must provide both exact timestamps`);
+    }
+    const segmentDeparture = exactDeparture ?? cursor;
+    if (segmentDeparture.getTime() !== cursor.getTime()) {
+      throw new Error(`segment ${segment.id} must be continuous`);
+    }
+    const arrival = exactArrival ?? new Date(segmentDeparture.getTime() + segment.rideMinutes * MINUTE_MS);
+    if (arrival <= segmentDeparture) throw new Error(`segment ${segment.id} must arrive after departure`);
     const dwellMinutes = segment.to.selected ? segment.to.dwellMinutes : 0;
     const nextDeparture = new Date(arrival.getTime() + dwellMinutes * MINUTE_MS);
 
-    rideMinutes += segment.rideMinutes;
+    rideMilliseconds += arrival.getTime() - segmentDeparture.getTime();
     stopMinutes += dwellMinutes;
     cursor = nextDeparture;
 
@@ -65,10 +64,8 @@ export function buildTimeline(input: {
   return {
     segments,
     returnAt: cursor.toISOString(),
-    rideMinutes,
+    rideMinutes: Math.ceil(rideMilliseconds / MINUTE_MS),
     stopMinutes,
-    fitsDesiredReturn: cursor <= desiredReturn,
-    fitsHardReturn: cursor <= hardReturn,
   };
 }
 
@@ -77,8 +74,56 @@ export function formatKoreanTime(value: string): string {
     timeZone: "Asia/Seoul",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).format(asValidDate(value, "value"));
+}
+
+function seoulDateKey(value: string): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(asValidDate(value, "value")).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+export function formatRideTime(departureAt: string, value: string): string {
+  const departureDate = seoulDateKey(departureAt);
+  const valueDate = seoulDateKey(value);
+  if (valueDate === departureDate) return formatKoreanTime(value);
+
+  const nextDay = new Date(`${departureDate}T00:00:00+09:00`);
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+  if (valueDate === seoulDateKey(nextDay.toISOString())) {
+    return `다음 날 ${formatKoreanTime(value)}`;
+  }
+  return formatKoreanDateTime(value);
+}
+
+export function formatKoreanDateTime(value: string): string {
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(asValidDate(value, "value"));
+}
+
+export function formatElapsedAge(value: string, referenceTime: string): string {
+  const elapsedMinutes = Math.max(0, Math.floor(
+    (asValidDate(referenceTime, "referenceTime").getTime() - asValidDate(value, "value").getTime()) / MINUTE_MS,
+  ));
+  if (elapsedMinutes < 1) return "방금";
+  const days = Math.floor(elapsedMinutes / (24 * 60));
+  const hours = Math.floor((elapsedMinutes % (24 * 60)) / 60);
+  const minutes = elapsedMinutes % 60;
+  if (days) return `${days}일 ${hours}시간 전`;
+  if (hours) return `${hours}시간 ${minutes}분 전`;
+  return `${minutes}분 전`;
 }
 
 export function weatherRiskLabel(segment: PlannedSegment): {
