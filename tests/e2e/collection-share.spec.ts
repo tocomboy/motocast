@@ -11,7 +11,8 @@ test.describe("collection and sharing boundaries", () => {
     test.skip(!process.env.MOTOCAST_E2E_BASE_URL || !process.env.MOTOCAST_E2E_STORAGE_STATE, "Requires external Preview auth state");
     await page.goto("/");
     await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
-    await page.getByRole("button", { name: "저장한 경로" }).click();
+    await page.getByRole("navigation", { name: "주요 화면" })
+      .getByRole("button", { name: "저장한 경로", exact: true }).click();
     await expect(page.getByRole("heading", { name: "라이딩 컬렉션" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "라이딩 공유" })).toBeVisible();
   });

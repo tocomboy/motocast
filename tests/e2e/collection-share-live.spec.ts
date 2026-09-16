@@ -26,6 +26,11 @@ let pendingCleanup: LiveCleanupState | null = null;
 // a failure cannot persist a published token in a trace, screenshot, or video.
 test.use({ screenshot: "off", trace: "off", video: "off" });
 
+function savedRoutesNavigation(page: Page) {
+  return page.getByRole("navigation", { name: "주요 화면" })
+    .getByRole("button", { name: "저장한 경로", exact: true });
+}
+
 function seoulDepartureIn(minutesAhead: number) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
@@ -95,7 +100,7 @@ async function chooseSchedule(page: Page, departure: { date: string; time: strin
 
 async function startCollectionDeletion(page: Page, collectionId: string) {
   await page.goto("/");
-  await page.getByRole("button", { name: "저장한 경로" }).click();
+  await savedRoutesNavigation(page).click();
   const item = page.locator(`[data-collection-id="${collectionId}"]`);
   await expect(item).toHaveCount(1, { timeout: 20_000 });
   page.once("dialog", (dialog) => dialog.accept());
@@ -113,7 +118,7 @@ async function startShareRevocation(page: Page, shareId: string) {
   if (await item.count() === 0) {
     const summaryDialog = page.getByRole("dialog", { name: "공유 · 저장" });
     if (await summaryDialog.isVisible().catch(() => false)) await summaryDialog.getByRole("button", { name: "공유 저장 창 닫기" }).click();
-    await page.getByRole("button", { name: "저장한 경로" }).click();
+    await savedRoutesNavigation(page).click();
     item = page.locator(`[data-share-id="${shareId}"]`);
   }
   await expect(item).toHaveCount(1, { timeout: 20_000 });
@@ -310,8 +315,10 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
 
     for (const viewport of [
       { width: 320, height: 800 },
+      { width: 384, height: 832 },
       { width: 390, height: 844 },
       { width: 820, height: 1180 },
+      { width: 832, height: 384 },
       { width: 1440, height: 900 },
     ]) {
       await page.setViewportSize(viewport);
@@ -403,7 +410,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await settingsDialog.getByRole("button", { name: "머무는 시간 10분 늘리기" }).click();
     await settingsDialog.getByRole("button", { name: "설정 적용" }).click();
     await expect(page.locator(".ordered-waypoint").nth(2)).toContainText("휴식 · 50분 정차");
-    await page.getByRole("button", { name: "저장한 경로" }).click();
+    await savedRoutesNavigation(page).click();
 
     const routeCountBeforePreparation = planRouteRequestCount;
     const finalizeCountBeforePreparation = finalizeRequestCount;
@@ -473,8 +480,10 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
 
     for (const viewport of [
       { width: 320, height: 800 },
+      { width: 384, height: 832 },
       { width: 390, height: 844 },
       { width: 820, height: 1180 },
+      { width: 832, height: 384 },
       { width: 1440, height: 900 },
     ]) {
       await page.setViewportSize(viewport);

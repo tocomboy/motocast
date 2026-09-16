@@ -136,6 +136,52 @@ describe("PlannerDashboard collection share intent", () => {
     expect(mocks.summaryDialogShowModal).toHaveBeenCalledTimes(1);
     expect(renderer.root.findAllByProps({ className: "summary-action-panel" })[0].props.hidden).toBe(false);
     expect(renderer.root.findByProps({ "data-preview-request": "1" }).children).toEqual(["공유 관리자"]);
+    const weatherStatuses = renderer.root.findAllByProps({ role: "status" })
+      .filter((status) => renderedText(status).includes("추천 경로 날씨:"));
+    expect(weatherStatuses).toHaveLength(1);
+    expect(renderedText(weatherStatuses[0])).toContain("실시간 조회 예보");
+    await act(async () => renderer.unmount());
+  });
+
+  it("announces connected summary weather while loading and when a stale snapshot replaces it", async () => {
+    const successfulInvoke = mocks.invoke.getMockImplementation()!;
+    let resolveWeather!: (value: { error: null; data: Record<string, unknown> }) => void;
+    let weatherPoint!: Record<string, unknown>;
+    mocks.invoke.mockImplementation((name: string, options: { body: Record<string, unknown> }) => {
+      if (name !== "weather-timeline") return successfulInvoke(name, options);
+      weatherPoint = (options.body.points as Array<Record<string, unknown>>)[0];
+      return new Promise((resolve) => { resolveWeather = resolve; });
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<PlannerDashboard connected initialCourse={course} navigationMode="memory" />, { createNodeMock });
+    });
+    await chooseSchedule(renderer);
+    await act(async () => renderer.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }));
+    await act(async () => { await Promise.resolve(); });
+
+    const loadingStatuses = renderer.root.findAllByProps({ role: "status" })
+      .filter((status) => renderedText(status).includes("추천 경로 날씨 조회 중"));
+    expect(loadingStatuses).toHaveLength(1);
+    expect(renderedText(loadingStatuses[0])).toContain("날씨 조회 중");
+
+    const now = new Date().toISOString();
+    await act(async () => resolveWeather({ error: null, data: {
+      generatedAt: now,
+      issuedAt: now,
+      validUntil: "2099-01-01T02:00:00.000Z",
+      source: "snapshot",
+      stale: true,
+      staleReason: "기상청 요청에 실패했습니다.",
+      failureKind: "provider",
+      staleObservedAt: now,
+      forecasts: [{ ...weatherPoint, status: "forecast", model: "ultra", issuedAt: now, condition: "cloudy", temperatureC: 18, precipitationProbability: 20, windSpeedMps: 2 }],
+    } }));
+
+    const staleStatuses = renderer.root.findAllByProps({ role: "status" })
+      .filter((status) => renderedText(status).includes("추천 경로 날씨:"));
+    expect(staleStatuses).toHaveLength(1);
+    expect(renderedText(staleStatuses[0])).toContain("기상청 공급자 오류로 저장본 표시");
     await act(async () => renderer.unmount());
   });
 
