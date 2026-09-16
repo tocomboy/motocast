@@ -12,6 +12,16 @@ export const currentVersion = packageMetadata.version;
 
 export const releaseNotes = [
   {
+    version: "0.2.3",
+    date: "2026-09-16",
+    title: "경로 소요시간 계산 개선",
+    summary: "전체 소요시간과 구간 시간이 달라도 라이딩 계획을 계산할 수 있도록 개선했습니다.",
+    bullets: [
+      "카카오 전체 소요시간을 기준으로 경유지 도착 시각을 계산해요.",
+      "구간 도착 시각은 비례 배분한 추정값임을 안내해요.",
+    ],
+  },
+  {
     version: "0.2.2",
     date: "2026-09-16",
     title: "경로 오류 진단 개선",

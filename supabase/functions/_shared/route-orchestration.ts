@@ -83,7 +83,7 @@ export async function orchestrateRecommendedRoute(
               fromPointIndex: cursor,
               toPointIndex: endIndex,
               destinationRole: endIndex === points.length - 1 ? "destination" : points[endIndex].stopRole ?? "waypoint",
-            }, error.durationDiagnostic);
+            });
           }
           throw error;
         }

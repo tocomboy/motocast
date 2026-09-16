@@ -27,7 +27,7 @@ test.describe("public update notes", () => {
     const dialog = page.getByRole("dialog", { name: "새로운 소식을 확인해 보세요" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`현재 v${currentVersion}`)).toBeVisible();
-    await expect(dialog.getByText("일부 경로 계획 오류는 원인을 확인 중이에요.")).toBeVisible();
+    await expect(dialog.getByText("카카오 전체 소요시간을 기준으로 경유지 도착 시각을 계산해요.")).toBeVisible();
     const layout = await dialog.evaluate((element) => ({
       dialogHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
       documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
@@ -83,15 +83,17 @@ test.describe("public update notes", () => {
     await expect(page.getByRole("heading", { level: 1, name: "업데이트 소식" })).toBeVisible();
 
     const releases = page.getByRole("article");
-    await expect(releases).toHaveCount(4);
+    await expect(releases).toHaveCount(5);
     await expect(releases.nth(0)).toContainText(`v${currentVersion}`);
     await expect(releases.nth(0).getByText("현재 버전", { exact: true })).toBeVisible();
-    await expect(releases.nth(1)).toContainText("v0.2.1");
+    await expect(releases.nth(1)).toContainText("v0.2.2");
     await expect(releases.nth(1).getByText("현재 버전", { exact: true })).toHaveCount(0);
-    await expect(releases.nth(2)).toContainText("v0.2.0");
+    await expect(releases.nth(2)).toContainText("v0.2.1");
     await expect(releases.nth(2).getByText("현재 버전", { exact: true })).toHaveCount(0);
-    await expect(releases.nth(3)).toContainText("v0.1.0");
+    await expect(releases.nth(3)).toContainText("v0.2.0");
     await expect(releases.nth(3).getByText("현재 버전", { exact: true })).toHaveCount(0);
+    await expect(releases.nth(4)).toContainText("v0.1.0");
+    await expect(releases.nth(4).getByText("현재 버전", { exact: true })).toHaveCount(0);
 
     const backLink = page.getByRole("link", { name: "플래너로 돌아가기" });
     await backLink.focus();
@@ -110,7 +112,8 @@ test.describe("public update notes", () => {
       await page.evaluate(() => document.fonts.ready);
 
       await expect(page.getByRole("heading", { level: 1, name: "업데이트 소식" })).toBeVisible();
-      await expect(page.getByRole("article")).toHaveCount(4);
+      await expect(page.getByRole("article")).toHaveCount(5);
+      await expect(page.getByText("카카오 전체 소요시간을 기준으로 경유지 도착 시각을 계산해요.")).toBeVisible();
       await expect(page.getByText("일부 경로 계획 오류는 원인을 확인 중이에요.")).toBeVisible();
       await expect(page.getByText("모바일에서 초대 관리와 링크 복사 버튼이 보이도록 고쳤어요.")).toBeVisible();
       await expect(page.getByText("새 버전의 주요 소식을 처음 접속할 때 한 번만 알려드려요.")).toBeVisible();

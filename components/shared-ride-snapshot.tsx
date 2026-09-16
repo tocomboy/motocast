@@ -171,6 +171,7 @@ export function SharedRideSnapshotView({
             <strong>{snapshot.schemaVersion === 3 ? "추천 경로" : selected.candidate.label}</strong>
             <span>{Math.round(selected.totalDistanceMeters / 100) / 10} km · {minutes(selected.totalDurationSeconds)} · 복귀 {formatRideTime(snapshot.trip.departureAt, selected.returnAt)}</span>
             <small>이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</small>
+            <p className="route-estimate-note">도착·복귀 시각은 교통 상황에 따라 달라질 수 있는 추정값입니다.</p>
             <ol className="shared-legs">
               {selected.legs.map((leg, index) => (
                 <li key={`${selected.candidate.id}-${index}`}>

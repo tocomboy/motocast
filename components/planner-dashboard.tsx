@@ -784,6 +784,9 @@ export function PlannerDashboard({ connected }: { connected: boolean }) {
                   <span><strong>{formatRideTime(displayedDepartureAt, timeline.returnAt)}</strong> 예상 복귀</span>
                 </div>
                 <div className="return-status safe">정차 포함 예상 복귀</div>
+                {liveRoute ? (
+                  <p className="route-estimate-note">도착 시각은 추정값입니다. 전체 시간과 구간 합계가 다르면 전체 시간을 기준으로 구간별 시간을 비례 배분합니다.</p>
+                ) : null}
               </section>
             </div>
           </div>
