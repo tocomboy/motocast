@@ -473,7 +473,9 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(sharedLegs.nth(0)).toContainText(lunchName);
     await expect(sharedLegs.nth(1)).toContainText(waypointName);
     await expect(sharedLegs.nth(2)).toContainText(restName);
-    await expect(page.locator(".share-preview")).toContainText("예상 복귀");
+    const expectedArrivalMetric = page.locator(".share-preview .riding-summary-metrics > div").filter({ hasText: "예상 도착" });
+    await expect(expectedArrivalMetric.locator("dt")).toHaveText("예상 도착");
+    await expect(expectedArrivalMetric.locator("dd")).toHaveText(/\S/);
     await expect(page.locator(".share-preview")).not.toContainText("희망 복귀");
     await expect(page.locator(".share-preview")).not.toContainText("최종 복귀");
     await expect(page.locator(".share-preview")).not.toContainText("선택 경로 미통과");
