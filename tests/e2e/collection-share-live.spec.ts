@@ -52,26 +52,50 @@ async function selectFirstPlace(
   query: string,
   selectedListName?: string,
 ) {
-  const input = page.getByLabel(new RegExp(`^${label}(?: · 필수)?$`));
+  const field = page.locator(".place-field").filter({ has: page.locator(".place-field-label", { hasText: label }) }).first();
+  const trigger = field.locator(".place-picker-trigger");
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: `${label} 선택` });
+  const input = dialog.getByLabel(`${label} 검색어`);
   await input.fill(query);
   await input.press("Enter");
-  const results = page.getByRole("list", { name: `${label} 검색 결과` });
-  await expect(results).toBeVisible({ timeout: 20_000 });
-  const firstResult = results.getByRole("button").first();
-  const selectedName = (await firstResult.locator("strong").innerText()).trim();
-  await firstResult.click();
+  const firstResult = dialog.locator(".place-picker-results li").first();
+  await expect(firstResult).toBeVisible({ timeout: 20_000 });
+  const selectedName = (await firstResult.locator("strong").first().innerText()).trim();
+  await firstResult.getByRole("button", { name: "선택", exact: true }).click();
   if (selectedListName) {
     await expect(
       page.getByRole("list", { name: selectedListName }).getByText(selectedName, { exact: true }),
     ).toBeVisible();
   } else {
-    await expect(input).toHaveAttribute("aria-invalid", "false");
+    await expect(trigger).toContainText(selectedName);
   }
   return selectedName;
 }
 
+async function chooseSchedule(page: Page, departure: { date: string; time: string }) {
+  await page.locator(".schedule-trigger").click();
+  const dialog = page.getByRole("dialog", { name: "새 일정 선택" });
+  const [year, month] = departure.date.split("-");
+  const targetMonth = `${year}년 ${Number(month)}월`;
+  if ((await dialog.locator(".calendar-heading strong").innerText()).trim() !== targetMonth) {
+    await dialog.getByRole("button", { name: "다음 달" }).click();
+    await expect(dialog.locator(".calendar-heading strong")).toHaveText(targetMonth);
+  }
+  const day = String(Number(departure.date.slice(-2)));
+  await dialog.locator(".calendar-grid").getByRole("button", { name: day, exact: true }).click();
+  const [hour, minute] = departure.time.split(":");
+  await dialog.locator(".schedule-time-rows button").nth(0).click();
+  await page.getByRole("dialog", { name: "출발 시 선택" }).locator(".hour-grid").getByRole("button", { name: hour, exact: true }).click();
+  await dialog.locator(".schedule-time-rows button").nth(1).click();
+  await page.getByRole("dialog", { name: "출발 분 선택" }).locator(".minute-grid").getByRole("button", { name: minute, exact: true }).click();
+  await dialog.getByRole("button", { name: "일정 적용" }).click();
+  await expect(page.locator(".schedule-trigger")).toContainText(departure.time);
+}
+
 async function startCollectionDeletion(page: Page, collectionId: string) {
   await page.goto("/");
+  await page.getByRole("button", { name: "저장한 경로" }).click();
   const item = page.locator(`[data-collection-id="${collectionId}"]`);
   await expect(item).toHaveCount(1, { timeout: 20_000 });
   page.once("dialog", (dialog) => dialog.accept());
@@ -85,7 +109,13 @@ async function startCollectionDeletion(page: Page, collectionId: string) {
 }
 
 async function startShareRevocation(page: Page, shareId: string) {
-  const item = page.locator(`[data-share-id="${shareId}"]`);
+  let item = page.locator(`[data-share-id="${shareId}"]`);
+  if (await item.count() === 0) {
+    const summaryDialog = page.getByRole("dialog", { name: "공유 · 저장" });
+    if (await summaryDialog.isVisible().catch(() => false)) await summaryDialog.getByRole("button", { name: "공유 저장 창 닫기" }).click();
+    await page.getByRole("button", { name: "저장한 경로" }).click();
+    item = page.locator(`[data-share-id="${shareId}"]`);
+  }
   await expect(item).toHaveCount(1, { timeout: 20_000 });
   const revocation = page.waitForResponse((response) => (
     response.url().includes("/rest/v1/rpc/revoke_share") && response.request().method() === "POST"
@@ -234,22 +264,20 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
     await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
-    await page.getByRole("button", { name: "계획 수정" }).click();
-    await expect(page.getByRole("dialog", { name: "라이딩 계획 편집" })).toBeVisible();
+    await page.locator(".planner-home-entry-grid").getByRole("button", { name: /새 경로 만들기/ }).click();
+    await expect(page.getByRole("heading", { name: "라이딩 계획" })).toBeVisible();
     const departure = seoulDepartureIn(30);
-    await page.getByLabel("라이딩 날짜").fill(departure.date);
-    await page.getByLabel("출발", { exact: true }).fill(departure.time);
     await selectFirstPlace(page, "출발지", liveQueries.origin!);
-    await selectFirstPlace(page, "복귀지", liveQueries.destination!);
+    await selectFirstPlace(page, "도착지", liveQueries.destination!);
     const waypointType = page.getByLabel("추가할 종류");
     const addWaypoint = page.getByRole("button", { name: /^\+ 경유지 추가/ });
     await waypointType.selectOption("lunch");
     await addWaypoint.click();
-    await expect(page.getByLabel("1번째 점심 장소")).toBeFocused();
+    await expect(page.locator(".ordered-waypoint").nth(0).locator(".place-picker-trigger")).toBeFocused();
     const lunchName = await selectFirstPlace(page, "1번째 점심 장소", liveQueries.lunch!);
     await waypointType.selectOption("waypoint");
     await addWaypoint.click();
-    await expect(page.getByLabel("2번째 경유지 장소")).toBeFocused();
+    await expect(page.locator(".ordered-waypoint").nth(1).locator(".place-picker-trigger")).toBeFocused();
     const waypointName = await selectFirstPlace(page, "2번째 경유지 장소", liveQueries.waypoint!);
     await page.getByRole("button", { name: "2번째 경유지 위로 이동" }).click();
     await expect(page.getByRole("button", { name: "1번째 경유지 아래로 이동" })).toBeFocused();
@@ -257,20 +285,24 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(page.getByRole("button", { name: "2번째 경유지 위로 이동" })).toBeFocused();
     await waypointType.selectOption("rest");
     await addWaypoint.click();
-    await expect(page.getByLabel("3번째 휴식 장소")).toBeFocused();
+    await expect(page.locator(".ordered-waypoint").nth(2).locator(".place-picker-trigger")).toBeFocused();
     const restName = await selectFirstPlace(page, "3번째 휴식 장소", liveQueries.rest!);
-    const thirdRole = page.getByLabel("3번째 경유지 종류");
-    await thirdRole.selectOption("lunch");
-    const duplicateRoleError = page.locator('.action-notice[role="alert"]');
+    await page.getByRole("button", { name: "경유 3 설정" }).click();
+    let settingsDialog = page.getByRole("dialog", { name: "경유지 설정" });
+    await settingsDialog.getByRole("button", { name: "점심", exact: true }).click();
+    await settingsDialog.getByRole("button", { name: "설정 적용" }).click();
+    const duplicateRoleError = settingsDialog.getByRole("alert");
     await expect(duplicateRoleError).toBeFocused();
     await expect(duplicateRoleError).toContainText("점심은 하나만 추가할 수 있습니다.");
-    await expect(thirdRole).toHaveValue("rest");
-    await thirdRole.selectOption("dinner");
-    await expect(duplicateRoleError).toHaveCount(0);
-    await expect(page.locator(".action-notice").filter({ hasText: "휴식을(를) 저녁으로 변경했습니다." })).toBeVisible();
-    await expect(page.getByLabel("3번째 저녁 머무는 시간 · 분")).toHaveValue("60");
-    await thirdRole.selectOption("rest");
-    await expect(page.getByLabel("3번째 휴식 머무는 시간 · 분")).toHaveValue("30");
+    await settingsDialog.getByRole("button", { name: "저녁", exact: true }).click();
+    await settingsDialog.getByRole("button", { name: "설정 적용" }).click();
+    await expect(page.locator(".ordered-waypoint").nth(2)).toContainText("저녁 · 60분 정차");
+    await page.getByRole("button", { name: "경유 3 설정" }).click();
+    settingsDialog = page.getByRole("dialog", { name: "경유지 설정" });
+    await settingsDialog.getByRole("button", { name: "휴식", exact: true }).click();
+    await settingsDialog.getByRole("button", { name: "설정 적용" }).click();
+    await expect(page.locator(".ordered-waypoint").nth(2)).toContainText("휴식 · 30분 정차");
+    await chooseSchedule(page, departure);
     const orderedItems = page.getByRole("list", { name: "경유지 방문 순서" }).getByRole("listitem");
     await expect(orderedItems.nth(0)).toContainText(lunchName);
     await expect(orderedItems.nth(1)).toContainText(waypointName);
@@ -334,14 +366,18 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(page.locator(".live-data-badge")).toHaveText("실제 경로");
     expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
 
-    await page.getByLabel("새 컬렉션 이름").fill(title);
+    await page.getByRole("button", { name: "공유 · 저장" }).click();
+    const summaryActions = page.getByRole("dialog", { name: "공유 · 저장" });
+    await summaryActions.getByRole("button", { name: "내 경로 저장", exact: true }).click();
+    const collectionSaveDialog = page.getByRole("dialog", { name: "내 경로로 저장" });
+    await collectionSaveDialog.getByLabel("경로 이름").fill(title);
     const collectionSaveStarted = page.waitForRequest((request) => (
       request.url().includes("/functions/v1/save-collection") && request.method() === "POST"
     ), { timeout: 30_000 });
     const savedCollection = page.waitForResponse((response) => (
       response.url().includes("/functions/v1/save-collection") && response.request().method() === "POST"
     ), { timeout: 30_000 });
-    await page.getByRole("button", { name: /현재 전체 코스로 새 컬렉션 저장/ }).click();
+    await collectionSaveDialog.getByRole("button", { name: "저장", exact: true }).click();
     await collectionSaveStarted;
     cleanup.collectionMutationStarted = true;
     const savedCollectionResponse = await savedCollection;
@@ -354,11 +390,20 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
       : null;
     if (typeof savedCollectionId !== "string" || !uuidPattern.test(savedCollectionId)) throw new Error("Live collection cleanup identity was not returned");
     cleanup.collectionId = savedCollectionId;
-    await expect(page.getByRole("status").filter({ hasText: `${title} 컬렉션의 1번째 불변 버전` })).toBeVisible();
+    await expect(collectionSaveDialog.getByRole("status")).toContainText(title);
+    await collectionSaveDialog.getByRole("button", { name: "저장한 경로 보기" }).click();
+    await expect(page.getByRole("heading", { name: "저장한 경로" })).toBeVisible();
+    const storedCollectionItem = page.locator(`[data-collection-id="${cleanup.collectionId}"]`);
+    await storedCollectionItem.getByRole("button", { name: `${title} 계획에 적용` }).click();
+    await expect(page.locator(".schedule-trigger")).toHaveText("날짜와 출발 시각 선택");
 
-    const restDwell = page.getByLabel("3번째 휴식 머무는 시간 · 분");
-    await restDwell.fill("45");
-    await expect(restDwell).toHaveValue("45");
+    await page.getByRole("button", { name: "경유 3 설정" }).click();
+    settingsDialog = page.getByRole("dialog", { name: "경유지 설정" });
+    await settingsDialog.getByRole("button", { name: "머무는 시간 10분 늘리기" }).click();
+    await settingsDialog.getByRole("button", { name: "머무는 시간 10분 늘리기" }).click();
+    await settingsDialog.getByRole("button", { name: "설정 적용" }).click();
+    await expect(page.locator(".ordered-waypoint").nth(2)).toContainText("휴식 · 50분 정차");
+    await page.getByRole("button", { name: "저장한 경로" }).click();
 
     const routeCountBeforePreparation = planRouteRequestCount;
     const finalizeCountBeforePreparation = finalizeRequestCount;
@@ -367,22 +412,20 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const publishCountBeforePreparation = publishRequestCount;
     const collectionItem = page.locator(`[data-collection-id="${cleanup.collectionId}"]`);
     await collectionItem.getByRole("button", { name: `${title} 공유 준비` }).click();
-    const manualPreviewButton = page.getByRole("button", { name: "공유 요약 미리보기" });
-    await expect(manualPreviewButton).toBeDisabled();
     await expect(page.locator(".share-preview")).toHaveCount(0);
-    await expect(restDwell).toHaveValue("30");
     await expect(orderedItems.nth(0)).toContainText(lunchName);
     await expect(orderedItems.nth(1)).toContainText(waypointName);
     await expect(orderedItems.nth(2)).toContainText(restName);
-    await expect(page.getByLabel("1번째 경유지 종류")).toHaveValue("lunch");
-    await expect(page.getByLabel("2번째 경유지 종류")).toHaveValue("waypoint");
-    await expect(page.getByLabel("3번째 경유지 종류")).toHaveValue("rest");
-    await expect(page.getByLabel("3번째 휴식 머무는 시간 · 분")).toHaveValue("30");
+    await expect(orderedItems.nth(0)).toContainText("점심 · 60분 정차");
+    await expect(orderedItems.nth(1)).toContainText("일반 경유지 · 통과");
+    await expect(orderedItems.nth(2)).toContainText("휴식 · 30분 정차");
     expect(planRouteRequestCount).toBe(routeCountBeforePreparation);
     expect(finalizeRequestCount).toBe(finalizeCountBeforePreparation);
     expect(weatherRequestCount).toBe(weatherCountBeforePreparation);
     expect(previewRequestCount).toBe(previewCountBeforePreparation);
     expect(publishRequestCount).toBe(publishCountBeforePreparation);
+    await expect(page.locator(".schedule-trigger")).toHaveText("날짜와 출발 시각 선택");
+    await chooseSchedule(page, departure);
 
     const preparedRouteRequest = page.waitForRequest((request) => (
       request.url().includes("/functions/v1/plan-route") && request.method() === "POST"
@@ -435,14 +478,8 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
       { width: 1440, height: 900 },
     ]) {
       await page.setViewportSize(viewport);
-      if (viewport.width <= 820) {
-        const dialog = page.getByRole("dialog", { name: "라이딩 계획 편집" });
-        if (await dialog.isVisible()) await page.keyboard.press("Escape");
-      }
-      await page.locator(".management-grid").scrollIntoViewIfNeeded();
-      await expect(page.getByRole("heading", { name: "라이딩 컬렉션" })).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "공유 · 저장" })).toBeVisible();
       await expect(page.getByRole("heading", { name: "라이딩 공유" })).toBeVisible();
-      await expect(collectionItem).toBeVisible();
       await expect(page.locator(".share-preview")).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
     }
@@ -507,40 +544,42 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(page.getByRole("status").filter({ hasText: "공유 링크를 회수했습니다." })).toBeVisible();
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole("button", { name: "계획 수정" }).click();
-    const plannerDialog = page.getByRole("dialog", { name: "라이딩 계획 편집" });
-    await expect(plannerDialog).toBeVisible();
-    const addRest = plannerDialog.getByRole("button", { name: /^\+ 경유지 추가/ });
-    await plannerDialog.getByLabel("추가할 종류").selectOption("rest");
+    await page.getByRole("dialog", { name: "공유 · 저장" }).getByRole("button", { name: "공유 저장 창 닫기" }).click();
+    await page.getByRole("button", { name: "경로 수정" }).last().click();
+    const plannerPanel = page.locator(".planner-panel");
+    await expect(plannerPanel).toBeVisible();
+    const addRest = plannerPanel.getByRole("button", { name: /^\+ 경유지 추가/ });
+    await plannerPanel.getByLabel("추가할 종류").selectOption("rest");
     for (let index = 0; index < 4; index += 1) await addRest.click();
     await addRest.click();
-    const restLimitError = plannerDialog.getByRole("alert");
+    const restLimitError = plannerPanel.getByRole("alert");
     await expect(restLimitError).toBeFocused();
     await expect(restLimitError).toContainText("휴식은 최대 5개까지 추가할 수 있습니다.");
-    await expect(plannerDialog.getByLabel("추가할 종류")).toHaveValue("rest");
-    await plannerDialog.getByRole("button", { name: "7번째 휴식 제거" }).click();
+    await expect(plannerPanel.getByLabel("추가할 종류")).toHaveValue("rest");
+    await plannerPanel.getByRole("button", { name: "경유 7 설정" }).click();
+    await page.getByRole("dialog", { name: "경유지 설정" }).getByRole("button", { name: "경유지 삭제" }).click();
     await expect(restLimitError).toHaveCount(0);
-    await expect(plannerDialog.locator(".action-notice").filter({ hasText: "휴식을(를) 경로에서 제거했습니다." })).toBeVisible();
+    await expect(plannerPanel.locator(".action-notice").filter({ hasText: "휴식을(를) 경로에서 제거했습니다." })).toBeVisible();
     await addRest.click();
-    const firstRestDwell = plannerDialog.getByLabel("3번째 휴식 머무는 시간 · 분");
-    await firstRestDwell.fill("45");
-    await expect(firstRestDwell).toHaveValue("45");
-    await plannerDialog.getByRole("button", { name: "4번째 휴식 위로 이동" }).click();
-    await plannerDialog.getByRole("button", { name: "추천 경로 다시 계산" }).click();
-    const errorNotice = plannerDialog.getByRole("alert");
+    await plannerPanel.getByRole("button", { name: "경유 3 설정" }).click();
+    settingsDialog = page.getByRole("dialog", { name: "경유지 설정" });
+    await settingsDialog.getByRole("button", { name: "머무는 시간 10분 늘리기" }).click();
+    await settingsDialog.getByRole("button", { name: "머무는 시간 10분 늘리기" }).click();
+    await settingsDialog.getByRole("button", { name: "설정 적용" }).click();
+    await expect(plannerPanel.locator(".ordered-waypoint").nth(2)).toContainText("휴식 · 50분 정차");
+    await plannerPanel.getByRole("button", { name: "4번째 휴식 위로 이동" }).click();
+    await plannerPanel.getByRole("button", { name: "추천 경로 다시 계산" }).click();
+    const errorNotice = plannerPanel.getByRole("alert");
     await expect(errorNotice).toBeFocused();
     await expect(errorNotice).toContainText("추가한 모든 경유지에서 검색 결과 장소를 선택해 주세요.");
     expect(await errorNotice.evaluate((element) => {
       const box = element.getBoundingClientRect();
       return box.left >= 0 && box.right <= window.innerWidth && element.scrollWidth <= element.clientWidth;
     })).toBe(true);
-    for (let remaining = 5; remaining > 0; remaining -= 1) {
-      await plannerDialog.getByRole("button", { name: /번째 휴식 제거/ }).first().click();
-      if (remaining > 1) {
-        await expect(plannerDialog.getByRole("button", { name: "3번째 휴식 제거" })).toBeFocused();
-      } else {
-        await expect(plannerDialog.getByRole("button", { name: "2번째 경유지 제거" })).toBeFocused();
-      }
+    while (await plannerPanel.locator(".ordered-waypoint").count() > 3) {
+      const lastCard = plannerPanel.locator(".ordered-waypoint").last();
+      await lastCard.getByRole("button", { name: /설정/ }).click();
+      await page.getByRole("dialog", { name: "경유지 설정" }).getByRole("button", { name: "경유지 삭제" }).click();
     }
     await expect(addRest).toBeEnabled();
 

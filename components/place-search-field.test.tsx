@@ -39,7 +39,7 @@ describe("PlaceSearchField collection application", () => {
         <PlaceSearchField key="origin-1" label="출발지" placeholder="검색" selected={place("b", "컬렉션 출발지")} onSelect={onSelect} />,
       );
     });
-    expect(renderer.root.findByType("input").props.value).toBe("컬렉션 출발지");
+    expect(renderer.root.findByType("input").props.value).toBe("");
     expect(renderer.root.findByType("strong").children).toEqual(["컬렉션 출발지"]);
     await act(async () => renderer.unmount());
   });

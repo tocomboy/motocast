@@ -47,7 +47,7 @@ describe("planner persistence lock policy", () => {
     expect(source).not.toContain('key={`share-${liveTripId ?? "none"}-${shareManagerEpoch}`}');
     expect(source).toContain("sessionEpoch={shareManagerEpoch}");
     expect(source).toContain("previewRequest={sharePreviewRequest?.tripId === shareTripId ? sharePreviewRequest.serial : 0}");
-    expect(source.match(/invalidateShareSession\(\);/g)).toHaveLength(3);
+    expect(source.match(/invalidateShareSession\(\);/g)).toHaveLength(4);
     const invalidator = source.indexOf("function invalidateShareSession()");
     const clearPreviewRequest = source.indexOf("setSharePreviewRequest(null)", invalidator);
     const advanceShareEpoch = source.indexOf("setShareManagerEpoch((current) => current + 1)", clearPreviewRequest);

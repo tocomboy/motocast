@@ -85,6 +85,16 @@ function validateCollectionCoursePoints(points: CollectionPoint[]) {
   return points;
 }
 
+export function parseCollectionCourse(value: unknown): CollectionCourse {
+  const raw = record(value, "INVALID_COLLECTION_VERSION");
+  if (!Array.isArray(raw.points)) throw new Error("INVALID_COLLECTION_VERSION");
+  return {
+    origin: parseSelectedPlace(raw.origin),
+    destination: parseSelectedPlace(raw.destination),
+    points: validateCollectionCoursePoints(raw.points.map(parseCollectionPoint)),
+  };
+}
+
 export function parseCollectionRows(value: unknown): RidingCollection[] {
   if (!Array.isArray(value)) throw new Error("INVALID_COLLECTION_RESPONSE");
   return value.map((item) => {
@@ -111,11 +121,7 @@ export function parseCollectionRows(value: unknown): RidingCollection[] {
         id: parsed.id,
         number: Number(parsed.version_number),
         createdAt: timestamp(parsed.created_at, "INVALID_COLLECTION_VERSION"),
-        course: {
-          origin: parseSelectedPlace(parsed.origin),
-          destination: parseSelectedPlace(parsed.destination),
-          points: validateCollectionCoursePoints(parsed.points.map(parseCollectionPoint)),
-        },
+        course: parseCollectionCourse({ origin: parsed.origin, destination: parsed.destination, points: parsed.points }),
       };
     }).sort((left, right) => right.number - left.number);
     if (versions.length === 0) return null;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { parseCollectionRows, type CollectionCourse, type RidingCollection } from "@/lib/collections/contracts";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
@@ -10,17 +10,25 @@ type CollectionManagerProps = {
   onApply: (course: CollectionCourse, title: string) => void;
   onShare: (course: CollectionCourse, title: string) => void;
   disabled?: boolean;
+  mode?: "manage" | "home" | "save";
+  onShowCollections?: () => void;
+  triggerLabel?: string;
 };
 
-export function CollectionManager({ currentCourse, onApply, onShare, disabled = false }: CollectionManagerProps) {
+export function CollectionManager({ currentCourse, onApply, onShare, disabled = false, mode = "manage", onShowCollections, triggerLabel = "경로 저장" }: CollectionManagerProps) {
   const [collections, setCollections] = useState<RidingCollection[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("컬렉션을 불러오는 중입니다.");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [savedTitle, setSavedTitle] = useState("");
   const saveAttemptRef = useRef<{ payloadKey: string; operationId: string } | null>(null);
+  const savePendingRef = useRef(false);
+  const saveDialogRef = useRef<HTMLDialogElement>(null);
+  const saveTriggerRef = useRef<HTMLButtonElement>(null);
+  const saveTitleId = useId();
 
-  const loadCollections = useCallback(async () => {
+  const loadCollections = useCallback(async (preserveStatus = false) => {
     const supabase = getBrowserSupabase();
     if (!supabase) return;
     const { data, error } = await supabase
@@ -34,7 +42,7 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
     try {
       const parsed = parseCollectionRows(data);
       setCollections(parsed);
-      setStatus(parsed.length ? `${parsed.length}개의 내 컬렉션을 불러왔습니다.` : "저장된 컬렉션이 없습니다.");
+      if (!preserveStatus) setStatus(parsed.length ? `${parsed.length}개의 내 컬렉션을 불러왔습니다.` : "저장된 컬렉션이 없습니다.");
     } catch {
       setStatus("저장된 컬렉션 응답을 안전하게 확인하지 못했습니다.");
     }
@@ -46,7 +54,7 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
   }, [loadCollections]);
 
   async function saveVersion(collection: RidingCollection | null) {
-    if (disabled) return;
+    if (disabled || savePendingRef.current) return;
     const collectionTitle = collection?.title ?? title.trim();
     const collectionDescription = collection?.description ?? description;
     if (!collectionTitle || !currentCourse) {
@@ -68,23 +76,28 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
       saveAttemptRef.current = { payloadKey, operationId: crypto.randomUUID() };
     }
     const targetId = collection?.id ?? "new";
+    savePendingRef.current = true;
     setBusyId(targetId);
-    const { data, error } = await supabase.functions.invoke("save-collection", {
-      body: {
-        saveOperationId: saveAttemptRef.current.operationId,
-        ...payload,
-      },
-    });
-    setBusyId(null);
+    let data: unknown;
+    let error: unknown;
+    try {
+      ({ data, error } = await supabase.functions.invoke("save-collection", { body: { saveOperationId: saveAttemptRef.current.operationId, ...payload } }));
+    } catch {
+      error = true;
+    } finally {
+      savePendingRef.current = false;
+      setBusyId(null);
+    }
     if (error || !data || typeof data !== "object" || !Number.isInteger((data as { versionNumber?: unknown }).versionNumber)) {
       setStatus("컬렉션을 저장하지 못했습니다. 입력과 이용 권한을 확인해 주세요.");
       return;
     }
     setTitle("");
     setDescription("");
+    setSavedTitle(collectionTitle);
     saveAttemptRef.current = null;
     setStatus(`${collectionTitle} 컬렉션의 ${(data as { versionNumber: number }).versionNumber}번째 불변 버전을 저장했습니다.`);
-    await loadCollections();
+    await loadCollections(true);
   }
 
   async function deleteCollection(collection: RidingCollection) {
@@ -105,6 +118,30 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
     await loadCollections();
   }
 
+  const collectionItems = collections.map((collection) => (
+    <li key={collection.id} data-collection-id={collection.id}>
+      <div>
+        <strong>{collection.title}</strong>
+        <span>{collection.latestVersion.course.origin.name} → {collection.latestVersion.course.points.map((point) => point.name).join(" → ")}{collection.latestVersion.course.points.length ? " → " : ""}{collection.latestVersion.course.destination.name}</span>
+        <small>경유지 {collection.latestVersion.course.points.length}개 · 휴식 {collection.latestVersion.course.points.filter((point) => point.dwellMinutes > 0).reduce((sum, point) => sum + point.dwellMinutes, 0)}분 · 날짜와 시간 미포함</small>
+        {collection.description ? <small>{collection.description}</small> : null}
+      </div>
+      <div className="collection-actions">
+        <button type="button" aria-label={`${collection.title} 계획에 적용`} disabled={disabled} onClick={() => onApply(collection.latestVersion.course, collection.title)}>새 일정으로 출발</button>
+        {mode === "manage" ? <><button type="button" aria-label={`${collection.title} 공유 준비`} disabled={disabled} onClick={() => onShare(collection.latestVersion.course, collection.title)}>공유 준비</button><button type="button" aria-label={`${collection.title} 새 버전 저장`} disabled={disabled || busyId !== null || !currentCourse} onClick={() => void saveVersion(collection)}>새 버전</button><button className="danger-text" type="button" aria-label={`${collection.title} 삭제`} disabled={disabled || busyId !== null} onClick={() => void deleteCollection(collection)}>삭제</button></> : null}
+      </div>
+    </li>
+  ));
+
+  if (mode === "home") return <section className="collection-manager collection-manager-home" aria-label="최근 저장한 경로">{collections.length ? <ul className="collection-list">{collectionItems.slice(0, 1)}</ul> : null}<p className="manager-status" role="status" aria-live="polite">{status}</p></section>;
+
+  if (mode === "save") return <section className="collection-manager collection-manager-save" aria-label="경로 저장">
+    <button ref={saveTriggerRef} className="secondary-button" type="button" disabled={disabled || !currentCourse} onClick={() => saveDialogRef.current?.showModal()}>{triggerLabel}</button>
+    <dialog ref={saveDialogRef} className="collection-save-dialog" aria-labelledby={saveTitleId} onClose={() => saveTriggerRef.current?.focus()} onCancel={(event) => { if (busyId !== null) event.preventDefault(); }}>
+      <div className="collection-save-shell"><header><div><p className="eyebrow">SAVE ROUTE</p><h2 id={saveTitleId}>내 경로로 저장</h2></div><button type="button" disabled={busyId !== null} onClick={() => saveDialogRef.current?.close()} aria-label="경로 저장 창 닫기">×</button></header>{savedTitle ? <div className="collection-save-success" role="status"><strong>{savedTitle}</strong><span>내 경로에 저장했습니다. 새 일정을 정해 다시 사용할 수 있어요.</span></div> : <><p>출발 날짜와 시간은 저장하지 않습니다. 다음에 새 일정을 정해 다시 계산할 수 있어요.</p><label><span>경로 이름</span><input disabled={busyId !== null} maxLength={120} value={title} onChange={(event) => { setTitle(event.target.value); setSavedTitle(""); }} placeholder="예: 북한강 아침 코스" /></label><label><span>설명 · 선택</span><textarea disabled={busyId !== null} maxLength={2000} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="도로 특징이나 주의점을 기록하세요." /></label><p className="manager-status" role="status" aria-live="polite">{status}</p></>}<div className="collection-save-actions">{savedTitle && onShowCollections ? <button type="button" onClick={() => { saveDialogRef.current?.close(); onShowCollections(); }}>저장한 경로 보기</button> : null}<button type="button" disabled={busyId !== null} onClick={() => saveDialogRef.current?.close()}>{savedTitle ? "닫기" : "취소"}</button>{!savedTitle ? <button className="primary-button" type="button" disabled={disabled || busyId !== null || !currentCourse || !title.trim()} onClick={() => void saveVersion(null)}>{busyId === "new" ? "저장 중…" : "저장"}</button> : null}</div></div>
+    </dialog>
+  </section>;
+
   return (
     <section className="collection-manager" aria-labelledby="collection-heading">
       <div className="collection-heading-row">
@@ -124,23 +161,7 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
       </div>
 
       {collections.length ? (
-        <ul className="collection-list">
-          {collections.map((collection) => (
-            <li key={collection.id} data-collection-id={collection.id}>
-              <div>
-                <strong>{collection.title}</strong>
-                <span>v{collection.latestVersion.number} · {collection.latestVersion.course.origin.name} → {collection.latestVersion.course.destination.name} · 경유지 {collection.latestVersion.course.points.length}개</span>
-                {collection.description ? <small>{collection.description}</small> : null}
-              </div>
-              <div className="collection-actions">
-                <button type="button" aria-label={`${collection.title} 계획에 적용`} disabled={disabled} onClick={() => onApply(collection.latestVersion.course, collection.title)}>계획에 적용</button>
-                <button type="button" aria-label={`${collection.title} 공유 준비`} disabled={disabled} onClick={() => onShare(collection.latestVersion.course, collection.title)}>공유 준비</button>
-                <button type="button" aria-label={`${collection.title} 새 버전 저장`} disabled={disabled || busyId !== null || !currentCourse} onClick={() => void saveVersion(collection)}>새 버전</button>
-                <button className="danger-text" type="button" aria-label={`${collection.title} 삭제`} disabled={disabled || busyId !== null} onClick={() => void deleteCollection(collection)}>삭제</button>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <ul className="collection-list">{collectionItems}</ul>
       ) : null}
       <p className="manager-status" role="status" aria-live="polite">{status}</p>
     </section>

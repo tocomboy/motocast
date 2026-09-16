@@ -88,6 +88,35 @@ insert into concurrent_retry_versions select version_number from dblink_get_resu
 select * from dblink_get_result('collection_c1') as result(version_number integer);
 select * from dblink_get_result('collection_c2') as result(version_number integer);
 
+insert into public.share_links(owner_id, token_hash, published_snapshot, collection_course)
+values (
+  '73000000-0000-0000-0000-000000000003',
+  encode(extensions.digest(repeat('b', 43), 'sha256'), 'hex'),
+  '{}'::jsonb,
+  '{"origin":{"kakaoPlaceId":"origin","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"출발","address":"테스트 주소","roadAddress":null,"longitude":127.0,"latitude":37.0},"destination":{"kakaoPlaceId":"destination","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"복귀","address":"테스트 주소","roadAddress":null,"longitude":127.2,"latitude":37.2},"points":[{"id":"lunch","label":"점심","kakaoPlaceId":"lunch","verificationToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"점심","address":"테스트 주소","roadAddress":null,"longitude":127.1,"latitude":37.1,"kind":"stop","dwellMinutes":60,"selected":true,"winding":false,"stopRole":"lunch"}]}'::jsonb
+);
+select dblink_exec('collection_c1', 'reset role');
+select dblink_exec('collection_c2', 'reset role');
+select dblink_exec('collection_c1', 'set role authenticated');
+select dblink_exec('collection_c2', 'set role authenticated');
+select dblink_exec('collection_c1', $$set "request.jwt.claim.sub" = '73000000-0000-0000-0000-000000000003'$$);
+select dblink_exec('collection_c2', $$set "request.jwt.claim.sub" = '73000000-0000-0000-0000-000000000003'$$);
+select dblink_send_query('collection_c1', $query$
+  select version_number from public.save_shared_collection(
+    repeat('b', 43), '73000000-0000-4000-8000-000000000024', '공유 동시 저장'
+  )
+$query$);
+select dblink_send_query('collection_c2', $query$
+  select version_number from public.save_shared_collection(
+    repeat('b', 43), '73000000-0000-4000-8000-000000000024', '공유 동시 저장'
+  )
+$query$);
+create temp table concurrent_shared_retry_versions(version_number integer);
+insert into concurrent_shared_retry_versions select version_number from dblink_get_result('collection_c1') as result(version_number integer);
+insert into concurrent_shared_retry_versions select version_number from dblink_get_result('collection_c2') as result(version_number integer);
+select * from dblink_get_result('collection_c1') as result(version_number integer);
+select * from dblink_get_result('collection_c2') as result(version_number integer);
+
 create temp table tap_results(ok boolean not null, description text not null);
 insert into tap_results values
   ((select array_agg(version_number order by version_number) = array[2, 3] from concurrent_versions), 'concurrent writers receive distinct sequential versions'),
@@ -97,7 +126,9 @@ insert into tap_results values
   ((select count(*) = 4 from public.collection_versions where collection_id = '73000000-0000-0000-0000-000000000013'), 'concurrent retries append exactly one immutable version'),
   ((select count(*) = 1 from public.collection_save_operations
     where owner_id = '73000000-0000-0000-0000-000000000003'
-      and operation_id = '73000000-0000-4000-8000-000000000023'), 'concurrent retries share one durable save-operation result');
+      and operation_id = '73000000-0000-4000-8000-000000000023'), 'concurrent retries share one durable save-operation result'),
+  ((select array_agg(version_number order by version_number) = array[1, 1] from concurrent_shared_retry_versions), 'concurrent shared-copy retries return the same first version'),
+  ((select count(*) = 1 from public.riding_collections where owner_id = '73000000-0000-0000-0000-000000000003' and title = '공유 동시 저장'), 'concurrent shared-copy retries create exactly one recipient collection');
 
 select dblink_disconnect('collection_c1');
 select dblink_disconnect('collection_c2');

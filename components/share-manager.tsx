@@ -145,6 +145,9 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
       } else if (error?.message.includes("SHARE_WEATHER_NOT_FRESH")) {
         setPreviewToken(null);
         setStatus({ epoch: operationEpoch, message: "날씨가 오래됐거나 만료되어 발행하지 않았습니다. 날씨를 다시 조회하고 새 미리보기를 확인해 주세요." });
+      } else if (error?.message.includes("SHARE_COURSE_UNAVAILABLE")) {
+        setPreviewToken(null);
+        setStatus({ epoch: operationEpoch, message: "저장된 경로 정보가 부족해 발행하지 않았습니다. 경로를 다시 계산한 뒤 새 미리보기를 확인해 주세요." });
       } else {
         setStatus({ epoch: operationEpoch, message: "공유 링크를 발행하지 못했습니다." });
       }

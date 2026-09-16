@@ -127,6 +127,19 @@ describe("ShareManager collection preview request", () => {
     await act(async () => renderer.unmount());
   });
 
+  it("invalidates the preview and gives recovery guidance when the private course is unavailable", async () => {
+    browserMocks.rpc
+      .mockResolvedValueOnce({ data: [{ preview_snapshot: rawSharedRideSnapshotWithOmissions(0), preview_token: "p".repeat(43) }], error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: "SHARE_COURSE_UNAVAILABLE" } });
+    const renderer = await renderShareManager();
+    const publishButton = renderer.root.findByProps({ className: "primary-button" });
+    await act(async () => publishButton.props.onClick());
+    expect(renderer.root.findByProps({ className: "manager-status" }).children.join(""))
+      .toContain("경로를 다시 계산한 뒤 새 미리보기를 확인");
+    expect(renderer.root.findByProps({ className: "primary-button" }).props.disabled).toBe(true);
+    await act(async () => renderer.unmount());
+  });
+
   it("ignores a late preview response from an invalidated session", async () => {
     let resolveOldPreview!: (value: { data: null; error: { message: string } }) => void;
     browserMocks.rpc.mockReturnValueOnce(new Promise((resolve) => { resolveOldPreview = resolve; }));

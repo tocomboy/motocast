@@ -21,6 +21,11 @@ insert into acl_results(ok, description) values
   (not has_function_privilege('authenticated', 'public.create_kakao_oidc_handoff_internal(text,text,text,timestamptz)', 'EXECUTE'), 'authenticated cannot create OIDC handoffs'),
   (not has_function_privilege('anon', 'public.consume_kakao_oidc_handoff_internal(text,text)', 'EXECUTE'), 'anon cannot consume OIDC handoffs'),
   (not has_function_privilege('authenticated', 'public.consume_kakao_oidc_handoff_internal(text,text)', 'EXECUTE'), 'authenticated cannot consume OIDC handoffs'),
+  (has_function_privilege('authenticated', 'public.save_shared_collection(text,uuid,text)', 'EXECUTE'), 'authenticated can copy a verified shared course'),
+  (has_function_privilege('authenticated', 'public.get_shared_course(text)', 'EXECUTE'), 'authenticated can bootstrap a verified shared course'),
+  (has_function_privilege('authenticated', 'public.add_place_favorite(jsonb)', 'EXECUTE'), 'authenticated can add a favorite through the narrow RPC'),
+  (has_function_privilege('authenticated', 'public.remove_place_favorite(smallint,text)', 'EXECUTE'), 'authenticated can remove a favorite through the narrow RPC'),
+  (not has_function_privilege('anon', 'public.get_shared_course(text)', 'EXECUTE'), 'anonymous role cannot read private shared courses'),
   ((select relrowsecurity from pg_class where oid = 'public.kakao_oidc_handoffs'::regclass), 'OIDC handoff table has RLS enabled'),
   (not has_table_privilege('authenticated', 'public.trips', 'TRUNCATE'), 'browser cannot truncate trips'),
   (not has_table_privilege('authenticated', 'public.weather_snapshots', 'REFERENCES'), 'browser cannot create references to weather snapshots'),
@@ -46,6 +51,7 @@ with protected_tables(table_name) as (
     ('route_plan_runs'),
     ('share_preview_grants'),
     ('kakao_oidc_handoffs')
+    ,('place_favorites')
 ), dml(privilege_name) as (
   values ('INSERT'), ('UPDATE'), ('DELETE')
 )
@@ -94,6 +100,10 @@ with denied(function_signature) as (
     ('public.delete_owned_trip(uuid)'),
     ('public.preview_trip_share(uuid)'),
     ('public.publish_trip_share(uuid,text)'),
+    ('public.save_shared_collection(text,uuid,text)'),
+    ('public.get_shared_course(text)'),
+    ('public.add_place_favorite(jsonb)'),
+    ('public.remove_place_favorite(smallint,text)'),
     ('public.revoke_share(uuid)'),
     ('public.resolve_share(text)'),
     ('public.build_trip_share_snapshot(uuid,uuid)'),

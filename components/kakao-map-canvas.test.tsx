@@ -291,7 +291,9 @@ describe("KakaoMapCanvas", () => {
     expect(notice.findAllByType("li").at(-1)?.findAllByType("span")[1].children.join(""))
       .toContain("와인딩 경유지 20 · 선택 경로 미통과");
     expect(sharedMap.findAllByProps({ "aria-labelledby": "map-omissions-heading" })).toHaveLength(0);
-    expect(notice.parent?.parent).toBe(sharedMap.parent);
+    const notices = renderer.root.findByProps({ className: "riding-summary-notices" });
+    expect(notices.findAllByProps({ "aria-labelledby": "map-omissions-heading" })).toHaveLength(1);
+    expect(notices).not.toBe(sharedMap);
     await act(async () => renderer.unmount());
   });
 

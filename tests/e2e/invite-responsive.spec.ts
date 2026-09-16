@@ -49,27 +49,18 @@ for (const viewport of [
     await setProductionMarkup(page, plannerMarkup);
 
     const inviteLink = page.getByRole("link", { name: "초대 관리" });
-    const planButton = page.getByRole("button", { name: "계획 수정" });
     await expect(inviteLink).toBeVisible();
     await expect(inviteLink).toHaveAttribute("href", "/admin/invites");
-    if (viewport.width <= 820) await expect(planButton).toBeVisible();
 
     const layout = await page.locator(".app-header").evaluate((header) => {
       const invite = header.querySelector<HTMLElement>(".ghost-button")!;
-      const plan = header.querySelector<HTMLElement>(".mobile-plan-button")!;
       const inviteBox = invite.getBoundingClientRect();
-      const planBox = plan.getBoundingClientRect();
-      const overlaps = inviteBox.left < planBox.right && inviteBox.right > planBox.left
-        && inviteBox.top < planBox.bottom && inviteBox.bottom > planBox.top;
       return {
         documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
         headerHasNoHorizontalOverflow: header.scrollWidth <= header.clientWidth,
         inviteHeight: inviteBox.height,
         inviteInsideViewport: inviteBox.left >= 0 && inviteBox.right <= window.innerWidth,
         inviteIsClickable: getComputedStyle(invite).pointerEvents !== "none",
-        mobileActionsDoNotOverlap: planBox.width === 0 || !overlaps,
-        planHeight: planBox.height,
-        planInsideViewport: planBox.width === 0 || (planBox.left >= 0 && planBox.right <= window.innerWidth),
       };
     });
     expect(layout).toMatchObject({
@@ -77,11 +68,8 @@ for (const viewport of [
       headerHasNoHorizontalOverflow: true,
       inviteInsideViewport: true,
       inviteIsClickable: true,
-      mobileActionsDoNotOverlap: true,
-      planInsideViewport: true,
     });
     expect(layout.inviteHeight).toBeGreaterThanOrEqual(44);
-    if (viewport.width <= 820) expect(layout.planHeight).toBeGreaterThanOrEqual(44);
   });
 
   test(`${viewport.name} keeps invite creation and copy actions visible and unclipped`, async ({ page }) => {

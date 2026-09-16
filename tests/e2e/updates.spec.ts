@@ -27,7 +27,7 @@ test.describe("public update notes", () => {
     const dialog = page.getByRole("dialog", { name: "새로운 소식을 확인해 보세요" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`현재 v${currentVersion}`)).toBeVisible();
-    await expect(dialog.getByText("카카오 전체 소요시간을 기준으로 경유지 도착 시각을 계산해요.")).toBeVisible();
+    await expect(dialog.getByText("새 공유 링크를 내 경로로 저장하고, 새 날짜와 출발 시각을 정해 다시 달려요.")).toBeVisible();
     const layout = await dialog.evaluate((element) => ({
       dialogHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
       documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
@@ -83,23 +83,50 @@ test.describe("public update notes", () => {
     await expect(page.getByRole("heading", { level: 1, name: "업데이트 소식" })).toBeVisible();
 
     const releases = page.getByRole("article");
-    await expect(releases).toHaveCount(5);
+    await expect(releases).toHaveCount(6);
     await expect(releases.nth(0)).toContainText(`v${currentVersion}`);
     await expect(releases.nth(0).getByText("현재 버전", { exact: true })).toBeVisible();
-    await expect(releases.nth(1)).toContainText("v0.2.2");
+    await expect(releases.nth(1)).toContainText("v0.2.3");
     await expect(releases.nth(1).getByText("현재 버전", { exact: true })).toHaveCount(0);
-    await expect(releases.nth(2)).toContainText("v0.2.1");
+    await expect(releases.nth(2)).toContainText("v0.2.2");
     await expect(releases.nth(2).getByText("현재 버전", { exact: true })).toHaveCount(0);
-    await expect(releases.nth(3)).toContainText("v0.2.0");
+    await expect(releases.nth(3)).toContainText("v0.2.1");
     await expect(releases.nth(3).getByText("현재 버전", { exact: true })).toHaveCount(0);
-    await expect(releases.nth(4)).toContainText("v0.1.0");
+    await expect(releases.nth(4)).toContainText("v0.2.0");
     await expect(releases.nth(4).getByText("현재 버전", { exact: true })).toHaveCount(0);
+    await expect(releases.nth(5)).toContainText("v0.1.0");
+    await expect(releases.nth(5).getByText("현재 버전", { exact: true })).toHaveCount(0);
 
     const backLink = page.getByRole("link", { name: "플래너로 돌아가기" });
     await backLink.focus();
     await expect(backLink).toBeFocused();
     await backLink.click();
     await expect(page).toHaveURL("/");
+  });
+
+  test("keeps the mobile navigation usable when the announcement request fails", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.route("**/api/releases/claim", async (route) => {
+      await route.fulfill({ body: JSON.stringify({ error: "unavailable" }), contentType: "application/json", status: 503 });
+    });
+
+    await page.goto("/");
+    const errorNotice = page.getByRole("status").filter({ hasText: "업데이트 소식을 불러오지 못했습니다." });
+    const navigation = page.getByRole("navigation", { name: "주요 화면" });
+    await expect(errorNotice).toBeVisible();
+    await expect(navigation).toBeVisible();
+
+    const geometry = await Promise.all([
+      errorNotice.boundingBox(),
+      navigation.boundingBox(),
+    ]);
+    expect(geometry[0]).not.toBeNull();
+    expect(geometry[1]).not.toBeNull();
+    expect(geometry[0]!.y + geometry[0]!.height).toBeLessThanOrEqual(geometry[1]!.y);
+
+    const newRoute = navigation.getByRole("button", { name: "새 경로 만들기" });
+    await newRoute.click();
+    await expect(newRoute).toHaveAttribute("aria-current", "page");
   });
 
   for (const viewport of [
@@ -112,7 +139,8 @@ test.describe("public update notes", () => {
       await page.evaluate(() => document.fonts.ready);
 
       await expect(page.getByRole("heading", { level: 1, name: "업데이트 소식" })).toBeVisible();
-      await expect(page.getByRole("article")).toHaveCount(5);
+      await expect(page.getByRole("article")).toHaveCount(6);
+      await expect(page.getByText("새 공유 링크를 내 경로로 저장하고, 새 날짜와 출발 시각을 정해 다시 달려요.")).toBeVisible();
       await expect(page.getByText("카카오 전체 소요시간을 기준으로 경유지 도착 시각을 계산해요.")).toBeVisible();
       await expect(page.getByText("일부 경로 계획 오류는 원인을 확인 중이에요.")).toBeVisible();
       await expect(page.getByText("모바일에서 초대 관리와 링크 복사 버튼이 보이도록 고쳤어요.")).toBeVisible();

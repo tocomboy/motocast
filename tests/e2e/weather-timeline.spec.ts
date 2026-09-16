@@ -117,12 +117,13 @@ test("renders model, outside-window, and stale states without changing route ord
   const resolution = page.waitForResponse((response) => response.url().endsWith("/api/shares/resolve"));
   await page.goto(`/share#${"a".repeat(43)}`);
   await expect((await resolution).status()).toBe(200);
-  await expect(page.getByRole("heading", { name: "구간 통과 시각별 날씨" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "구간별 시간 · 날씨" })).toBeVisible();
   await expect(page.locator(".shared-weather-state")).toContainText("기상청 공급자 오류 후 저장본");
   await expect(page.locator(".shared-weather-reason")).toHaveText("기상청 요청에 실패했습니다.");
   await expect(page.locator(".shared-weather-list")).toContainText("초단기예보");
   await expect(page.locator(".shared-weather-list")).toContainText("단기예보");
-  await expect(page.locator(".shared-weather-list")).toContainText("상세 예보 기간 밖 · 기상청 상세 호출 없음");
+  await expect(page.locator(".shared-weather-list")).toContainText("상세 예보 기간 밖");
+  await expect(page.locator(".shared-weather-list")).toContainText("기상청 상세 호출 없음");
   await expect(page.locator(".shared-routes article")).toHaveCount(1);
   await expect(page.locator(".shared-routes article")).toContainText("균형");
   await expect(page.locator(".shared-snapshot")).not.toContainText("와인딩 추정");
@@ -192,5 +193,5 @@ test("renders an immutable schema version 1 share with its historical return fie
   await expect(page.getByRole("heading", { name: "여행 루트" })).toBeVisible();
   await expect(page.locator(".shared-routes article")).toHaveCount(1);
   await expect(page.getByText("도착·복귀 시각은 교통 상황에 따라 달라질 수 있는 추정값입니다.")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "구간 통과 시각별 날씨" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "구간별 시간 · 날씨" })).toBeVisible();
 });

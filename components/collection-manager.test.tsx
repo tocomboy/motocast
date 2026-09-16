@@ -104,4 +104,24 @@ describe("CollectionManager direct course", () => {
     expect(browserMocks.invoke.mock.calls[1][1].body.saveOperationId).toBe(firstId);
     await act(async () => renderer.unmount());
   });
+
+  it("shows a stable saved result and opens the saved routes view", async () => {
+    const onShowCollections = vi.fn();
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<CollectionManager mode="save" currentCourse={directCourse} onApply={vi.fn()} onShare={vi.fn()} onShowCollections={onShowCollections} />, {
+        createNodeMock: (element) => element.type === "dialog" ? { showModal: vi.fn(), close: vi.fn() } : {},
+      });
+    });
+    await act(async () => buttonWithText(renderer.root, "경로 저장")?.props.onClick());
+    await act(async () => renderer.root.findByType("input").props.onChange({ target: { value: "남한강 코스" } }));
+    const confirmSave = renderer.root.findAllByType("button").find((button) => button.children.join("") === "저장");
+    await act(async () => confirmSave?.props.onClick());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(renderer.root.findByProps({ role: "status" }).findByType("strong").children).toEqual(["남한강 코스"]);
+    expect(renderer.root.findAllByType("input")).toHaveLength(0);
+    await act(async () => buttonWithText(renderer.root, "저장한 경로 보기")?.props.onClick());
+    expect(onShowCollections).toHaveBeenCalledTimes(1);
+    await act(async () => renderer.unmount());
+  });
 });
