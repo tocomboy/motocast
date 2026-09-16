@@ -12,6 +12,16 @@ export const currentVersion = packageMetadata.version;
 
 export const releaseNotes = [
   {
+    version: "0.2.1",
+    date: "2026-09-16",
+    title: "모바일 초대 기능 개선",
+    summary: "작은 화면에서도 초대 링크를 만들고 복사할 수 있습니다.",
+    bullets: [
+      "모바일에서 초대 관리와 링크 복사 버튼이 보이도록 고쳤어요.",
+      "작은 화면에서도 초대 버튼을 누르기 편하도록 배치를 다듬었어요.",
+    ],
+  },
+  {
     version: "0.2.0",
     date: "2026-09-16",
     title: "업데이트 소식을 한눈에",

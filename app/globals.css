@@ -1531,8 +1531,7 @@ button {
     padding: 0 17px;
   }
 
-  .trip-heading,
-  .ghost-button {
+  .trip-heading {
     display: none;
   }
 
@@ -1677,8 +1676,35 @@ button {
 }
 
 @media (max-width: 520px) {
+  .app-header {
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 10px 12px;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    justify-self: stretch;
+  }
+
   .header-actions .compact {
     display: none;
+  }
+
+  .admin-nav {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 48px;
+  }
+
+  .admin-nav .brand-dark {
+    margin-bottom: 0;
+  }
+
+  .admin-nav .text-link {
+    margin-left: auto;
   }
 
   .summary-metrics {

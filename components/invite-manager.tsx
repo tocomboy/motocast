@@ -9,6 +9,42 @@ type InviteResult = {
   expires_at: string;
 };
 
+type InviteManagerViewProps = {
+  copyInvite: () => void;
+  createInvite: () => void;
+  invite: InviteResult | null;
+  inviteUrl: string;
+  status: string;
+  working: boolean;
+};
+
+export function InviteManagerView({ copyInvite, createInvite, invite, inviteUrl, status, working }: InviteManagerViewProps) {
+  return (
+    <section className="admin-card" aria-labelledby="invite-title">
+      <p className="eyebrow">ONE-TIME ACCESS</p>
+      <h1 id="invite-title">라이더 초대</h1>
+      <p className="admin-intro">7일 동안 유효한 일회용 링크를 만듭니다. 링크를 받은 사람은 카카오 로그인 후 이 모임의 라이더로 등록됩니다.</p>
+
+      <button className="primary-button" type="button" onClick={createInvite} disabled={working}>
+        {working ? "링크 만드는 중…" : "초대 링크 생성"}
+      </button>
+
+      {invite ? (
+        <div className="invite-result">
+          <label htmlFor="invite-url">초대 링크</label>
+          <div className="invite-copy-row">
+            <input id="invite-url" readOnly value={inviteUrl} onFocus={(event) => event.currentTarget.select()} />
+            <button className="ghost-button dark" type="button" onClick={copyInvite}>복사</button>
+          </div>
+          <small>만료: {new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(invite.expires_at))}</small>
+        </div>
+      ) : null}
+
+      <p className="admin-status" role="status">{status}</p>
+    </section>
+  );
+}
+
 export function InviteManager() {
   const [invite, setInvite] = useState<InviteResult | null>(null);
   const [status, setStatus] = useState("새 링크는 한 번 사용되거나 만료되면 다시 쓸 수 없습니다.");
@@ -50,28 +86,12 @@ export function InviteManager() {
     }
   }
 
-  return (
-    <section className="admin-card" aria-labelledby="invite-title">
-      <p className="eyebrow">ONE-TIME ACCESS</p>
-      <h1 id="invite-title">라이더 초대</h1>
-      <p className="admin-intro">7일 동안 유효한 일회용 링크를 만듭니다. 링크를 받은 사람은 카카오 로그인 후 이 모임의 라이더로 등록됩니다.</p>
-
-      <button className="primary-button" type="button" onClick={createInvite} disabled={working}>
-        {working ? "링크 만드는 중…" : "7일 초대 링크 만들기"}
-      </button>
-
-      {invite ? (
-        <div className="invite-result">
-          <label htmlFor="invite-url">초대 링크</label>
-          <div className="invite-copy-row">
-            <input id="invite-url" readOnly value={inviteUrl} onFocus={(event) => event.currentTarget.select()} />
-            <button className="ghost-button dark" type="button" onClick={copyInvite}>복사</button>
-          </div>
-          <small>만료: {new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(invite.expires_at))}</small>
-        </div>
-      ) : null}
-
-      <p className="admin-status" role="status">{status}</p>
-    </section>
-  );
+  return <InviteManagerView
+    copyInvite={copyInvite}
+    createInvite={createInvite}
+    invite={invite}
+    inviteUrl={inviteUrl}
+    status={status}
+    working={working}
+  />;
 }

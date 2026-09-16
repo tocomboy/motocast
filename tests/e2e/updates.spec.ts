@@ -1,4 +1,9 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { expect, test } from "@playwright/test";
+
+const currentVersion = (JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as { version: string }).version;
 
 test.describe("public update notes", () => {
   test("shows one current-version announcement per server identity decision", async ({ page }) => {
@@ -8,11 +13,11 @@ test.describe("public update notes", () => {
     await page.route("**/api/releases/claim", async (route) => {
       const body = route.request().postDataJSON() as Record<string, unknown>;
       expect(Object.keys(body).sort()).toEqual(["expectedVersion", "presentationId"]);
-      expect(body.expectedVersion).toBe("0.2.0");
+      expect(body.expectedVersion).toBe(currentVersion);
       expect(body.presentationId).toMatch(/^[0-9a-f-]{36}$/i);
       presentationIds.push(String(body.presentationId));
       await route.fulfill({
-        body: JSON.stringify({ show: decisions[presentationIds.length - 1], version: "0.2.0" }),
+        body: JSON.stringify({ show: decisions[presentationIds.length - 1], version: currentVersion }),
         contentType: "application/json",
         status: 200,
       });
@@ -21,8 +26,8 @@ test.describe("public update notes", () => {
     await page.goto("/");
     const dialog = page.getByRole("dialog", { name: "새로운 소식을 확인해 보세요" });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText("현재 v0.2.0")).toBeVisible();
-    await expect(dialog.getByText("새 버전의 주요 소식을 처음 접속할 때 한 번만 알려드려요.")).toBeVisible();
+    await expect(dialog.getByText(`현재 v${currentVersion}`)).toBeVisible();
+    await expect(dialog.getByText("모바일에서 초대 관리와 링크 복사 버튼이 보이도록 고쳤어요.")).toBeVisible();
     const layout = await dialog.evaluate((element) => ({
       dialogHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
       documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
@@ -47,7 +52,7 @@ test.describe("public update notes", () => {
     const repeatedClaim = page.waitForResponse((response) => response.url().includes("/api/releases/claim"));
     await page.reload();
     const repeatedResponse = await repeatedClaim;
-    expect(await repeatedResponse.json()).toEqual({ show: false, version: "0.2.0" });
+    expect(await repeatedResponse.json()).toEqual({ show: false, version: currentVersion });
     expect(presentationIds).toHaveLength(2);
     await expect(dialog).toBeHidden();
 
@@ -69,7 +74,7 @@ test.describe("public update notes", () => {
   test("opens from the global version footer and shows the current release history", async ({ page }) => {
     await page.goto("/");
 
-    const releaseLink = page.getByRole("link", { name: "업데이트 소식 · v0.2.0" });
+    const releaseLink = page.getByRole("link", { name: `업데이트 소식 · v${currentVersion}` });
     await expect(releaseLink).toBeVisible();
     await releaseLink.click();
 
@@ -78,11 +83,13 @@ test.describe("public update notes", () => {
     await expect(page.getByRole("heading", { level: 1, name: "업데이트 소식" })).toBeVisible();
 
     const releases = page.getByRole("article");
-    await expect(releases).toHaveCount(2);
-    await expect(releases.nth(0)).toContainText("v0.2.0");
+    await expect(releases).toHaveCount(3);
+    await expect(releases.nth(0)).toContainText(`v${currentVersion}`);
     await expect(releases.nth(0).getByText("현재 버전", { exact: true })).toBeVisible();
-    await expect(releases.nth(1)).toContainText("v0.1.0");
+    await expect(releases.nth(1)).toContainText("v0.2.0");
     await expect(releases.nth(1).getByText("현재 버전", { exact: true })).toHaveCount(0);
+    await expect(releases.nth(2)).toContainText("v0.1.0");
+    await expect(releases.nth(2).getByText("현재 버전", { exact: true })).toHaveCount(0);
 
     const backLink = page.getByRole("link", { name: "플래너로 돌아가기" });
     await backLink.focus();
@@ -101,7 +108,8 @@ test.describe("public update notes", () => {
       await page.evaluate(() => document.fonts.ready);
 
       await expect(page.getByRole("heading", { level: 1, name: "업데이트 소식" })).toBeVisible();
-      await expect(page.getByRole("article")).toHaveCount(2);
+      await expect(page.getByRole("article")).toHaveCount(3);
+      await expect(page.getByText("모바일에서 초대 관리와 링크 복사 버튼이 보이도록 고쳤어요.")).toBeVisible();
       await expect(page.getByText("새 버전의 주요 소식을 처음 접속할 때 한 번만 알려드려요.")).toBeVisible();
       await expect(page.getByText("코스를 저장해 다시 불러오고, 준비한 라이딩 정보를 링크로 공유해요.")).toBeVisible();
 
