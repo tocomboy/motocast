@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assertKakaoRouteMatchesPoints, assertKakaoSectionsContinuous, normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload, routeDurationDiagnostic, routeRequestDiagnostic, routeResponseDiagnostic, RouteResponseValidationError } from "./kakao-route";
+import { assertKakaoRouteMatchesPoints, assertKakaoSectionsContinuous, normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload, routeRequestDiagnostic, routeResponseDiagnostic, RouteResponseValidationError } from "./kakao-route";
 import { safeErrorCode, safeErrorMessage, safeErrorStatus } from "./http";
 
 function payload() {
@@ -48,7 +48,6 @@ describe("normalizeKakaoRoutePayload", () => {
     ["SECTION_DISTANCE_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].distance -= 1; }],
     ["SECTION_DURATION_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].duration -= 1; }],
     ["ROUTE_DISTANCE_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].summary.distance += 1; }],
-    ["ROUTE_DURATION_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].summary.duration += 1; }],
     ["ROAD_VERTEX_SHAPE", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].vertexes.pop(); }],
     ["ROAD_VERTEX_RANGE", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].vertexes[0] = 0; }],
     ["INTEGER_VALUE", (value: ReturnType<typeof payload>) => { value.routes[0].summary.duration = 0.5; }],
@@ -68,46 +67,7 @@ describe("normalizeKakaoRoutePayload", () => {
     expect(safeErrorMessage(caught)).toBe("경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
   });
 
-  it.each([
-    ...[1, 2, 3, 4, 5, 6].flatMap((seconds) => [
-      { delta: seconds, category: `SUMMARY_GT_SECTIONS_${seconds}S` },
-      { delta: -seconds, category: `SUMMARY_LT_SECTIONS_${seconds}S` },
-    ]),
-    { delta: 7, category: "SUMMARY_GT_SECTIONS_7_TO_60S" },
-    { delta: 60, category: "SUMMARY_GT_SECTIONS_7_TO_60S" },
-    { delta: 61, category: "SUMMARY_GT_SECTIONS_OVER_60S" },
-    { delta: -7, category: "SUMMARY_LT_SECTIONS_7_TO_60S" },
-    { delta: -60, category: "SUMMARY_LT_SECTIONS_7_TO_60S" },
-    { delta: -61, category: "SUMMARY_LT_SECTIONS_OVER_60S" },
-  ])("classifies a signed duration mismatch without exposing its raw delta: %#", ({ delta, category }) => {
-    const value = payload();
-    value.routes[0].summary.duration += delta;
-    const caught = (() => {
-      try { normalizeKakaoRoutePayload(value); } catch (error) { return error; }
-    })();
-    expect(routeDurationDiagnostic(caught)).toBe(category);
-    expect(routeResponseDiagnostic(caught)).toBe("ROUTE_DURATION_TOTAL");
-    expect(safeErrorCode(caught)).toBe("ROUTE_RESPONSE_INVALID");
-    expect(safeErrorStatus(caught)).toBe(502);
-    expect(safeErrorMessage(caught)).toBe("경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
-  });
-
-  it("returns UNKNOWN for unsafe duration arithmetic and a matching route", () => {
-    const value = payload();
-    value.routes[0].summary.duration = Number.MAX_SAFE_INTEGER + 1;
-    const caught = (() => {
-      try { normalizeKakaoRoutePayload(value); } catch (error) { return error; }
-    })();
-    expect(routeResponseDiagnostic(caught)).toBe("ROUTE_DURATION_TOTAL");
-    expect(routeDurationDiagnostic(caught)).toBe("UNKNOWN");
-    expect(routeDurationDiagnostic(new RouteResponseValidationError("ROUTE_DURATION_TOTAL"))).toBe("UNKNOWN");
-    expect(routeDurationDiagnostic(new Error("private detail"))).toBe("UNKNOWN");
-    expect(routeDurationDiagnostic({ reason: "ROUTE_DURATION_TOTAL", durationDiagnostic: "SUMMARY_GT_SECTIONS_1S" })).toBe("UNKNOWN");
-    expect(routeDurationDiagnostic(new RouteResponseValidationError("SECTION_DURATION_TOTAL", undefined, "SUMMARY_GT_SECTIONS_1S"))).toBe("UNKNOWN");
-    expect(routeDurationDiagnostic(normalizeKakaoRoutePayload(payload()))).toBe("UNKNOWN");
-  });
-
-  it("returns UNKNOWN when the section duration sum is not a safe integer", () => {
+  it("maps an unsafe section duration sum to the closed allocation reason", () => {
     const value = payload();
     value.routes[0].sections = [0, 1].map(() => ({
       distance: 6000,
@@ -122,14 +82,7 @@ describe("normalizeKakaoRoutePayload", () => {
     const caught = (() => {
       try { normalizeKakaoRoutePayload(value); } catch (error) { return error; }
     })();
-    expect(routeResponseDiagnostic(caught)).toBe("ROUTE_DURATION_TOTAL");
-    expect(routeDurationDiagnostic(caught)).toBe("UNKNOWN");
-  });
-
-  it("closes forged duration categories", () => {
-    const forged = new RouteResponseValidationError("ROUTE_DURATION_TOTAL", undefined, "SUMMARY_GT_SECTIONS_1S");
-    Object.assign(forged, { durationDiagnostic: "private-duration-detail" });
-    expect(routeDurationDiagnostic(forged)).toBe("UNKNOWN");
+    expect(routeResponseDiagnostic(caught)).toBe("ROUTE_DURATION_ALLOCATION");
   });
 
   it("never treats a foreign error or a forged reason as a printable diagnostic", () => {
@@ -164,6 +117,15 @@ describe("normalizeKakaoRoutePayload", () => {
 
   it("accepts a complete route with geometry", () => {
     expect(normalizeKakaoRoutePayload(payload()).summary.distance).toBe(12000);
+  });
+
+  it.each([120, -120])("allocates a signed summary mismatch while keeping exact internal totals: %i", (delta) => {
+    const value = payload();
+    value.routes[0].summary.duration += delta;
+    const route = normalizeKakaoRoutePayload(value);
+    expect(route.sections[0].duration).toBe(1800 + delta);
+    expect(route.sections[0].roads[0].duration).toBe(1800 + delta);
+    expect(route.sections.reduce((sum, section) => sum + section.duration, 0)).toBe(route.summary.duration);
   });
 
   it("normalizes an extra provider route while the caller keeps one recommendation", () => {
@@ -229,21 +191,27 @@ describe("normalizeKakaoRoutePayload", () => {
 
   it("rejects a provider summary that substitutes another destination", () => {
     const value = payload();
+    value.routes[0].summary.duration += 120;
     value.routes[0].summary.destination.x = 128.2;
     const route = normalizeKakaoRoutePayload(value);
-    expect(() => assertKakaoRouteMatchesPoints(route, [
+    let caught: unknown;
+    try { assertKakaoRouteMatchesPoints(route, [
       { longitude: 127.1, latitude: 37.5 },
       { longitude: 127.2, latitude: 37.6 },
-    ])).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+    ]); } catch (error) { caught = error; }
+    expect(routeResponseDiagnostic(caught)).toBe("SUMMARY_POINT_SNAP");
   });
 
   it("rejects disconnected roads even when distance and duration totals agree", () => {
     const value = payload();
+    value.routes[0].summary.duration += 120;
     value.routes[0].sections[0].roads = [
       { name: "앞 구간", distance: 6000, duration: 900, vertexes: [127.1, 37.5, 127.15, 37.55] },
       { name: "끊긴 구간", distance: 6000, duration: 900, vertexes: [127.18, 37.58, 127.2, 37.6] },
     ];
-    expect(() => normalizeKakaoRoutePayload(value)).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+    let caught: unknown;
+    try { normalizeKakaoRoutePayload(value); } catch (error) { caught = error; }
+    expect(routeResponseDiagnostic(caught)).toBe("ROAD_CONTINUITY");
   });
 
   it("rejects a gap introduced only when separately valid provider calls are combined", () => {

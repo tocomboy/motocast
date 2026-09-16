@@ -165,6 +165,7 @@ test("renders a schema version 3 share with one recommended route and no candida
   await expect(page.getByRole("heading", { name: "여행 루트" })).toBeVisible();
   await expect(page.locator(".shared-routes article")).toHaveCount(1);
   await expect(page.locator(".shared-routes article")).toContainText("추천 경로");
+  await expect(page.getByText("도착·복귀 시각은 교통 상황에 따라 달라질 수 있는 추정값입니다.")).toBeVisible();
   await expect(page.locator(".shared-snapshot")).not.toContainText("경유와 정차 전체");
   await expect(page.locator(".shared-snapshot")).not.toContainText("와인딩 추정");
   await expect(page.locator(".shared-snapshot")).not.toContainText("최단");
@@ -190,5 +191,6 @@ test("renders an immutable schema version 1 share with its historical return fie
   await expect(page.getByText("최종 복귀 · 이전 발행본", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "여행 루트" })).toBeVisible();
   await expect(page.locator(".shared-routes article")).toHaveCount(1);
+  await expect(page.getByText("도착·복귀 시각은 교통 상황에 따라 달라질 수 있는 추정값입니다.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "구간 통과 시각별 날씨" })).toBeVisible();
 });

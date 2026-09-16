@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { normalizeKakaoRoutePayload, routeDurationDiagnostic, routeRequestDiagnostic, routeResponseDiagnostic, RouteResponseValidationError, type NormalizedKakaoRoute } from "./kakao-route";
+import { normalizeKakaoRoutePayload, routeRequestDiagnostic, routeResponseDiagnostic, RouteResponseValidationError, type NormalizedKakaoRoute } from "./kakao-route";
 import { orchestrateRecommendedRoute, type RouteChunkRequest, type RouteOperation } from "./route-orchestration";
 import type { RoutePointRequest } from "./route-request";
 
@@ -118,7 +118,7 @@ describe("orchestrateRecommendedRoute", () => {
     expect(JSON.stringify(error)).not.toContain("지점");
   });
 
-  it("preserves duration diagnostics through contextual wrapping without changing provider or budget counts", async () => {
+  it("uses allocated duration plus dwell for the next provider chunk departure", async () => {
     const deps = dependencies(Date.parse("2026-09-01T00:00:00.000Z"));
     deps.provider.mockImplementation(async (request) => {
       const route = providerResult(request);
@@ -127,7 +127,7 @@ describe("orchestrateRecommendedRoute", () => {
           result_code: 0,
           summary: {
             distance: route.summary.distance,
-            duration: route.summary.duration + 7,
+            duration: route.summary.duration + 60,
             origin: { x: route.summary.origin.longitude, y: route.summary.origin.latitude },
             destination: { x: route.summary.destination.longitude, y: route.summary.destination.latitude },
             waypoints: route.summary.waypoints.map(({ longitude, latitude }) => ({ x: longitude, y: latitude })),
@@ -137,17 +137,53 @@ describe("orchestrateRecommendedRoute", () => {
       };
       return normalizeKakaoRoutePayload(raw);
     });
-    const error = await orchestrateRecommendedRoute(
-      [point(0), point(1), point(2)],
+    const result = await orchestrateRecommendedRoute(
+      [point(0), point(1, 10), point(2)],
       "2026-09-01T00:06:00.000Z",
       deps.value,
-    ).then(() => null, (error: unknown) => error);
-    expect(routeDurationDiagnostic(error)).toBe("SUMMARY_GT_SECTIONS_7_TO_60S");
-    expect(routeResponseDiagnostic(error)).toBe("ROUTE_DURATION_TOTAL");
-    expect(routeRequestDiagnostic(error)).toBe("FUTURE_P0_P2_DESTINATION");
+    );
+    expect(result.legs.map((leg) => leg.durationSeconds)).toEqual([120, 120]);
+    expect(deps.provider).toHaveBeenCalledTimes(2);
+    expect(deps.budget).toHaveBeenCalledTimes(2);
+    expect(deps.provider.mock.calls[1][0].departureAt.toISOString()).toBe("2026-09-01T00:18:00.000Z");
+    expect(deps.budget.mock.invocationCallOrder.every((order, index) => order < deps.provider.mock.invocationCallOrder[index])).toBe(true);
+  });
+
+  it("retains the exact 24-hour exclusion after allocating the summary duration", async () => {
+    const deps = dependencies(Date.parse("2026-09-01T00:00:00.000Z"));
+    deps.provider.mockImplementation(async (request) => normalizeKakaoRoutePayload({
+      routes: [{
+        result_code: 0,
+        summary: {
+          distance: 100,
+          duration: 86_400,
+          origin: { x: request.origin.longitude, y: request.origin.latitude },
+          destination: { x: request.destination.longitude, y: request.destination.latitude },
+          waypoints: [],
+        },
+        sections: [{
+          distance: 100,
+          duration: 86_399,
+          roads: [{
+            name: "24시간 경계 도로",
+            distance: 100,
+            duration: 86_399,
+            vertexes: [
+              request.origin.longitude, request.origin.latitude,
+              request.destination.longitude, request.destination.latitude,
+            ],
+          }],
+        }],
+      }],
+    }));
+
+    await expect(orchestrateRecommendedRoute(
+      [point(0), point(1)],
+      "2026-09-01T00:00:00.000Z",
+      deps.value,
+    )).rejects.toThrow("ROUTE_EXCEEDS_24_HOURS");
     expect(deps.provider).toHaveBeenCalledTimes(1);
     expect(deps.budget).toHaveBeenCalledTimes(1);
-    expect(deps.budget.mock.invocationCallOrder[0]).toBeLessThan(deps.provider.mock.invocationCallOrder[0]);
   });
 
   it("preserves ordered stops, dwell and ETA while charging once per split provider call", async () => {
