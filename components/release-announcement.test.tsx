@@ -2,6 +2,8 @@ import { StrictMode, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer, type TestRendererOptions } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { currentVersion } from "@/lib/releases";
+
 import { ReleaseAnnouncement } from "./release-announcement";
 
 vi.mock("next/link", () => ({
@@ -47,7 +49,7 @@ afterEach(() => {
 
 describe("release announcement", () => {
   it("uses one presentation request across Strict Mode replay and opens the current note", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ show: true, version: "0.2.0" }), {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ show: true, version: currentVersion }), {
       headers: { "content-type": "application/json" },
       status: 200,
     }));
@@ -57,13 +59,13 @@ describe("release announcement", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith("/api/releases/claim", expect.objectContaining({
-      body: JSON.stringify({ expectedVersion: "0.2.0", presentationId }),
+      body: JSON.stringify({ expectedVersion: currentVersion, presentationId }),
       cache: "no-store",
       method: "POST",
     }));
     expect(node.showModal).toHaveBeenCalledTimes(1);
     expect(renderer.root.findAllByType("p")
-      .some((paragraph) => paragraph.children.join("") === "현재 v0.2.0")).toBe(true);
+      .some((paragraph) => paragraph.children.join("") === `현재 v${currentVersion}`)).toBe(true);
     expect(renderer.root.findByProps({ id: "release-announcement-title" }).children.join(""))
       .toBe("새로운 소식을 확인해 보세요");
     await act(async () => renderer.unmount());
@@ -78,7 +80,7 @@ describe("release announcement", () => {
 
     const { node, renderer } = await renderAnnouncement();
     await act(async () => renderer.unmount());
-    await act(async () => resolveResponse(new Response(JSON.stringify({ show: true, version: "0.2.0" }), {
+    await act(async () => resolveResponse(new Response(JSON.stringify({ show: true, version: currentVersion }), {
       headers: { "content-type": "application/json" },
       status: 200,
     })));
@@ -89,7 +91,7 @@ describe("release announcement", () => {
   it("retries a failed request with the same presentation UUID", async () => {
     const fetchMock = vi.fn()
       .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ show: true, version: "0.2.0" }), {
+      .mockResolvedValueOnce(new Response(JSON.stringify({ show: true, version: currentVersion }), {
         headers: { "content-type": "application/json" },
         status: 200,
       }));
@@ -105,8 +107,8 @@ describe("release announcement", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const bodies = fetchMock.mock.calls.map(([, options]) => JSON.parse(String(options?.body)));
     expect(bodies).toEqual([
-      { expectedVersion: "0.2.0", presentationId },
-      { expectedVersion: "0.2.0", presentationId },
+      { expectedVersion: currentVersion, presentationId },
+      { expectedVersion: currentVersion, presentationId },
     ]);
     expect(node.showModal).toHaveBeenCalledTimes(1);
     await act(async () => renderer.unmount());
@@ -126,7 +128,7 @@ describe("release announcement", () => {
       .find((button) => button.children.includes("다시 시도"));
     await act(async () => retry!.props.onClick());
     await act(async () => renderer.unmount());
-    await act(async () => resolveRetry(new Response(JSON.stringify({ show: true, version: "0.2.0" }), {
+    await act(async () => resolveRetry(new Response(JSON.stringify({ show: true, version: currentVersion }), {
       headers: { "content-type": "application/json" },
       status: 200,
     })));
