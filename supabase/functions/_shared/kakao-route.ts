@@ -38,6 +38,17 @@ const routeValidationReasons = [
 type RouteValidationReason = typeof routeValidationReasons[number];
 const allowedRouteValidationReasons = new Set<string>(routeValidationReasons);
 
+const routeDurationDiagnostics = [
+  "SUMMARY_GT_SECTIONS_1S", "SUMMARY_GT_SECTIONS_2S", "SUMMARY_GT_SECTIONS_3S",
+  "SUMMARY_GT_SECTIONS_4S", "SUMMARY_GT_SECTIONS_5S", "SUMMARY_GT_SECTIONS_6S",
+  "SUMMARY_GT_SECTIONS_7_TO_60S", "SUMMARY_GT_SECTIONS_OVER_60S",
+  "SUMMARY_LT_SECTIONS_1S", "SUMMARY_LT_SECTIONS_2S", "SUMMARY_LT_SECTIONS_3S",
+  "SUMMARY_LT_SECTIONS_4S", "SUMMARY_LT_SECTIONS_5S", "SUMMARY_LT_SECTIONS_6S",
+  "SUMMARY_LT_SECTIONS_7_TO_60S", "SUMMARY_LT_SECTIONS_OVER_60S",
+] as const;
+type RouteDurationDiagnostic = typeof routeDurationDiagnostics[number];
+const allowedRouteDurationDiagnostics = new Set<string>(routeDurationDiagnostics);
+
 type RouteRequestDiagnosticContext = {
   operation: "directions" | "future_directions";
   fromPointIndex: number;
@@ -46,7 +57,11 @@ type RouteRequestDiagnosticContext = {
 };
 
 export class RouteResponseValidationError extends Error {
-  constructor(readonly reason: RouteValidationReason, readonly requestContext?: RouteRequestDiagnosticContext) {
+  constructor(
+    readonly reason: RouteValidationReason,
+    readonly requestContext?: RouteRequestDiagnosticContext,
+    readonly durationDiagnostic?: RouteDurationDiagnostic,
+  ) {
     super("INVALID_ROUTE_PROVIDER_RESPONSE");
   }
 }
@@ -57,6 +72,16 @@ export function routeResponseDiagnostic(error: unknown): RouteValidationReason |
   if (!(error instanceof RouteResponseValidationError)) return "UNKNOWN";
   const reason = error.reason;
   return allowedRouteValidationReasons.has(reason) ? reason : "UNKNOWN";
+}
+
+export function routeDurationDiagnostic(error: unknown): RouteDurationDiagnostic | "UNKNOWN" {
+  if (
+    !(error instanceof RouteResponseValidationError) ||
+    error.reason !== "ROUTE_DURATION_TOTAL" ||
+    !error.durationDiagnostic ||
+    !allowedRouteDurationDiagnostics.has(error.durationDiagnostic)
+  ) return "UNKNOWN";
+  return error.durationDiagnostic;
 }
 
 // Only ordered occurrence positions (not place IDs/coordinates), a closed role,
@@ -163,6 +188,22 @@ function normalizeSection(value: unknown) {
   return section;
 }
 
+function classifyRouteDurationMismatch(summaryDuration: number, sections: NormalizedKakaoRoute["sections"]): RouteDurationDiagnostic | undefined {
+  if (!Number.isSafeInteger(summaryDuration)) return undefined;
+  let sectionDuration = 0;
+  for (const section of sections) {
+    if (!Number.isSafeInteger(section.duration)) return undefined;
+    sectionDuration += section.duration;
+    if (!Number.isSafeInteger(sectionDuration)) return undefined;
+  }
+  const delta = summaryDuration - sectionDuration;
+  if (!Number.isSafeInteger(delta) || delta === 0) return undefined;
+  const direction = delta > 0 ? "SUMMARY_GT_SECTIONS" : "SUMMARY_LT_SECTIONS";
+  const magnitude = Math.abs(delta);
+  if (magnitude <= 6) return `${direction}_${magnitude}S` as RouteDurationDiagnostic;
+  return `${direction}_${magnitude <= 60 ? "7_TO_60S" : "OVER_60S"}` as RouteDurationDiagnostic;
+}
+
 export function normalizeKakaoRoutesPayload(value: unknown): NormalizedKakaoRoute[] {
   const payload = record(value);
   if (!Array.isArray(payload.routes) || payload.routes.length === 0) {
@@ -193,7 +234,11 @@ export function normalizeKakaoRoutesPayload(value: unknown): NormalizedKakaoRout
       throw new RouteResponseValidationError("ROUTE_DISTANCE_TOTAL");
     }
     if (sections.reduce((sum, section) => sum + section.duration, 0) !== summary.duration) {
-      throw new RouteResponseValidationError("ROUTE_DURATION_TOTAL");
+      throw new RouteResponseValidationError(
+        "ROUTE_DURATION_TOTAL",
+        undefined,
+        classifyRouteDurationMismatch(summary.duration, sections),
+      );
     }
     return { summary, sections };
   });

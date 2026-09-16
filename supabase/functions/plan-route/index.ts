@@ -1,7 +1,7 @@
 import { consumeBudget, requireMember, serviceClient } from "../_shared/auth.ts";
 import { corsHeaders, jsonResponse, safeErrorCode, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
 import { requestKakaoRoute } from "../_shared/kakao-provider.ts";
-import { routeRequestDiagnostic, routeResponseDiagnostic } from "../_shared/kakao-route.ts";
+import { routeDurationDiagnostic, routeRequestDiagnostic, routeResponseDiagnostic } from "../_shared/kakao-route.ts";
 import { orchestrateRecommendedRoute } from "../_shared/route-orchestration.ts";
 import { legacyScheduleBoundary } from "../_shared/route-deadline.ts";
 import { withValidatedRouteRequest, type RoutePointRequest } from "../_shared/route-request.ts";
@@ -101,7 +101,13 @@ Deno.serve(async (request) => {
 
     return jsonResponse(route, 200, cors);
   } catch (error) {
-    console.error("plan-route failed", safeErrorCode(error), routeResponseDiagnostic(error), routeRequestDiagnostic(error));
+    console.error(
+      "plan-route failed",
+      safeErrorCode(error),
+      routeResponseDiagnostic(error),
+      routeRequestDiagnostic(error),
+      routeDurationDiagnostic(error),
+    );
     return jsonResponse({ error: safeErrorMessage(error), code: safeErrorCode(error) }, safeErrorStatus(error), cors);
   }
 });

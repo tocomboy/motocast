@@ -37,7 +37,7 @@ describe("deployed plan-route diagnostic boundary", () => {
     expect(response.status).toBe(502);
     expect(Object.keys(body).sort()).toEqual(["code", "error"]);
     expect(body.code).toBe(expectedCode);
-    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", expectedCode, kind === "known" ? "SECTION_DURATION_TOTAL" : "UNKNOWN", "UNKNOWN");
+    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", expectedCode, kind === "known" ? "SECTION_DURATION_TOTAL" : "UNKNOWN", "UNKNOWN", "UNKNOWN");
     expect(JSON.stringify({ body, log: log.mock.calls })).not.toContain(privateDetail);
     expect(serviceClient).not.toHaveBeenCalled();
   });
@@ -58,7 +58,7 @@ describe("deployed plan-route diagnostic boundary", () => {
     const body = await response.json();
     expect(response.status).toBe(502);
     expect(body).toEqual({ code: "ROUTE_RESPONSE_INVALID", error: "경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." });
-    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", "ROUTE_RESPONSE_INVALID", reason, "UNKNOWN");
+    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", "ROUTE_RESPONSE_INVALID", reason, "UNKNOWN", "UNKNOWN");
     expect(JSON.stringify({ body, log: log.mock.calls })).not.toContain("fixture-private-detail");
     expect(serviceClient).not.toHaveBeenCalled();
   });
@@ -75,8 +75,33 @@ describe("deployed plan-route diagnostic boundary", () => {
     const body = await response.json();
     expect(response.status).toBe(502);
     expect(body).toEqual({ code: "ROUTE_RESPONSE_INVALID", error: "경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." });
-    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", "ROUTE_RESPONSE_INVALID", "RESULT_CODE_106", forged ? "UNKNOWN" : "FUTURE_P1_P3_REST");
+    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", "ROUTE_RESPONSE_INVALID", "RESULT_CODE_106", forged ? "UNKNOWN" : "FUTURE_P1_P3_REST", "UNKNOWN");
     expect(JSON.stringify({ body, log: log.mock.calls })).not.toContain("fixture-private-detail");
+    expect(serviceClient).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("logs only an allowlisted duration category and keeps the public response unchanged %#", async (forged) => {
+    const error = new RouteResponseValidationError(
+      "ROUTE_DURATION_TOTAL",
+      { operation: "future_directions", fromPointIndex: 0, toPointIndex: 2, destinationRole: "destination" },
+      "SUMMARY_LT_SECTIONS_OVER_60S",
+    );
+    if (forged) Object.assign(error, { durationDiagnostic: "fixture-private-duration-detail" });
+    validation.mockRejectedValue(error);
+    const response = await handler(new Request("https://preview.example/functions/v1/plan-route", {
+      method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+    }));
+    const body = await response.json();
+    expect(response.status).toBe(502);
+    expect(body).toEqual({ code: "ROUTE_RESPONSE_INVALID", error: "경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." });
+    expect(log).toHaveBeenCalledExactlyOnceWith(
+      "plan-route failed",
+      "ROUTE_RESPONSE_INVALID",
+      "ROUTE_DURATION_TOTAL",
+      "FUTURE_P0_P2_DESTINATION",
+      forged ? "UNKNOWN" : "SUMMARY_LT_SECTIONS_OVER_60S",
+    );
+    expect(JSON.stringify({ body, log: log.mock.calls })).not.toContain("fixture-private-duration-detail");
     expect(serviceClient).not.toHaveBeenCalled();
   });
 });
