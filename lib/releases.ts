@@ -12,6 +12,16 @@ export const currentVersion = packageMetadata.version;
 
 export const releaseNotes = [
   {
+    version: "0.2.2",
+    date: "2026-09-16",
+    title: "경로 오류 진단 개선",
+    summary: "경로 계획 실패 원인을 더 정확히 확인할 수 있도록 진단을 보완했습니다.",
+    bullets: [
+      "일부 경로 계획 오류는 원인을 확인 중이에요.",
+      "실패 원인을 구분하는 서버 진단을 보완했어요.",
+    ],
+  },
+  {
     version: "0.2.1",
     date: "2026-09-16",
     title: "모바일 초대 기능 개선",

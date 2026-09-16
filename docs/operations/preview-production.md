@@ -2,6 +2,10 @@
 
 This runbook implements `OPS-002`, `OPS-004`, `OPS-005`, and `OPS-007` from `docs/product/MOTOCAST_SOT.md`. It records project references and secret ownership, never secret values.
 
+## Route duration diagnostic release — 2026-09-16
+
+Version 0.2.2 adds only bounded signed-duration categories to rejected `ROUTE_DURATION_TOTAL` server logs. Deploy only `plan-route` on each verified Supabase target with JWT verification enabled; no migration, credential or budget setting change is required. Public errors, response acceptance and persisted data remain unchanged. Read back the exact deployed function source and separate observed diagnostic output from route-planning success. The known planning failure remains under investigation; see the [release evidence and recovery boundary](../work/research/2026-09-16-route-duration-diagnostic.md).
+
 ## Removable Free-plan keepalive
 
 The user approved a daily 04:00 Asia/Seoul cloud job on 2026-09-15. Its fixed environment targets, Actions-only public key copies, activation evidence, per-target switches, and mandatory removal on plan/environment changes are isolated in [Temporary Supabase Free keepalive](temporary-supabase-keepalive.md). This is operational infrastructure with its own retirement procedure, not a product feature or uptime guarantee.

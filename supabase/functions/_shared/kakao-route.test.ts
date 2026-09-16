@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assertKakaoRouteMatchesPoints, assertKakaoSectionsContinuous, normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload, routeRequestDiagnostic, routeResponseDiagnostic, RouteResponseValidationError } from "./kakao-route";
+import { assertKakaoRouteMatchesPoints, assertKakaoSectionsContinuous, normalizeKakaoRoutePayload, normalizeKakaoRoutesPayload, routeDurationDiagnostic, routeRequestDiagnostic, routeResponseDiagnostic, RouteResponseValidationError } from "./kakao-route";
 import { safeErrorCode, safeErrorMessage, safeErrorStatus } from "./http";
 
 function payload() {
@@ -66,6 +66,70 @@ describe("normalizeKakaoRoutePayload", () => {
     expect(safeErrorCode(caught)).toBe("ROUTE_RESPONSE_INVALID");
     expect(safeErrorStatus(caught)).toBe(502);
     expect(safeErrorMessage(caught)).toBe("경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+  });
+
+  it.each([
+    ...[1, 2, 3, 4, 5, 6].flatMap((seconds) => [
+      { delta: seconds, category: `SUMMARY_GT_SECTIONS_${seconds}S` },
+      { delta: -seconds, category: `SUMMARY_LT_SECTIONS_${seconds}S` },
+    ]),
+    { delta: 7, category: "SUMMARY_GT_SECTIONS_7_TO_60S" },
+    { delta: 60, category: "SUMMARY_GT_SECTIONS_7_TO_60S" },
+    { delta: 61, category: "SUMMARY_GT_SECTIONS_OVER_60S" },
+    { delta: -7, category: "SUMMARY_LT_SECTIONS_7_TO_60S" },
+    { delta: -60, category: "SUMMARY_LT_SECTIONS_7_TO_60S" },
+    { delta: -61, category: "SUMMARY_LT_SECTIONS_OVER_60S" },
+  ])("classifies a signed duration mismatch without exposing its raw delta: %#", ({ delta, category }) => {
+    const value = payload();
+    value.routes[0].summary.duration += delta;
+    const caught = (() => {
+      try { normalizeKakaoRoutePayload(value); } catch (error) { return error; }
+    })();
+    expect(routeDurationDiagnostic(caught)).toBe(category);
+    expect(routeResponseDiagnostic(caught)).toBe("ROUTE_DURATION_TOTAL");
+    expect(safeErrorCode(caught)).toBe("ROUTE_RESPONSE_INVALID");
+    expect(safeErrorStatus(caught)).toBe(502);
+    expect(safeErrorMessage(caught)).toBe("경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+  });
+
+  it("returns UNKNOWN for unsafe duration arithmetic and a matching route", () => {
+    const value = payload();
+    value.routes[0].summary.duration = Number.MAX_SAFE_INTEGER + 1;
+    const caught = (() => {
+      try { normalizeKakaoRoutePayload(value); } catch (error) { return error; }
+    })();
+    expect(routeResponseDiagnostic(caught)).toBe("ROUTE_DURATION_TOTAL");
+    expect(routeDurationDiagnostic(caught)).toBe("UNKNOWN");
+    expect(routeDurationDiagnostic(new RouteResponseValidationError("ROUTE_DURATION_TOTAL"))).toBe("UNKNOWN");
+    expect(routeDurationDiagnostic(new Error("private detail"))).toBe("UNKNOWN");
+    expect(routeDurationDiagnostic({ reason: "ROUTE_DURATION_TOTAL", durationDiagnostic: "SUMMARY_GT_SECTIONS_1S" })).toBe("UNKNOWN");
+    expect(routeDurationDiagnostic(new RouteResponseValidationError("SECTION_DURATION_TOTAL", undefined, "SUMMARY_GT_SECTIONS_1S"))).toBe("UNKNOWN");
+    expect(routeDurationDiagnostic(normalizeKakaoRoutePayload(payload()))).toBe("UNKNOWN");
+  });
+
+  it("returns UNKNOWN when the section duration sum is not a safe integer", () => {
+    const value = payload();
+    value.routes[0].sections = [0, 1].map(() => ({
+      distance: 6000,
+      duration: Number.MAX_SAFE_INTEGER,
+      roads: [{
+        name: "지방도",
+        distance: 6000,
+        duration: Number.MAX_SAFE_INTEGER,
+        vertexes: [127.1, 37.5, 127.2, 37.6],
+      }],
+    }));
+    const caught = (() => {
+      try { normalizeKakaoRoutePayload(value); } catch (error) { return error; }
+    })();
+    expect(routeResponseDiagnostic(caught)).toBe("ROUTE_DURATION_TOTAL");
+    expect(routeDurationDiagnostic(caught)).toBe("UNKNOWN");
+  });
+
+  it("closes forged duration categories", () => {
+    const forged = new RouteResponseValidationError("ROUTE_DURATION_TOTAL", undefined, "SUMMARY_GT_SECTIONS_1S");
+    Object.assign(forged, { durationDiagnostic: "private-duration-detail" });
+    expect(routeDurationDiagnostic(forged)).toBe("UNKNOWN");
   });
 
   it("never treats a foreign error or a forged reason as a printable diagnostic", () => {

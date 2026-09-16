@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { routeRequestDiagnostic, routeResponseDiagnostic, RouteResponseValidationError, type NormalizedKakaoRoute } from "./kakao-route";
+import { normalizeKakaoRoutePayload, routeDurationDiagnostic, routeRequestDiagnostic, routeResponseDiagnostic, RouteResponseValidationError, type NormalizedKakaoRoute } from "./kakao-route";
 import { orchestrateRecommendedRoute, type RouteChunkRequest, type RouteOperation } from "./route-orchestration";
 import type { RoutePointRequest } from "./route-request";
 
@@ -116,6 +116,38 @@ describe("orchestrateRecommendedRoute", () => {
     expect(deps.operations).toEqual(["directions", "future_directions", "future_directions"].slice(0, failedCall));
     expect(deps.budget.mock.invocationCallOrder.every((order, index) => order < deps.provider.mock.invocationCallOrder[index])).toBe(true);
     expect(JSON.stringify(error)).not.toContain("지점");
+  });
+
+  it("preserves duration diagnostics through contextual wrapping without changing provider or budget counts", async () => {
+    const deps = dependencies(Date.parse("2026-09-01T00:00:00.000Z"));
+    deps.provider.mockImplementation(async (request) => {
+      const route = providerResult(request);
+      const raw = {
+        routes: [{
+          result_code: 0,
+          summary: {
+            distance: route.summary.distance,
+            duration: route.summary.duration + 7,
+            origin: { x: route.summary.origin.longitude, y: route.summary.origin.latitude },
+            destination: { x: route.summary.destination.longitude, y: route.summary.destination.latitude },
+            waypoints: route.summary.waypoints.map(({ longitude, latitude }) => ({ x: longitude, y: latitude })),
+          },
+          sections: route.sections,
+        }],
+      };
+      return normalizeKakaoRoutePayload(raw);
+    });
+    const error = await orchestrateRecommendedRoute(
+      [point(0), point(1), point(2)],
+      "2026-09-01T00:06:00.000Z",
+      deps.value,
+    ).then(() => null, (error: unknown) => error);
+    expect(routeDurationDiagnostic(error)).toBe("SUMMARY_GT_SECTIONS_7_TO_60S");
+    expect(routeResponseDiagnostic(error)).toBe("ROUTE_DURATION_TOTAL");
+    expect(routeRequestDiagnostic(error)).toBe("FUTURE_P0_P2_DESTINATION");
+    expect(deps.provider).toHaveBeenCalledTimes(1);
+    expect(deps.budget).toHaveBeenCalledTimes(1);
+    expect(deps.budget.mock.invocationCallOrder[0]).toBeLessThan(deps.provider.mock.invocationCallOrder[0]);
   });
 
   it("preserves ordered stops, dwell and ETA while charging once per split provider call", async () => {
