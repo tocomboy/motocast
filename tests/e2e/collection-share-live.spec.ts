@@ -60,8 +60,8 @@ async function selectFirstPlace(
   query: string,
   selectedListName?: string,
 ) {
-  const field = page.locator(".place-field").filter({ has: page.locator(".place-field-label", { hasText: label }) }).first();
-  const trigger = field.locator(".place-picker-trigger");
+  const accessibleLabel = new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},`);
+  const trigger = page.getByRole("button", { name: accessibleLabel }).and(page.locator(".place-picker-trigger")).first();
   const dialog = page.locator("dialog.place-picker-dialog[open]");
   if (!await dialog.isVisible().catch(() => false)) await trigger.click();
   const input = dialog.getByLabel(`${label} 검색어`);
@@ -408,6 +408,10 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const summaryActions = page.getByRole("dialog", { name: "공유 · 저장" });
     await summaryActions.getByRole("button", { name: /내 경로에 저장하기|이 경로 저장/ }).click();
     const collectionSaveDialog = summaryActions.locator(".collection-manager-save-panel");
+    expect(await collectionSaveDialog.evaluate((panel) => {
+      const style = getComputedStyle(panel);
+      return [style.backgroundColor, style.borderTopWidth, style.borderRadius, style.padding];
+    })).toEqual(["rgba(0, 0, 0, 0)", "0px", "0px", "0px"]);
     await collectionSaveDialog.getByLabel("경로 이름").fill(title);
     const collectionSaveStarted = page.waitForRequest((request) => (
       request.url().includes("/functions/v1/save-collection") && request.method() === "POST"
@@ -444,6 +448,10 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     }
     await savedRoutesNavigation(page).click();
     await expect(page.getByRole("heading", { name: /저장한 경로(?: 모음)?/ }).first()).toBeVisible();
+    expect(await page.locator(".collections-view > .collection-manager").evaluate((manager) => {
+      const style = getComputedStyle(manager);
+      return [style.backgroundColor, style.borderTopWidth, style.borderRadius, style.padding];
+    })).toEqual(["rgba(0, 0, 0, 0)", "0px", "0px", "0px"]);
     const storedCollectionItem = page.locator(`[data-collection-id="${cleanup.collectionId}"]`);
     await storedCollectionItem.getByRole("button", { name: `${title} 계획에 적용` }).click();
     await expect(page.locator(".schedule-trigger strong")).toHaveText("날짜와 출발 시각 선택");

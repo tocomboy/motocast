@@ -34,7 +34,25 @@ test.beforeAll(() => {
 
 async function setProductionMarkup(page: import("@playwright/test").Page, markup: string) {
   await page.goto("/#home");
-  await page.evaluate((productionMarkup) => { document.body.innerHTML = productionMarkup; }, markup);
+  const stylesheetUrls = await page.locator('link[rel="stylesheet"][href]').evaluateAll((links) => (
+    links.map((link) => (link as HTMLLinkElement).href)
+  ));
+  expect(stylesheetUrls.length).toBeGreaterThan(0);
+  const stylesheetLinks = stylesheetUrls.map((href) => (
+    `<link rel="stylesheet" href="${href.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}">`
+  )).join("");
+  // The app service worker intentionally bypasses sensitive paths, which keeps
+  // this script-free fixture from being replaced by a cached app navigation.
+  const fixturePath = "/admin/__motocast_static_fixture";
+  await page.route(`**${fixturePath}`, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: `<!doctype html><html lang="ko"><head>${stylesheetLinks}</head><body>${markup}</body></html>`,
+  }));
+  await page.goto(fixturePath);
+  await page.waitForFunction((expectedUrls) => expectedUrls.every((href) => (
+    Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')).some((link) => link.href === href && link.sheet !== null)
+  )), stylesheetUrls);
   await page.evaluate(() => document.fonts.ready);
 }
 
@@ -71,6 +89,22 @@ for (const viewport of [
       inviteIsClickable: true,
     });
     expect(layout.inviteHeight).toBeGreaterThanOrEqual(44);
+
+    const homeCollectionFrame = await page.locator(".planner-home-collections .collection-manager-home").evaluate((manager) => {
+      const style = getComputedStyle(manager);
+      return {
+        background: style.backgroundColor,
+        borderTopWidth: style.borderTopWidth,
+        borderRadius: style.borderRadius,
+        padding: style.padding,
+      };
+    });
+    expect(homeCollectionFrame).toEqual({
+      background: "rgba(0, 0, 0, 0)",
+      borderTopWidth: "0px",
+      borderRadius: "0px",
+      padding: "0px",
+    });
 
     const savedRoutes = page.locator(".planner-home-collections");
     const savedRoutesHeading = savedRoutes.getByRole("heading", { name: viewport.width <= 767 ? "저장한 경로" : "최근 저장한 경로", exact: true });

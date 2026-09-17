@@ -160,6 +160,42 @@ test.describe("Galaxy S23+ CSS viewport emulation", () => {
     await expect(placeDialog).toBeHidden();
     await expect(originTrigger).toBeFocused();
 
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await originTrigger.click();
+    const desktopPlaceDialog = page.locator("dialog.place-picker-dialog[open]");
+    const desktopSearchLayout = await desktopPlaceDialog.evaluate((dialog) => {
+      const shell = dialog.querySelector<HTMLElement>(".mode-search")!;
+      const header = shell.querySelector<HTMLElement>(".place-picker-header")!;
+      const favorites = shell.querySelector<HTMLElement>(".place-favorites")!;
+      const content = shell.querySelector<HTMLElement>(".place-picker-content")!;
+      const searchInput = shell.querySelector<HTMLInputElement>(".place-picker-search input")!;
+      const searchAction = shell.querySelector<HTMLElement>(".place-picker-search .place-search-button, .place-picker-search .place-query-clear")!;
+      const inputBox = searchInput.getBoundingClientRect();
+      const actionBox = searchAction.getBoundingClientRect();
+      return {
+        dialogWidth: dialog.getBoundingClientRect().width,
+        titleLeft: header.querySelector("h2")!.getBoundingClientRect().left - dialog.getBoundingClientRect().left - Number.parseFloat(getComputedStyle(dialog).borderLeftWidth),
+        favoritesWidth: favorites.getBoundingClientRect().width,
+        contentGap: getComputedStyle(content).columnGap,
+        hasNoHorizontalOverflow: dialog.scrollWidth <= dialog.clientWidth,
+        searchActionInsideInput: actionBox.top >= inputBox.top - 1
+          && actionBox.bottom <= inputBox.bottom + 1
+          && actionBox.left >= inputBox.left - 1
+          && actionBox.right <= inputBox.right + 1,
+      };
+    });
+    expect(desktopSearchLayout).toMatchObject({
+      dialogWidth: 960,
+      favoritesWidth: 280,
+      contentGap: "24px",
+      hasNoHorizontalOverflow: true,
+      searchActionInsideInput: true,
+    });
+    expect(desktopSearchLayout.titleLeft).toBeCloseTo(32, 0);
+    await expect(desktopPlaceDialog.getByRole("button", { name: "즐겨찾기 관리", exact: true })).toBeVisible();
+    await desktopPlaceDialog.getByRole("button", { name: "출발지 검색 닫기" }).click();
+    await page.setViewportSize({ width: 384, height: 832 });
+
     await editor.getByRole("button", { name: "+ 경유지 추가", exact: true }).click();
     const waypointSettings = page.getByRole("dialog", { name: "경유지 설정" });
     await waypointSettings.getByRole("button", { name: "추가하고 장소 선택", exact: true }).click();

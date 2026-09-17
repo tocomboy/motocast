@@ -4105,20 +4105,29 @@ body:has(dialog[open]) {
 
 .collections-view {
   margin: 0 auto;
-  max-width: 1280px;
-  padding: 48px 32px 80px;
+  max-width: none;
+  padding: 48px 0 80px;
+  width: min(1280px, calc(100% - 64px));
 }
 
 .collections-view .view-heading {
   align-items: center;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   margin-bottom: 28px;
 }
 
 .collections-view .view-heading h1 { font-size: 32px; line-height: 48px; margin: 0; }
 .collections-desktop-intro { color: #405049; font-size: 18px; line-height: 27px; margin: 4px 0 0; }
 .collections-back { display: none; }
+.collection-manager-home,
+.collections-view > .collection-manager,
+.collection-manager.collection-manager-save-panel {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
 .collections-view > .collection-manager > .collection-heading-row { display: none; }
 .collections-view > .collection-manager .collection-list > li { background: #fffdf8; }
 .collections-view > .collection-manager .collection-schedule-note { background: transparent; border-radius: 0; padding: 0; }
@@ -4261,6 +4270,43 @@ body:has(dialog[open]) {
 }
 .place-picker-shell.mode-register .place-picker-results li { grid-template-columns: minmax(0, 1fr) 80px; }
 .place-picker-shell.mode-register .favorite-register-result { min-height: 48px; width: 100%; }
+.place-picker-shell.mode-search { gap: 20px; padding: 32px; }
+.place-picker-shell.mode-search .place-picker-header,
+.place-picker-shell.mode-search .place-picker-search { border: 0; padding: 0; }
+.place-picker-shell.mode-search .place-picker-search .place-query-clear,
+.place-picker-shell.mode-search .place-picker-search .place-search-button {
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.place-picker-shell.mode-search .place-picker-back { display: none; }
+.place-picker-shell.mode-search .place-picker-content {
+  align-items: start;
+  gap: 24px;
+  grid-template-columns: 280px minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+.place-picker-shell.mode-search .place-favorites {
+  align-self: start;
+  background: #fffdf8;
+  border: 1px solid #d9d2c5;
+  border-radius: 16px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  max-height: min(540px, calc(100dvh - 220px));
+  padding: 20px;
+  width: 280px;
+}
+.place-picker-shell.mode-search .place-picker-results { max-height: min(540px, calc(100dvh - 220px)); padding: 0; }
+.place-picker-shell.mode-search .place-picker-results li > div:first-child { border: 1px solid #d9d2c5; border-radius: 12px; padding: 16px; }
+.desktop-favorites-footer { display: grid; gap: 8px; margin-top: auto; padding-top: 16px; }
+.desktop-favorites-footer p { color: #405049; font-size: 14px; margin: 0; }
+.place-picker-shell.mode-search .desktop-favorites-footer button { min-height: 48px; width: 100%; }
+.mobile-favorites-manage { display: none; }
+.desktop-place-picker-title { display: inline; }
+.mobile-place-picker-title { display: none; }
 .favorite-register-result {
   background: #fffdf8;
   border: 1px solid #18221d;
@@ -4317,6 +4363,20 @@ body:has(dialog[open]) {
 
   .place-picker-shell.mode-search.show-favorites .place-picker-results { display: none; }
   .place-picker-shell.mode-search.show-results .place-favorites { display: none; }
+  .place-picker-shell.mode-search { gap: 0; padding: 0; }
+  .place-picker-shell.mode-search .place-picker-header { border-bottom: 1px solid #d9d2c5; padding: 12px 16px; }
+  .place-picker-shell.mode-search .place-picker-search { border-bottom: 1px solid #d9d2c5; padding: 12px 20px; }
+  .place-picker-shell.mode-search .place-picker-search .place-query-clear,
+  .place-picker-shell.mode-search .place-picker-search .place-search-button { right: 26px; top: 18px; transform: none; }
+  .place-picker-shell.mode-search .place-picker-back { display: inline-flex; }
+  .place-picker-shell.mode-search .place-picker-content { display: block; overflow-y: auto; }
+  .place-picker-shell.mode-search .place-favorites { border: 0; border-bottom: 1px solid #d9d2c5; border-radius: 0; display: block; max-height: none; padding: 20px; width: auto; }
+  .place-picker-shell.mode-search .place-picker-results { max-height: none; padding: 20px; }
+  .place-picker-shell.mode-search .place-picker-results li > div:first-child { border: 0; border-radius: 0; padding: 0; }
+  .desktop-favorites-footer { display: none; }
+  .mobile-favorites-manage { display: inline-flex; }
+  .desktop-place-picker-title { display: none; }
+  .mobile-place-picker-title { display: inline; }
   .place-picker-dialog:has(.mode-manage),
   .place-picker-dialog:has(.mode-register) { height: 100dvh; max-height: 100dvh; max-width: none; width: 100vw; }
   .place-picker-shell.mode-manage .place-picker-content { display: block; }
@@ -4367,7 +4427,7 @@ body:has(dialog[open]) {
   .shared-map-details h2,
   .riding-summary-weather h2 { font-size: 20px; line-height: 30px; margin-top: 16px; }
 
-  .collections-view { padding: 4px 20px 64px; }
+  .collections-view { box-sizing: border-box; padding: 4px 20px 64px; width: 100%; }
   .collections-view .view-heading { grid-template-columns: 48px minmax(0, 1fr); min-height: 60px; }
   .collections-view .view-heading h1 { font-size: 24px; line-height: 36px; }
   .collections-desktop-intro { display: none; }

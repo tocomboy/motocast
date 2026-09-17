@@ -171,7 +171,7 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
         <div className={`place-picker-shell mode-${pickerMode} ${showResults ? "show-results" : "show-favorites"}`}>
           <header className="place-picker-header">
             <button type="button" className="place-picker-back" onClick={back} aria-label={pickerMode === "register" ? "즐겨찾기 관리로 돌아가기" : pickerMode === "manage" || showResults ? `${roleLabel} 선택으로 돌아가기` : `${roleLabel} 검색 닫기`}>←</button>
-            <div><h2 id={titleId}>{pickerMode === "manage" ? "즐겨찾기 관리" : pickerMode === "register" ? "즐겨찾기 등록" : showResults ? "장소 검색" : `${roleLabel} 선택`}</h2></div>
+            <div><h2 id={titleId}>{pickerMode === "manage" ? "즐겨찾기 관리" : pickerMode === "register" ? "즐겨찾기 등록" : <><span className="desktop-place-picker-title">{roleLabel} 선택</span><span className="mobile-place-picker-title">{showResults ? "장소 검색" : `${roleLabel} 선택`}</span></>}</h2></div>
             <button type="button" className="place-picker-close" onClick={closePicker} aria-label={`${roleLabel} 검색 닫기`}>×</button>
           </header>
           <div className="place-picker-search" role="search">
@@ -181,11 +181,12 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
           </div>
           <div className="place-picker-content">
             <aside className="place-favorites" aria-labelledby={`${titleId}-favorites`}>
-              <div className="place-favorites-heading"><h3 id={`${titleId}-favorites`}>{pickerMode === "manage" ? <>공용 즐겨찾기 <span>{favorites?.favorites.length ?? 0} / 3</span></> : "공용 즐겨찾기"}</h3>{pickerMode !== "manage" ? <span>{favorites?.favorites.length ?? 0}/3</span> : null}{favorites && pickerMode === "search" ? <button type="button" onClick={() => { invalidateSearch(); setPickerMode("manage"); }}>관리</button> : null}</div>
+              <div className="place-favorites-heading"><h3 id={`${titleId}-favorites`}>{pickerMode === "manage" ? <>공용 즐겨찾기 <span>{favorites?.favorites.length ?? 0} / 3</span></> : "공용 즐겨찾기"}</h3>{pickerMode !== "manage" ? <span>{favorites?.favorites.length ?? 0}/3</span> : null}{favorites && pickerMode === "search" ? <button className="mobile-favorites-manage" type="button" onClick={() => { invalidateSearch(); setPickerMode("manage"); }}>관리</button> : null}</div>
               {!favorites ? <p>즐겨찾기 연결 전입니다.</p> : favorites.status === "loading" ? <p role="status">즐겨찾기를 불러오는 중입니다.</p> : favorites.status === "error" ? <div className="place-favorites-error"><p role="alert">{favorites.message}</p><button type="button" onClick={favorites.retry}>다시 시도</button></div> : favorites.favorites.length ? (
                 <ul>{favorites.favorites.map((favorite) => <li key={favorite.slot}><button type="button" disabled={pickerMode !== "search"} onClick={() => { if (pickerMode === "search") choose(favoriteAsSearchResult(favorite)); }}><strong>{pickerMode === "search" ? "★ " : ""}{favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span></button>{pickerMode === "manage" ? <button type="button" disabled={favorites.busy} aria-label={`${favorite.place.name} 즐겨찾기 삭제`} onClick={() => void favorites.remove(favorite)}>삭제</button> : null}</li>)}</ul>
               ) : <p>검색 결과에서 별을 눌러 최대 3개를 저장하세요.</p>}
               {favorites && favorites.status !== "loading" && favorites.status !== "error" && pickerMode !== "manage" ? <p className="place-favorite-status" role="status">{favorites.message}</p> : null}
+              {favorites && pickerMode === "search" ? <div className="desktop-favorites-footer"><p>출발 · 경유 · 도착에서 함께 사용</p><button type="button" onClick={() => { invalidateSearch(); setPickerMode("manage"); }}>즐겨찾기 관리</button></div> : null}
               {pickerMode === "manage" ? <div className="favorite-manage-controls"><button className="primary-button favorite-register-button" type="button" onClick={() => { invalidateSearch(); setQuery(""); setResults([]); setShowResults(false); setSearchSettled(false); setPickerMode("register"); window.setTimeout(() => searchInputRef.current?.focus(), 0); }}><span aria-hidden="true">+ </span>즐겨찾기 등록</button><p className="favorite-manage-helper" role="status">{favorites?.message || "즐겨찾기는 최대 3개까지 등록할 수 있어요."}</p></div> : null}
             </aside>
             {pickerMode !== "manage" ? <section className="place-picker-results" aria-labelledby={`${titleId}-results`}>
