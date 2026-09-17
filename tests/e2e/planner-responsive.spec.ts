@@ -44,6 +44,7 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
       metaBeforeMap: metaBox.bottom <= mapBox.top + 1,
       headerBeforeMap: headerBox.bottom <= mapBox.top + 1,
       metricsBeforeMap: metricsBox.bottom <= mapBox.top + 1,
+      mapBeforeMetrics: mapBox.bottom <= metricsBox.top + 1,
       detailsAfterMap: detailsBox.top >= mapBox.bottom - 1,
       metaOverlapsMap: overlaps(metaBox, mapBox),
       legendOverlapsMap: overlaps(legendBox, mapBox),
@@ -71,7 +72,6 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
     mapContainsMetrics: false,
     metaBeforeMap: true,
     headerBeforeMap: true,
-    metricsBeforeMap: true,
     detailsAfterMap: true,
     metaOverlapsMap: false,
     legendOverlapsMap: false,
@@ -79,6 +79,11 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
     detailsHaveNoInternalOverflow: true,
     summaryInsideStage: true,
   });
+  if ((page.viewportSize()?.width ?? 1440) <= 1023) {
+    expect(layout.mapBeforeMetrics).toBe(true);
+  } else {
+    expect(layout.metricsBeforeMap).toBe(true);
+  }
   expect(layout.mapHeight).toBeGreaterThanOrEqual(360);
   expect(layout.summaryLabelFontSize).toBeGreaterThanOrEqual(14);
   expect(layout.summaryValueFontSize).toBeGreaterThanOrEqual(16);
@@ -110,6 +115,83 @@ async function expectReadableWeatherTimeline(page: import("@playwright/test").Pa
 }
 
 test.describe("planner responsive shell", () => {
+  test("home matches the Figma typography and spacing at supported widths", async ({ page }) => {
+    for (const viewport of [
+      { width: 320, height: 800 },
+      { width: 384, height: 832 },
+      { width: 390, height: 844 },
+      { width: 820, height: 1180 },
+      { width: 1440, height: 900 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.goto("/#home");
+      await expect(page.getByRole("button", { name: "MOTOCAST 홈" })).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+
+      const home = page.locator(".planner-home");
+      const title = home.getByRole("heading", { name: "오늘은 어디로 달려볼까요?" });
+      const primary = home.getByRole("button", { name: /새 경로 만들기/ }).first();
+      await expect(title).toBeVisible();
+      await expect(primary).toBeVisible();
+
+      const layout = await home.evaluate((element) => {
+        const header = document.querySelector<HTMLElement>(".app-header")!;
+        const title = element.querySelector<HTMLElement>("#planner-home-title")!;
+        const titleSpans = Array.from(title.querySelectorAll<HTMLElement>("span"));
+        const titleLines = titleSpans.map((span) => span.getBoundingClientRect());
+        const titleTextRects = titleSpans.flatMap((span) => {
+          const range = document.createRange();
+          range.selectNodeContents(span);
+          return Array.from(range.getClientRects());
+        });
+        const motorcycle = element.querySelector<HTMLElement>(".planner-home-motorcycle")!;
+        const motorcycleBox = motorcycle.getBoundingClientRect();
+        const primary = element.querySelector<HTMLElement>(".planner-home-entry-grid .primary-button")!;
+        const primaryBox = primary.getBoundingClientRect();
+        const overlaps = (left: DOMRect, right: DOMRect) => left.left < right.right && left.right > right.left && left.top < right.bottom && left.bottom > right.top;
+        return {
+          bodyFontFamily: getComputedStyle(document.body).fontFamily,
+          loadedNotoFaces: Array.from(document.fonts).filter((face) => face.family.includes("Noto Sans KR Variable") && face.status === "loaded").length,
+          documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
+          headerHasNoHorizontalOverflow: header.scrollWidth <= header.clientWidth,
+          homeHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
+          titleFontSize: Number.parseFloat(getComputedStyle(title).fontSize),
+          titleLineCount: new Set(titleTextRects.map((line) => Math.round(line.top))).size,
+          titleOverlapsMotorcycle: titleLines.some((line) => overlaps(line, motorcycleBox)),
+          motorcycleRightGap: window.innerWidth - motorcycleBox.right,
+          primaryHeight: primaryBox.height,
+          primaryInsideViewport: primaryBox.left >= 0 && primaryBox.right <= window.innerWidth,
+          brandMarkCount: header.querySelectorAll(".brand-mark").length,
+          navigationDisplay: getComputedStyle(header.querySelector<HTMLElement>(".app-navigation")!).display,
+        };
+      });
+      expect(layout.bodyFontFamily).toContain("Noto Sans KR Variable");
+      expect(layout.loadedNotoFaces).toBeGreaterThan(0);
+      expect(layout).toMatchObject({
+        documentHasNoHorizontalOverflow: true,
+        headerHasNoHorizontalOverflow: true,
+        homeHasNoHorizontalOverflow: true,
+        titleOverlapsMotorcycle: false,
+        primaryInsideViewport: true,
+        brandMarkCount: 0,
+      });
+      expect(layout.primaryHeight).toBeGreaterThanOrEqual(48);
+      if (viewport.width <= 767) {
+        expect(layout.titleFontSize).toBe(28);
+        expect(layout.titleLineCount).toBe(2);
+        expect(layout.motorcycleRightGap).toBeGreaterThanOrEqual(39);
+        expect(layout.navigationDisplay).toBe("none");
+      } else {
+        expect(layout.navigationDisplay).not.toBe("none");
+      }
+      if (viewport.width === 1440) {
+        expect(layout.titleFontSize).toBe(40);
+        expect(layout.titleLineCount).toBe(1);
+        expect(layout.motorcycleRightGap).toBeGreaterThanOrEqual(191);
+      }
+    }
+  });
+
   test("intermediate desktop widths keep all route facts unclipped", async ({ page }) => {
     await page.goto("/");
     for (const width of [821, 900, 901, 957, 958, 1000, 1024, 1120, 1121]) {
@@ -147,16 +229,16 @@ test.describe("planner responsive shell", () => {
       await page.evaluate(() => document.fonts.ready);
       const layout = await page.locator(".shared-map-details").evaluate((details) => {
         const legend = details.querySelector<HTMLElement>(".map-marker-legend")!;
-        const summary = details.querySelector<HTMLElement>(".shared-map-summary")!;
-        const summaryBox = summary.getBoundingClientRect();
+        const routeOrder = details.querySelector<HTMLElement>(".summary-route-order")!;
+        const routeOrderBox = routeOrder.getBoundingClientRect();
         const items = Array.from(legend.querySelectorAll("li"));
         return {
           itemCount: items.length,
-          noOverflow: [details, legend, summary].every((item) => item.scrollWidth <= item.clientWidth),
+          noOverflow: [details, legend, routeOrder].every((item) => item.scrollWidth <= item.clientWidth),
           noOverlap: items.every((item) => {
             const box = item.getBoundingClientRect();
-            return box.right <= summaryBox.left || box.left >= summaryBox.right ||
-              box.bottom <= summaryBox.top || box.top >= summaryBox.bottom;
+            return box.right <= routeOrderBox.left || box.left >= routeOrderBox.right ||
+              box.bottom <= routeOrderBox.top || box.top >= routeOrderBox.bottom;
           }),
         };
       });
@@ -237,16 +319,18 @@ test.describe("planner responsive shell", () => {
     await openButton.focus();
     await page.keyboard.press("Enter");
 
-    const editor = page.locator(".planner-panel");
+    const editorView = page.locator(".workspace.is-editor-view");
+    const editor = editorView.locator(".planner-panel");
     await expect(editor).toBeVisible();
-    await expect(editor.getByRole("heading", { name: "라이딩 계획" })).toBeVisible();
-    await expect(editor.getByText("복귀는 자동 계산", { exact: true })).toBeVisible();
+    await expect(editorView.getByRole("heading", { name: viewport.width <= 767 ? "어디로 떠날까요?" : "경로 편집" })).toBeVisible();
     const plannerCopyFontSizes = await editor.locator(
       ".section-label, .planner-form label > span, .time-estimate-note strong, .time-estimate-note small, .ordered-waypoint strong, .ordered-waypoint small",
     ).evaluateAll((elements) => elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)));
     expect(plannerCopyFontSizes.every((fontSize) => fontSize >= 14)).toBe(true);
     await editor.locator(".schedule-trigger").click();
-    const dialog = page.getByRole("dialog", { name: "새 일정 선택" });
+    const dialog = page.getByRole("dialog", {
+      name: viewport.width <= 767 ? "출발 날짜·시간" : "언제 출발할까요?",
+    });
     await expect(dialog).toBeVisible();
     const visibleButtons = await dialog.locator("button").evaluateAll((buttons) => buttons
       .map((button) => ({

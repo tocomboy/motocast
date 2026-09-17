@@ -10,7 +10,7 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("@/components/shared-ride-snapshot", () => ({
-  SharedRideSnapshotView: ({ snapshot }: { snapshot: { trip: { title: string } } }) => <h2>{snapshot.trip.title}</h2>,
+  SharedRideSnapshotView: ({ snapshot, actions }: { snapshot: { trip: { title: string } }; actions?: ReactNode }) => <><h2>{snapshot.trip.title}</h2>{actions}</>,
 }));
 vi.mock("@/components/planner-dashboard", () => ({
   PlannerDashboard: ({ initialTitle }: { initialTitle: string }) => <div data-embedded-planner>{initialTitle}</div>,

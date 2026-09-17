@@ -23,7 +23,12 @@ vi.mock("@/components/share-manager", () => ({
   },
 }));
 vi.mock("@/lib/supabase/browser", () => ({
-  getBrowserSupabase: () => ({ functions: { invoke: mocks.invoke }, rpc: mocks.rpc }),
+  getBrowserSupabase: () => ({
+    functions: { invoke: mocks.invoke },
+    rpc: mocks.rpc,
+    from: () => ({ select() { return this; }, order: async () => ({ data: [], error: null }) }),
+    auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }) },
+  }),
 }));
 
 import { PlannerDashboard } from "./planner-dashboard";
@@ -50,6 +55,7 @@ function createNodeMock(element: ReactElement<unknown>) {
   const className = typeof props.className === "string" ? props.className : "";
   return {
     focus: className.includes("action-notice") ? mocks.noticeFocus : vi.fn(),
+    click: vi.fn(),
     querySelector: vi.fn(),
     querySelectorAll: vi.fn(() => []),
     ...(element.type === "dialog" ? { showModal: mocks.summaryDialogShowModal, close: vi.fn(), open: false } : {}),
@@ -66,7 +72,7 @@ async function chooseSchedule(renderer: ReactTestRenderer) {
   await act(async () => renderer.root.findByProps({ className: "schedule-time-rows" }).findAllByType("button")[1].props.onClick());
   const minute = renderer.root.findByProps({ className: "clock-grid minute-grid" }).findAllByType("button").find((button) => button.children.includes("00"))!;
   await act(async () => minute.props.onClick());
-  await act(async () => renderer.root.findAllByType("button").find((button) => button.children.includes("일정 적용"))!.props.onClick());
+  await act(async () => renderer.root.findByProps({ className: "schedule-dialog-actions" }).findByType("button").props.onClick());
 }
 
 beforeEach(() => {
@@ -118,11 +124,11 @@ describe("PlannerDashboard collection share intent", () => {
   it("keeps share preparation across the mandatory new schedule and opens exactly one fresh preview", async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<PlannerDashboard connected />, { createNodeMock: (element) => ({ focus: vi.fn(), querySelector: vi.fn(), querySelectorAll: vi.fn(() => []), ...(element.type === "dialog" ? { showModal: mocks.summaryDialogShowModal, close: vi.fn(), open: false } : {}) }) });
+      renderer = create(<PlannerDashboard connected />, { createNodeMock: (element) => ({ focus: vi.fn(), click: vi.fn(), querySelector: vi.fn(), querySelectorAll: vi.fn(() => []), ...(element.type === "dialog" ? { showModal: mocks.summaryDialogShowModal, close: vi.fn(), open: false } : {}) }) });
     });
     const prepare = renderer.root.findAllByType("button").find((button) => button.children.includes("공유 준비 테스트"))!;
     await act(async () => prepare.props.onClick());
-    expect(renderer.root.findByProps({ className: "schedule-trigger" }).children).toEqual(["날짜와 출발 시각 선택"]);
+    expect(renderedText(renderer.root.findByProps({ className: "schedule-trigger" }))).toContain("날짜와 출발 시각 선택");
     await chooseSchedule(renderer);
     mocks.summaryDialogShowModal.mockReset();
     const form = renderer.root.findByType("form");
@@ -193,7 +199,7 @@ describe("PlannerDashboard collection share intent", () => {
     });
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<PlannerDashboard connected />, { createNodeMock: (element) => ({ focus: vi.fn(), querySelector: vi.fn(), querySelectorAll: vi.fn(() => []), ...(element.type === "dialog" ? { showModal: vi.fn(), close: vi.fn() } : {}) }) });
+      renderer = create(<PlannerDashboard connected />, { createNodeMock: (element) => ({ focus: vi.fn(), click: vi.fn(), querySelector: vi.fn(), querySelectorAll: vi.fn(() => []), ...(element.type === "dialog" ? { showModal: vi.fn(), close: vi.fn() } : {}) }) });
     });
     await act(async () => renderer.root.findAllByType("button").find((button) => button.children.includes("공유 준비 테스트"))!.props.onClick());
     await chooseSchedule(renderer);

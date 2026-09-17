@@ -5,7 +5,6 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-const styles = readFileSync(path.join(process.cwd(), "app", "globals.css"), "utf8");
 let plannerMarkup = "";
 let inviteMarkup = "";
 
@@ -34,12 +33,14 @@ test.beforeAll(() => {
 });
 
 async function setProductionMarkup(page: import("@playwright/test").Page, markup: string) {
-  await page.setContent(`<style>${styles}</style>${markup}`);
+  await page.goto("/#home");
+  await page.evaluate((productionMarkup) => { document.body.innerHTML = productionMarkup; }, markup);
   await page.evaluate(() => document.fonts.ready);
 }
 
 for (const viewport of [
   { name: "compact 320", width: 320, height: 800 },
+  { name: "Galaxy width 384", width: 384, height: 832 },
   { name: "mobile 390", width: 390, height: 844 },
   { name: "tablet 820", width: 820, height: 1180 },
   { name: "desktop 1440", width: 1440, height: 900 },
@@ -70,6 +71,51 @@ for (const viewport of [
       inviteIsClickable: true,
     });
     expect(layout.inviteHeight).toBeGreaterThanOrEqual(44);
+
+    const savedRoutes = page.locator(".planner-home-collections");
+    const savedRoutesHeading = savedRoutes.getByRole("heading", { name: viewport.width <= 767 ? "저장한 경로" : "최근 저장한 경로", exact: true });
+    const showAll = savedRoutes.getByRole("button", { name: "전체 보기", exact: true });
+    await expect(savedRoutesHeading).toBeVisible();
+    await expect(showAll).toBeVisible();
+    const savedRoutesLayout = await savedRoutes.locator(".planner-home-section-heading").evaluate((heading) => {
+      const title = heading.querySelector<HTMLElement>("h2")!;
+      const description = heading.querySelector<HTMLElement>("p")!;
+      const button = heading.querySelector<HTMLElement>("button")!;
+      const titleBox = title.getBoundingClientRect();
+      const descriptionBox = description.getBoundingClientRect();
+      const buttonBox = button.getBoundingClientRect();
+      const buttonTextRange = document.createRange();
+      buttonTextRange.selectNodeContents(button);
+      return {
+        noHorizontalOverflow: heading.scrollWidth <= heading.clientWidth,
+        titleAndButtonDoNotOverlap: titleBox.right <= buttonBox.left,
+        descriptionIsNextRow: descriptionBox.top >= Math.max(titleBox.bottom, buttonBox.bottom),
+        descriptionUsesFullRow: descriptionBox.left <= titleBox.left + 1 && descriptionBox.right >= buttonBox.right - 1,
+        buttonHeight: buttonBox.height,
+        buttonTextFits: button.scrollWidth <= button.clientWidth,
+        buttonLineCount: new Set(Array.from(buttonTextRange.getClientRects()).map((rect) => Math.round(rect.top))).size,
+        loadedNotoFaces: Array.from(document.fonts).filter((face) => face.family.includes("Noto Sans KR Variable") && face.status === "loaded").length,
+      };
+    });
+    expect(savedRoutesLayout).toMatchObject({
+      noHorizontalOverflow: true,
+      titleAndButtonDoNotOverlap: true,
+      descriptionIsNextRow: true,
+      descriptionUsesFullRow: true,
+      buttonTextFits: true,
+    });
+    expect(savedRoutesLayout.buttonHeight).toBeGreaterThanOrEqual(48);
+    expect(savedRoutesLayout.buttonLineCount).toBe(1);
+    expect(savedRoutesLayout.loadedNotoFaces).toBeGreaterThan(0);
+    const saveNote = page.locator(".planner-home-save-note");
+    if (viewport.width <= 767) {
+      await expect(saveNote).toBeVisible();
+      await expect(saveNote).toContainText("마음에 드는 경로를 모아두세요");
+      await expect(saveNote).toContainText("라이딩 결과 화면의 공유 · 저장에서");
+      await expect(saveNote).toContainText("경로를 저장할 수 있어요.");
+    } else {
+      await expect(saveNote).toBeHidden();
+    }
   });
 
   test(`${viewport.name} keeps invite creation and copy actions visible and unclipped`, async ({ page }) => {

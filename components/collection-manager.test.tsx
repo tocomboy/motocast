@@ -5,16 +5,19 @@ import type { CollectionCourse } from "@/lib/collections/contracts";
 
 const browserMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  rpc: vi.fn(),
+  rows: [] as unknown[],
+  loadError: null as unknown,
 }));
 
 vi.mock("@/lib/supabase/browser", () => ({
   getBrowserSupabase: () => ({
     from: () => ({
       select() { return this; },
-      order: async () => ({ data: [], error: null }),
+      order: async () => ({ data: browserMocks.rows, error: browserMocks.loadError }),
     }),
     functions: { invoke: browserMocks.invoke },
-    rpc: vi.fn(),
+    rpc: browserMocks.rpc,
   }),
 }));
 
@@ -23,7 +26,7 @@ import { CollectionManager } from "./collection-manager";
 const directCourse: CollectionCourse = {
   origin: {
     kakaoPlaceId: "origin-place",
-    verificationToken: "origin-proof",
+    verificationToken: "a".repeat(43),
     name: "테스트 출발지",
     address: "서울특별시 테스트 출발로",
     roadAddress: null,
@@ -32,7 +35,7 @@ const directCourse: CollectionCourse = {
   },
   destination: {
     kakaoPlaceId: "destination-place",
-    verificationToken: "destination-proof",
+    verificationToken: "b".repeat(43),
     name: "테스트 복귀지",
     address: "서울특별시 테스트 복귀로",
     roadAddress: null,
@@ -51,6 +54,9 @@ function buttonWithText(root: ReactTestInstance, text: string) {
 beforeEach(() => {
   browserMocks.invoke.mockReset();
   browserMocks.invoke.mockResolvedValue({ data: { versionNumber: 1 }, error: null });
+  browserMocks.rpc.mockReset();
+  browserMocks.rows = [];
+  browserMocks.loadError = null;
   vi.stubGlobal("window", { clearTimeout, confirm: vi.fn(), setTimeout });
 });
 
@@ -60,20 +66,26 @@ afterEach(() => {
 
 describe("CollectionManager direct course", () => {
   it("saves an origin-to-destination course with no waypoint placeholder", async () => {
+    let resolveSave!: (value: { data: { versionNumber: number }; error: null }) => void;
+    browserMocks.invoke.mockReturnValueOnce(new Promise((resolve) => { resolveSave = resolve; }));
+    const onSaved = vi.fn();
+    const onBusyChange = vi.fn();
     let renderer!: ReactTestRenderer;
     await act(async () => {
       renderer = create(
-        <CollectionManager currentCourse={directCourse} onApply={vi.fn()} onShare={vi.fn()} />,
+        <CollectionManager mode="save-panel" currentCourse={directCourse} onApply={vi.fn()} onShare={vi.fn()} onSaved={onSaved} onBusyChange={onBusyChange} />,
       );
     });
 
     const input = renderer.root.findByType("input");
     await act(async () => input.props.onChange({ target: { value: "직접 코스" } }));
-    const saveButton = buttonWithText(renderer.root, "현재 전체 코스로 새 컬렉션 저장");
+    const saveButton = buttonWithText(renderer.root, "내 경로에 저장");
     expect(saveButton).toBeDefined();
     expect(saveButton?.props.disabled).toBe(false);
 
-    await act(async () => saveButton?.props.onClick());
+    await act(async () => { void saveButton?.props.onClick(); });
+    expect(onBusyChange).toHaveBeenCalledWith(true);
+    await act(async () => resolveSave({ data: { versionNumber: 1 }, error: null }));
     expect(browserMocks.invoke).toHaveBeenCalledWith("save-collection", {
       body: {
         saveOperationId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
@@ -85,6 +97,7 @@ describe("CollectionManager direct course", () => {
         points: [],
       },
     });
+    expect(onSaved).toHaveBeenCalledWith("직접 코스");
     await act(async () => renderer.unmount());
   });
 
@@ -94,10 +107,10 @@ describe("CollectionManager direct course", () => {
       .mockResolvedValueOnce({ data: { versionNumber: 1 }, error: null });
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<CollectionManager currentCourse={directCourse} onApply={vi.fn()} onShare={vi.fn()} />);
+      renderer = create(<CollectionManager mode="save-panel" currentCourse={directCourse} onApply={vi.fn()} onShare={vi.fn()} />);
     });
     await act(async () => renderer.root.findByType("input").props.onChange({ target: { value: "재시도 코스" } }));
-    const saveButton = buttonWithText(renderer.root, "현재 전체 코스로 새 컬렉션 저장");
+    const saveButton = buttonWithText(renderer.root, "내 경로에 저장");
     await act(async () => saveButton?.props.onClick());
     await act(async () => saveButton?.props.onClick());
     const firstId = browserMocks.invoke.mock.calls[0][1].body.saveOperationId;
@@ -122,6 +135,52 @@ describe("CollectionManager direct course", () => {
     expect(renderer.root.findAllByType("input")).toHaveLength(0);
     await act(async () => buttonWithText(renderer.root, "저장한 경로 보기")?.props.onClick());
     expect(onShowCollections).toHaveBeenCalledTimes(1);
+    await act(async () => renderer.unmount());
+  });
+
+  it("does not navigate after a save-panel request settles after unmount", async () => {
+    let resolveSave!: (value: { data: { versionNumber: number }; error: null }) => void;
+    browserMocks.invoke.mockReturnValueOnce(new Promise((resolve) => { resolveSave = resolve; }));
+    const onSaved = vi.fn();
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<CollectionManager mode="save-panel" currentCourse={directCourse} onApply={vi.fn()} onShare={vi.fn()} onSaved={onSaved} />);
+    });
+    await act(async () => renderer.root.findByType("input").props.onChange({ target: { value: "늦은 코스" } }));
+    await act(async () => { void buttonWithText(renderer.root, "내 경로에 저장")?.props.onClick(); });
+    await act(async () => renderer.unmount());
+    await act(async () => resolveSave({ data: { versionNumber: 1 }, error: null }));
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("keeps a collection mutation failure visible after the list loaded", async () => {
+    browserMocks.rows = [{
+      id: "collection-1",
+      title: "삭제 실패 코스",
+      description: "",
+      updated_at: "2026-09-17T00:00:00.000Z",
+      collection_versions: [{
+        id: "version-1",
+        version_number: 1,
+        created_at: "2026-09-17T00:00:00.000Z",
+        origin: directCourse.origin,
+        destination: directCourse.destination,
+        points: [],
+      }],
+    }];
+    browserMocks.rpc.mockResolvedValue({ error: { message: "denied" } });
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<CollectionManager currentCourse={directCourse} onApply={vi.fn()} onShare={vi.fn()} />);
+    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    const deleteButton = renderer.root.findAllByType("button").find((button) => button.props["aria-label"] === "삭제 실패 코스 삭제");
+    expect(deleteButton).toBeDefined();
+    vi.mocked(window.confirm).mockReturnValue(true);
+    await act(async () => deleteButton?.props.onClick());
+    const feedback = renderer.root.findByProps({ className: "manager-operation-feedback" });
+    expect(feedback.props.role).toBe("alert");
+    expect(feedback.children.join("")).toContain("삭제하지 못했습니다");
     await act(async () => renderer.unmount());
   });
 });

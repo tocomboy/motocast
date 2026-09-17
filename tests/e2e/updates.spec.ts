@@ -73,6 +73,7 @@ test.describe("public update notes", () => {
 
   test("opens from the global version footer and shows the current release history", async ({ page }) => {
     await page.goto("/");
+    await page.getByRole("button", { name: "MOTOCAST 홈" }).click();
 
     const releaseLink = page.getByRole("link", { name: `업데이트 소식 · v${currentVersion}` });
     await expect(releaseLink).toBeVisible();
@@ -104,7 +105,7 @@ test.describe("public update notes", () => {
     await expect(page).toHaveURL("/");
   });
 
-  test("keeps the mobile navigation usable when the announcement request fails", async ({ page }) => {
+  test("keeps the mobile summary actions usable when the announcement request fails", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.route("**/api/releases/claim", async (route) => {
       await route.fulfill({ body: JSON.stringify({ error: "unavailable" }), contentType: "application/json", status: 503 });
@@ -112,21 +113,20 @@ test.describe("public update notes", () => {
 
     await page.goto("/");
     const errorNotice = page.getByRole("status").filter({ hasText: "업데이트 소식을 불러오지 못했습니다." });
-    const navigation = page.getByRole("navigation", { name: "주요 화면" });
+    const actions = page.locator(".riding-summary-actions");
     await expect(errorNotice).toBeVisible();
-    await expect(navigation).toBeVisible();
+    await expect(actions).toBeVisible();
 
     const geometry = await Promise.all([
       errorNotice.boundingBox(),
-      navigation.boundingBox(),
+      actions.boundingBox(),
     ]);
     expect(geometry[0]).not.toBeNull();
     expect(geometry[1]).not.toBeNull();
-    expect(geometry[0]!.y + geometry[0]!.height).toBeLessThanOrEqual(geometry[1]!.y);
+    expect(geometry[0]!.y + geometry[0]!.height <= geometry[1]!.y || geometry[0]!.y >= geometry[1]!.y + geometry[1]!.height).toBe(true);
 
-    const newRoute = navigation.getByRole("button", { name: "새 경로 만들기" });
-    await newRoute.click();
-    await expect(newRoute).toHaveAttribute("aria-current", "page");
+    await actions.getByRole("button", { name: "경로 수정", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "어디로 떠날까요?" })).toBeVisible();
   });
 
   for (const viewport of [
