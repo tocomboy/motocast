@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import "@fontsource-variable/noto-sans-kr";
 
 import { ReleaseFooter } from "@/components/release-footer";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";

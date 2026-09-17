@@ -8,25 +8,29 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
   const meta = page.locator(".route-map-meta");
   const details = page.locator(".route-map-details");
   const legend = details.getByRole("list", { name: "지도 지점 표시 안내" });
-  const summary = page.locator(".ride-summary");
-  const metrics = page.locator(".summary-metrics");
+  const summary = page.locator(".riding-summary-layout");
+  const metrics = page.locator(".riding-summary-metrics");
   await expect(map).toBeVisible();
   await expect(meta).toBeVisible();
   await expect(legend).toBeVisible();
   await expect(summary).toBeVisible();
   await expect(metrics).toBeVisible();
-  await expect(metrics.locator("span").filter({ hasText: /주행$/ })).toBeVisible();
-  await expect(metrics.locator("span").filter({ hasText: /정차$/ })).toBeVisible();
-  await expect(metrics.locator("span").filter({ hasText: /예상 복귀$/ })).toBeVisible();
+  await expect(metrics.getByText("주행", { exact: true })).toBeVisible();
+  await expect(metrics.getByText("휴식", { exact: true })).toBeVisible();
+  await expect(metrics.getByText("예상 도착", { exact: true })).toBeVisible();
   const layout = await page.evaluate(() => {
     const mapBox = document.querySelector(".map-area")!.getBoundingClientRect();
     const meta = document.querySelector(".route-map-meta")!;
     const details = document.querySelector(".route-map-details")!;
     const legend = details.querySelector(".map-marker-legend")!;
+    const header = document.querySelector<HTMLElement>(".riding-summary-header")!;
+    const metrics = document.querySelector<HTMLElement>(".riding-summary-metrics")!;
     const metaBox = meta.getBoundingClientRect();
     const detailsBox = details.getBoundingClientRect();
     const legendBox = legend.getBoundingClientRect();
-    const summary = document.querySelector<HTMLElement>(".ride-summary")!;
+    const headerBox = header.getBoundingClientRect();
+    const metricsBox = metrics.getBoundingClientRect();
+    const summary = document.querySelector<HTMLElement>(".riding-summary-layout")!;
     const summaryBox = summary.getBoundingClientRect();
     const overlaps = (left: DOMRect, right: DOMRect) => (
       left.left < right.right && left.right > right.left && left.top < right.bottom && left.bottom > right.top
@@ -34,20 +38,23 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
     return {
       mapContainsMeta: document.querySelector(".map-area")!.contains(meta),
       mapContainsLegend: document.querySelector(".map-area")!.contains(legend),
-      mapContainsSummary: document.querySelector(".map-area")!.contains(document.querySelector(".ride-summary")!),
+      mapContainsSummary: document.querySelector(".map-area")!.contains(summary),
+      mapContainsHeader: document.querySelector(".map-area")!.contains(header),
+      mapContainsMetrics: document.querySelector(".map-area")!.contains(metrics),
       metaBeforeMap: metaBox.bottom <= mapBox.top + 1,
+      headerBeforeMap: headerBox.bottom <= mapBox.top + 1,
+      metricsBeforeMap: metricsBox.bottom <= mapBox.top + 1,
+      mapBeforeMetrics: mapBox.bottom <= metricsBox.top + 1,
       detailsAfterMap: detailsBox.top >= mapBox.bottom - 1,
       metaOverlapsMap: overlaps(metaBox, mapBox),
       legendOverlapsMap: overlaps(legendBox, mapBox),
-      summaryOverlapsMap: overlaps(summaryBox, mapBox),
       mapHeight: mapBox.height,
       summaryClientWidth: summary.clientWidth,
       summaryScrollWidth: summary.scrollWidth,
       summaryClientHeight: summary.clientHeight,
       summaryScrollHeight: summary.scrollHeight,
-      summaryLabelFontSize: Number.parseFloat(getComputedStyle(summary.querySelector(".summary-metrics span")!).fontSize),
-      summaryValueFontSize: Number.parseFloat(getComputedStyle(summary.querySelector(".summary-metrics strong")!).fontSize),
-      summaryStatusFontSize: Number.parseFloat(getComputedStyle(summary.querySelector(".return-status")!).fontSize),
+      summaryLabelFontSize: Number.parseFloat(getComputedStyle(summary.querySelector(".riding-summary-metrics dt")!).fontSize),
+      summaryValueFontSize: Number.parseFloat(getComputedStyle(summary.querySelector(".riding-summary-metrics dd")!).fontSize),
       mapCopyFontSizes: Array.from(document.querySelectorAll<HTMLElement>(
         ".condition-banner, .example-data-badge, .live-data-badge, .map-marker-legend li",
       )).map((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
@@ -61,50 +68,133 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
     mapContainsMeta: false,
     mapContainsLegend: false,
     mapContainsSummary: false,
+    mapContainsHeader: false,
+    mapContainsMetrics: false,
     metaBeforeMap: true,
+    headerBeforeMap: true,
     detailsAfterMap: true,
     metaOverlapsMap: false,
     legendOverlapsMap: false,
-    summaryOverlapsMap: false,
     summaryHasNoInternalOverflow: true,
     detailsHaveNoInternalOverflow: true,
     summaryInsideStage: true,
   });
+  if ((page.viewportSize()?.width ?? 1440) <= 1023) {
+    expect(layout.mapBeforeMetrics).toBe(true);
+  } else {
+    expect(layout.metricsBeforeMap).toBe(true);
+  }
   expect(layout.mapHeight).toBeGreaterThanOrEqual(360);
   expect(layout.summaryLabelFontSize).toBeGreaterThanOrEqual(14);
   expect(layout.summaryValueFontSize).toBeGreaterThanOrEqual(16);
-  expect(layout.summaryStatusFontSize).toBeGreaterThanOrEqual(14);
   expect(layout.mapCopyFontSizes.every((fontSize) => fontSize >= 14)).toBe(true);
-  await expect(summary.getByRole("heading", { name: "경로 요약" })).toHaveCount(1);
+  await expect(summary.getByRole("heading", { name: "라이딩 결과" })).toHaveCount(1);
   await expect(summary.getByText("추천 경로", { exact: true })).toHaveCount(0);
   await expect(page.locator(".candidate-card, .candidate-strip, .candidate-tab")).toHaveCount(0);
 }
 
 async function expectReadableWeatherTimeline(page: import("@playwright/test").Page) {
-  const layout = await page.locator(".timeline-row").evaluateAll((rows) => rows.map((row) => {
-    const chip = row.querySelector<HTMLElement>(".weather-chip")!;
-    const segment = row.querySelector<HTMLElement>(".segment-copy strong")!;
+  const layout = await page.locator(".riding-weather-card").evaluateAll((rows) => rows.map((row) => {
+    const place = row.querySelector<HTMLElement>(".riding-weather-place")!;
+    const values = row.querySelector<HTMLElement>(".riding-weather-values")!;
     const rowBox = row.getBoundingClientRect();
-    const chipBox = chip.getBoundingClientRect();
+    const valuesBox = values.getBoundingClientRect();
     return {
       rowHasNoOverflow: row.scrollWidth <= row.clientWidth,
-      chipHasNoOverflow: chip.scrollWidth <= chip.clientWidth,
-      chipInsideRow: chipBox.left >= rowBox.left && chipBox.right <= rowBox.right + 1,
-      segmentFontSize: Number.parseFloat(getComputedStyle(segment).fontSize),
+      valuesHasNoOverflow: values.scrollWidth <= values.clientWidth,
+      valuesInsideRow: valuesBox.left >= rowBox.left && valuesBox.right <= rowBox.right + 1,
+      placeFontSize: Number.parseFloat(getComputedStyle(place.querySelector("strong")!).fontSize),
       copyFontSizes: Array.from(row.querySelectorAll<HTMLElement>(
-        ".timeline-time span, .segment-copy span, .weather-word, .weather-chip small, .risk-label",
+        ".riding-weather-time strong, .riding-weather-time small, .riding-weather-place strong, .riding-weather-place span, .riding-weather-place small, .riding-weather-values strong, .riding-weather-values span",
       )).map((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
     };
   }));
-  expect(layout.every((item) => item.rowHasNoOverflow && item.chipHasNoOverflow && item.chipInsideRow)).toBe(true);
-  expect(layout.every((item) => item.segmentFontSize >= 14)).toBe(true);
+  expect(layout.every((item) => item.rowHasNoOverflow && item.valuesHasNoOverflow && item.valuesInsideRow)).toBe(true);
+  expect(layout.every((item) => item.placeFontSize >= 14)).toBe(true);
   expect(layout.every((item) => item.copyFontSizes.every((fontSize) => fontSize >= 14))).toBe(true);
 }
 
 test.describe("planner responsive shell", () => {
+  test("home matches the Figma typography and spacing at supported widths", async ({ page }) => {
+    for (const viewport of [
+      { width: 320, height: 800 },
+      { width: 384, height: 832 },
+      { width: 390, height: 844 },
+      { width: 820, height: 1180 },
+      { width: 1440, height: 900 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.goto("/#home");
+      await expect(page.getByRole("button", { name: "MOTOCAST 홈" })).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+
+      const home = page.locator(".planner-home");
+      const title = home.getByRole("heading", { name: "오늘은 어디로 달려볼까요?" });
+      const primary = home.getByRole("button", { name: /새 경로 만들기/ }).first();
+      await expect(title).toBeVisible();
+      await expect(primary).toBeVisible();
+
+      const layout = await home.evaluate((element) => {
+        const header = document.querySelector<HTMLElement>(".app-header")!;
+        const title = element.querySelector<HTMLElement>("#planner-home-title")!;
+        const titleSpans = Array.from(title.querySelectorAll<HTMLElement>("span"));
+        const titleLines = titleSpans.map((span) => span.getBoundingClientRect());
+        const titleTextRects = titleSpans.flatMap((span) => {
+          const range = document.createRange();
+          range.selectNodeContents(span);
+          return Array.from(range.getClientRects());
+        });
+        const motorcycle = element.querySelector<HTMLElement>(".planner-home-motorcycle")!;
+        const motorcycleBox = motorcycle.getBoundingClientRect();
+        const primary = element.querySelector<HTMLElement>(".planner-home-entry-grid .primary-button")!;
+        const primaryBox = primary.getBoundingClientRect();
+        const overlaps = (left: DOMRect, right: DOMRect) => left.left < right.right && left.right > right.left && left.top < right.bottom && left.bottom > right.top;
+        return {
+          bodyFontFamily: getComputedStyle(document.body).fontFamily,
+          loadedNotoFaces: Array.from(document.fonts).filter((face) => face.family.includes("Noto Sans KR Variable") && face.status === "loaded").length,
+          documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
+          headerHasNoHorizontalOverflow: header.scrollWidth <= header.clientWidth,
+          homeHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
+          titleFontSize: Number.parseFloat(getComputedStyle(title).fontSize),
+          titleLineCount: new Set(titleTextRects.map((line) => Math.round(line.top))).size,
+          titleOverlapsMotorcycle: titleLines.some((line) => overlaps(line, motorcycleBox)),
+          motorcycleRightGap: window.innerWidth - motorcycleBox.right,
+          primaryHeight: primaryBox.height,
+          primaryInsideViewport: primaryBox.left >= 0 && primaryBox.right <= window.innerWidth,
+          brandMarkCount: header.querySelectorAll(".brand-mark").length,
+          navigationDisplay: getComputedStyle(header.querySelector<HTMLElement>(".app-navigation")!).display,
+        };
+      });
+      expect(layout.bodyFontFamily).toContain("Noto Sans KR Variable");
+      expect(layout.loadedNotoFaces).toBeGreaterThan(0);
+      expect(layout).toMatchObject({
+        documentHasNoHorizontalOverflow: true,
+        headerHasNoHorizontalOverflow: true,
+        homeHasNoHorizontalOverflow: true,
+        titleOverlapsMotorcycle: false,
+        primaryInsideViewport: true,
+        brandMarkCount: 0,
+      });
+      expect(layout.primaryHeight).toBeGreaterThanOrEqual(48);
+      if (viewport.width <= 767) {
+        expect(layout.titleFontSize).toBe(28);
+        expect(layout.titleLineCount).toBe(2);
+        expect(layout.motorcycleRightGap).toBeGreaterThanOrEqual(39);
+        expect(layout.navigationDisplay).toBe("none");
+      } else {
+        expect(layout.navigationDisplay).not.toBe("none");
+      }
+      if (viewport.width === 1440) {
+        expect(layout.titleFontSize).toBe(40);
+        expect(layout.titleLineCount).toBe(1);
+        expect(layout.motorcycleRightGap).toBeGreaterThanOrEqual(191);
+      }
+    }
+  });
+
   test("intermediate desktop widths keep all route facts unclipped", async ({ page }) => {
     await page.goto("/");
-    for (const width of [821, 900, 901, 957, 958, 1000, 1120, 1121]) {
+    for (const width of [821, 900, 901, 957, 958, 1000, 1024, 1120, 1121]) {
       await page.setViewportSize({ width, height: 900 });
       await expectMapInformationOutsideMap(page);
     }
@@ -139,16 +229,16 @@ test.describe("planner responsive shell", () => {
       await page.evaluate(() => document.fonts.ready);
       const layout = await page.locator(".shared-map-details").evaluate((details) => {
         const legend = details.querySelector<HTMLElement>(".map-marker-legend")!;
-        const summary = details.querySelector<HTMLElement>(".shared-map-summary")!;
-        const summaryBox = summary.getBoundingClientRect();
+        const routeOrder = details.querySelector<HTMLElement>(".summary-route-order")!;
+        const routeOrderBox = routeOrder.getBoundingClientRect();
         const items = Array.from(legend.querySelectorAll("li"));
         return {
           itemCount: items.length,
-          noOverflow: [details, legend, summary].every((item) => item.scrollWidth <= item.clientWidth),
+          noOverflow: [details, legend, routeOrder].every((item) => item.scrollWidth <= item.clientWidth),
           noOverlap: items.every((item) => {
             const box = item.getBoundingClientRect();
-            return box.right <= summaryBox.left || box.left >= summaryBox.right ||
-              box.bottom <= summaryBox.top || box.top >= summaryBox.bottom;
+            return box.right <= routeOrderBox.left || box.left >= routeOrderBox.right ||
+              box.bottom <= routeOrderBox.top || box.top >= routeOrderBox.bottom;
           }),
         };
       });
@@ -160,7 +250,8 @@ test.describe("planner responsive shell", () => {
   test("primary action remains readable on hover and keyboard focus", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/");
-    const action = page.locator(".primary-button").first();
+    await page.getByRole("button", { name: "MOTOCAST 홈" }).click();
+    const action = page.locator(".planner-home-entry-grid .primary-button").first();
     await expect(action).toBeVisible();
     const contrast = () => action.evaluate((element) => {
       const luminance = (color: string) => {
@@ -188,17 +279,14 @@ test.describe("planner responsive shell", () => {
     expect(await contrast()).toBeGreaterThanOrEqual(4.5);
   });
 
-  test("desktop keeps the plan and single recommended route visible", async ({ page }) => {
+  test("desktop keeps the single recommended route summary visible", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/");
 
-    await expect(page.getByRole("heading", { name: "라이딩 계획" })).toBeVisible();
-    await expect(page.getByText("복귀는 자동 계산", { exact: true })).toBeVisible();
-    await expect(page.getByLabel("추가할 종류")).toHaveValue("waypoint");
-    await expect(page.getByLabel("추가할 종류")).toBeDisabled();
-    await expect(page.getByText("추가한 경유지가 없습니다.", { exact: false })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "라이딩 결과" })).toBeVisible();
     await expectMapInformationOutsideMap(page);
-    await expect(page.getByRole("button", { name: "계획 수정" })).toBeHidden();
+    await expectReadableWeatherTimeline(page);
+    await expect(page.getByRole("button", { name: "경로 수정" }).last()).toBeVisible();
     await expect(page.locator("body")).not.toContainText("희망 복귀");
     await expect(page.locator("body")).not.toContainText("최종 복귀");
 
@@ -211,45 +299,39 @@ test.describe("planner responsive shell", () => {
     { name: "mobile 390", width: 390, height: 844 },
     { name: "tablet 820", width: 820, height: 1180 },
   ]) {
-    test(`${viewport.name} opens a labelled focus-contained planner dialog`, async ({ page }) => {
+    test(`${viewport.name} opens the editor and a focus-contained schedule dialog`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto("/");
 
-    const openButton = page.getByRole("button", { name: "계획 수정" });
+    const openButton = page.getByRole("button", { name: "경로 수정" }).first();
     await expect(openButton).toBeVisible();
-    const closedLayout = await page.evaluate(() => {
-      const header = document.querySelector(".app-header")!;
-      const button = document.querySelector(".mobile-plan-button")!;
-      const summary = document.querySelector(".ride-summary")!;
+    const closedLayout = await openButton.evaluate((button) => {
+      const summary = document.querySelector(".riding-summary-layout")!;
       const buttonBox = button.getBoundingClientRect();
-      const summaryBox = summary.getBoundingClientRect();
       return {
-        buttonInsideHeader: header.contains(button),
-        buttonOverlapsSummary: buttonBox.left < summaryBox.right && buttonBox.right > summaryBox.left
-          && buttonBox.top < summaryBox.bottom && buttonBox.bottom > summaryBox.top,
+        buttonInsideSummaryActions: Boolean(button.closest(".riding-summary-actions")),
+        buttonInsideSummary: summary.contains(button),
         buttonHeight: buttonBox.height,
       };
     });
-    expect(closedLayout).toMatchObject({ buttonInsideHeader: true, buttonOverlapsSummary: false });
+    expect(closedLayout).toMatchObject({ buttonInsideSummaryActions: true, buttonInsideSummary: true });
     expect(closedLayout.buttonHeight).toBeGreaterThanOrEqual(44);
     await openButton.focus();
     await page.keyboard.press("Enter");
 
-    const dialog = page.getByRole("dialog", { name: "라이딩 계획 편집" });
-    await expect(dialog).toBeVisible();
-    // A translated ancestor can produce fractional DOMRect heights mid-transition.
-    // Measure settled geometry without relaxing the 44px touch-target contract.
-    await dialog.evaluate(async (element) => {
-      await Promise.all(element.getAnimations().map((animation) => animation.finished));
-    });
-    await expect(dialog.getByLabel("출발", { exact: true })).toBeVisible();
-    await expect(dialog.getByLabel("추가할 종류")).toHaveValue("waypoint");
-    await expect(dialog.getByLabel("추가할 종류")).toBeDisabled();
-    await expect(dialog.getByText("복귀는 자동 계산", { exact: true })).toBeVisible();
-    const plannerCopyFontSizes = await dialog.locator(
-      ".section-label, .planner-form label > span, .selected-place strong, .selected-place small, .place-status, .time-estimate-note strong, .time-estimate-note small, .ordered-waypoint strong, .ordered-waypoint small, .toggle-row strong, .toggle-row small",
+    const editorView = page.locator(".workspace.is-editor-view");
+    const editor = editorView.locator(".planner-panel");
+    await expect(editor).toBeVisible();
+    await expect(editorView.getByRole("heading", { name: viewport.width <= 767 ? "어디로 떠날까요?" : "경로 편집" })).toBeVisible();
+    const plannerCopyFontSizes = await editor.locator(
+      ".section-label, .planner-form label > span, .time-estimate-note strong, .time-estimate-note small, .ordered-waypoint strong, .ordered-waypoint small",
     ).evaluateAll((elements) => elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)));
     expect(plannerCopyFontSizes.every((fontSize) => fontSize >= 14)).toBe(true);
+    await editor.locator(".schedule-trigger").click();
+    const dialog = page.getByRole("dialog", {
+      name: viewport.width <= 767 ? "출발 날짜·시간" : "언제 출발할까요?",
+    });
+    await expect(dialog).toBeVisible();
     const visibleButtons = await dialog.locator("button").evaluateAll((buttons) => buttons
       .map((button) => ({
         name: button.getAttribute("aria-label") ?? button.textContent?.trim(),
@@ -261,20 +343,15 @@ test.describe("planner responsive shell", () => {
     expect(visibleButtons.length).toBeGreaterThan(0);
     expect(visibleButtons.filter((button) => button.height < 44)).toEqual([]);
     const focusable = dialog.locator("input:not(:disabled), button:not(:disabled), [href], [tabindex]:not([tabindex='-1'])");
-    const first = focusable.first();
     const last = focusable.last();
     await last.focus();
     await page.keyboard.press("Tab");
-    await expect(first).toBeFocused();
+    await expect.poll(() => dialog.evaluate((element) => element === document.activeElement || element.contains(document.activeElement))).toBe(true);
     await page.keyboard.press("Shift+Tab");
-    await expect(last).toBeFocused();
+    await expect.poll(() => dialog.evaluate((element) => element === document.activeElement || element.contains(document.activeElement))).toBe(true);
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
-    await expect(openButton).toBeFocused();
-    await expectMapInformationOutsideMap(page);
-    await expectReadableWeatherTimeline(page);
-    await expect(page.getByRole("heading", { level: 1, name: "라이딩 계획 결과" })).toHaveCount(1);
-    await expect(page.getByRole("heading", { name: "시간에 따른 구간 날씨" })).toBeVisible();
+    await expect(editor.locator(".schedule-trigger")).toBeFocused();
 
     const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(hasHorizontalOverflow).toBe(false);
@@ -296,30 +373,43 @@ test.describe("planner responsive shell", () => {
           body: JSON.stringify({ snapshot: rawSharedRideSnapshotWithOmissions(20) }),
         });
       });
+      let saveRequests = 0;
+      await page.route("**/api/shares/save", async (request) => {
+        saveRequests += 1;
+        const body = request.request().postDataJSON() as { title?: unknown; saveOperationId?: unknown };
+        expect(body.title).toBe("공유 경로 복사 테스트");
+        expect(body.saveOperationId).toMatch(/^[0-9a-f-]{36}$/i);
+        await request.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ collectionId: "collection", versionId: "version", versionNumber: 1 }),
+        });
+      });
       await page.goto(`/share#${"a".repeat(43)}`);
 
-      const notice = page.locator(".shared-snapshot > .map-omissions");
+      const notice = page.locator(".shared-snapshot .map-omissions");
       const items = notice.getByRole("listitem");
       await expect(items).toHaveCount(20);
       const layout = await notice.evaluate((element) => {
         const list = element.querySelector("ul")!;
-        const map = element.parentElement!.querySelector(".shared-map")!;
-        const details = element.parentElement!.querySelector(".shared-map-details")!;
+        const snapshot = element.closest(".shared-snapshot")!;
+        const map = snapshot.querySelector(".shared-map")!;
+        const details = snapshot.querySelector(".shared-map-details")!;
         return {
-          parentIsSnapshot: element.parentElement?.classList.contains("shared-snapshot") ?? false,
+          insideSnapshot: snapshot.contains(element),
           detailsOutsideMap: !map.contains(details),
           detailsAfterMap: details.getBoundingClientRect().top >= map.getBoundingClientRect().bottom - 1,
           noticeOutsideMap: !map.contains(element),
           noticeHasNoInternalOverflow: element.scrollHeight <= element.clientHeight,
           listHasNoInternalOverflow: list.scrollHeight <= list.clientHeight,
           horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
-          readableShareCopy: Array.from(element.parentElement!.querySelectorAll<HTMLElement>(
+          readableShareCopy: Array.from(snapshot.querySelectorAll<HTMLElement>(
             ".map-marker-legend li, .map-omissions li, .shared-map-summary span, .shared-routes span, .shared-routes small, .shared-legs li, .shared-weather-list li, .shared-weather-state",
           )).every((item) => Number.parseFloat(getComputedStyle(item).fontSize) >= 14),
         };
       });
       expect(layout).toEqual({
-        parentIsSnapshot: true,
+        insideSnapshot: true,
         detailsOutsideMap: true,
         detailsAfterMap: true,
         noticeOutsideMap: true,
@@ -329,6 +419,20 @@ test.describe("planner responsive shell", () => {
         readableShareCopy: true,
       });
       await expect(items.last()).toBeVisible();
+
+      await page.getByRole("button", { name: "내 경로로 저장" }).click();
+      const saveDialog = page.getByRole("dialog", { name: "내 경로로 저장" });
+      await expect(saveDialog).toBeVisible();
+      await saveDialog.getByLabel("컬렉션 이름").fill("공유 경로 복사 테스트");
+      const dialogLayout = await saveDialog.evaluate((dialog) => ({
+        horizontalOverflow: dialog.scrollWidth > dialog.clientWidth,
+        viewportOverflow: dialog.getBoundingClientRect().right > window.innerWidth + 1,
+        fullHeightOnMobile: window.innerWidth > 560 || Math.abs(dialog.getBoundingClientRect().height - window.innerHeight) <= 1,
+      }));
+      expect(dialogLayout).toEqual({ horizontalOverflow: false, viewportOverflow: false, fullHeightOnMobile: true });
+      await saveDialog.getByRole("button", { name: "저장", exact: true }).click();
+      await expect(saveDialog.getByRole("status")).toContainText("내 라이딩 컬렉션에 저장했습니다");
+      expect(saveRequests).toBe(1);
     });
   }
 

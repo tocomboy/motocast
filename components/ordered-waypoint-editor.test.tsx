@@ -58,37 +58,61 @@ describe("OrderedWaypointEditor", () => {
 
   it("adds typed stops and reorders them in one shared visit sequence", async () => {
     let renderer!: ReactTestRenderer;
-    await act(async () => { renderer = create(<Harness />); });
+    await act(async () => { renderer = create(<Harness />, { createNodeMock: (element) => element.type === "dialog" ? { showModal: vi.fn(), close: vi.fn() } : {} }); });
 
     const add = () => renderer.root.findByProps({ className: "text-button" });
-    const addRole = () => renderer.root.findByProps({ "aria-label": "추가할 종류" });
+    const chooseRole = (label: string) => renderer.root.findAllByType("button").find((button) => button.children.includes(label))!;
+    const applyAdd = () => renderer.root.findAllByType("button").find((button) => button.children.includes("추가하고 장소 선택"))!;
 
-    await act(async () => addRole().props.onChange({ target: { value: "lunch" } }));
     await act(async () => add().props.onClick());
+    await act(async () => chooseRole("점심").props.onClick());
+    await act(async () => applyAdd().props.onClick());
     await act(async () => renderer.root.findByProps({ "data-place-label": "1번째 점심 장소" }).props.onClick());
 
-    await act(async () => addRole().props.onChange({ target: { value: "waypoint" } }));
     await act(async () => add().props.onClick());
+    await act(async () => applyAdd().props.onClick());
     await act(async () => renderer.root.findByProps({ "data-place-label": "2번째 경유지 장소" }).props.onClick());
     await act(async () => renderer.root.findByProps({ "aria-label": "2번째 경유지 위로 이동" }).props.onClick());
     await act(async () => renderer.root.findByProps({ "aria-label": "1번째 경유지 아래로 이동" }).props.onClick());
 
-    await act(async () => addRole().props.onChange({ target: { value: "rest" } }));
     await act(async () => add().props.onClick());
+    await act(async () => chooseRole("휴식").props.onClick());
+    await act(async () => applyAdd().props.onClick());
 
     const list = renderer.root.findByProps({ "aria-label": "경유지 방문 순서" });
-    expect(list.findAllByType("li").map((item) => item.findByType("select").props.value)).toEqual([
-      "lunch", "waypoint", "rest",
+    expect(list.findAll((item) => typeof item.props["data-place-label"] === "string").map((item) => item.props["data-place-label"])).toEqual([
+      "1번째 점심 장소", "2번째 경유지 장소", "3번째 휴식 장소",
     ]);
-    expect(renderer.root.findByProps({ "aria-label": "2번째 경유지 종류" }).props.value).toBe("waypoint");
-    expect(renderer.root.findByProps({ "aria-label": "3번째 경유지 종류" }).props.value).toBe("rest");
-    expect(renderer.root.findByProps({ "aria-label": "3번째 휴식 머무는 시간 · 분" }).props.value).toBe(30);
     expect(renderer.root.findAllByType("output")[0].children.join("")).toContain("휴식");
 
-    await act(async () => renderer.root.findByProps({ "aria-label": "3번째 경유지 종류" }).props.onChange({ target: { value: "lunch" } }));
-    expect(renderer.root.findByProps({ "aria-label": "3번째 경유지 종류" }).props.value).toBe("rest");
+    await act(async () => add().props.onClick());
+    await act(async () => chooseRole("점심").props.onClick());
+    await act(async () => applyAdd().props.onClick());
     expect(renderer.root.findByProps({ "data-error": true }).children.join("")).toContain("점심은 하나만");
 
+    await act(async () => renderer.unmount());
+  });
+
+  it("keeps settings errors visible and applies the new role default dwell", async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(<Harness />, { createNodeMock: (element) => element.type === "dialog" ? { showModal: vi.fn(), close: vi.fn() } : {} }); });
+    const add = () => renderer.root.findByProps({ className: "text-button" });
+    const chooseRole = (label: string) => renderer.root.findAllByType("button").find((button) => button.children.includes(label))!;
+    const applyAdd = () => renderer.root.findAllByType("button").find((button) => button.children.includes("추가하고 장소 선택"))!;
+    await act(async () => add().props.onClick());
+    await act(async () => chooseRole("점심").props.onClick());
+    await act(async () => applyAdd().props.onClick());
+    await act(async () => add().props.onClick());
+    await act(async () => chooseRole("휴식").props.onClick());
+    await act(async () => applyAdd().props.onClick());
+
+    await act(async () => renderer.root.findByProps({ "aria-label": "경유 2 설정" }).props.onClick());
+    await act(async () => renderer.root.findAllByProps({ "aria-pressed": false }).find((button) => button.children.includes("점심"))!.props.onClick());
+    await act(async () => renderer.root.findAllByType("button").find((button) => button.children.includes("설정 적용"))!.props.onClick());
+    expect(renderer.root.findByProps({ role: "alert" }).children.join("")).toContain("점심은 하나만");
+
+    await act(async () => renderer.root.findAllByProps({ "aria-pressed": false }).find((button) => button.children.includes("저녁"))!.props.onClick());
+    expect(renderer.root.findByProps({ className: "dwell-stepper" }).findByType("strong").children).toEqual(["60", "분"]);
     await act(async () => renderer.unmount());
   });
 });

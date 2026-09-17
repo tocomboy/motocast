@@ -164,6 +164,12 @@
   text-underline-offset: 4px;
 }
 
+@media (max-width: 767px) {
+  :global(body:has(.app-navigation)) .error {
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 74px);
+  }
+}
+
 @media (max-width: 360px) {
   .dialog {
     max-height: calc(100dvh - 20px);

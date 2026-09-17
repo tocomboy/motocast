@@ -42,7 +42,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function renderShareManager(disabled = false, currentTripId: string | null = tripId, sessionEpoch = 0, previewRequest = 1) {
+async function renderShareManager(disabled = false, currentTripId: string | null = tripId, sessionEpoch = 0, previewRequest = 1, mode: "publish" | "history" = "publish") {
   let renderer!: ReactTestRenderer;
   const options: TestRendererOptions & { unstable_strictMode: boolean } = {
     createNodeMock: () => ({}),
@@ -50,7 +50,7 @@ async function renderShareManager(disabled = false, currentTripId: string | null
   };
   await act(async () => {
     renderer = create(
-      <StrictMode><ShareManager tripId={currentTripId} sessionEpoch={sessionEpoch} previewRequest={previewRequest} disabled={disabled} /></StrictMode>,
+      <StrictMode><ShareManager mode={mode} tripId={currentTripId} sessionEpoch={sessionEpoch} previewRequest={previewRequest} disabled={disabled} /></StrictMode>,
       options,
     );
   });
@@ -127,6 +127,19 @@ describe("ShareManager collection preview request", () => {
     await act(async () => renderer.unmount());
   });
 
+  it("invalidates the preview and gives recovery guidance when the private course is unavailable", async () => {
+    browserMocks.rpc
+      .mockResolvedValueOnce({ data: [{ preview_snapshot: rawSharedRideSnapshotWithOmissions(0), preview_token: "p".repeat(43) }], error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: "SHARE_COURSE_UNAVAILABLE" } });
+    const renderer = await renderShareManager();
+    const publishButton = renderer.root.findByProps({ className: "primary-button" });
+    await act(async () => publishButton.props.onClick());
+    expect(renderer.root.findByProps({ className: "manager-status" }).children.join(""))
+      .toContain("경로를 다시 계산한 뒤 새 미리보기를 확인");
+    expect(renderer.root.findByProps({ className: "primary-button" }).props.disabled).toBe(true);
+    await act(async () => renderer.unmount());
+  });
+
   it("ignores a late preview response from an invalidated session", async () => {
     let resolveOldPreview!: (value: { data: null; error: { message: string } }) => void;
     browserMocks.rpc.mockReturnValueOnce(new Promise((resolve) => { resolveOldPreview = resolve; }));
@@ -193,6 +206,48 @@ describe("ShareManager collection preview request", () => {
       await Promise.resolve();
     });
     expect(renderer.root.findAllByType("li")).toHaveLength(2);
+    await act(async () => renderer.unmount());
+  });
+});
+
+describe("ShareManager link history status", () => {
+  const link = { id: "10000000-0000-4000-8000-000000000001", created_at: "2030-01-01T00:00:00.000Z", revoked_at: null };
+
+  function mockLinkHistory(error: { message: string } | null = null) {
+    browserMocks.from.mockReturnValue({
+      select() { return this; },
+      order: async () => ({ data: error ? null : [link], error }),
+    });
+  }
+
+  it("shows a successful revoke result without a publishable trip", async () => {
+    mockLinkHistory();
+    browserMocks.rpc.mockResolvedValueOnce({ data: null, error: null });
+    const renderer = await renderShareManager(false, null, 0, 0, "history");
+    const revokeButton = renderer.root.findAllByType("button").find((button) => button.children.join("") === "링크 회수");
+    expect(revokeButton).toBeDefined();
+    await act(async () => revokeButton!.props.onClick());
+    expect(renderer.root.findByProps({ className: "manager-status" }).children.join(""))
+      .toContain("공유 링크를 회수했습니다");
+    await act(async () => renderer.unmount());
+  });
+
+  it("shows a revoke error without replacing it with publish guidance", async () => {
+    mockLinkHistory();
+    browserMocks.rpc.mockResolvedValueOnce({ data: null, error: { message: "expected revoke refusal" } });
+    const renderer = await renderShareManager(false, null, 0, 0, "history");
+    const revokeButton = renderer.root.findAllByType("button").find((button) => button.children.join("") === "링크 회수");
+    await act(async () => revokeButton!.props.onClick());
+    expect(renderer.root.findByProps({ className: "manager-status" }).children.join(""))
+      .toContain("공유 링크를 회수하지 못했습니다");
+    await act(async () => renderer.unmount());
+  });
+
+  it("shows a link history load error without replacing it with publish guidance", async () => {
+    mockLinkHistory({ message: "expected history refusal" });
+    const renderer = await renderShareManager(false, null, 0, 0, "history");
+    expect(renderer.root.findByProps({ className: "manager-status" }).children.join(""))
+      .toContain("공유 발행 기록을 불러오지 못했습니다");
     await act(async () => renderer.unmount());
   });
 });

@@ -135,6 +135,30 @@ function mapCanvas(renderer: ReactTestRenderer) {
 }
 
 describe("KakaoMapCanvas", () => {
+  it("shows an explicit empty state and loads the map after the first place is selected", async () => {
+    vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "test-public-key");
+    stubBrowser();
+    const maps = installMaps();
+    const renderer = await mountMap(undefined, []);
+
+    expect(statusText(renderer)).toContain("장소를 선택하면 지도에 표시해요");
+    expect(renderer.root.findAllByProps({ className: "schematic-map" })).toHaveLength(0);
+    expect(maps.MapConstructor).not.toHaveBeenCalled();
+    expect(maps.loadCallbacks).toHaveLength(0);
+
+    await act(async () => {
+      renderer.update(<StrictMode><KakaoMapCanvas points={[points[0]]} /></StrictMode>);
+    });
+    expect(statusText(renderer)).toContain("카카오 지도를 불러오는 중");
+    await flush(maps.loadCallbacks);
+
+    expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
+    expect(maps.Marker).toHaveBeenCalledTimes(1);
+    expect(statusText(renderer)).toContain("카카오 지도 준비 완료");
+    expect(mapCanvas(renderer).props.className).toContain("is-ready");
+    await act(async () => renderer.unmount());
+  });
+
   it("turns an SDK response without kakao.maps into a visible error without demo geometry", async () => {
     vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "test-public-key");
     const scripts = stubBrowser();
@@ -291,7 +315,9 @@ describe("KakaoMapCanvas", () => {
     expect(notice.findAllByType("li").at(-1)?.findAllByType("span")[1].children.join(""))
       .toContain("와인딩 경유지 20 · 선택 경로 미통과");
     expect(sharedMap.findAllByProps({ "aria-labelledby": "map-omissions-heading" })).toHaveLength(0);
-    expect(notice.parent?.parent).toBe(sharedMap.parent);
+    const notices = renderer.root.findByProps({ className: "riding-summary-notices" });
+    expect(notices.findAllByProps({ "aria-labelledby": "map-omissions-heading" })).toHaveLength(1);
+    expect(notices).not.toBe(sharedMap);
     await act(async () => renderer.unmount());
   });
 

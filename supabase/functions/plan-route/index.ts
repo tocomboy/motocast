@@ -19,6 +19,7 @@ function storagePoint(point: RoutePointRequest) {
     id: point.id,
     label: point.label,
     kakaoPlaceId: point.kakaoPlaceId,
+    verificationToken: point.verificationToken,
     name: point.name,
     address: point.address,
     roadAddress: point.roadAddress,

@@ -19,3 +19,7 @@
 .footer a:hover {
   color: #a83d18;
 }
+
+:global(body:has(.app-shell[data-view="editor"], .app-shell[data-view="summary"], .app-shell[data-view="collections"])) .footer {
+  display: none;
+}

@@ -11,7 +11,8 @@ insert into auth.users (
 )
 values
   ('00000000-0000-0000-0000-000000000000', '71000000-0000-0000-0000-000000000001', 'authenticated', 'authenticated', 'plan-a@motocast.test', '', now(), now(), now(), '{"provider":"kakao","providers":["kakao"]}', '{"name":"플랜 A"}'),
-  ('00000000-0000-0000-0000-000000000000', '72000000-0000-0000-0000-000000000002', 'authenticated', 'authenticated', 'plan-b@motocast.test', '', now(), now(), now(), '{"provider":"kakao","providers":["kakao"]}', '{"name":"플랜 B"}');
+  ('00000000-0000-0000-0000-000000000000', '72000000-0000-0000-0000-000000000002', 'authenticated', 'authenticated', 'plan-b@motocast.test', '', now(), now(), now(), '{"provider":"kakao","providers":["kakao"]}', '{"name":"플랜 B"}'),
+  ('00000000-0000-0000-0000-000000000000', '73000000-0000-0000-0000-000000000003', 'authenticated', 'authenticated', 'plan-c@motocast.test', '', now(), now(), now(), '{"provider":"kakao","providers":["kakao"]}', '{"name":"플랜 C"}');
 
 insert into public.memberships(user_id, role)
 values
@@ -158,6 +159,14 @@ insert into tap_results values
   (has_function_privilege('service_role', 'public.save_collection_version_internal(uuid,uuid,uuid,text,text,jsonb)', 'EXECUTE'), 'trusted Edge role can save verified collection versions'),
   (not has_function_privilege('authenticated', 'public.save_trip_plan(jsonb,jsonb)', 'EXECUTE'), 'browser cannot persist untrusted route JSON directly'),
   (not has_function_privilege('anon', 'public.publish_trip_share(uuid,text)', 'EXECUTE'), 'anon cannot publish shares'),
+  (has_function_privilege('authenticated', 'public.save_shared_collection(text,uuid,text)', 'EXECUTE'), 'authenticated members can copy a verified shared course'),
+  (not has_function_privilege('anon', 'public.save_shared_collection(text,uuid,text)', 'EXECUTE'), 'anon cannot copy a shared course'),
+  (not has_function_privilege('service_role', 'public.save_shared_collection(text,uuid,text)', 'EXECUTE'), 'service role cannot copy a shared course'),
+  (has_function_privilege('authenticated', 'public.get_shared_course(text)', 'EXECUTE'), 'authenticated members can bootstrap a verified shared course'),
+  (not has_function_privilege('anon', 'public.get_shared_course(text)', 'EXECUTE'), 'anon cannot bootstrap a private shared course'),
+  (not has_function_privilege('service_role', 'public.get_shared_course(text)', 'EXECUTE'), 'service role cannot bootstrap a private shared course'),
+  (not has_function_privilege('authenticated', 'public.publish_trip_share_without_collection_course(uuid,text)', 'EXECUTE'), 'browser cannot call the private legacy publisher'),
+  (not has_function_privilege('service_role', 'public.save_trip_plan_without_reusable_course(jsonb,jsonb)', 'EXECUTE'), 'service role cannot bypass reusable course capture'),
   (has_function_privilege('service_role', 'public.stage_route_candidate_internal(uuid,uuid,jsonb,jsonb)', 'EXECUTE'), 'trusted Edge role can stage provider candidates'),
   (has_function_privilege('anon', 'public.resolve_share(text)', 'EXECUTE'), 'anon can resolve only a tokenized public snapshot'),
   (not has_function_privilege('authenticated', 'public.build_trip_share_snapshot(uuid,uuid)', 'EXECUTE'), 'authenticated cannot call the private snapshot builder');
@@ -767,6 +776,10 @@ insert into tap_results values
   ((select char_length(share_token) = 43 from published_result), 'share token contains 32 random base64url bytes'),
   ((select token_hash <> share_token and char_length(token_hash) = 64 from public.share_links cross join published_result), 'database stores only the share token hash'),
   ((select published_snapshot::text not like '%verificationToken%' from published_result), 'public snapshot recursively excludes internal place verification proofs');
+insert into tap_results values
+  ((select reusable_course = (select course from fixture) from public.trips where id = (select id from trip_result)), 'finalized trip retains the exact private verified reusable course'),
+  ((select collection_course = (select course from fixture) from public.share_links where id = (select share_id from published_result)), 'published share atomically retains the exact private verified collection course'),
+  ((select published_snapshot::text not like '%collection_course%' and published_snapshot::text not like '%verificationToken%' from published_result), 'public share projection does not expose the private copy payload');
 
 do $$
 declare reused_rejected boolean := false; version_dml_rejected boolean := false; share_dml_rejected boolean := false;
@@ -854,11 +867,166 @@ select * from public.publish_trip_share(
 grant select on reissued_result to authenticated, anon;
 insert into tap_results values
   ((select reissued.share_token <> original.share_token from reissued_result reissued cross join published_result original), 'reissue creates a different token'),
-  ((select public.resolve_share(share_token) -> 'route' -> 'candidate' ->> 'id' = 'recommended' from reissued_result), 'reissue publishes one representative recommended route');
+  ((select public.resolve_share(share_token) -> 'route' -> 'candidate' ->> 'id' = 'recommended' from reissued_result), 'reissue publishes one representative recommended route'),
+  ((select public.get_shared_course(share_token) = (select course from fixture) from reissued_result), 'active authenticated member receives the exact private course for a new schedule'),
+  ((select not (public.get_shared_course(share_token) ?| array['serviceDate','departureAt','desiredReturnAt','hardReturnAt','ownerId']) from reissued_result), 'private planning bootstrap exposes no source schedule or owner fields');
 
-select set_config('request.jwt.claim.sub', '72000000-0000-0000-0000-000000000002', true);
+create temp table missing_course_preview on commit drop as
+select * from public.preview_trip_share((select id from trip_result));
+grant select on missing_course_preview to authenticated;
+
+reset role;
+update public.trips set reusable_course = null where id = (select id from trip_result);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.publish_trip_share(
+      (select id from trip_result),
+      (select preview_token from missing_course_preview)
+    );
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'SHARE_COURSE_UNAVAILABLE'; end;
+  insert into tap_results values (rejected, 'publishing without a reusable course is rejected');
+end;
+$$;
+
+reset role;
 insert into tap_results values
-  ((select count(*) = 0 from public.riding_collections), 'rider B cannot read rider A collections'),
+  ((select consumed_at is null from public.share_preview_grants
+    where token_hash = encode(extensions.digest((select preview_token from missing_course_preview), 'sha256'), 'hex')), 'missing-course rejection rolls back preview consumption'),
+  ((select count(*) = 2 from public.share_links), 'missing-course rejection rolls back the share insert');
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '72000000-0000-0000-0000-000000000002', true);
+create temp table shared_copy_result on commit drop as
+select * from public.save_shared_collection(
+  (select share_token from reissued_result),
+  '72000000-0000-4000-8000-000000002001',
+  '공유받은 북한강'
+);
+grant select on shared_copy_result to authenticated;
+create temp table shared_copy_retry_result on commit drop as
+select * from public.save_shared_collection(
+  (select share_token from reissued_result),
+  '72000000-0000-4000-8000-000000002001',
+  '공유받은 북한강'
+);
+grant select on shared_copy_retry_result to authenticated;
+insert into tap_results values
+  ((select row(collection_id, version_id, version_number) from shared_copy_result) =
+   (select row(collection_id, version_id, version_number) from shared_copy_retry_result), 'shared copy exact retry returns the same immutable version'),
+  ((select count(*) = 1 from public.collection_versions cv join public.riding_collections c on c.id = cv.collection_id
+    where c.owner_id = '72000000-0000-0000-0000-000000000002' and c.title = '공유받은 북한강'), 'recipient owns exactly one copied collection version'),
+  ((select cv.points -> 0 ->> 'id' = 'winding' and cv.points -> 1 ->> 'stopRole' = 'lunch'
+      and (cv.points -> 1 ->> 'dwellMinutes')::integer = 60
+    from public.collection_versions cv where cv.id = (select version_id from shared_copy_result)), 'shared copy preserves mixed order and dwell without schedule fields'),
+  ((select not (to_jsonb(cv) ?| array['service_date', 'departure_at', 'desired_return_at', 'hard_return_at'])
+    from public.collection_versions cv where cv.id = (select version_id from shared_copy_result)), 'shared copy stores no source schedule fields'),
+  ((select cv.origin = (select course -> 'origin' from fixture)
+      and cv.destination = (select course -> 'destination' from fixture)
+    from public.collection_versions cv where cv.id = (select version_id from shared_copy_result)), 'source trip edits cannot change the immutable shared copy course');
+
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.save_shared_collection(
+      (select share_token from published_result),
+      '72000000-0000-4000-8000-000000002002',
+      '회수된 경로'
+    );
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'SHARE_NOT_FOUND'; end;
+  insert into tap_results values (rejected, 'recipient cannot copy a revoked share token');
+end;
+$$;
+
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.save_shared_collection(
+      (select share_token from reissued_result),
+      '72000000-0000-4000-8000-000000002001',
+      '다른 요청 이름'
+    );
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'COLLECTION_OPERATION_REUSED'; end;
+  insert into tap_results values (rejected, 'shared copy operation id rejects changed payload');
+end;
+$$;
+
+reset role;
+insert into public.share_links(owner_id, token_hash, published_snapshot, collection_course)
+values
+  ('71000000-0000-0000-0000-000000000001', encode(extensions.digest(repeat('c', 43), 'sha256'), 'hex'), '{}'::jsonb, null),
+  ('71000000-0000-0000-0000-000000000001', encode(extensions.digest(repeat('d', 43), 'sha256'), 'hex'), '{}'::jsonb,
+    jsonb_build_object(
+      'origin', pg_temp.test_point('repeat-origin', '같은 장소 출발', 127, 37, 'pass-through', 0, false),
+      'destination', pg_temp.test_point('repeat-destination', '복귀', 127.2, 37.2, 'pass-through', 0, false),
+      'points', jsonb_build_array(
+        pg_temp.test_point('repeat-1', '같은 장소 1', 127.1, 37.1, 'pass-through', 0, true),
+        pg_temp.test_point('repeat-2', '같은 장소 2', 127.1, 37.1, 'pass-through', 0, true)
+      )
+    ));
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '72000000-0000-0000-0000-000000000002', true);
+do $$
+declare rejected boolean := false;
+begin
+  begin
+    perform public.save_shared_collection(repeat('c', 43), '72000000-0000-4000-8000-000000002003', '이전 공유');
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'SHARE_COURSE_UNAVAILABLE'; end;
+  insert into tap_results values (rejected, 'share without a private course returns the legacy-copy guidance error');
+end;
+$$;
+create temp table repeated_copy_result on commit drop as
+select * from public.save_shared_collection(
+  repeat('d', 43), '72000000-0000-4000-8000-000000002004', '반복 장소 경로'
+);
+grant select on repeated_copy_result to authenticated;
+insert into tap_results values (
+  (select jsonb_array_length(points) = 2
+      and points -> 0 ->> 'id' = 'repeat-1'
+      and points -> 1 ->> 'id' = 'repeat-2'
+      and points -> 0 -> 'longitude' = points -> 1 -> 'longitude'
+      and points -> 0 -> 'latitude' = points -> 1 -> 'latitude'
+    from public.collection_versions where id = (select version_id from repeated_copy_result)),
+  'shared copy preserves repeated physical places as distinct ordered occurrences'
+);
+
+select set_config('request.jwt.claim.sub', '73000000-0000-0000-0000-000000000003', true);
+do $$
+declare rejected boolean := false; bootstrap_rejected boolean := false;
+begin
+  begin
+    perform public.save_shared_collection(repeat('d', 43), '73000000-0000-4000-8000-000000003001', '비회원 저장');
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'MEMBERSHIP_REQUIRED'; end;
+  begin perform public.get_shared_course(repeat('d', 43)); exception when sqlstate 'P0001' then bootstrap_rejected := sqlerrm = 'MEMBERSHIP_REQUIRED'; end;
+  insert into tap_results values (rejected, 'authenticated nonmember cannot copy a shared course'), (bootstrap_rejected, 'authenticated nonmember cannot bootstrap a private shared course');
+end;
+$$;
+reset role;
+update public.memberships set revoked_at = now() where user_id = '72000000-0000-0000-0000-000000000002';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '72000000-0000-0000-0000-000000000002', true);
+do $$
+declare rejected boolean := false; bootstrap_rejected boolean := false;
+begin
+  begin
+    perform public.save_shared_collection(repeat('d', 43), '72000000-0000-4000-8000-000000002005', '회수 회원 저장');
+  exception when sqlstate 'P0001' then rejected := sqlerrm = 'MEMBERSHIP_REQUIRED'; end;
+  begin perform public.get_shared_course(repeat('d', 43)); exception when sqlstate 'P0001' then bootstrap_rejected := sqlerrm = 'MEMBERSHIP_REQUIRED'; end;
+  insert into tap_results values (rejected, 'revoked member cannot copy a shared course'), (bootstrap_rejected, 'revoked member cannot bootstrap a private shared course');
+end;
+$$;
+reset role;
+update public.memberships set revoked_at = null where user_id = '72000000-0000-0000-0000-000000000002';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '72000000-0000-0000-0000-000000000002', true);
+
+insert into tap_results values
+  ((select count(*) = 2 from public.riding_collections
+    where owner_id = '72000000-0000-0000-0000-000000000002'), 'rider B reads only the copied collection it owns'),
   ((select count(*) = 0 from public.share_links), 'rider B cannot manage rider A share links');
 
 do $$

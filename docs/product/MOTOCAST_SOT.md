@@ -164,6 +164,16 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Verification: exact preview/publish, missing/stale/exact-expiry weather rejection at preview, weather becoming stale after preview rejection at publish, source-change rejection, capability expiry, single-use, concurrent use, nested-field allowlist, direct-DML denial, revoke and reissue tests; collection-triggered preview waits for route/weather persistence and consumes one request across React Strict Mode effect replay.
 - Confirmed as security implementation of `SHARE-001`: 2026-08-30.
 
+#### SHARE-004 — Save a received share as an owned course
+
+- Status: `CONFIRMED`
+- Decision: A received link opens the existing immutable riding summary. For links issued after this feature, an authenticated active member can explicitly save the shared course as a new owned collection. The server captures the verified origin, destination and ordered point occurrences privately at publication; the public resolver never exposes verification proofs. Copy uses the token to select that immutable course, binds ownership to the current member and uses an operation ID for exact retry. The original owner's later edits do not change the copy. Dates, departure time, route results and weather are excluded from the saved course; applying any saved course requires choosing a new departure date and time.
+- Rationale: A rider can reuse a received course without inheriting another rider's schedule or submitting unverified public snapshot data as a new course.
+- User impact: New links support “내 경로로 저장” and “새 일정으로 출발”. The latter privately retrieves the course after active-member authentication and opens a blank schedule without automatically saving or calculating. Older plans without verified reusable input require recalculation before publication. No compatibility copy is promised for previously issued links.
+- Affected: trusted plan persistence, private share course column, authenticated copy and course-read RPC/APIs, public summary action, collection application. Private reusable input stays in component memory; embedded planning uses memory navigation so application view hashes cannot be mistaken for a replacement share bearer.
+- Verification: active/anonymous/revoked and cross-user ownership, public proof nonexposure, immutable repeated point order/dwell, schedule omission, exact/concurrent retry and changed-payload denial, stale browser-response isolation, same-origin JSON enforcement.
+- Confirmed: 2026-09-17. The user separately authorized backup and deletion of all users' prior shared links, saved courses and riding records, preserving accounts and memberships; execution evidence belongs to the release record.
+
 ### Trip inputs and schedule
 
 #### PLAN-001 — Place identity and validation
@@ -197,6 +207,25 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Compatibility: The current tables and schemaVersion 3 contracts already persist one ordered point array with `kind`, `stopRole`, dwell, and occurrence ID, so no table or stored-data rewrite is required. Migration `20260902123000_ordered_waypoint_limits.sql` replaces only the collection/current-plan validators so the 20-item limit follows role-free `pass-through` meaning instead of a client-controlled legacy bit. Public Edge writers and the browser collection reader canonicalize that compatibility marker to `winding=true`; current product copy and map legends call the role `경유` and never imply provider-derived winding. Existing immutable schemaVersion 1/2 snapshots are not rewritten.
 - Verification: mixed-role add/type-change/dwell/move/remove; duplicate lunch/dinner and 5/20/30 boundaries; incomplete place refusal; exact UI-to-request role order; collection save/apply round trip; route/ETA/map/share occurrence order; mobile and desktop keyboard, focus, label and overflow checks.
 - Confirmed by user interview: 2026-09-02.
+
+#### PLAN-004 — Shared place favorites within each rider account
+
+- Status: `CONFIRMED`
+- Decision: Each rider can keep at most three app-owned favorite places, shared across origin, waypoint and destination selection. “공용” describes those three selection roles, not cross-account access. Registration comes from place search; management supports exact-item deletion and duplicate-safe retries. Slots and serialized owner mutations enforce the maximum under concurrent requests.
+- Rationale: The user requested three common favorites and Kakao Map-like selection while retaining private rider data.
+- User impact: The same favorite list is available on mobile and desktop after login. A full list requires removing an existing place before registering another.
+- Affected: private favorite table, owner-only add/remove RPCs, place picker and management UI. A favorite is a bookmark, not proof that a route is provider-validated; the existing signed-place validation still runs when planning or saving a course.
+- Verification: account isolation, active-member checks, service/direct-DML denial, duplicate/limit/stale-delete behavior, simultaneous additions, and all three place roles.
+- Confirmed: original favorite scope and full Figma-to-app implementation request, 2026-09-17.
+
+#### UI-001 — Mobile and desktop riding workflow
+
+- Status: `CONFIRMED`
+- Decision: Implement the approved Figma home, route editor, riding summary and saved-route collection as separate navigable views, with responsive search, schedule, waypoint, favorite, sharing and saving dialogs. Preserve current route safety, active-member ownership and explicit share approval. Saved courses contain places/order/rest, never the departure date or time.
+- User impact: Home distinguishes a new route from saved routes. The motorcycle remains to the right with space from the edge. Editing follows origin → ordered waypoints → destination → reset. Results show map, weather emoji/text, ride/rest duration and estimated arrival. Choosing a saved course requests a new schedule.
+- Responsive contract: up to 767px uses 20px gutters and one-column flows; 768–1199px uses 32px gutters, 360px editor and two-column saved cards; 1200px and above uses at most 1280px content, 456px editor and three-column saved cards. Result map/weather stacks below 1024px to preserve card readability, as permitted by the approved intermediate-width design. Desktop reference width is 1440px.
+- Verification: complete navigation including back/cancel/error/retry, 320/390/768/1024/1440px clipping and scrolling, minimum 44px touch controls, focus/keyboard behavior, stable occurrence IDs and single-line waypoint number labels. Prototype examples never become fabricated live results.
+- Confirmed: Figma design requests and explicit application implementation request, 2026-09-17.
 
 ### Routes and motorcycle safety
 
@@ -252,7 +281,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Rationale: A point-to-point line can look rideable while crossing roads or terrain that the provider never routed, and identical markers make the actual stop order hard to verify.
 - User impact: Riders see the real road shape without status, legend, or summary cards covering it, and can distinguish every planned role at a glance and through assistive text.
 - Affected: Kakao map canvas, planner/share map-point classification, Kakao type boundary, responsive styles, unit/Playwright/Preview tests.
-- Verification: no pre-route polyline; exact provider path readback; role-specific marker image/title and non-color legend; planner status/legend/summary outside the map with no overlap at 320/390/820/1440 widths; mobile plan-edit control inside the header with no route-summary overlap and a 44px minimum target; one `경로 요약` heading; public/preview share legend and route facts outside the map; bounds over road and marker points; a new calculation replaces the previous route and weather without stale canvas state; SDK/error states; connected Preview at mobile and desktop widths.
+- Verification: no pre-route polyline; exact provider path readback; role-specific marker image/title and non-color legend; planner status/legend/summary outside the map with no overlap at 320/390/820/1440 widths; mobile route-edit control in the summary action area, outside the map and without covering metrics, with a 44px minimum target; one visible riding-result heading (the approved redesign uses `라이딩 결과`); public/preview share legend and route facts outside the map; bounds over road and marker points; a new calculation replaces the previous route and weather without stale canvas state; SDK/error states; connected Preview at mobile and desktop widths.
 - Confirmed by user Goal: 2026-09-01; planner map information hierarchy reconfirmed by user: 2026-09-05.
 
 #### ROUTE-006 — Single rider-authored recommended route

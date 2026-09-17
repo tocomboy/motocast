@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 export type MapMarkerRole = "origin" | "destination" | "lunch" | "dinner" | "rest" | "waypoint";
 export type MapPoint = { label: string; latitude: number; longitude: number; role?: MapMarkerRole; nonTraversed?: boolean };
 type PathPoint = { latitude: number; longitude: number };
+type MapDisplayState = "empty" | "loading" | "ready" | "demo" | "error";
 const KAKAO_MAP_LOAD_TIMEOUT_MS = 10_000;
 const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; color: string }> = {
   origin: { label: "출발", symbol: "출", color: "#18372b" },
@@ -67,18 +68,21 @@ export function KakaoMapCanvas({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appKey = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY;
+  const hasGeometry = points.length > 0 || Boolean(path?.length);
   const geometryKey = JSON.stringify({ points, path: path ?? [] });
   const [mapState, setMapState] = useState<{ status: "loading" | "ready" | "error"; geometryKey: string }>({
     status: "loading",
     geometryKey,
   });
-  const state = appKey
-    ? mapState.geometryKey === geometryKey ? mapState.status : "loading"
-    : "demo";
+  const state: MapDisplayState = !hasGeometry
+    ? "empty"
+    : appKey
+      ? mapState.geometryKey === geometryKey ? mapState.status : "loading"
+      : "demo";
   const isReady = state === "ready";
 
   useEffect(() => {
-    if (!appKey) return;
+    if (!hasGeometry || !appKey) return;
     const geometry = JSON.parse(geometryKey) as { points: MapPoint[]; path: PathPoint[] };
 
     let active = true;
@@ -118,7 +122,7 @@ export function KakaoMapCanvas({
             const groupedMarkers = markerGroups(geometry.points);
             const markerPath = groupedMarkers.map((group) => new loadedMaps.LatLng(group.latitude, group.longitude));
             const routePath = geometry.path.map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
-            const map = new loadedMaps.Map(containerRef.current, { center: markerPath[0], level: 8 });
+            const map = new loadedMaps.Map(containerRef.current, { center: markerPath[0] ?? routePath[0], level: 8 });
             const bounds = new loadedMaps.LatLngBounds();
             routePath.forEach((position) => bounds.extend(position));
             markerPath.forEach((position, index) => {
@@ -199,14 +203,14 @@ export function KakaoMapCanvas({
       if (script && onLoad) script.removeEventListener("load", onLoad);
       if (script && onError) script.removeEventListener("error", onError);
     };
-  }, [appKey, geometryKey]);
+  }, [appKey, geometryKey, hasGeometry]);
 
   return (
     <div className="map-shell" aria-label="선택한 라이딩 경로 지도">
       <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert={!isReady} />
       <MapStatus state={state} actualRoute={Boolean(path?.length)} />
       {isReady && showLegend ? <MapMarkerLegend points={points} /> : null}
-      {!isReady ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
+      {!isReady && state !== "empty" ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
     </div>
   );
 }
@@ -277,10 +281,11 @@ function SchematicRoute({ state, points, actualRoute }: { state: "loading" | "de
   );
 }
 
-function MapStatus({ state, actualRoute }: { state: "loading" | "ready" | "demo" | "error"; actualRoute: boolean }) {
+function MapStatus({ state, actualRoute }: { state: MapDisplayState; actualRoute: boolean }) {
   return (
     <div className={`map-status ${state === "ready" ? "is-visually-hidden" : ""}`} role="status" aria-live="polite">
       <span className={`status-dot ${state}`} />
+      {state === "empty" ? "장소를 선택하면 지도에 표시해요" : null}
       {state === "loading" ? actualRoute ? "실제 경로 지도를 불러오는 중" : "카카오 지도를 불러오는 중" : null}
       {state === "ready" ? actualRoute ? "실제 경로 지도 준비 완료" : "카카오 지도 준비 완료" : null}
       {state === "demo" ? actualRoute ? "카카오 지도 키 미설정 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 키 미설정 · 예시 경로 개요 표시 중" : null}

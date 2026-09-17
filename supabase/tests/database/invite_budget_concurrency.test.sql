@@ -106,7 +106,7 @@ insert into budget_results select result from dblink_get_result('budget_c2') as 
 
 insert into public.trips(
   id, user_id, title, service_date, departure_at, desired_return_at, hard_return_at,
-  origin, destination, lunch_stop, selected_profile
+  origin, destination, lunch_stop, selected_profile, reusable_course
 ) values (
   '74000000-0000-4000-8000-000000000011',
   '74000000-0000-0000-0000-000000000001',
@@ -115,7 +115,12 @@ insert into public.trips(
   '{"id":"origin","label":"출발","longitude":127,"latitude":37}'::jsonb,
   '{"id":"destination","label":"복귀","longitude":127.2,"latitude":37.2}'::jsonb,
   '{"id":"lunch","label":"점심","longitude":127.1,"latitude":37.1}'::jsonb,
-  'balanced'
+  'balanced',
+  jsonb_build_object(
+    'origin', jsonb_build_object('kakaoPlaceId', 'origin', 'verificationToken', repeat('a', 43), 'name', '출발', 'address', '서울 출발', 'roadAddress', null, 'longitude', 127, 'latitude', 37),
+    'destination', jsonb_build_object('kakaoPlaceId', 'destination', 'verificationToken', repeat('b', 43), 'name', '복귀', 'address', '서울 복귀', 'roadAddress', null, 'longitude', 127.2, 'latitude', 37.2),
+    'points', '[]'::jsonb
+  )
 );
 insert into public.route_cache(trip_id, provider, profile, summary, expires_at)
 select

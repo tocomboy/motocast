@@ -70,7 +70,7 @@ try {
   await page.goto(new URL("/", baseUrl).toString());
   process.stdout.write("Kakao 로그인과 Preview 접근을 브라우저에서 완료해 주세요.\n");
   await page.waitForURL((url) => url.origin === baseUrl.origin && url.pathname === "/", { timeout: 5 * 60_000 });
-  await page.getByRole("heading", { name: "라이딩 계획" }).waitFor({ state: "visible", timeout: 30_000 });
+  await page.getByRole("navigation", { name: "주요 화면" }).getByRole("button", { name: "저장한 경로" }).waitFor({ state: "visible", timeout: 30_000 });
   const currentState = await context.storageState();
   const projectBound = currentState.cookies.some((cookie) => cookie.name.includes(previewSupabaseProjectRef)) ||
     currentState.origins.some((origin) => origin.localStorage.some((item) => item.name.includes(previewSupabaseProjectRef)));
