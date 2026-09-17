@@ -103,8 +103,8 @@ async function chooseSchedule(page: Page, departure: { date: string; time: strin
 }
 
 async function startCollectionDeletion(page: Page, collectionId: string) {
-  await page.goto("/");
-  await savedRoutesNavigation(page).click();
+  await page.goto("/#collections");
+  await expect(page.locator(".collections-view")).toBeVisible();
   const item = page.locator(`[data-collection-id="${collectionId}"]`);
   await expect(item).toHaveCount(1, { timeout: 20_000 });
   const management = item.locator(".collection-card-management");
@@ -123,10 +123,12 @@ async function startCollectionDeletion(page: Page, collectionId: string) {
 
 async function startShareRevocation(page: Page, shareId: string) {
   let item = page.locator(`[data-share-id="${shareId}"]`);
-  if (await item.count() === 0) {
-    const summaryDialog = page.getByRole("dialog", { name: "공유 · 저장" });
-    if (await summaryDialog.isVisible().catch(() => false)) await summaryDialog.getByRole("button", { name: "공유 저장 창 닫기" }).click();
-    await savedRoutesNavigation(page).click();
+  const summaryDialog = page.getByRole("dialog", { name: "공유 · 저장" });
+  if (await summaryDialog.isVisible().catch(() => false)) {
+    await expect(item).toHaveCount(1, { timeout: 20_000 });
+  } else if (await item.count() === 0) {
+    await page.goto("/#collections");
+    await expect(page.locator(".collections-view")).toBeVisible();
     item = page.locator(`[data-share-id="${shareId}"]`);
   }
   const outerManagement = page.locator(".collection-share-management");
@@ -237,6 +239,7 @@ test.afterEach(async ({ context }, testInfo) => {
 
 test("calculates, stores, publishes, revokes, and cleans up test-owned resources", async ({ page }) => {
   test.setTimeout(360_000);
+  page.setDefaultTimeout(20_000);
   test.skip(!liveMutationsEnabled || !hasLiveQueries, "Requires explicit live mutation opt-in and five place queries");
   const title = `MOTOCAST E2E ${Date.now()}`;
   const cleanup: LiveCleanupState = {
@@ -582,6 +585,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     cleanup.activeShareId = null;
     cleanup.shareMutationStarted = false;
     await expect(page.getByRole("status").filter({ hasText: "공유 링크를 회수했습니다." })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "공유 · 저장" })).toBeVisible();
 
     await page.getByRole("button", { name: "공유 요약 만들기" }).click();
     const shareRepublishStarted = page.waitForRequest((request) => (

@@ -791,7 +791,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
         <section className="collections-view" id="collections" aria-labelledby="collections-view-title">
           <div className="view-heading"><button className="collections-back" type="button" onClick={() => navigate("home")} aria-label="홈으로">←</button><div><h1 id="collections-view-title" data-view-title="collections" tabIndex={-1}><span className="desktop-collections-title">저장한 경로 모음</span><span className="mobile-collections-title">저장한 경로</span></h1><p className="collections-desktop-intro">경로를 고르면 새로운 출발 날짜와 시간을 설정해요.</p></div></div>
           <CollectionManager currentCourse={currentCourse} onApply={applyCollection} onShare={prepareCollectionShare} disabled={calculating} />
-          <details className="collection-share-management"><summary>공유 링크 관리</summary><ShareManager tripId={null} sessionEpoch={shareManagerEpoch} disabled={calculating} /></details>
+          <details className="collection-share-management"><summary>공유 링크 관리</summary><ShareManager mode="history" tripId={null} sessionEpoch={shareManagerEpoch} disabled={calculating} /></details>
         </section>
       ) : connected && view === "summary" && !liveRoute ? (
         <section className="empty-summary"><h1 data-view-title="summary" tabIndex={-1}>계산된 경로가 없습니다.</h1><p>장소와 새 일정을 선택하고 실제 경로를 계산해 주세요.</p><button className="primary-button" type="button" onClick={() => navigate("editor")}>경로 편집으로</button></section>

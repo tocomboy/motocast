@@ -8,8 +8,9 @@ import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 type ShareLinkRow = { id: string; createdAt: string; revokedAt: string | null };
 type ShareStatus = { epoch: number; message: string };
+type ShareManagerMode = "publish" | "history";
 
-export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, disabled = false }: { tripId: string | null; sessionEpoch?: number; previewRequest?: number; disabled?: boolean }) {
+export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, disabled = false, mode = "publish" }: { tripId: string | null; sessionEpoch?: number; previewRequest?: number; disabled?: boolean; mode?: ShareManagerMode }) {
   const [links, setLinks] = useState<ShareLinkRow[]>([]);
   const [preview, setPreview] = useState<SharedRideSnapshot | null>(null);
   const [previewRaw, setPreviewRaw] = useState<unknown>(null);
@@ -20,7 +21,9 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
   const [issued, setIssued] = useState<{ epoch: number; tripId: string; shareId: string; url: string } | null>(null);
   const [status, setStatus] = useState<ShareStatus>({
     epoch: sessionEpoch,
-    message: "여행 루트와 날씨 요약을 확인한 뒤에만 발행됩니다.",
+    message: mode === "history"
+      ? "발행한 공유 링크를 확인하고 회수할 수 있습니다."
+      : "여행 루트와 날씨 요약을 확인한 뒤에만 발행됩니다.",
   });
   const [busyEpoch, setBusyEpoch] = useState<number | null>(null);
   const handledPreviewRequestRef = useRef(0);
@@ -116,11 +119,15 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
 
   const activePreview = previewEpoch === sessionEpoch && previewTripId === tripId ? preview : null;
   const issuedUrl = issued?.epoch === sessionEpoch && issued.tripId === tripId ? issued.url : null;
-  const visibleStatus = !tripId
-    ? "실제 경로와 유효한 최신 날씨를 준비한 뒤 공유할 수 있습니다."
-    : status.epoch === sessionEpoch
+  const visibleStatus = mode === "history"
+    ? status.epoch === sessionEpoch
       ? status.message
-      : "여행 루트와 날씨 요약을 확인한 뒤에만 발행됩니다.";
+      : "발행한 공유 링크를 확인하고 회수할 수 있습니다."
+    : !tripId
+      ? "실제 경로와 유효한 최신 날씨를 준비한 뒤 공유할 수 있습니다."
+      : status.epoch === sessionEpoch
+        ? status.message
+        : "여행 루트와 날씨 요약을 확인한 뒤에만 발행됩니다.";
 
   async function publish() {
     if (disabled) return;
