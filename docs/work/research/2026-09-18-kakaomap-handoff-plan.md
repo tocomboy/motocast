@@ -3,7 +3,7 @@
 - 결정일: 2026-09-18 (Asia/Seoul).
 - 작업: [Issue #59](https://github.com/tocomboy/motocast/issues/59). 정본: [ROUTE-008](../../product/MOTOCAST_SOT.md#route-008--execute-the-summarized-course-in-kakaomap).
 - 기준: clean develop `af5c19113bd3e0c6dd104a9cb0bdf0abfcc4f888`, package version `0.3.0`. 원격 develop/main fetch 완료. 이 문서는 현재 서비스 동작이 아닌 확정된 다음 개발 계약이다.
-- 이번 승인: Figma 디자인·프로토타입, Git/Issue와 문서 정리. 앱 코드·DB·인증·환경·CI/CD 설정·Preview/Production 배포는 이번 범위에 없다. 문서 준비는 버전 중립이며 구현 릴리스는 `0.4.0` 후보로 별도 확정한다.
+- 최초 승인은 디자인·문서 준비였다. 후속 사용자 승인으로 구현·검증·병합·Preview/Production 배포까지 진행한다. 배포 전 검증을 먼저 수행하며 실제 카카오맵 앱 연결은 사용자가 휴대폰으로 검증한다. 기능 버전은 `0.4.0`이며 DB·인증 정책·환경·CI/CD 설정과 GPS는 변경하지 않는다.
 
 ## 1. 결정과 변경 이력
 
@@ -145,3 +145,15 @@
 - 제품 구현·앱 실행·GPS·실기기·배포: NOT_RUN.
 
 문서 영향 분류: **Update** — 이 계획, 제품 정본 ROUTE-008, README의 다음 개발 안내, Android 요구사항. **Verified unaffected** — 검증/릴리스 규범, DB schema/migrations, 인증/공유·비용/배포 설정, package/lockfile/releases. **Archive/history excluded** — 9월 16~17일 릴리스·Figma 구현 기록의 당시 결과는 덮어쓰지 않는다. 새 계약과 그 구현 상태를 별도로 기록했다. 새 제품 코드나 테스트 파일은 작성하지 않았고 개발 도구 설치는 격리 복사본의 기존 lockfile 패키지 설치와 기존 Playwright/Deno 실행 범위뿐이다.
+
+## 9. 0.4.0 구현·배포 진행
+
+- 사용자 승인: 구현·병합·배포, 배포 전 검증 선행. 실제 휴대폰 카카오맵 연결은 사용자 검증 대기이며 자동 검사로 대체하지 않는다.
+- 구현: 최소 장소 입력/URL 생성, 소유자 최신 결과 결속과 공개 공유 snapshot 어댑터를 분리했다. 공유본 직접 실행은 저장·새 일정·재계산 없이 동작한다. 5개 초과/불명확한 순서는 차단하며 모바일 공식 스토어와 명시적 재시도를 제공한다.
+- UI: 모바일/PC 주요 실행 버튼, 보조 저장·새 일정, 홈 이동, 과거 시간·날씨 안내, 안전·설치·초과·재계산·외부 이동 안내. 취소/Escape/Tab 포커스 순환을 지원한다.
+- 로컬 검증: WSL Node 20.20.0 키 없는 격리 복사본. npm ci, lint, typecheck, Deno 5 entrypoints, build PASS. 단위 74 files / 631 PASS. Chromium 49 PASS / 기존 연결 전용 2 SKIP. 최초 브라우저 9 FAIL은 Tab 포커스 이탈 6건과 업데이트 이력 개수/순번 3건으로 수정 후 전체 재검증했다.
+- 휴대폰 검증: 설치된 앱 열기, 미설치 공식 스토어, 복귀·재실행, 방문 순서, 도로 옵션, Android/iPhone/PWA는 사용자 검증 대기 NOT_RUN. GPS 구현은 별도 Android 범위다.
+- 배포 순서: review branch 정확한 SHA CI와 무배포 확인 → develop fast-forward 및 Preview 검증 → develop-to-main PR/필수 검사 → Production SHA/UI/로그 확인 → 버전 태그와 Release. 각 실제 결과는 PR/Issue/Notion에 기록한다.
+- 복구: Web-only 변경이므로 필요 시 검증된 이전 Web 배포를 대상으로 복구한다. DB migration/함수/사용자 데이터 변경 없음. 이전 0.3.0은 경로 실행 없이 기존 저장·새 일정 기능을 유지한다. 복구 시에도 대상 환경·SHA·사용자 영향과 결과를 별도 검증한다.
+- 문서 분류: Update — README, ROUTE-008, 이 계획, 릴리스 노트. Verified unaffected — DB schema/migrations, 인증 정책, 비용/배포 설정, Android GPS 범위. 과거 준비 검증 기록은 당시 결과로 보존한다.
+- 자체 검수: 정상/오류/5개 경계·동일 방문 반복·구버전 불명확 거부·소유자 계정/입력 세대·공유 교체·한 확인당 1회·토큰 최소 투영을 대조했다. 인증/RLS/DB/경로 계산 정책 변경 없음. 미해결 BLOCKER/HIGH/MEDIUM 0. 독립 리뷰가 아닌 단독 자체 검수다. 화면 이미지에서 보조 버튼 CSS 우선순위 문제를 발견해 수정하고 6개 viewport 색상 회귀 검사를 추가했다. 최종 Chromium 49 PASS / 2 SKIP이며 휴대폰 결과는 포함하지 않는다.

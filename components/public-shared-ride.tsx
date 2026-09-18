@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { SharedRideSnapshotView } from "@/components/shared-ride-snapshot";
 import { PlannerDashboard } from "@/components/planner-dashboard";
+import { KakaoMapHandoff } from "@/components/kakaomap-handoff";
+import { sharedHandoff } from "@/lib/planner/kakaomap-sources";
 import { parseCollectionCourse, type CollectionCourse } from "@/lib/collections/contracts";
 import { parseSharedRideSnapshot, type SharedRideSnapshot } from "@/lib/sharing/contracts";
 
@@ -179,7 +181,10 @@ export function PublicSharedRide() {
       </header>
       {state.status === "found" ? (
         planningCourse ? <section className="shared-planner-embed" aria-label="공유 경로 새 일정"><button className="shared-back-button" type="button" onClick={() => setPlanningCourse(null)}>← 공유 요약으로</button><PlannerDashboard connected initialCourse={planningCourse} initialTitle={state.snapshot.trip.title} navigationMode="memory" onExit={() => setPlanningCourse(null)} /></section> : <>
-          <SharedRideSnapshotView snapshot={state.snapshot} referenceTime={state.referenceTime} backAction={<Link href="/" aria-label="홈으로">←</Link>} actions={<><button className="secondary-button" type="button" disabled={courseState.status === "busy"} onClick={() => void startNewSchedule()}>{courseState.status === "busy" ? "경로 준비 중…" : "새 일정으로 출발"}</button><button className="primary-button" type="button" onClick={openSaveDialog}>내 경로로 저장</button></>} />
+          <SharedRideSnapshotView snapshot={state.snapshot} referenceTime={state.referenceTime} backAction={<Link className="shared-home-link" href="/" aria-label="홈으로">홈으로</Link>} actions={<>
+            <KakaoMapHandoff context="shared" readSource={() => ({ identity: String(resolutionSequenceRef.current), result: sharedHandoff(state.snapshot) })} onPrepare={() => void startNewSchedule()} />
+            <div className="shared-summary-secondary"><button className="secondary-button" type="button" disabled={courseState.status === "busy"} onClick={() => void startNewSchedule()}>{courseState.status === "busy" ? "경로 준비 중…" : "새 일정으로 출발"}</button><button className="secondary-button" type="button" onClick={openSaveDialog}>내 경로로 저장</button></div>
+          </>} />
           <p className="shared-save-scope">장소와 경유 순서만 저장됩니다. 날짜·출발 시각·공유 당시 날씨는 포함되지 않습니다.</p>
           {courseState.status === "error" ? <div className="shared-course-error" role="alert"><span>{courseState.message}</span>{courseState.needsLogin ? <Link href="/" target="_blank" rel="noreferrer">로그인 화면을 새 탭에서 열기</Link> : <button type="button" onClick={() => void startNewSchedule()}>다시 시도</button>}</div> : null}
           <dialog ref={saveDialogRef} className="shared-save-dialog" aria-labelledby="shared-save-dialog-title" onCancel={(event) => { if (saveInFlightRef.current !== null) event.preventDefault(); }}>

@@ -2,8 +2,11 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
 import { CollectionManager } from "@/components/collection-manager";
+import { KakaoMapHandoff } from "@/components/kakaomap-handoff";
+import { ownerHandoff } from "@/lib/planner/kakaomap-sources";
 import { KakaoMapCanvas, MapMarkerLegend } from "@/components/kakao-map-canvas";
 import { OrderedWaypointEditor } from "@/components/ordered-waypoint-editor";
 import { PlaceFavoritesProvider, usePlaceFavorites } from "@/components/place-favorites-provider";
@@ -238,6 +241,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   const rideDateRef = useRef<HTMLButtonElement>(null);
   const noticeSequenceRef = useRef(0);
   const routeGenerationRef = useRef(0);
+  const calculatedGenerationRef = useRef<number | null>(null);
   const liveTripIdRef = useRef<string | null>(null);
   const weatherRequestRef = useRef(0);
   const sharePreviewSerialRef = useRef(0);
@@ -277,6 +281,21 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   }, []);
 
   useEffect(() => { viewRef.current = view; }, [view]);
+
+  useEffect(() => {
+    if (!connected) return;
+    const supabase = getBrowserSupabase();
+    let userId: string | null | undefined;
+    const subscription = supabase?.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      const next = session?.user.id ?? null;
+      if (userId !== undefined && userId !== next) {
+        routeGenerationRef.current += 1;
+        setLiveResultStale(true);
+      }
+      userId = next;
+    }).data.subscription;
+    return () => subscription?.unsubscribe();
+  }, [connected]);
 
   useEffect(() => {
     if (!summaryActionsOpen || view !== "summary") return;
@@ -732,6 +751,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
         return;
       }
       setLiveRoute(candidate);
+      calculatedGenerationRef.current = calculationGeneration;
       setWeather(null);
       setLiveResultStale(false);
       setLiveTripId(savedTripId);
@@ -890,9 +910,12 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
             ]}
             distance={`${selected.distanceKm} km`}
             actions={<>
-              <button className="secondary-button" type="button" onClick={() => navigate("editor")}>경로 수정</button>
+              <KakaoMapHandoff context="owner" readSource={() => ({
+                identity: `${routeGenerationRef.current}:${navigationGenerationRef.current}`,
+                result: ownerHandoff({ course: currentCourse, route: liveRoute, departureAt, stale: liveResultStale || calculatedGenerationRef.current !== routeGenerationRef.current, busy: calculating }),
+              })} onPrepare={() => navigate("editor")} />
               {connected ? <>
-                <button className="primary-button" type="button" onClick={() => openSummaryActions("choice")}>공유 · 저장</button>
+                <button className="secondary-button" type="button" onClick={() => openSummaryActions("choice")}>공유 · 저장</button>
                 <dialog
                   ref={summaryActionsDialogRef}
                   className="summary-actions-dialog"

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CollectionCourse } from "@/lib/collections/contracts";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), rpc: vi.fn(), shareProps: [] as Array<Record<string, unknown>>, summaryDialogShowModal: vi.fn(), noticeFocus: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), rpc: vi.fn(), shareProps: [] as Array<Record<string, unknown>>, summaryDialogShowModal: vi.fn(), noticeFocus: vi.fn(), authListeners: [] as Array<(event: string, session: { user: { id: string } } | null) => void> }));
 
 vi.mock("next/link", () => ({ default: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a> }));
 vi.mock("next/image", () => ({ default: ({ src }: { src: string }) => <span data-image-src={src} /> }));
@@ -27,11 +27,12 @@ vi.mock("@/lib/supabase/browser", () => ({
     functions: { invoke: mocks.invoke },
     rpc: mocks.rpc,
     from: () => ({ select() { return this; }, order: async () => ({ data: [], error: null }) }),
-    auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }) },
+    auth: { onAuthStateChange: (listener: (event: string, session: { user: { id: string } } | null) => void) => { mocks.authListeners.push(listener); return { data: { subscription: { unsubscribe: vi.fn() } } }; } },
   }),
 }));
 
 import { PlannerDashboard } from "./planner-dashboard";
+import { KakaoMapHandoff } from "./kakaomap-handoff";
 
 const place = (id: string, longitude: number) => ({
   kakaoPlaceId: id,
@@ -76,6 +77,7 @@ async function chooseSchedule(renderer: ReactTestRenderer) {
 }
 
 beforeEach(() => {
+  mocks.authListeners.length = 0;
   mocks.invoke.mockReset();
   mocks.rpc.mockReset().mockResolvedValue({ data: tripId, error: null });
   mocks.shareProps.length = 0;
@@ -121,6 +123,22 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PlannerDashboard collection share intent", () => {
+  it("binds owner handoff to the calculated inputs and invalidates it on account change", async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={course} navigationMode="memory" />, { createNodeMock }); });
+    await act(async () => { for (const listener of mocks.authListeners) listener("INITIAL_SESSION", { user: { id: "first" } }); });
+    await chooseSchedule(renderer);
+    await act(async () => renderer.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }));
+    const result = () => renderer.root.findByType(KakaoMapHandoff).props.readSource().result;
+    expect(result().status).toBe("ready");
+    const calls = mocks.invoke.mock.calls.length;
+    await act(async () => { for (const listener of mocks.authListeners) listener("TOKEN_REFRESHED", { user: { id: "first" } }); });
+    expect(result().status).toBe("ready");
+    await act(async () => { for (const listener of mocks.authListeners) listener("SIGNED_IN", { user: { id: "second" } }); });
+    expect(result()).toEqual({ status: "blocked", reason: "stale" });
+    expect(mocks.invoke).toHaveBeenCalledTimes(calls);
+    await act(async () => renderer.unmount());
+  });
   it("keeps share preparation across the mandatory new schedule and opens exactly one fresh preview", async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => {

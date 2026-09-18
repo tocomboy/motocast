@@ -321,6 +321,8 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Confirmed by user: 2026-09-18, install KakaoMap when absent; replace redundant summary editing with `경로 실행`; connect future native GPS before external handoff. The subsequent instruction authorizes Figma, Git and documentation preparation first, not application implementation or deployment.
 - Superseding user decision, 2026-09-18: Shared summaries also execute directly; this replaces the previous requirement to prepare the recipient's own plan first. Owner recalculation remains unchanged. Update the existing preparation PR #67, Figma, documents, Issues and Notion only; no application implementation, merge or deployment.
 
+- Subsequent implementation authorization, 2026-09-18: Implement and verify before merging/deploying v0.4.0. The user will validate actual KakaoMap app handoff on their phone; record it as pending, never infer device success from automated tests. GPS remains separate.
+
 ### Weather
 
 #### WEATHER-001 — Forecast selection and role

@@ -103,7 +103,7 @@ test.describe("Galaxy S23+ CSS viewport emulation", () => {
       const box = button.getBoundingClientRect();
       return box.height >= 44 && box.left >= 0 && box.right <= window.innerWidth;
     }))).toBe(true);
-    await summaryActions.getByRole("button", { name: "경로 수정", exact: true }).click();
+    await summary.getByRole("button", { name: "경로 편집으로", exact: true }).click();
     const homeButton = page.getByRole("button", { name: "홈으로" });
     await expect(homeButton).toBeVisible();
     await homeButton.click();
