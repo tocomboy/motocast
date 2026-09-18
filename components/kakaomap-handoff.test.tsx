@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { KakaoMapHandoff } from "./kakaomap-handoff";
 import type { HandoffResult } from "../lib/planner/kakaomap-handoff";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 async function setup(ua = "Windows") {
   const open = vi.fn();
@@ -15,7 +15,8 @@ async function setup(ua = "Windows") {
     { label: "출발", latitude: 37, longitude: 127 }, { label: "도착", latitude: 37.1, longitude: 127.1 },
   ] } };
   vi.stubGlobal("navigator", { userAgent: ua, maxTouchPoints: 0 });
-  vi.stubGlobal("window", { open, location: { assign } });
+  vi.stubGlobal("window", { open, location: { assign }, addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  vi.stubGlobal("document", { visibilityState: "visible", addEventListener: vi.fn(), removeEventListener: vi.fn() });
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(<KakaoMapHandoff context="shared" readSource={() => source} onPrepare={onPrepare} />, {
     createNodeMock: (node) => node.type === "dialog" ? modal : { focus },
@@ -56,28 +57,28 @@ describe("KakaoMap confirmation lifecycle", () => {
     expect(s.onPrepare).toHaveBeenCalledTimes(1);
     await act(async () => s.renderer.unmount());
   });
-  it.each(["Android", "iPhone"])("keeps %s installation explicit and retries through confirmation", async (ua) => {
+  it.each(["Android", "iPhone"])("launches %s directly without an installation panel", async (ua) => {
+    vi.useFakeTimers();
     const s = await setup(ua);
     await s.click("경로 실행");
-    await s.click("카카오맵 설치 안내");
+    expect(JSON.stringify(s.renderer.toJSON())).not.toContain("카카오맵 설치 안내");
+    await s.click("확인하고 카카오맵 열기");
+    expect(s.assign).toHaveBeenCalledTimes(1);
+    expect(s.assign.mock.calls[0][0]).toMatch(ua === "Android" ? /^intent:\/\/route/ : /^kakaomap:\/\/route/);
     const link = s.renderer.root.findByType("a");
     expect(link.props.href).toMatch(ua === "Android" ? /^https:\/\/play.google.com\// : /^https:\/\/apps.apple.com\//);
-    expect(s.assign).not.toHaveBeenCalled();
-    await s.click("다시 실행");
-    expect(s.assign).not.toHaveBeenCalled();
-    await s.click("확인하고 카카오맵 열기");
-    expect(s.assign).toHaveBeenCalledExactlyOnceWith("kakaomap://route?sp=37,127&ep=37.1,127.1&by=car");
-    expect(s.open).not.toHaveBeenCalled();
     await s.click("요약으로 돌아가기");
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(s.assign).toHaveBeenCalledTimes(1);
     expect(s.focus).toHaveBeenCalled();
     await act(async () => s.renderer.unmount());
   });
-  it("exposes installation recovery when a mobile scheme throws", async () => {
+  it("keeps recovery reachable when the browser rejects both launch and store", async () => {
     const s = await setup("Android");
     s.assign.mockImplementation(() => { throw Error("Unsupported scheme"); });
     await s.click("경로 실행");
     await s.click("확인하고 카카오맵 열기");
-    expect(s.renderer.root.findByType("h2").children).toEqual(["카카오맵 앱이 필요합니다"]);
+    expect(s.renderer.root.findByType("a").props.href).toContain("play.google.com");
     expect(s.open).not.toHaveBeenCalled();
     await act(async () => s.renderer.unmount());
   });

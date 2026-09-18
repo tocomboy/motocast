@@ -27,7 +27,7 @@ test.describe("public update notes", () => {
     const dialog = page.getByRole("dialog", { name: "새로운 소식을 확인해 보세요" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`현재 v${currentVersion}`)).toBeVisible();
-    await expect(dialog.getByText("공유받은 경로는 저장하거나 새 일정을 만들지 않고 바로 실행해요.")).toBeVisible();
+    await expect(dialog.getByText("경유지 최대 5개와 자동차전용도로 제외 안내를 강조했어요.")).toBeVisible();
     const layout = await dialog.evaluate((element) => ({
       dialogHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
       documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
@@ -84,21 +84,12 @@ test.describe("public update notes", () => {
     await expect(page.getByRole("heading", { level: 1, name: "업데이트 소식" })).toBeVisible();
 
     const releases = page.getByRole("article");
-    await expect(releases).toHaveCount(7);
-    await expect(releases.nth(0)).toContainText(`v${currentVersion}`);
-    await expect(releases.nth(0).getByText("현재 버전", { exact: true })).toBeVisible();
-    await expect(releases.nth(1)).toContainText("v0.3.0");
-    await expect(releases.nth(1).getByText("현재 버전", { exact: true })).toHaveCount(0);
-    await expect(releases.nth(2)).toContainText("v0.2.3");
-    await expect(releases.nth(2).getByText("현재 버전", { exact: true })).toHaveCount(0);
-    await expect(releases.nth(3)).toContainText("v0.2.2");
-    await expect(releases.nth(3).getByText("현재 버전", { exact: true })).toHaveCount(0);
-    await expect(releases.nth(4)).toContainText("v0.2.1");
-    await expect(releases.nth(4).getByText("현재 버전", { exact: true })).toHaveCount(0);
-    await expect(releases.nth(5)).toContainText("v0.2.0");
-    await expect(releases.nth(5).getByText("현재 버전", { exact: true })).toHaveCount(0);
-    await expect(releases.nth(6)).toContainText("v0.1.0");
-    await expect(releases.nth(6).getByText("현재 버전", { exact: true })).toHaveCount(0);
+    const expectedVersions = [currentVersion, "0.4.0", "0.3.0", "0.2.3", "0.2.2", "0.2.1", "0.2.0", "0.1.0"];
+    await expect(releases).toHaveCount(expectedVersions.length);
+    for (const [index, version] of expectedVersions.entries()) {
+      await expect(releases.nth(index)).toContainText(`v${version}`);
+      await expect(releases.nth(index).getByText("현재 버전", { exact: true })).toHaveCount(index === 0 ? 1 : 0);
+    }
 
     const backLink = page.getByRole("link", { name: "플래너로 돌아가기" });
     await backLink.focus();
@@ -143,7 +134,7 @@ test.describe("public update notes", () => {
       await page.evaluate(() => document.fonts.ready);
 
       await expect(page.getByRole("heading", { level: 1, name: "업데이트 소식" })).toBeVisible();
-      await expect(page.getByRole("article")).toHaveCount(7);
+      await expect(page.getByRole("article")).toHaveCount(8);
       await expect(page.getByText("새 공유 링크를 내 경로로 저장하고, 새 날짜와 출발 시각을 정해 다시 달려요.")).toBeVisible();
       await expect(page.getByText("카카오 전체 소요시간을 기준으로 경유지 도착 시각을 계산해요.")).toBeVisible();
       await expect(page.getByText("일부 경로 계획 오류는 원인을 확인 중이에요.")).toBeVisible();
