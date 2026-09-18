@@ -45,7 +45,8 @@ for (const viewport of [{ width: 320, height: 800 }, { width: 384, height: 824 }
     await run.click();
     const dialog = page.getByRole("dialog", { name: "카카오맵에서 경로 옵션을 확인해 주세요" });
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText("공유 당시 시간·날씨는 현재 주행 기준이 아닙니다");
+    await expect(dialog.locator("strong")).toHaveText(["경유지 최대 5개", "자동차전용도로 제외"]);
+    await expect(dialog.getByRole("button")).toHaveCount(2);
     const bounds = await dialog.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.y).toBeGreaterThanOrEqual(0);
@@ -117,14 +118,16 @@ test("a replacement share token discards a pending confirmation", async ({ page 
   await expect(page.getByRole("dialog", { name: "카카오맵에서 경로 옵션을 확인해 주세요" })).toBeVisible();
 });
 
-test("mobile installation links return to explicit confirmation without a web substitute", async ({ page }) => {
+test("mobile launch offers store recovery only after attempting the app", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, "userAgent", { value: "Mozilla Android Mobile" }));
   await page.setViewportSize({ width: 390, height: 844 });
   const requests = await openShared(page);
   await page.getByRole("button", { name: "경로 실행", exact: true }).click();
-  await page.getByRole("button", { name: "카카오맵 설치 안내" }).click();
-  const dialog = page.getByRole("dialog", { name: "카카오맵 앱이 필요합니다" });
-  await expect(dialog.getByRole("link", { name: "카카오맵 설치 · Android" })).toHaveAttribute("href", "https://play.google.com/store/apps/details?id=net.daum.android.map");
+  await expect(page.getByRole("button", { name: "카카오맵 설치 안내" })).toHaveCount(0);
+  await expect(page.getByRole("dialog").getByRole("link")).toHaveCount(0);
+  await page.getByRole("button", { name: "확인하고 카카오맵 열기" }).click();
+  const dialog = page.getByRole("dialog", { name: "카카오맵에서 경로를 확인해 주세요" });
+  await expect(dialog.getByRole("link", { name: "Google Play에서 카카오맵 설치" })).toHaveAttribute("href", "https://play.google.com/store/apps/details?id=net.daum.android.map");
   await expect(dialog).toContainText("공유 링크를 다시 열어 주세요");
   await page.getByRole("button", { name: "다시 실행", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "카카오맵에서 경로 옵션을 확인해 주세요" })).toBeVisible();

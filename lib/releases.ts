@@ -12,6 +12,17 @@ export const currentVersion = packageMetadata.version;
 
 export const releaseNotes = [
   {
+    version: "0.4.1",
+    date: "2026-09-18",
+    title: "카카오맵 실행 안내 개선",
+    summary: "실행 안내를 간결하게 정리하고 앱 설치로 이어지는 흐름을 개선했습니다.",
+    bullets: [
+      "경유지 최대 5개와 자동차전용도로 제외 안내를 강조했어요.",
+      "별도 설치 안내 화면 없이 앱 실행을 먼저 시도해요.",
+      "앱이 열리지 않으면 공식 스토어로 연결하며, 설치 후 돌아와 다시 실행할 수 있어요.",
+    ],
+  },
+  {
     version: "0.4.0",
     date: "2026-09-18",
     title: "카카오맵에서 경로 실행",

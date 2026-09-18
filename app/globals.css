@@ -4850,7 +4850,7 @@ body:has(dialog[open]) {
 }
 .kakaomap-dialog::backdrop { background: rgb(24 34 29 / 38%); }
 .kakaomap-dialog[open] { display: grid; gap: 12px; }
-.kakaomap-dialog h2 { font-size: 22px; line-height: 1.5; margin: 0; }
+.kakaomap-dialog h2 { font-size: 22px; line-height: 1.5; margin: 0; word-break: keep-all; }
 .kakaomap-dialog p { line-height: 1.6; margin: 0 0 8px; overflow-wrap: anywhere; }
 .kakaomap-dialog > button,
 .kakaomap-dialog > a {
