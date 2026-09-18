@@ -618,7 +618,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("dialog", { name: "공유 · 저장" }).getByRole("button", { name: "공유 저장 창 닫기" }).click();
-    await page.getByRole("button", { name: "경로 수정" }).last().click();
+    await page.getByRole("button", { name: "경로 편집으로", exact: true }).click();
     const plannerPanel = page.locator(".planner-panel");
     await expect(plannerPanel).toBeVisible();
     const addRest = plannerPanel.getByRole("button", { name: /^\+ 경유지 추가/ });

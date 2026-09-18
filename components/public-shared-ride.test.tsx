@@ -199,7 +199,7 @@ describe("PublicSharedRide fragment handling", () => {
     expect(renderer.root.findByType("input").props.disabled).toBe(true);
     expect(renderer.root.findByProps({ "aria-label": "저장 창 닫기" }).props.disabled).toBe(true);
     const preventDefault = vi.fn();
-    renderer.root.findByType("dialog").props.onCancel({ preventDefault });
+    renderer.root.findByProps({ className: "shared-save-dialog" }).props.onCancel({ preventDefault });
     expect(preventDefault).toHaveBeenCalledTimes(1);
 
     await act(async () => finishSave({ ok: false, status: 503, json: async () => ({}) } as Response));

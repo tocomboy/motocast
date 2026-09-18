@@ -113,3 +113,27 @@ export function rawSharedRideSnapshotWithOmissions(omissionCount = 20) {
 export function sharedRideSnapshotWithOmissions(omissionCount = 20): SharedRideSnapshot {
   return parseSharedRideSnapshot(rawSharedRideSnapshotWithOmissions(omissionCount));
 }
+
+export function orderedSharedRideSnapshot(count: number): SharedRideSnapshot {
+  const start = "2020-01-01T00:00:00.000Z";
+  const points = Array.from({ length: count }, (_, index) => ({
+    ...origin, id: `visit-${index}`, label: `공개 방문 ${index + 1}`, position: index,
+    longitude: 127.1 + index * 0.01, latitude: 37.1 + index * 0.01, winding: true,
+  }));
+  const visits = [origin, ...points, destination];
+  const time = (i: number) => new Date(Date.parse(start) + i * 3_600_000).toISOString();
+  const legs = visits.slice(1).map((to, index) => {
+    const from = visits[index];
+    return { from, to, via: [], departureAt: time(index), arrivalAt: time(index + 1), dwellMinutes: 0,
+      distanceMeters: 10_000, durationSeconds: 3_600, forecastTraffic: false,
+      sections: [{ distance: 10_000, duration: 3_600, roads: [{ name: "공개 도로", distance: 10_000, duration: 3_600, vertexes: [from.longitude, from.latitude, to.longitude, to.latitude] }] }],
+    };
+  });
+  return parseSharedRideSnapshot({ schemaVersion: 3,
+    trip: { title: "공유 장소 직접 실행 검증", serviceDate: "2020-01-01", departureAt: start, origin, destination, lunchStop: null, dinnerStop: null },
+    waypoints: points, weather: null,
+    route: { candidate: { id: "recommended", label: "추천 경로", estimatedWinding: false },
+      safety: { vehicle: "motorcycle", motorwayExcluded: true, fallbackUsed: false },
+      totalDistanceMeters: legs.length * 10_000, totalDurationSeconds: legs.length * 3_600, returnAt: time(legs.length), legs },
+  });
+}

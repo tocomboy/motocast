@@ -286,7 +286,7 @@ test.describe("planner responsive shell", () => {
     await expect(page.getByRole("heading", { name: "라이딩 결과" })).toBeVisible();
     await expectMapInformationOutsideMap(page);
     await expectReadableWeatherTimeline(page);
-    await expect(page.getByRole("button", { name: "경로 수정" }).last()).toBeVisible();
+    await expect(page.getByRole("button", { name: "경로 실행" }).last()).toBeVisible();
     await expect(page.locator("body")).not.toContainText("희망 복귀");
     await expect(page.locator("body")).not.toContainText("최종 복귀");
 
@@ -303,7 +303,7 @@ test.describe("planner responsive shell", () => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto("/");
 
-    const openButton = page.getByRole("button", { name: "경로 수정" }).first();
+    const openButton = page.getByRole("button", { name: "경로 편집으로" }).first();
     await expect(openButton).toBeVisible();
     const closedLayout = await openButton.evaluate((button) => {
       const summary = document.querySelector(".riding-summary-layout")!;
@@ -314,7 +314,7 @@ test.describe("planner responsive shell", () => {
         buttonHeight: buttonBox.height,
       };
     });
-    expect(closedLayout).toMatchObject({ buttonInsideSummaryActions: true, buttonInsideSummary: true });
+    expect(closedLayout).toMatchObject({ buttonInsideSummaryActions: false, buttonInsideSummary: true });
     expect(closedLayout.buttonHeight).toBeGreaterThanOrEqual(44);
     await openButton.focus();
     await page.keyboard.press("Enter");
