@@ -18,7 +18,7 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
   const [previewEpoch, setPreviewEpoch] = useState(-1);
   const [previewToken, setPreviewToken] = useState<string | null>(null);
   const [previewReferenceTime, setPreviewReferenceTime] = useState<string>(new Date(0).toISOString());
-  const [issued, setIssued] = useState<{ epoch: number; tripId: string; shareId: string; url: string } | null>(null);
+  const [issued, setIssued] = useState<{ epoch: number; tripId: string; shareId: string; url: string; revoked: boolean } | null>(null);
   const [status, setStatus] = useState<ShareStatus>({
     epoch: sessionEpoch,
     message: mode === "history"
@@ -118,7 +118,8 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
   }, [previewRequest, tripId, disabled, busy, createPreview]);
 
   const activePreview = previewEpoch === sessionEpoch && previewTripId === tripId ? preview : null;
-  const issuedUrl = issued?.epoch === sessionEpoch && issued.tripId === tripId ? issued.url : null;
+  const activeIssued = issued?.epoch === sessionEpoch && issued.tripId === tripId ? issued : null;
+  const issuedUrl = activeIssued && !activeIssued.revoked ? activeIssued.url : null;
   const visibleStatus = mode === "history"
     ? status.epoch === sessionEpoch
       ? status.message
@@ -170,7 +171,7 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
     }
     setBusyEpoch(null);
     setPreviewToken(null);
-    setIssued({ epoch: operationEpoch, tripId, shareId, url: `${window.location.origin}/share#${token}` });
+    setIssued({ epoch: operationEpoch, tripId, shareId, url: `${window.location.origin}/share#${token}`, revoked: false });
     setStatus({ epoch: operationEpoch, message: "불변 공유 링크를 발행했습니다. 원본을 수정해도 이 링크의 내용은 바뀌지 않습니다." });
     await loadLinks();
   }
@@ -191,7 +192,7 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
       setStatus({ epoch: operationEpoch, message: "공유 링크를 회수하지 못했습니다. 이미 회수됐거나 권한이 없습니다." });
       return;
     }
-    if (issued?.shareId === link.id) setIssued(null);
+    setIssued((current) => current?.shareId === link.id ? { ...current, revoked: true, url: "" } : current);
     setStatus({ epoch: operationEpoch, message: "공유 링크를 회수했습니다. 다시 공유하려면 새 미리보기와 새 링크를 발행하세요." });
     await loadLinks();
   }
@@ -217,7 +218,14 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
 
       {activePreview ? (
         <div className="share-preview">
-          <div className="share-preview-warning"><strong>아직 공개되지 않았습니다.</strong><span>여행 루트와 구간별 날씨를 확인하세요.</span></div>
+          <div className="share-preview-warning">
+            <strong>{activeIssued ? activeIssued.revoked ? "공유 링크를 회수했습니다." : "공유 링크를 발행했습니다." : "아직 공개되지 않았습니다."}</strong>
+            <span>{activeIssued
+              ? activeIssued.revoked
+                ? "이 링크로는 더 이상 볼 수 없습니다. 다시 공유하려면 새 요약을 만들어 주세요."
+                : "발행한 링크로 이 요약을 볼 수 있습니다. 원본을 수정해도 공유한 내용은 바뀌지 않습니다."
+              : "여행 루트와 구간별 날씨를 확인하세요."}</span>
+          </div>
           <SharedRideSnapshotView snapshot={activePreview} referenceTime={previewReferenceTime} preview />
           <button className="primary-button" type="button" disabled={disabled || busy || !previewToken} onClick={() => void publish()}>확인한 요약으로 링크 발행</button>
         </div>

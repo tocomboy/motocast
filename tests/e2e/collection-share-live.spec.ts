@@ -578,6 +578,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     cleanup.activeShareId = publishedShareId;
     const issuedInput = page.getByLabel(/발행한 공유 링크/);
     await expect(issuedInput).toBeVisible();
+    await expect(page.locator(".share-preview-warning strong")).toHaveText("공유 링크를 발행했습니다.");
     const issuedUrl = await issuedInput.inputValue();
     expect(/^https:\/\/[^/]+\/share#[A-Za-z0-9_-]{43}$/.test(issuedUrl)).toBe(true);
 
@@ -585,9 +586,12 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     cleanup.activeShareId = null;
     cleanup.shareMutationStarted = false;
     await expect(page.getByRole("status").filter({ hasText: "공유 링크를 회수했습니다." })).toBeVisible();
+    await expect(page.locator(".share-preview-warning strong")).toHaveText("공유 링크를 회수했습니다.");
+    await expect(issuedInput).not.toBeVisible();
     await expect(page.getByRole("dialog", { name: "공유 · 저장" })).toBeVisible();
 
     await page.getByRole("button", { name: "공유 요약 만들기" }).click();
+    await expect(page.locator(".share-preview-warning strong")).toHaveText("아직 공개되지 않았습니다.");
     const shareRepublishStarted = page.waitForRequest((request) => (
       request.url().includes("/rest/v1/rpc/publish_trip_share") && request.method() === "POST"
     ), { timeout: 30_000 });

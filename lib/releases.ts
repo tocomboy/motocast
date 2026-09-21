@@ -12,6 +12,17 @@ export const currentVersion = packageMetadata.version;
 
 export const releaseNotes = [
   {
+    version: "0.4.2",
+    date: "2026-09-21",
+    title: "공유 링크 상태 안내 개선",
+    summary: "공유 요약에서 링크의 발행·회수 상태를 정확하게 안내합니다.",
+    bullets: [
+      "링크를 발행하면 공유 완료 안내로 바뀌어요.",
+      "링크를 회수하면 회수 안내를 표시하고 발행한 링크를 숨겨요.",
+      "발행이나 회수에 실패하면 마지막으로 확인한 상태를 유지해요.",
+    ],
+  },
+  {
     version: "0.4.1",
     date: "2026-09-18",
     title: "카카오맵 실행 안내 개선",

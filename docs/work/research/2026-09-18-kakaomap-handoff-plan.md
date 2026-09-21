@@ -1,5 +1,7 @@
 # 카카오맵 경로 실행 — 디자인과 구현 계획
 
+현재 우선순위(2026-09-18 사용자 결정): 남은 외부 앱·스토어·PC 실기기 검증은 별도 선행 작업으로 진행하지 않고 실제 버그 발생 시 대응한다. 미실행 결과는 `NOT_RUN`으로 보존한다. 다음 개발 순서는 공유 상태 문구 #66 → Android API 기반 #30이며, [결정·검증 기록](2026-09-18-share-publication-status.md#사용자-결정과-작업-순서)을 따른다. 아래 준비·배포 당시의 검증 대기 기록은 역사로 유지한다.
+
 - 결정일: 2026-09-18 (Asia/Seoul).
 - 작업: [Issue #59](https://github.com/tocomboy/motocast/issues/59). 정본: [ROUTE-008](../../product/MOTOCAST_SOT.md#route-008--execute-the-summarized-course-in-kakaomap).
 - 최초 준비 기준(역사): clean develop `af5c19113bd3e0c6dd104a9cb0bdf0abfcc4f888`, package version `0.3.0`. 원격 develop/main fetch 완료. 0.4.0은 배포 완료했으며 현재 변경과 검증 범위는 문서 말미의 0.4.1 절을 따른다.
