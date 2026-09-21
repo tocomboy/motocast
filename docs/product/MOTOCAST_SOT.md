@@ -149,7 +149,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Status: `CONFIRMED`
 - Decision: Share tokens use at least 32 random bytes; store only SHA-256 hashes. Public links carry the bearer in a URL fragment, copy it only to component-local memory, and synchronously remove the fragment before resolver access or third-party map code can run; fragment-removal failure stops resolution. The public resolver returns the published snapshot only and never exposes owner source tables, management metadata, or internal place-verification proofs. All user-facing ride, place, schedule, route, and weather information remains in the full preview without automatic redaction.
 - Rationale: A database leak must not produce usable public links.
-- User impact: A lost link cannot be recovered; it can only be revoked and reissued.
+- User impact: A lost link cannot be recovered; it can only be revoked and reissued. The owner's list shows only currently active shares; revoked entries are hidden without deleting their immutable records. A successful revoke may still display its completion notice. Active-only list visibility was confirmed by the user on 2026-09-21 and also applies to the planned Android client.
 - Affected: share RPC/endpoint, schema, logging, tests.
 - Verification: no-plaintext search, synchronous fragment removal before one Strict Mode resolver request, removal-failure denial, resolver contract test, revoked/unknown token denial, access-log redaction.
 - Confirmed: 2026-08-30.

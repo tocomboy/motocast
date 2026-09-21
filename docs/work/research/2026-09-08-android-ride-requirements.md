@@ -9,6 +9,10 @@
 
 ## 1. 범위와 우선순위
 
+2026-09-18 착수 순서: 공유 상태 문구 [#66](https://github.com/tocomboy/motocast/issues/66)를 수정·검증한 뒤 [#30](https://github.com/tocomboy/motocast/issues/30)의 기존 API·Android 로그인 계약 정리부터 시작한다. 카카오맵 잔여 실기기 검증은 선행조건으로 두지 않고 버그 발생 시 대응한다. [사용자 결정과 #66 검증](2026-09-18-share-publication-status.md#사용자-결정과-작업-순서)을 참조한다.
+
+현재 API 조사, 웹 쿠키 로그인과 native 세션의 차이, 구현 단계와 검증 한계는 [Android API 계약 준비](2026-09-18-android-api-contract-preparation.md)에 정리했다. 이 문서는 앱 구현이나 #30 완료를 뜻하지 않는다.
+
 핵심 범위는 Android 앱의 주행 중 위치 기반 날씨 안내와 음식점 추천이다. Android 앱은 Kotlin + Jetpack Compose로 개발한다. iOS는 초기 개발 범위에 포함하지 않는다.
 
 백엔드는 현재 TypeScript/Supabase를 유지하고 앱과 명확한 API 계약으로 분리한다. 앱은 GPS·화면·주행 상태·기기 알림을, 백엔드는 인증·권한·경로·추천·날씨·저장·호출 예산을 담당한다. API 요청/응답·오류·버전 호환을 문서화하고 서버용 비밀키를 앱에 포함하지 않는다. 기존 DB 접근 보호 규칙과 좁은 서버 쓰기 경계를 유지한다.

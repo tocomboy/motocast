@@ -40,7 +40,9 @@
 
 공유받은 요약에서도 `경로 실행`을 주요 버튼으로 제공하며 저장·새 일정 생성 없이 장소와 방문 순서를 전달합니다. 공유 당시 시간·날씨는 현재 주행 기준이 아님을 안내합니다. `새 일정으로 출발`은 내 날짜·시간으로 경로·날씨를 다시 계산하고, `내 경로로 저장`은 나중을 위해 컬렉션에 저장하는 보조 동작입니다. 상단은 `홈으로`로 구분합니다. 공유 경유지가 5개를 넘으면 실행을 막고 새 일정에서 사용자가 직접 줄여 재계산하도록 안내합니다. 소유자 요약의 수정 후 재계산 조건은 그대로 유지합니다.
 
-**0.4.1 후보**는 Figma 댓글을 반영해 안전 안내를 두 항목으로 줄이고 별도 설치 화면을 제거합니다. Android Intent와 iPhone의 제한적 자동 이동으로 공식 스토어 연결을 시도하고, 실행 후 복구 링크를 제공합니다. 기존 휴대폰 앱 실행은 사용자 확인 PASS이며 새 미설치/스토어 이동은 별도 기기 검증이 필요합니다. 게시·배포 결과는 아래 계획과 Issue 및 Release에 기록합니다. Figma 상태 화면, 구현 순서, 실제 기기 검증과 향후 Android GPS 경계는 [카카오맵 실행 계획](docs/work/research/2026-09-18-kakaomap-handoff-plan.md)과 [Issue #59](https://github.com/tocomboy/motocast/issues/59)를 참조하세요.
+**0.4.1**은 Figma 댓글을 반영해 안전 안내를 두 항목으로 줄이고 별도 설치 화면을 제거했습니다. Android Intent와 iPhone의 제한적 자동 이동으로 공식 스토어 연결을 시도하고, 실행 후 복구 링크를 제공합니다. 기존 휴대폰 앱 실행은 사용자 확인 PASS이며 새 미설치/스토어 이동은 NOT_RUN입니다. [배포·검증 결과](https://github.com/tocomboy/motocast/releases/tag/v0.4.1), [카카오맵 실행 계획](docs/work/research/2026-09-18-kakaomap-handoff-plan.md), [Issue #59](https://github.com/tocomboy/motocast/issues/59)를 참조하세요.
+
+2026-09-18 사용자 결정에 따라 남은 카카오맵 실기기 검증은 버그 발생 시 대응하며, 다음 순서는 **공유 발행 상태 문구 #66 수정·검증 → Android API 기반 #30 준비**입니다. [현재 수정·검증 기록](docs/work/research/2026-09-18-share-publication-status.md)과 [Android 요구사항](docs/work/research/2026-09-08-android-ride-requirements.md)을 참조하세요. 로컬 수정과 실제 배포 상태는 구분합니다.
 
 ## 구성
 

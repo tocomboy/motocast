@@ -210,8 +210,144 @@ describe("ShareManager collection preview request", () => {
   });
 });
 
+describe("ShareManager preview publication notice", () => {
+  const shareId = "10000000-0000-4000-8000-000000000002";
+  const previewResult = () => ({
+    data: [{ preview_snapshot: rawSharedRideSnapshotWithOmissions(0), preview_token: "p".repeat(43) }],
+    error: null,
+  });
+  const publishResult = () => ({
+    data: [{ share_id: shareId, share_token: "s".repeat(43) }],
+    error: null,
+  });
+
+  function notice(renderer: ReactTestRenderer) {
+    return renderer.root.findByProps({ className: "share-preview-warning" }).findByType("strong").children.join("");
+  }
+
+  async function click(renderer: ReactTestRenderer, label: string) {
+    const button = renderer.root.findAllByType("button").find((entry) => entry.children.join("") === label);
+    expect(button).toBeDefined();
+    await act(async () => button!.props.onClick());
+  }
+
+  it("updates the current preview from unpublished to published, revoked and newly prepared", async () => {
+    browserMocks.from.mockReturnValue({
+      select() { return this; },
+      order: async () => ({ data: [{ id: shareId, created_at: "2030-01-01T00:00:00.000Z", revoked_at: null }], error: null }),
+    });
+    browserMocks.rpc
+      .mockResolvedValueOnce(previewResult())
+      .mockResolvedValueOnce(publishResult())
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce(previewResult());
+    const renderer = await renderShareManager();
+    expect(notice(renderer)).toBe("아직 공개되지 않았습니다.");
+    await click(renderer, "확인한 요약으로 링크 발행");
+    expect(notice(renderer)).toBe("공유 링크를 발행했습니다.");
+    expect(renderer.root.findByProps({ className: "primary-button" }).props.disabled).toBe(true);
+    expect(renderer.root.findAllByType("input")).toHaveLength(1);
+    await click(renderer, "링크 회수");
+    expect(notice(renderer)).toBe("공유 링크를 회수했습니다.");
+    expect(renderer.root.findAllByType("input")).toHaveLength(0);
+    expect(renderer.root.findByProps({ className: "primary-button" }).props.disabled).toBe(true);
+    await click(renderer, "공유 요약 만들기");
+    expect(notice(renderer)).toBe("아직 공개되지 않았습니다.");
+    expect(renderer.root.findByProps({ className: "primary-button" }).props.disabled).toBe(false);
+    expect(browserMocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "preview_trip_share", "publish_trip_share", "revoke_share", "preview_trip_share",
+    ]);
+    await act(async () => renderer.unmount());
+  });
+
+  it("keeps the publication notice after failed revocation or failed preview regeneration", async () => {
+    browserMocks.from.mockReturnValue({
+      select() { return this; },
+      order: async () => ({ data: [{ id: shareId, created_at: "2030-01-01T00:00:00.000Z", revoked_at: null }], error: null }),
+    });
+    browserMocks.rpc
+      .mockResolvedValueOnce(previewResult())
+      .mockResolvedValueOnce(publishResult())
+      .mockResolvedValueOnce({ data: null, error: { message: "expected revoke refusal" } })
+      .mockResolvedValueOnce({ data: null, error: { message: "expected preview refusal" } });
+    const renderer = await renderShareManager();
+    await click(renderer, "확인한 요약으로 링크 발행");
+    await click(renderer, "링크 회수");
+    expect(notice(renderer)).toBe("공유 링크를 발행했습니다.");
+    expect(renderer.root.findByProps({ className: "manager-status" }).children.join("")).toContain("회수하지 못했습니다");
+    await click(renderer, "공유 요약 만들기");
+    expect(notice(renderer)).toBe("공유 링크를 발행했습니다.");
+    expect(renderer.root.findAllByType("input")).toHaveLength(1);
+    await act(async () => renderer.unmount());
+  });
+
+  it("does not mark a rejected publish as published", async () => {
+    browserMocks.rpc.mockResolvedValueOnce(previewResult());
+    const renderer = await renderShareManager();
+    await click(renderer, "확인한 요약으로 링크 발행");
+    expect(notice(renderer)).toBe("아직 공개되지 않았습니다.");
+    expect(renderer.root.findAllByType("input")).toHaveLength(0);
+    expect(renderer.root.findByProps({ className: "manager-status" }).children.join("")).toContain("발행하지 못했습니다");
+    await act(async () => renderer.unmount());
+  });
+
+  it("resets only the new preview notice while preserving previously issued link history", async () => {
+    browserMocks.from.mockReturnValue({
+      select() { return this; },
+      order: async () => ({ data: [{ id: shareId, created_at: "2030-01-01T00:00:00.000Z", revoked_at: null }], error: null }),
+    });
+    browserMocks.rpc.mockResolvedValueOnce(previewResult()).mockResolvedValueOnce(publishResult()).mockResolvedValueOnce(previewResult());
+    const renderer = await renderShareManager();
+    await click(renderer, "확인한 요약으로 링크 발행");
+    await click(renderer, "공유 요약 만들기");
+    expect(notice(renderer)).toBe("아직 공개되지 않았습니다.");
+    expect(renderer.root.findAllByType("li")).toHaveLength(1);
+    expect(renderer.root.findAllByType("input")).toHaveLength(0);
+    await act(async () => renderer.unmount());
+  });
+
+  it("hides the prior notice and issued URL when the planning session changes", async () => {
+    browserMocks.rpc.mockResolvedValueOnce(previewResult()).mockResolvedValueOnce(publishResult());
+    const renderer = await renderShareManager();
+    await click(renderer, "확인한 요약으로 링크 발행");
+    await act(async () => renderer.update(<StrictMode><ShareManager tripId={tripId} sessionEpoch={1} /></StrictMode>));
+    expect(renderer.root.findAllByProps({ className: "share-preview-warning" })).toHaveLength(0);
+    expect(renderer.root.findAllByType("input")).toHaveLength(0);
+    await act(async () => renderer.unmount());
+  });
+});
+
 describe("ShareManager link history status", () => {
   const link = { id: "10000000-0000-4000-8000-000000000001", created_at: "2030-01-01T00:00:00.000Z", revoked_at: null };
+
+  it("lists only active shares and hides an entirely revoked history", async () => {
+    const revoked = { ...link, id: "10000000-0000-4000-8000-000000000002", revoked_at: "2030-01-02T00:00:00.000Z" };
+    browserMocks.from.mockReturnValue({ select() { return this; }, order: async () => ({ data: [link, revoked], error: null }) });
+    const renderer = await renderShareManager(false, null, 0, 0, "history");
+    expect(renderer.root.findAllByType("li").map((item) => item.props["data-share-id"])).toEqual([link.id]);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("회수됨");
+    await act(async () => renderer.unmount());
+
+    browserMocks.from.mockReturnValue({ select() { return this; }, order: async () => ({ data: [revoked], error: null }) });
+    const emptyRenderer = await renderShareManager(false, null, 0, 0, "history");
+    expect(emptyRenderer.root.findAllByType("li")).toHaveLength(0);
+    expect(emptyRenderer.root.findAllByType("details")).toHaveLength(0);
+    await act(async () => emptyRenderer.unmount());
+  });
+
+  it("removes a successfully revoked link even when refreshing the list fails", async () => {
+    const order = vi.fn()
+      .mockResolvedValueOnce({ data: [link], error: null })
+      .mockResolvedValue({ data: null, error: { message: "expected read failure" } });
+    browserMocks.from.mockReturnValue({ select() { return this; }, order });
+    browserMocks.rpc.mockResolvedValueOnce({ data: null, error: null });
+    const renderer = await renderShareManager(false, null, 0, 0, "history");
+    const revokeButton = renderer.root.findAllByType("button").find((button) => button.children.join("") === "링크 회수");
+    await act(async () => revokeButton!.props.onClick());
+    expect(renderer.root.findAllByType("li")).toHaveLength(0);
+    expect(renderer.root.findByProps({ className: "manager-status" }).children.join("")).toContain("불러오지 못했습니다");
+    await act(async () => renderer.unmount());
+  });
 
   function mockLinkHistory(error: { message: string } | null = null) {
     browserMocks.from.mockReturnValue({
@@ -240,6 +376,7 @@ describe("ShareManager link history status", () => {
     await act(async () => revokeButton!.props.onClick());
     expect(renderer.root.findByProps({ className: "manager-status" }).children.join(""))
       .toContain("공유 링크를 회수하지 못했습니다");
+    expect(renderer.root.findAllByType("li")).toHaveLength(1);
     await act(async () => renderer.unmount());
   });
 
