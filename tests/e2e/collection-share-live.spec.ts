@@ -153,6 +153,8 @@ async function startShareRevocation(page: Page, shareId: string) {
   await item.getByRole("button", { name: "링크 회수" }).click();
   const response = await revocation;
   if (!response.ok()) throw new Error("test-owned share revocation rejected");
+  await expect(item).toHaveCount(0);
+  await expect(page.getByText("회수됨", { exact: true })).toHaveCount(0);
 }
 
 async function verifyRevokedShare(page: Page, revokedUrl: string) {

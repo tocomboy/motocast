@@ -58,7 +58,7 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
       if (reportErrors) setStatus({ epoch: sessionEpochRef.current, message: "공유 발행 기록 응답을 안전하게 확인하지 못했습니다." });
       return;
     }
-    setLinks(parsed);
+    setLinks(parsed.filter((link) => link.revokedAt === null));
   }, []);
 
   const createPreview = useCallback(async () => {
@@ -183,6 +183,7 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
     const operationEpoch = sessionEpoch;
     setBusyEpoch(operationEpoch);
     const { error } = await supabase.rpc("revoke_share", { target_share_id: link.id });
+    if (!error) setLinks((current) => current.filter((item) => item.id !== link.id));
     if (sessionEpochRef.current !== operationEpoch) {
       if (!error) await loadLinks(false);
       return;
@@ -243,8 +244,8 @@ export function ShareManager({ tripId, sessionEpoch = 0, previewRequest = 0, dis
         <details className="share-link-management"><summary>공유 링크 관리</summary><ul className="share-link-list" aria-label="내 공유 발행 기록">
           {links.map((link) => (
             <li key={link.id} data-share-id={link.id}>
-              <span><strong>{new Date(link.createdAt).toLocaleString("ko-KR")}</strong>{link.revokedAt ? "회수됨" : "공개 중"}</span>
-              {!link.revokedAt ? <button className="danger-text" type="button" disabled={disabled || busy} onClick={() => void revoke(link)}>링크 회수</button> : null}
+              <span><strong>{new Date(link.createdAt).toLocaleString("ko-KR")}</strong>공개 중</span>
+              <button className="danger-text" type="button" disabled={disabled || busy} onClick={() => void revoke(link)}>링크 회수</button>
             </li>
           ))}
         </ul></details>

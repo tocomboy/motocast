@@ -320,6 +320,35 @@ describe("ShareManager preview publication notice", () => {
 describe("ShareManager link history status", () => {
   const link = { id: "10000000-0000-4000-8000-000000000001", created_at: "2030-01-01T00:00:00.000Z", revoked_at: null };
 
+  it("lists only active shares and hides an entirely revoked history", async () => {
+    const revoked = { ...link, id: "10000000-0000-4000-8000-000000000002", revoked_at: "2030-01-02T00:00:00.000Z" };
+    browserMocks.from.mockReturnValue({ select() { return this; }, order: async () => ({ data: [link, revoked], error: null }) });
+    const renderer = await renderShareManager(false, null, 0, 0, "history");
+    expect(renderer.root.findAllByType("li").map((item) => item.props["data-share-id"])).toEqual([link.id]);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("회수됨");
+    await act(async () => renderer.unmount());
+
+    browserMocks.from.mockReturnValue({ select() { return this; }, order: async () => ({ data: [revoked], error: null }) });
+    const emptyRenderer = await renderShareManager(false, null, 0, 0, "history");
+    expect(emptyRenderer.root.findAllByType("li")).toHaveLength(0);
+    expect(emptyRenderer.root.findAllByType("details")).toHaveLength(0);
+    await act(async () => emptyRenderer.unmount());
+  });
+
+  it("removes a successfully revoked link even when refreshing the list fails", async () => {
+    const order = vi.fn()
+      .mockResolvedValueOnce({ data: [link], error: null })
+      .mockResolvedValue({ data: null, error: { message: "expected read failure" } });
+    browserMocks.from.mockReturnValue({ select() { return this; }, order });
+    browserMocks.rpc.mockResolvedValueOnce({ data: null, error: null });
+    const renderer = await renderShareManager(false, null, 0, 0, "history");
+    const revokeButton = renderer.root.findAllByType("button").find((button) => button.children.join("") === "링크 회수");
+    await act(async () => revokeButton!.props.onClick());
+    expect(renderer.root.findAllByType("li")).toHaveLength(0);
+    expect(renderer.root.findByProps({ className: "manager-status" }).children.join("")).toContain("불러오지 못했습니다");
+    await act(async () => renderer.unmount());
+  });
+
   function mockLinkHistory(error: { message: string } | null = null) {
     browserMocks.from.mockReturnValue({
       select() { return this; },
@@ -347,6 +376,7 @@ describe("ShareManager link history status", () => {
     await act(async () => revokeButton!.props.onClick());
     expect(renderer.root.findByProps({ className: "manager-status" }).children.join(""))
       .toContain("공유 링크를 회수하지 못했습니다");
+    expect(renderer.root.findAllByType("li")).toHaveLength(1);
     await act(async () => renderer.unmount());
   });
 

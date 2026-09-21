@@ -52,11 +52,11 @@
 1. COMPLETE — 현재 공유 상태 변경 자체 검수, 버전 일치와 필수 로컬 검사. 기존 수정·실패 기록 보존.
 2. IN_PROGRESS — 고정 후보의 CI 전용 PR, 무배포 확인, develop/Preview와 실제 발행·회수·새 미리보기 검증.
 3. PENDING — develop → main 승격, 정확한 Production 버전·배포·공유 동작·로그 검증, 태그·Release 게시.
-4. PENDING — 웹 작업 폴더와 별도 Android 프로젝트·도구 구성, Preview 연결 설정과 빌드 검증. 앱 로그인·주행 기능 구현은 별도 #30 이후 범위.
+4. COMPLETE (로컬 개발 환경) — 별도 MOTOCAST-Android Git 프로젝트, Kotlin/Compose, SDK36, Gradle 8.14.3, Preview origin 설정. APK 빌드 PASS, 단위 4 PASS, lint 0 ERROR / 5 WARNING. 실제 앱 설치·로그인·API·주행은 NOT_RUN이며 #30 이후 범위다. 원격·Production 배포 연결은 없다.
 
 완료 조건은 공유 상태가 실제 배포에서 확인되고, 별도 Android 환경에서 재현 가능한 개발 빌드가 성공하는 것이다. 신규 라이더·예산 소진 등 전체 제품의 기존 미실행 검증은 이번 UI 패치 성공으로 대신하지 않는다.
 
-### 0.4.2 최종 로컬 후보 검증
+### 0.4.2 최초 후보 검증 (497ea69)
 
 - 환경: WSL Node 20.20.0 / npm 10.8.2, 인증정보 없는 별도 소스 복사본. Windows 소유권 확인이 필요한 Git/WSL 호출은 사용자 실행 환경에서 수행했다. 기존 작업 폴더·설정·계정을 보존했다.
 - 첫 설치는 비로그인 셸이 Node 12.22.9를 선택하여 SETUP_OR_IMPORT_FAILURE. 기존 Node 20 경로를 명시한 뒤 `npm ci` PASS. 도구 업그레이드나 검증 완화는 없다.
@@ -65,3 +65,11 @@
 - 자체 검수: SHARE-001/002/003의 명시적 발행, 소비된 승인 재사용 금지, 정확한 링크 회수, 회수 후 원문 제거, 실패 시 마지막 상태 보존, trip/session 격리 및 새 미리보기와 발행 이력 분리를 확인했다. 미해결 BLOCKER/HIGH/MEDIUM 0. API·DB·인증 경계와 이전 릴리스 이력은 유지한다.
 - 복구: 운영 웹의 직전 v0.4.1 결과물과 같은 DB/API 계약을 사용한다. 문제 발생 시 실제 운영 배포 ID와 영향 범위를 확인한 뒤 웹 결과물을 복구하며 데이터 초기화·DB downgrade는 필요하지 않다.
 - 문서 영향: Update — README, 본 기록, 기존 Android 준비·요구사항과 카카오맵 잔여 검증 기록. Verified unaffected — 제품 공유 계약, 검증·운영 규범, DB schema/migration, 인증·비용 정책. 과거 검증·릴리스 기록은 당시 결과로 보존한다.
+
+### 2026-09-21 추가 결정: 현재 공개 중인 링크만 표시
+
+Production 승격 전에 사용자가 공유 목록에서 `회수됨`을 숨기도록 요청했다. 같은 공유 UI 변경으로 이번 0.4.2에 포함한다. 기존 후보의 CI와 Preview 실제 발행·회수·새 미리보기·4개 화면 폭 검증은 최초 후보의 증거로 보존하고, 추가 변경의 로컬·CI·Preview 검증을 다시 수행한다. DB 기록 삭제나 RPC 변경은 없다. 성공한 정확한 링크는 목록에서 즉시 제거하고 재조회 실패에도 되살리지 않으며, 회수 실패는 기존 공개 항목을 유지한다. Android 준비 문서와 SHARE-002에도 같은 사용자 결정을 기록한다.
+
+최초 후보의 Preview는 `dpl_Cu8BjRHZA5w1b9VsH8TcoBqQwEWp` / `497ea69f05a223fd2721d4a98c791bc715126a78`, CI-only PR #71 및 develop CI 35573543783 성공이다. 해당 배포의 로그 Warning/Error/Fatal 0, 회수된 링크 조회의 예상 404를 확인했다. 테스트 계획 1개만 정확한 소유자 RPC로 정리했고 기존 계획 2개는 보존했다. 테스트 발행 링크 2개는 모두 회수 상태로 보존했다. Production 승격·최종 배포 결과는 이 후보 기록과 구분하여 해당 승격 PR과 v0.4.2 Release에 기록한다.
+
+추가 결정 반영 후 로컬 검증: 단위 **648 PASS / 0 FAIL**, 전체 Chromium **49 PASS / 0 FAIL / 2 SKIP**, lint·typecheck·production build PASS. 기존 Deno 진입점은 변경이 없어 최초 후보 결과를 재사용한다. 공유 컴포넌트·단위·연결 E2E·릴리스 문구의 실제 검증 사본과 byte 일치 PASS. 공개/회수 혼합 목록, 전부 회수된 목록, 성공 후 재조회 실패, 회수 실패 시 항목 보존을 검사했다. 단독 자체 검수의 미해결 BLOCKER/HIGH/MEDIUM 0. 이 절은 후보 고정 시점의 기록이며 이후 상태의 정본은 승격 PR과 Release다.
