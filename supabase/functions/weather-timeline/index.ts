@@ -14,6 +14,7 @@ import { parseWeatherRequest, type WeatherPoint, type WeatherRequest } from "../
 import { assertWeatherPointsMatch, weatherPointsFromStoredRoute } from "../_shared/weather-route.ts";
 import { kmaBindingDiagnostic, kmaResponseDiagnostic, safeWeatherDiagnosticCode, weatherFailureKind } from "../_shared/weather-failure.ts";
 import { publicWeatherSnapshot } from "../_shared/weather-snapshot.ts";
+import { readBoundedWeatherBody, WeatherBundleError, WEATHER_RESPONSE_BYTE_CAP } from "../_shared/weather-bundle.ts";
 import { parseKmaItems } from "../_shared/kma-response.ts";
 
 type MemberClient = Awaited<ReturnType<typeof requireMember>>["supabase"];
@@ -126,7 +127,17 @@ async function fetchForecast(input: {
   } catch {
     throw new Error("KMA_REQUEST_FAILED");
   }
-  const items = await parseKmaItems(response, {
+  let bounded: Awaited<ReturnType<typeof readBoundedWeatherBody>>;
+  try {
+    bounded = await readBoundedWeatherBody(response, WEATHER_RESPONSE_BYTE_CAP);
+  } catch (error) {
+    if (error instanceof WeatherBundleError && error.kind === "oversize") {
+      const { error: blockError } = await serviceClient().rpc("block_weather_transfer_internal");
+      if (blockError) throw new Error("WEATHER_PERSIST_FAILED");
+    }
+    throw new Error("KMA_REQUEST_FAILED");
+  }
+  const items = await parseKmaItems(new Response(JSON.stringify(bounded.raw)), {
     baseDate: base.date,
     baseTime: base.time,
     nx: input.nx,
