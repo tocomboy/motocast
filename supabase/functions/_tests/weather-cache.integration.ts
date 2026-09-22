@@ -28,7 +28,8 @@ const rpc = async (name: string, args: Record<string, unknown>) => {
   try { return { data: JSON.parse(await sql(`set role service_role;select to_jsonb(public.${name}(${parameters.join(",")}));`)), error: null }; }
   catch { return { data: null, error: { message: "WEATHER_CACHE_PERSIST_FAILED" } }; }
 };
-const key = { model: "ultra" as const, nx: grid, ny: 127, baseDate: "20260922", baseTime: "1000" };
+const baseDate = await sql("select to_char(timezone('Asia/Seoul',clock_timestamp()),'YYYYMMDD');");
+const key = { model: "ultra" as const, nx: grid, ny: 127, baseDate, baseTime: "1000" };
 const material = ["1100", "1200", "1300"].flatMap(fcstTime => Object.entries({ T1H: "21", SKY: "4", PTY: "1", WSD: "2" })
   .map(([category, fcstValue]) => ({ baseDate: key.baseDate, baseTime: key.baseTime, nx: key.nx, ny: key.ny, fcstDate: key.baseDate, fcstTime, category, fcstValue })));
 let calls = 0; let active = 0; let peak = 0;

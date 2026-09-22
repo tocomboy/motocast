@@ -70,7 +70,7 @@ assert sql("select count(*) from public.weather_fetch_cache;") == "0"
 assert sql("select count(*) from public.weather_usage_daily;") == "0"
 member=str(uuid.uuid4()); peer=str(uuid.uuid4())
 sql("insert into auth.users(id,aud,role) values (%s,'authenticated','authenticated'),(%s,'authenticated','authenticated');insert into public.memberships(user_id,role) values (%s,'rider'),(%s,'rider');" % (quote(member),quote(peer),quote(member),quote(peer)))
-base_date="20260922"
+base_date=sql("select to_char(timezone('Asia/Seoul',clock_timestamp()),'YYYYMMDD');")
 key=("ultra",60,127,base_date,"1000")
 
 def no_config():
