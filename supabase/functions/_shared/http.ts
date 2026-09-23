@@ -21,6 +21,7 @@ export function jsonResponse(body: unknown, status: number, cors: HeadersInit) {
 
 export function safeErrorMessage(error: unknown) {
   if (!(error instanceof Error)) return "요청을 처리하지 못했습니다.";
+  if (error.message === "WEATHER_STORAGE_CAPACITY") return "현재 날씨 정보를 갱신할 수 없습니다. 잠시 후 다시 시도해 주세요.";
   if (error.message.includes("API_DAILY_BUDGET_EXHAUSTED")) return "오늘의 무료 API 사용 한도를 모두 사용했습니다.";
   if (error.message.includes("API_BUDGET_NOT_CONFIGURED")) return "무료 API 사용 한도가 설정되지 않았습니다.";
   if (error.message.includes("MEMBERSHIP_REQUIRED")) return "서비스 이용 권한이 없습니다.";
@@ -71,6 +72,7 @@ export function safeErrorCode(error: unknown) {
 
 export function safeErrorStatus(error: unknown) {
   if (!(error instanceof Error)) return 500;
+  if (error.message === "WEATHER_STORAGE_CAPACITY") return 503;
   if (error.message.includes("AUTH_REQUIRED")) return 401;
   if (error.message.includes("MEMBERSHIP_REQUIRED")) return 403;
   if (error.message.includes("API_DAILY_BUDGET_EXHAUSTED")) return 429;

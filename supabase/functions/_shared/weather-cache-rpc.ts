@@ -20,7 +20,7 @@ export function weatherCacheRpc(rpc: Rpc, memberId: string, configuredLimit: num
   async function call(name: string, values: Record<string, unknown>) {
     const { data, error } = await rpc(name, values);
     if (error) {
-      const allowed = ["API_DAILY_BUDGET_EXHAUSTED", "API_BUDGET_NOT_CONFIGURED", "API_BUDGET_BASELINE_REQUIRED", "MEMBERSHIP_REQUIRED", "WEATHER_LEASE_EXPIRED"];
+      const allowed = ["API_DAILY_BUDGET_EXHAUSTED", "API_BUDGET_NOT_CONFIGURED", "API_BUDGET_BASELINE_REQUIRED", "MEMBERSHIP_REQUIRED", "WEATHER_LEASE_EXPIRED", "WEATHER_STORAGE_CAPACITY"];
       throw new Error(allowed.includes(error.message) ? error.message : "WEATHER_CACHE_PERSIST_FAILED");
     }
     return data;

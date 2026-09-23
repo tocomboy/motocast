@@ -10,6 +10,13 @@ function items() {
 }
 function payload(values = items()) { return { response: { header: { resultCode: "00" }, body: { pageNo: 1, totalCount: values.length, items: { item: values } } } }; }
 const now = Date.parse("2026-09-22T01:50:00Z");
+
+it("propagates exact capacity denial through RPC before provider dispatch", async () => {
+  const fetch = vi.fn();
+  const store = weatherCacheRpc(async () => ({ data: null, error: { message: "WEATHER_STORAGE_CAPACITY" } }), "synthetic-member", 100);
+  await expect(sharedWeatherBundle(key, { store, fetch })).rejects.toThrow("WEATHER_STORAGE_CAPACITY");
+  expect(fetch).not.toHaveBeenCalled();
+});
 function harness() {
   let ready = false; let clock = now;
   const claim = vi.fn<WeatherCacheStore["claim"]>(async () => ready
@@ -54,7 +61,7 @@ describe("shared cache orchestration", () => {
     expect(h.metrics.map(m => [m.cacheHits, m.providerCalls, m.budgetReservations])).toEqual([[0, 1, 1], [1, 0, 0]]);
   });
   it("never calls provider when start response is lost or denied", async () => {
-    for (const error of ["API_DAILY_BUDGET_EXHAUSTED", "WEATHER_CACHE_PERSIST_FAILED"]) {
+    for (const error of ["API_DAILY_BUDGET_EXHAUSTED", "WEATHER_CACHE_PERSIST_FAILED", "WEATHER_STORAGE_CAPACITY"]) {
       const h = harness(); h.store.start.mockRejectedValue(new Error(error));
       await expect(sharedWeatherBundle(key, h)).rejects.toThrow(error);
       expect(h.fetch).not.toHaveBeenCalled(); expect(h.store.start).toHaveBeenCalledTimes(1);
