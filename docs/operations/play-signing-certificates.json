@@ -1,0 +1,24 @@
+{
+  "packageName": "dev.motocast.android",
+  "observedAt": "2026-09-26",
+  "sourceUrl": "https://play.google.com/console/u/1/developers/6104684221857241408/app/4972515627756573636/keymanagement",
+  "status": "CONFIGURATION_CANDIDATE_NOT_APPLIED",
+  "certificates": [
+    {
+      "source": "current-classic",
+      "sha256": "CC:AD:E7:74:E3:36:2B:AE:DC:4A:C2:A9:46:92:3D:2C:CE:3B:E3:79:81:FB:62:83:EB:1A:52:F7:0C:9E:19:80",
+      "integrityDigest": "zK3ndOM2K67cSsKpRpI9LM4743mB-2KD6xpS9wyeGYA"
+    },
+    {
+      "source": "current-quantum",
+      "sha256": "A8:D7:39:7A:96:7E:1D:8A:F6:43:BD:99:D1:F2:31:B9:1D:1A:F3:E5:F6:1A:AA:DA:F1:49:D7:8C:D1:37:5D:C5",
+      "integrityDigest": "qNc5epZ-HYr2Q72Z0fIxuR0a8-X2Gqra8UnXjNE3XcU"
+    },
+    {
+      "source": "console-digital-asset-links-snippet",
+      "sha256": "C2:0E:77:4B:61:71:A6:6D:03:0A:83:A5:7E:B2:98:8F:80:FE:16:C2:51:EB:27:2C:A5:A4:60:34:5B:70:E7:0A",
+      "integrityDigest": "wg53S2Fxpm0DCoOlfrKYj4D-FsJR6ycspaRgNFtw5wo"
+    }
+  ],
+  "note": "Public fingerprints only. Current classic and quantum buttons read separately after clearing stale clipboard state; association snippet read directly from visible Console JSON. Snippet generation not separately confirmed. Upload certificate excluded. Real Play proof and device verification pending."
+}

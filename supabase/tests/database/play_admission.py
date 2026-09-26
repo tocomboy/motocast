@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import sys
 import subprocess
+import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -195,6 +196,41 @@ try:
         assert sql("select count(*) from public.memberships where user_id="+quote(uid)) == "1"
         assert sql("select count(*) from public.profiles where id="+quote(uid)) == "1"
     check("six simultaneous proof claims have one winner; six commits are idempotent", concurrent_admission)
+
+    def invitation_overlap():
+        uid, admin = user(), user()
+        challenge = begin(uid); take(uid, challenge)
+        sql("insert into public.memberships(user_id,role) values(" + quote(admin) + ",'admin');")
+        invite = sql("set role authenticated;select set_config('request.jwt.claim.sub'," + quote(admin) +
+            ",false);select invite_token from public.create_invite(interval '1 day');").splitlines()[-1]
+        assert sql("select to_regprocedure('public.play_admission_test_pause()') is null") == "t"
+        # Widen the real RPC race at its first INSERT, without replacing the production lock or RPC.
+        sql("""create function public.play_admission_test_pause() returns trigger language plpgsql as $$
+          begin if current_setting('application_name')='motocast_play_invite_race' then perform pg_sleep(2); end if;
+          return new; end $$;
+          create trigger play_admission_test_pause before insert on public.memberships
+          for each row execute function public.play_admission_test_pause();""")
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                play = pool.submit(run, BASE, ("set application_name='motocast_play_invite_race';set role service_role;"
+                    "select public.complete_play_admission_internal(" +
+                    ",".join(map(quote,[uid,challenge['challengeId'],'a'*64])) + ");").encode())
+                deadline = time.monotonic() + 10
+                while sql("select count(*) from pg_stat_activity where datname=current_database() and "
+                    "application_name='motocast_play_invite_race' and wait_event='PgSleep'") != "1":
+                    assert time.monotonic() < deadline, "Play RPC never reached INSERT barrier"
+                    time.sleep(0.02)
+                invited = pool.submit(run, BASE, ("set role authenticated;select set_config('request.jwt.claim.sub'," +
+                    quote(uid) + ",false);select public.claim_invite("+quote(invite)+");").encode())
+                results = [play.result(), invited.result()]
+            (LOG / "invitation-overlap.log").write_bytes(b"\n".join(r.stdout+r.stderr for r in results))
+            assert all(r.returncode == 0 for r in results), "Concurrent Play/invite admission failed; see retained overlap log"
+            assert sql("select count(*) from public.memberships where user_id="+quote(uid)) == "1"
+            assert sql("select count(*) from public.profiles where id="+quote(uid)) == "1"
+        finally:
+            # These two exact test-owned objects were created above; keep all result/fixture evidence.
+            sql("drop trigger play_admission_test_pause on public.memberships; drop function public.play_admission_test_pause();")
+    check("simultaneous Play and invite registration complete without a foreign-key lock cycle", invitation_overlap)
 
     def throttles():
         uid = user()
