@@ -3,12 +3,16 @@ import { assertKakaoSectionsContinuous, RouteResponseValidationError, type Norma
 import { assertRideUnder24Hours } from "./route-deadline.ts";
 import type { RoutePointRequest } from "./route-request.ts";
 
+// Verified stored places and an explicitly authorized live GPS origin share only routing fields.
+// Provider routing never needs a fabricated place-verification proof for the GPS fix.
+export type RoutablePoint = Pick<RoutePointRequest, "id" | "label" | "name" | "longitude" | "latitude" | "kind" | "dwellMinutes" | "selected" | "winding" | "stopRole">;
+
 export type RouteOperation = "directions" | "future_directions";
 
 export type RouteChunkRequest = {
-  origin: RoutePointRequest;
-  destination: RoutePointRequest;
-  waypoints: RoutePointRequest[];
+  origin: RoutablePoint;
+  destination: RoutablePoint;
+  waypoints: RoutablePoint[];
   departureAt: Date;
   isFuture: boolean;
 };
@@ -20,7 +24,7 @@ type RouteOrchestrationDependencies = {
   requestProvider: (input: RouteChunkRequest) => Promise<NormalizedKakaoRoute>;
 };
 
-function nextChunk(points: RoutePointRequest[], startIndex: number) {
+function nextChunk(points: RoutablePoint[], startIndex: number) {
   const furthest = Math.min(startIndex + 6, points.length - 1);
   let endIndex = furthest;
   for (let index = startIndex + 1; index <= furthest; index += 1) {
@@ -32,7 +36,7 @@ function nextChunk(points: RoutePointRequest[], startIndex: number) {
   return { endIndex, via: points.slice(startIndex + 1, endIndex) };
 }
 
-function responsePoint(point: RoutePointRequest) {
+function responsePoint(point: RoutablePoint) {
   return {
     id: point.id,
     label: point.label,
@@ -47,7 +51,7 @@ function responsePoint(point: RoutePointRequest) {
 }
 
 export async function orchestrateRecommendedRoute(
-  points: RoutePointRequest[],
+  points: RoutablePoint[],
   departureAt: string,
   dependencies: RouteOrchestrationDependencies,
 ) {
