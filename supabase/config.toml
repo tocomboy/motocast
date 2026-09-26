@@ -50,3 +50,6 @@ verify_jwt = false
 
 [analytics]
 enabled = false
+
+[functions.play-admission]
+verify_jwt = true

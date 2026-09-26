@@ -53,7 +53,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### AUTH-001 — Invite-only Kakao authentication
 
 - Status: `CONFIRMED`
-- Decision: Use Supabase Auth with a Kakao identity, with the email-free OIDC boundary defined by `AUTH-004`. Keep the Kakao subject separate from the internal Supabase user ID. Only administrators create cryptographically random, one-time invitation links. A valid invitation is required for first membership creation; an existing active member can sign in again without a fresh invite. Invitations expire and can be revoked; memberships can be revoked. A valid active membership is required to use rider data and provider functions.
+- Decision: Use Supabase Auth with a Kakao identity, with the email-free OIDC boundary defined by `AUTH-004`. Keep the Kakao subject separate from the internal Supabase user ID. Only administrators create cryptographically random, one-time invitation links. A valid invitation is required for first membership creation except for the server-verified Play admission in `AUTH-007`; an existing active member can sign in again without a fresh invite. Invitations expire and can be revoked; memberships can be revoked. A valid active membership is required to use rider data and provider functions.
 - Rationale: Access is limited to known acquaintances without maintaining a custom password system.
 - User impact: A rider enters through an invitation, signs in with Kakao, and loses access immediately after membership revocation.
 - Affected: Supabase Auth, callback route, invitations, memberships, RLS, Edge Functions, admin UI.
@@ -73,7 +73,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### AUTH-003 — Uninvited OAuth account lifecycle
 
 - Status: `CONFIRMED`
-- Decision: A Kakao OAuth completion without a valid invitation is signed out and denied all application access. It may leave only the minimum dormant `auth.users` record; it must not create a public profile or membership. Administrators receive a safe cleanup procedure for dormant records.
+- Decision: A Kakao OAuth completion without a valid invitation or a completed `AUTH-007` Play admission is signed out and denied all application access. It may leave only the minimum dormant `auth.users` record; it must not create a public profile or membership. Administrators receive a safe cleanup procedure for dormant records.
 - Rationale: Supabase OAuth creates the Auth user before the application callback can claim an invitation. The callback and database therefore prevent profile creation until a claim succeeds and retain only the unavoidable Auth record when an uninvited login is denied.
 - User impact: Both options deny app access, but the retained-record option stores minimal Kakao profile data for an uninvited person while strict cleanup needs a trusted server boundary and careful retry handling.
 - Affected: Auth hooks/callback, profile creation flow, administrator cleanup procedure, privacy notice, tests.
@@ -101,6 +101,29 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Verification: live authorize redirect scope readback and regression search showing the application no longer calls Kakao `signInWithOAuth`.
 - Deprecated by user selection of `AUTH-004`: 2026-08-31.
 
+#### AUTH-006 — Android Kakao SDK authentication
+
+- Status: `CONFIRMED`
+- Decision: Use the Kakao Android SDK for the native Android app. Prefer Kakao Talk login when available and provide Kakao Account login in the default browser when unavailable. A user cancellation ends the attempt; it must not automatically launch another login. Preserve the existing web flow in `AUTH-004`, email-free consent, first membership by invitation or the `AUTH-007` Play exception, active-member re-login, revoked-member denial, and server-side authorization.
+- Identity/session boundary: Reuse the existing Kakao Developers application identity. Verify the SDK ID token with Supabase Auth before using a Supabase session for MOTOCAST APIs; a Kakao access token is not a MOTOCAST API bearer. Bind each login to a fresh nonce and current attempt, preserve audience/nonce verification, and prove the existing Supabase user ID is retained. Never merge accounts by email, copy web cookies, spoof Origin, or ship server secrets. Application access requires the server membership gate even after authentication succeeds.
+- Affected: Android SDK dependency and callback, native platform/package/signing registration, SDK token handling, Supabase ID-token compatibility, secure app session lifecycle and membership/invitation UI. The previously proposed custom browser-to-app one-time exchange is an unselected alternative, not a required implementation.
+- Verification: Kakao Talk installed/unavailable/cancel/error paths, missing OIDC token, nonce/audience rejection, duplicate/expired/stale callback, process death, token storage/logout, no email request, same-account identity and data ownership, new/active/revoked membership, existing web regression. Local SDK tests do not establish live provider compatibility.
+- Confirmed by user: 2026-09-21, "SDK로 가자 확정해". SDK direction is final; actual registration, connected verification and deployment status must be recorded separately.
+
+#### AUTH-007 — Play-verified membership without an invitation
+
+- Status: `CONFIRMED`; implementation and hosted rollout are not yet complete.
+- Decision: A new user authenticated with Kakao may create a rider membership without an invitation only after the server verifies a fresh Play Integrity proof for an approved MOTOCAST Play build. Web/PWA and debug/sideload entry keep the invitation route. Existing active members keep normal sign-in and refresh; this exception does not require a new proof on every existing-member request.
+- Verification boundary: Require Google-verified `LICENSED` and `PLAY_RECOGNIZED` verdicts, the approved package/signing-certificate/version, and fresh request binding to the authenticated user, target environment and one-time admission challenge. A client flag, installer name, copied token, native app key or successful Kakao login alone is not admission evidence. Missing, stale, replayed, cross-user or unevaluated proofs and provider outages must not create a profile or membership.
+- Membership boundary: Create only a normal rider, atomically and idempotently. Preserve existing roles and data. A revoked membership must never be reactivated through this path, even with a valid proof. Keep server-side active-membership checks, per-user RLS and API budgets. Do not match Google and Kakao identities by email or collect a new email scope.
+- Scope: Initial implementation and deployment target the existing Preview backend and Play internal track. Production/public signup is not authorized. Before any future public-track release, reconsider admission scope; the internal tester list is not a durable server membership allowlist.
+- Revocation: Play licensing proves app entitlement, not current internal-tester-list membership. Removing a tester does not automatically revoke an existing MOTOCAST membership. Use the existing administrator membership revocation for service access.
+- Supersedes: Only the mandatory-invitation condition for eligible new Play users in `AUTH-001`, `AUTH-003` and `AUTH-006`. Other identity, session, ownership and denial requirements remain binding.
+- Acceptance: Real Google proof from a Play-installed build; new/active/revoked/admin users; altered/missing/expired/replayed/cross-user/wrong-environment/package/certificate/version proofs; provider timeout; concurrent/retried admission; role preservation; no unauthorized profile creation; web/debug invitation regression; code-free Android UI; actual installation, login and Play update evidence recorded separately.
+- Confirmed by user: 2026-09-26, "Play 설치 검증을 통과한 신규 사용자는 초대 없이 가입으로 정책 변경하자"; implementation and necessary Play internal release authorized by "필요하면 플레이스토어 배포까지 진행해".
+- Plan and evidence: [Play membership implementation](../work/research/2026-09-26-play-verified-membership.md).
+- Official basis: [Integrity verdicts](https://developer.android.com/google/play/integrity/verdicts), [standard request binding](https://developer.android.com/google/play/integrity/standard).
+
 ### Ownership, collections, and sharing
 
 #### DATA-001 — Per-user ownership and RLS
@@ -116,11 +139,11 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### DATA-003 — Trusted aggregate mutation boundary
 
 - Status: `CONFIRMED`
-- Decision: The browser may request planning actions but cannot directly create or mutate route-backed trip aggregates, immutable collection versions, weather snapshots, share snapshots, or Kakao OIDC handoffs. The service role has no direct DML on any current application table, cannot execute public functions outside seven reviewed internal RPCs, and does not inherit direct table DML or function EXECUTE on future objects created by the migration role. Five RPCs own provider/budget aggregate work; two additional RPCs create and atomically consume only a hashed, encrypted, short-lived OIDC handoff. Trusted Edge Functions use these narrow SECURITY DEFINER boundaries, while direct table mutation remains denied.
+- Decision: The browser may request planning actions but cannot directly create or mutate route-backed trip aggregates, immutable collection versions, weather snapshots, share snapshots, or Kakao OIDC handoffs. The service role has no direct DML on any current application table, cannot execute public functions outside ten reviewed internal RPCs, and does not inherit direct table DML or function EXECUTE on future objects created by the migration role. Five RPCs own provider/budget aggregate work; two additional RPCs create and atomically consume only a hashed, encrypted, short-lived OIDC handoff. Three AUTH-007 RPCs issue, reserve and complete one-time Play admissions with bounded per-user/global attempts. Trusted Edge Functions use these narrow SECURITY DEFINER boundaries, while direct table mutation remains denied.
 - Rationale: RLS ownership alone cannot prove that browser-supplied route JSON came from the motorcycle-safe provider boundary or preserve multi-table invariants.
 - User impact: A new plan is saved only after its one verified `recommended` route is ready. Legacy three-route plans remain readable, while partial, expired, replayed, cross-user, or browser-forged route sets fail explicitly.
 - Affected: route Edge Function, route draft tables, trip/route/waypoint policies, finalization and selection RPCs, planner UI.
-- Verification: browser/service-role direct-DML denial across every application table and operation, future-table/function default-ACL probes, exact seven-function service-role allowlist (five provider/aggregate RPCs plus two OIDC handoff RPCs), one-route current and exact-three legacy finalization, mandatory-point/order/dwell matching, non-null route totals, durable plan-and-route payload hashes across draft cleanup, authenticated target-trip identity and `updated_at` revision binding, stale-update and wrong-target rejection, planning-id consumption, expiry, replay, cross-user, stage-versus-finalizer and two-finalizer races, and forced mid-write transaction rollback tests.
+- Verification: browser/service-role direct-DML denial across every application table and operation, future-table/function default-ACL probes, exact ten-function service-role allowlist (five provider/aggregate RPCs, two OIDC handoff RPCs and three AUTH-007 admission RPCs), one-route current and exact-three legacy finalization, mandatory-point/order/dwell matching, non-null route totals, durable plan-and-route payload hashes across draft cleanup, authenticated target-trip identity and `updated_at` revision binding, stale-update and wrong-target rejection, planning-id consumption, expiry, replay, cross-user, stage-versus-finalizer and two-finalizer races, and forced mid-write transaction rollback tests.
 - Confirmed as security implementation of `DATA-001` and `ROUTE-001`: 2026-08-30.
 
 #### DATA-002 — Riding collections
@@ -394,7 +417,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### OPS-003 — Git and CD topology
 
 - Status: `CONFIRMED`
-- Decision: `develop` is the default development branch and deploys Preview. `main` is Production and accepts only a same-repository `develop -> main` PR. Required checks are `verify` and `develop-only`; the `verify` workflow runs the repository baseline and Deno-checks all five deployed Edge Function entrypoints, including the public `kakao-oidc` authentication boundary. Administrator enforcement, conversation resolution, no force push, and no deletion remain enabled. Human approvals remain zero until a real reviewer is designated. Other branches must not auto-deploy; deployment-excluded review/rollback branches use a slash-free `review-*` or `rollback-*` name and require live zero-deployment proof before being relied upon.
+- Decision: `develop` is the default development branch and deploys Preview. `main` is Production and accepts only a same-repository `develop -> main` PR. Required checks are `verify` and `develop-only`; the `verify` workflow runs the repository baseline and Deno-checks all six maintained Edge Function entrypoints, including the public `kakao-oidc` authentication boundary and Preview-only `play-admission`. Administrator enforcement, conversation resolution, no force push, and no deletion remain enabled. Human approvals remain zero until a real reviewer is designated. Other branches must not auto-deploy; deployment-excluded review/rollback branches use a slash-free `review-*` or `rollback-*` name and require live zero-deployment proof before being relied upon.
 - Rationale: Separate continuous development from explicit production promotion.
 - User impact: Production changes only after a visible promotion gate.
 - Affected: GitHub settings/workflows, Vercel Git integration, `vercel.json`.

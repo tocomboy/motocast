@@ -1,6 +1,6 @@
 # Supabase Auth 운영 절차
 
-이 문서는 `AUTH-001`부터 `AUTH-005`까지의 운영 절차다. 실제 UUID, OAuth/OIDC credential, ID/access token, handoff, invite token은 문서·Issue·명령 인자·로그에 남기지 않는다.
+이 문서는 `AUTH-001`부터 `AUTH-007`까지의 운영 절차다. 실제 UUID, OAuth/OIDC credential, ID/access token, handoff, invite token은 문서·Issue·명령 인자·로그에 남기지 않는다.
 
 ## 이메일 없는 Kakao OIDC 설정
 
@@ -76,7 +76,7 @@ commit;
 
 ## 거부된 OAuth 사용자 정리
 
-초대 없이 OAuth를 완료한 사용자는 `auth.users`에만 남고 `profiles`나 `memberships`가 없어야 한다. 관리자가 삭제하기 전에 정확한 UUID에 대해 다음 조건을 모두 확인한다.
+초대와 유효한 Play 검증 없이 OAuth를 완료한 사용자는 `auth.users`에만 남고 `profiles`나 `memberships`가 없어야 한다. 관리자가 삭제하기 전에 정확한 UUID에 대해 다음 조건을 모두 확인한다.
 
 - `public.memberships` 행이 없다.
 - `public.profiles` 행이 없다.
@@ -91,3 +91,18 @@ commit;
 - 회수된 사용자는 소비된 과거 초대로 재활성화할 수 없다.
 - 재가입은 관리자가 새 초대를 발행한 경우에만 허용한다.
 - 초대를 소비한 Auth 사용자가 삭제돼 `consumed_by`가 비어도 `consumed_at`이 one-time tombstone으로 남으므로 링크는 재사용할 수 없다.
+
+
+## Play 설치 검증 가입 (AUTH-007)
+
+Preview `lehjmbgfpoemqcwxowbx`와 Play `dev.motocast.android` 전용이다. Cloud 프로젝트는 `MOTOCAST Play` / `motocast-play-2026` / `710070840912`, 조직 없음이다. 신규 Play 회원만 설치 증명 확인 후 일반 rider로 등록하며 기존 active 회원의 역할·profile을 바꾸지 않는다. revoked 회원은 자동 복원하지 않는다. 웹/개발 앱과 기존 code3의 초대 로그인은 유지한다.
+
+서버가 Kakao 사용자 확인 → 3분 challenge 발급 → 증명 예약 및 예산 차감 → Google decode → LICENSED / PLAY_RECOGNIZED / 패키지 / SHA256 인증서 / versionCode / 요청 hash / 시각 확인 → 원자적 회원·profile 생성 순서로 처리한다. 동일 proof 예약의 동시 요청은 하나만 Google에 전달된다. 설치자 이름·클라이언트 boolean·토큰 내용의 자체 해석은 가입 권한이 아니다. LICENSED는 Play 취득 자격이며 현재 내부 테스터 이메일 목록 조회가 아니다.
+
+- 새 migration: `20260926040355_play_verified_membership.sql`. challenge는 사용자당 한 행, 검증 예산은 전체 한 행이며 RLS와 직접 DML 거부를 유지한다. 새 service_role 전용 함수는 begin/take/complete 3개다. live Preview에 별도 날씨 함수가 있으므로 전체 기존 ACL과 새 3개를 모두 읽어 확인한다.
+- `play-admission`은 JWT 검증을 켜서 배포하고 함수 내부에서도 사용자 및 Kakao identity를 확인한다. Preview 이외의 프로젝트 URL은 거부한다.
+- 서버 secret: `PLAY_ADMISSION_PROJECT_ID=motocast-play-2026`, `PLAY_ADMISSION_SERVICE_ACCOUNT`(검증 전용 계정 JSON), `PLAY_ADMISSION_CERTIFICATES`(Play 앱 서명 SHA256의 base64url, 쉼표 구분), `PLAY_ADMISSION_VERSIONS`(검증할 versionCode allowlist, 최초4). 업로드 인증서를 앱 서명 인증서로 대신하지 않는다.
+- 키는 승인된 Preview secret store와 저장소 밖 사용자 전용 경로에만 보관한다. 프로젝트 IAM 관리자·Play 출시 역할을 부여하지 않는다. Android에는 공개 Cloud 프로젝트 번호만 포함하며 서비스 계정 키를 넣지 않는다.
+- 시간당 사용자5회, 서울 날짜당 전체 Google decode500회. 실패한 decode도 예산을 소모한다. 원본 proof/Google OAuth/Kakao/session token은 기록하지 않는다. Google 요청은 고정 HTTPS 목적지·각5초·64KiB 한도, 자동 재전송·redirect 없음이다.
+- 배포 전 정확한 후보 SHA CI-only PR 및 zero-deployment gate를 지킨다. 실제 Google proof와 신규 Play 사용자 가입은 로컬 합성 응답·CI로 대체하지 않는다.
+- 복구: `PLAY_ADMISSION_VERSIONS`를 비워 신규 Play 가입만 닫고, 검증한 이전 함수 소스로 복구한다. 이미 가입한 회원과 새 테이블은 삭제하지 않는다. 기존 로그인·초대 API를 유지하며 Android는 이전 정상 소스를 더 높은 versionCode로 배포한다. 서비스 키 분실/노출 시 새 키 전달 확인 후 해당 키만 폐기하는 별도 승인 절차를 따른다.

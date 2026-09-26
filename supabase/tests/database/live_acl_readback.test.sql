@@ -52,6 +52,8 @@ with protected_tables(table_name) as (
     ('share_preview_grants'),
     ('kakao_oidc_handoffs')
     ,('place_favorites')
+    ,('play_admission_challenges')
+    ,('play_admission_budget')
 ), dml(privilege_name) as (
   values ('INSERT'), ('UPDATE'), ('DELETE')
 )
@@ -79,7 +81,10 @@ with allowed(function_signature) as (
     ('public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)'),
     ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)'),
     ('public.create_kakao_oidc_handoff_internal(text,text,text,timestamptz)'),
-    ('public.consume_kakao_oidc_handoff_internal(text,text)')
+    ('public.consume_kakao_oidc_handoff_internal(text,text)'),
+    ('public.begin_play_admission_internal(uuid)'),
+    ('public.take_play_admission_internal(uuid,uuid,text)'),
+    ('public.complete_play_admission_internal(uuid,uuid,text)')
 )
 insert into acl_results(ok, description)
 select
@@ -129,7 +134,10 @@ with allowed(function_oid) as (
     ('public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)'::regprocedure::oid),
     ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)'::regprocedure::oid),
     ('public.create_kakao_oidc_handoff_internal(text,text,text,timestamptz)'::regprocedure::oid),
-    ('public.consume_kakao_oidc_handoff_internal(text,text)'::regprocedure::oid)
+    ('public.consume_kakao_oidc_handoff_internal(text,text)'::regprocedure::oid),
+    ('public.begin_play_admission_internal(uuid)'::regprocedure::oid),
+    ('public.take_play_admission_internal(uuid,uuid,text)'::regprocedure::oid),
+    ('public.complete_play_admission_internal(uuid,uuid,text)'::regprocedure::oid)
 )
 insert into acl_results(ok, description)
 select

@@ -12,6 +12,17 @@ export const currentVersion = packageMetadata.version;
 
 export const releaseNotes = [
   {
+    version: "0.5.0",
+    date: "2026-09-26",
+    title: "Google Play 앱 가입 간소화",
+    summary: "Google Play 설치가 확인된 신규 라이더는 초대 코드 없이 가입할 수 있습니다.",
+    bullets: [
+      "Google Play 앱에서 카카오 로그인과 설치 확인을 마치면 바로 시작할 수 있어요.",
+      "기존 회원은 지금처럼 로그인하면 됩니다.",
+      "웹과 개발용 앱의 신규 가입에는 기존 초대 방식이 적용돼요.",
+    ],
+  },
+  {
     version: "0.4.2",
     date: "2026-09-21",
     title: "공유 링크 상태 안내 개선",
