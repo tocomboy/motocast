@@ -2,7 +2,7 @@
   "packageName": "dev.motocast.android",
   "observedAt": "2026-09-26",
   "sourceUrl": "https://play.google.com/console/u/1/developers/6104684221857241408/app/4972515627756573636/keymanagement",
-  "status": "CONFIGURATION_CANDIDATE_NOT_APPLIED",
+  "status": "PREVIEW_CONFIGURED_DEVICE_VERIFICATION_NOT_RUN",
   "certificates": [
     {
       "source": "current-classic",

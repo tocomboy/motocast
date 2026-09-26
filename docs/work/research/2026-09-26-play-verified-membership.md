@@ -9,10 +9,10 @@ AUTH-007: 서버가 Play 설치 증명을 검증한 신규 카카오 사용자�
 ## 실행 계획
 
 1. 완료: 정책 정본, 신뢰 경계 및 외부 Play Integrity 프로젝트 연결 확인.
-2. 완료: 서버 증명 검증·일회용 가입 요청·원자적 회원 생성, 실제 DB/실패/권한 검사 및 고정 SHA CI 후 Preview DB/Edge 적용. 비밀값 설정은 별도 대기.
-3. 진행: Android 로그인 320 PASS. Figma 연결 오류로 화면 변경만 대기하며, 공유 App Links 준비 코드를 기존 후보에 통합한다.
-4. 완료: 공유 인증 파일과 추가 가입 동시성 검사의 후속 후보 검증·커밋/push 및 두 PR CI 확인. 도메인 선택·키 파일이 필요한 외부 설정은 보류.
-5. 대기: 실제 Google 연결, 최종 UI/서명 후보, 내부 테스트 배포 및 Play 설치본 가입·공유 링크·업데이트 확인.
+2. 완료: 서버 증명 검증·원자적 회원 생성과 실제 DB/실패/권한 검사. Preview DB/Edge 및 비밀값4개 적용과 Google OAuth 연결 확인.
+3. 완료: Figma P01~P03 디자인·Android 구현, 단위320개와 실제 Compose16개 동작 PASS.
+4. 완료: PR75 고정 SHA를 Preview에 배포. 공개 앱 링크 인증 파일·버전·접근 경계9개 점검 PASS.
+5. 진행: 최종 앱 승격·서명 후보와 내부 테스트 배포. Play 설치본 신규 가입·공유 링크·업데이트는 NOT_RUN.
 
 ## 작업 공간과 보존
 
@@ -31,7 +31,7 @@ AUTH-007: 서버가 Play 설치 증명을 검증한 신규 카카오 사용자�
 
 ## 검증 상태
 
-로컬 서버·실제 DB·Android 인증 구현 검증과 Hosted Preview DB/Edge 적용은 아래 최신 기록을 따른다. Play Integrity 프로젝트 연결 완료. 서버 비밀값 설정, 실제 Google 증명·새 앱 출시는 아직 NOT_RUN이다.
+로컬 서버·실제 DB·Android 구현과 Hosted Preview 적용·비밀값 설정은 완료했다. 실제 Google 설치 증명·기기 신규 가입은 NOT_RUN이며, 아래 시간순 기록의 과거 대기 상태와 구분한다.
 
 ## 구현 및 확인 (진행 중)
 
@@ -226,3 +226,25 @@ Supabase CLI는 로그인 없음 ERROR로 쓰지 않았으며, 승인된 프로�
 `verification-logs/play-admission/google-key-readback.json`와`secret-digests.json`이다.
 Production 변경 없음. 웹 인증 파일 배포·최종 앱 승격/내부 출시 및 실제 신규 가입은
 다음 단계이며, 위 설정만으로 완료 처리하지 않는다.
+
+## Preview 웹 배포 확인
+
+서버 PR75 head33add25646fad98d43a136f71ecdfdaf928c0c51의 CI36229365274 PASS,
+배포 전 GitHub Deployments0/Vercel checks0/status0을 확인했다. origin/develop이
+검토 기준9bcf151임을 직전 재확인하고 동일33add25로 fast-forward했다. PR75 MERGED.
+배포 dpl_7hznXgnHkVkmoStVRb5dyLd9ZWvZ는 develop/Preview/Ready, 빌드30초다.
+GitHub Deployment6676577894 success, push 이후CI36229541011도 PASS다.
+
+- assetlinks200 JSON, 쿠키·redirect 없음, Console 공개 SHA256 3개 일치 PASS.
+- login/updates의0.5.0과 공개share200 PASS.
+- 비회원 admin307/login, 개인course401, 합성 없는 공유404 PASS.
+- 다른 Preview URL의 Vercel302 보호, 무인증play-admission401 PASS.
+- 총9개 HTTP 점검 PASS. 실제 신규 가입·기기 도메인 검증과 업데이트는 NOT_RUN.
+
+고정 SHA 자체 검수에서 인증·권한·원자적 가입·예산·키 비노출·앱 취소·Play/개발
+UI 분리를 대조했으며 미해결 BLOCKER/HIGH는 없다. 독립 리뷰라는 의미가 아니다.
+새 키/환경 설정·배포 증거는 로컬 verification-logs/play-admission에 보존했다.
+Vercel connector403은 인증된 기존 브라우저로 확인을 마쳤고 우회 토큰을 만들지 않았다.
+문서 동기화는 앱 링크 상태/서명 설정/인증 운영/이 작업 기록만 수정했다.
+README의 AUTH-007 설명·제품 정책·DB 구조는 변경 없음, 시간순 과거 기록은 보존한다.
+Production main259f486 및 Production 프로젝트는 변경하지 않았다.

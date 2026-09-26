@@ -1,6 +1,7 @@
 # Android 공유 링크 연결 준비
 
-상태: 로컬 구현 후보. 공개 호스트·서명 설정·실제 Android 도메인 검증과 Play 배포는 미완료다.
+상태: 2026-09-26 Preview 배포 완료. 고정 공개 호스트의 인증 파일은 HTTP200이며
+Console에서 확인한 Play 서명3개와 일치한다. 실제 Android 도메인 검증은 아직 NOT_RUN이다.
 
 Android는 HTTPS `/share#<token>`과 `/invite#<token>`을 받고, MainActivity가 처음 실행되거나
 이미 실행 중일 때 같은 엄격한 URI 검사를 수행한다. 토큰은 fragment에 유지하고 query나
@@ -16,7 +17,8 @@ SHA-1, 업로드 인증서, 비밀키를 대신 사용하지 않는다. 인증�
 2026-09-26 Console에서 읽은 공개 지문과 Integrity용 base64url 변환은
 [서명 설정 후보](play-signing-certificates.json)에 기록했다. 현재 일반/양자 키와
 Console의 Digital Asset Links 스니펫을 구분한다. 스니펫의 서명 세대 대응은 별도
-미확인이며, 문서 생성 자체는 서버 설정 적용이나 실제 Play 증명 성공이 아니다.
+미확인이며, 설정 적용과 실제 Play 증명 성공은 구분한다. Preview 환경변수와
+공개 인증 JSON의 지문 일치는 확인했다.
 
 정상 응답은 `application/json`, 상태200, 쿠키·redirect 없음, 최대300초 캐시다.
 미설정 또는 형식 오류는503와 `no-store`로 드러낸다. 형식 검사는 그 지문이 실제 Play

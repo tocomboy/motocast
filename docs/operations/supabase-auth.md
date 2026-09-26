@@ -103,6 +103,7 @@ Preview `lehjmbgfpoemqcwxowbx`와 Play `dev.motocast.android` 전용이다. Clou
 - `play-admission`은 JWT 검증을 켜서 배포하고 함수 내부에서도 사용자 및 Kakao identity를 확인한다. Preview 이외의 프로젝트 URL은 거부한다.
 - 서버 secret: `PLAY_ADMISSION_PROJECT_ID=motocast-play-2026`, `PLAY_ADMISSION_SERVICE_ACCOUNT`(검증 전용 계정 JSON), `PLAY_ADMISSION_CERTIFICATES`(Play 앱 서명 SHA256의 base64url, 쉼표 구분), `PLAY_ADMISSION_VERSIONS`(검증할 versionCode allowlist, 최초4). 업로드 인증서를 앱 서명 인증서로 대신하지 않는다.
 - 키는 승인된 Preview secret store와 저장소 밖 사용자 전용 경로에만 보관한다. 프로젝트 IAM 관리자·Play 출시 역할을 부여하지 않는다. Android에는 공개 Cloud 프로젝트 번호만 포함하며 서비스 계정 키를 넣지 않는다.
+- 2026-09-26 Preview 비밀값4개 저장 및 digest 대조 완료. 검증 전용 계정의 로컬 생성 RSA2048 공개 인증서를 Google에 등록했고 OAuth 연결을 확인했다. 다운로드에 실패한 키2개는 승인 후 삭제했다. 현재 인증서 만료일2027-09-26 전에 교체해야 한다. 실제 Play 증명 성공은 별도 기기 확인이다.
 - 시간당 사용자5회, 서울 날짜당 전체 Google decode500회. 실패한 decode도 예산을 소모한다. 원본 proof/Google OAuth/Kakao/session token은 기록하지 않는다. Google 요청은 고정 HTTPS 목적지·각5초·64KiB 한도, 자동 재전송·redirect 없음이다.
 - 배포 전 정확한 후보 SHA CI-only PR 및 zero-deployment gate를 지킨다. 실제 Google proof와 신규 Play 사용자 가입은 로컬 합성 응답·CI로 대체하지 않는다.
 - 복구: `PLAY_ADMISSION_VERSIONS`를 비워 신규 Play 가입만 닫고, 검증한 이전 함수 소스로 복구한다. 이미 가입한 회원과 새 테이블은 삭제하지 않는다. 기존 로그인·초대 API를 유지하며 Android는 이전 정상 소스를 더 높은 versionCode로 배포한다. 서비스 키 분실/노출 시 새 키 전달 확인 후 해당 키만 폐기하는 별도 승인 절차를 따른다.
