@@ -60,7 +60,7 @@ Keep Auth users, rider data, provider secrets and budget ledgers isolated betwee
 Project: `tocomboys-projects/motocast`.
 
 - Production Branch: `main`.
-- Node.js: `20.x`.
+- Node.js target: `24.x` in package metadata, `.nvmrc`, CI and Vercel. Existing deployments retain their original runtime until redeployed. See [migration evidence](../work/research/2026-09-26-node24-runtime.md) for the applied setting and exact deployment status.
 - Vercel Authentication: `preview` only.
 - Production variables point to the final Production Supabase project.
 - Preview variables point to `lehjmbgfpoemqcwxowbx`.

@@ -405,12 +405,13 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### OPS-004 — Vercel runtime and secrets
 
 - Status: `CONFIRMED`
-- Decision: Use Vercel Hobby and the default `vercel.app` domain unless the user supplies a custom domain. Pin Node.js `20.x` consistently across `package.json`, GitHub CI, and Vercel. Vercel keeps only the three `NEXT_PUBLIC_*` variables; provider, service-role, origin, and budget secrets live in Supabase.
-- Rationale: Node.js 20 is already the locally and CI-verified baseline, so aligning Vercel down from its current 24.x setting avoids an unnecessary runtime migration while removing drift. Keeping server-only values in Supabase reduces credential exposure.
+- Decision: Use Vercel Hobby and the default `vercel.app` domain unless the user supplies a custom domain. Pin Node.js `24.x` consistently across `package.json`, `.nvmrc`, GitHub CI, and Vercel. Vercel keeps only the three `NEXT_PUBLIC_*` variables; provider, service-role, origin, and budget secrets live in Supabase.
+- Rationale: Node.js 20 reached end of life and Vercel disables new Node.js 20 builds on 2026-10-01. Use supported Node.js 24 for reproducible local, CI and deployment validation. Keeping server-only values in Supabase reduces credential exposure.
 - User impact: Stable builds with a smaller credential exposure surface.
 - Affected: package metadata, CI, Vercel project, Supabase secrets.
 - Verification: official runtime documentation, project/API readback, build output, environment-name readback.
 - Confirmed by user interview: 2026-08-30.
+- Runtime update 2026-09-26: the user requested investigation and correction of the Vercel Node.js warning. This supersedes the original Node.js 20 baseline; dependency versions, product behavior, authentication and deployment approval boundaries remain unchanged. See [runtime migration evidence](../work/research/2026-09-26-node24-runtime.md).
 - Interview update: On 2026-08-31 deployment-level readback found seven server-only values mistakenly targeted to both Preview and Production. The user confirmed that no Production credentials had been created, so those values were Preview credentials rather than Production authority. They were removed from Vercel entirely; future Production server credentials remain owned only by Supabase secrets under this confirmed decision.
 
 #### OPS-005 — Deployment protection
