@@ -198,3 +198,31 @@ Vitest699 PASS/0 FAIL/0 SKIP, Chromium49 PASS/2 기존 연결 전용 SKIP.
 런타임 PR의 깨끗한 Node24 의존성 설치와 동일한 의존성 버전을 사용했다.
 PR75는 CI 전용 브랜치로 유지하며 이 통합 커밋을 웹에 배포하지 않는다.
 별도 [Node24 작업 기록](2026-09-26-node24-runtime.md)에 설정/배포/복구 근거를 남겼다.
+
+## Figma·검증 키 복구 및 설정 적용
+
+사용자의 "막혀있던 내용들 진행해봐"에 따라 기존 Preview/내부 테스트 범위로 재개했다.
+Figma whoami와 B01 디자인 읽기 PASS. Android 기존 원본을 보존하고 P01(192:1915),
+P02(192:1938), P03(192:1961)을 만든 뒤 초대 없는 Play UI를 구현했다. Android 기록은
+`docs/play-signup-ui.md`이며 단위320개·실제 Compose16개 동작(4화면 크기) PASS다.
+서버 SQL·가입 endpoint 소스는2feeb1b 이후 변경하지 않았다.
+
+Google JSON 다운로드가 다시 파일을 전달하지 않아 동일 계정에 로컬 생성 RSA2048
+공개 X.509 인증서를 등록했다. 비공개 PKCS8·서비스 계정 JSON은 소스 밖 owner-only
+폴더에 보관했다. 공개키 readback 일치, OAuth200 및 합성 잘못된 token의 decode400
+INVALID_ARGUMENT PASS. 이는 실제 Play 설치 증명 성공을 뜻하지 않는다.
+사용자가 미사용 키2개 삭제를 승인했고, d125c4146f3b…와 a8cb24263f1c… 삭제 후
+사용자 관리 키는 a998e254020d…1개만 남음을 Console에서 확인했다. 만료2027-09-26
+전 교체가 필요하다. 계정 IAM/Play 출시 역할은 추가하지 않았다.
+
+Preview `lehjmbgfpoemqcwxowbx`에 PLAY_ADMISSION_SERVICE_ACCOUNT, PROJECT_ID,
+CERTIFICATES, VERSIONS(4)를 저장하고4개 SHA256 digest를 로컬 입력과 대조했다.
+Supabase CLI는 로그인 없음 ERROR로 쓰지 않았으며, 승인된 프로젝트의 비밀값 UI를
+사용했다. secret 변경 후 play-admission은v3/ACTIVE/JWTtrue, 코드 bundle hash는
+기존fe752883…와 동일하다. 다른7개 함수의 코드 배포는 하지 않았다.
+설정 전 PR75 head2feeb1b CI PASS·GitHub Deployments0·Vercelchecks/status0 재확인.
+
+키/인증 토큰은 로그·명령 인자·저장소에 기록하지 않았다. 로컬 readback은
+`verification-logs/play-admission/google-key-readback.json`와`secret-digests.json`이다.
+Production 변경 없음. 웹 인증 파일 배포·최종 앱 승격/내부 출시 및 실제 신규 가입은
+다음 단계이며, 위 설정만으로 완료 처리하지 않는다.
