@@ -11,7 +11,7 @@ AUTH-007: 서버가 Play 설치 증명을 검증한 신규 카카오 사용자�
 1. 완료: 정책 정본, 신뢰 경계 및 외부 Play Integrity 프로젝트 연결 확인.
 2. 완료: 서버 증명 검증·일회용 가입 요청·원자적 회원 생성, 실제 DB/실패/권한 검사 및 고정 SHA CI 후 Preview DB/Edge 적용. 비밀값 설정은 별도 대기.
 3. 진행: Android 로그인 320 PASS. Figma 연결 오류로 화면 변경만 대기하며, 공유 App Links 준비 코드를 기존 후보에 통합한다.
-4. 진행: 공유 인증 파일과 추가 가입 동시성 검사의 후속 후보 검증 및 PR 갱신. 도메인 선택·키 파일이 필요한 외부 설정은 보류.
+4. 완료: 공유 인증 파일과 추가 가입 동시성 검사의 후속 후보 검증·커밋/push 및 두 PR CI 확인. 도메인 선택·키 파일이 필요한 외부 설정은 보류.
 5. 대기: 실제 Google 연결, 최종 UI/서명 후보, 내부 테스트 배포 및 Play 설치본 가입·공유 링크·업데이트 확인.
 
 ## 작업 공간과 보존
@@ -122,3 +122,64 @@ proxy 제외 및 회귀 검사가 미커밋 상태로 있음을 확인했다. �
   파일 위치, 공유 공개 호스트 결정, 화면 최소 변경 선택은 아직 미응답이다.
 - 서버 비밀값·Vercel 보호·Play 트랙 변경 없음. 새 AAB/실제 Play 가입·기기 링크 검증은
   NOT_RUN이며 후보 PR 병합 전 상태를 유지한다.
+
+### 이번 진행의 최종 확인
+
+위 중간 기록 이후 서버236f5d5c4931ff37eab44704b7447d7c32a416a8의
+CI36221944855 PASS(verify2분38초), Android9e7b79a942799ca7031f1e8574c826664e62690f의
+CI36221973624 Required PASS를 확인했다. 앞선 Android36221823304는 PR edited 이벤트로
+취소되어 PASS로 세지 않으며 후속 같은 head 검사가 성공했다. Android의 manual-only
+targeted job3개 SKIP은 PR 필수 검사와 별도다. 제목/본문 후속 수정으로 중복 CI를
+일으키지 않도록 이번 완료 기록은 먼저 로컬에 보존한다. 두 PR은 draft/OPEN/미병합이다.
+서버 새 head의 GitHub Deployments0/Vercel check0/status0을 CI 종료 후 다시 확인했다.
+
+추가로 승인된 기존 로컬 업로드 키를 이용해 **검증용** Play0.2.0/code4 AAB/APK를
+생성했다. release 단위320 PASS/FAIL0/ERROR0/SKIP0, lint, 서명, 패키지·비디버그,
+zipalign/native16KB PASS. Play/debug 가입 flag 분리, Cloud 프로젝트 번호 및 release
+App Links manifest도 PASS. 이 소스는 UI/호스트가 미완료여서 출시 후보로 승격하지 않는다.
+AAB SHA256: `d01bf73b3e9f3da2f198232e72c1f63917968ecc73bae6eabae2b1a72ed53a81`.
+Android 로컬 `verification-logs/play-internal/9e7b79a-preflight/`에 AAB/APK/로그/근거를
+보존했다. 최종 main 소스에서 다시 만들어야 하며 Play 업로드·기기 실행은 NOT_RUN이다.
+서버 키 파일·공개 호스트·UI 선택/연결이 해결되면 단계5를 재개한다. Notion 기록은
+필수 접근 확인 도구 미노출로 NOTION_UPDATE_PENDING을 유지한다.
+
+## 고정 앱/테스터 주소의 Vercel 로그인 제거 · 2026-09-26
+
+사용자 요청: "vercel 로그인 없이 앱 + 카카오 로그인 만으로 볼 수 있게".
+기존 공개 호스트 결정 대기를 해소했다. 현재 발행/수신 호스트를 유지하고 Vercel
+Deployment Protection Exceptions에 이 호스트 하나만 추가한다. 다른 Preview URL,
+Production 코드/서버, 카카오 회원 권한·공유 회수·서버 키는 변경하지 않는다.
+
+실행 계획: (1) DONE 설정 화면과 정확한 호스트·기존 인증 경계 확인 및 OPS-005 갱신,
+(2) DONE 고정 호스트 예외 저장·새로고침 확인,
+(3) DONE 무인증 페이지/개인 API/공유 오류/다른 Preview 보호 readback,
+(4) DONE 결과 기록. 인증 파일 신규 코드 배포와 Play 신규 앱 출시는 별도 단계이며
+키 파일/UI 선행조건은 계속 남아 있다. 기존236f5d5/9e7b79a의 통과한 소스 검증을
+재사용하며 이번 설정 변경을 새 기기/App Links 성공으로 확대하지 않는다.
+
+### 적용 결과
+
+Vercel `tocomboys-projects/motocast`의 Deployment Protection Exceptions에
+고정 호스트1개를 추가하고 새로고침 후 목록 유지를 확인했다. 기본 Require Log In은
+켜진 상태이며 Protected Sourcemaps/다른 설정은 변경하지 않았다. 원래 `/login`의
+HTTP302 Vercel `/sso-api` 이동은 아래 공개 readback에서 사라졌다.
+
+- `/login`:200, 카카오 로그인 화면 PASS.
+- `/share`:200, 공개 공유 진입 화면 PASS.
+- `/admin/invites`:307 `/login`, 비로그인 관리자 화면 접근 거부 PASS.
+- `/api/shares/course`:쿠키/토큰 없는 합성 요청401, 개인 코스 조회 거부 PASS.
+- `/api/shares/resolve`:합성 유효형식 토큰에404, 없는 공개 공유 거부 PASS.
+- 동일 배포의 별도 URL `motocast-j3b65mtp1-tocomboys-projects.vercel.app/login`:
+  302 Vercel 로그인, 다른 개발 URL 보호 유지 PASS.
+- `/.well-known/assetlinks.json`:404. Vercel 차단은 해소됐지만 신규 인증 파일 코드는
+  아직 배포되지 않았으므로 실제 App Links 성공은 NOT_RUN이다.
+
+검증은 비로그인 HTTP 요청만 사용하고 실제 공유 토큰/쿠키/회원 데이터는 읽거나
+수정하지 않았다. readback은 로컬 `verification-logs/play-admission/public-origin-readback.json`,
+설정 화면은 이 세션의 `vercel-fixed-origin-public.png`로 보존했다. 현재 제공 중인
+웹 소스6826174와 Android code3은 그대로다. 카카오 신규 가입/실기기 로그인은 이번
+설정 readback으로 검증하지 않았다. 복구는 이 도메인 예외 한 개를 회수하는 방식이며
+카카오 회원/사용자 데이터나 배포 코드를 되돌릴 필요는 없다. 복구 실행은 하지 않았다.
+
+이번 변경은 정책/운영/작업 기록4개만 변경하므로 이전 동일 제품 코드의 로컬 검사
+근거를 재사용한다. 비밀값 검사와 정확한 docs diff를 확인하고 기존 PR75에 반영한다.

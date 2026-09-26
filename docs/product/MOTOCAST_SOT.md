@@ -439,12 +439,12 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### OPS-005 — Deployment protection
 
 - Status: `CONFIRMED`
-- Decision: Production is reachable through MOTOCAST invitation and Kakao authentication without Vercel-team authentication. Enable Vercel Authentication for Preview deployments only.
-- Rationale: Preview contains unreleased behavior and test data, while invited acquaintances must be able to reach Production without owning a Vercel account.
-- User impact: Preview requires authorized Vercel access; Production uses only the application's invitation and Kakao login boundary.
+- Decision: Production is reachable through MOTOCAST invitation and Kakao authentication without Vercel-team authentication. Keep Vercel Authentication on other Preview deployment URLs, but exempt the fixed Android/tester origin `https://motocast-git-develop-tocomboys-projects.vercel.app` so testers need only the app's Kakao login and membership checks. Play enrollment continues to require AUTH-007 verification; web/development enrollment retains invitations.
+- Rationale: Android App Links and testers must reach the fixed origin without a Vercel account. Other development deployment URLs remain protected.
+- User impact: The fixed tester origin's login page, explicitly published share snapshots and public App Links certificate are reachable without Vercel login. Private courses, writes and membership remain protected by application authentication and server authorization.
 - Affected: Vercel Deployment Protection, E2E automation, Preview instructions.
-- Verification: anonymous Production response reaches the application; anonymous Preview is challenged; an authorized Preview smoke test can proceed.
-- Confirmed by user interview: 2026-08-30.
+- Verification: anonymous Production and the fixed tester origin reach the application; other protected Preview URLs remain challenged. Private APIs still reject anonymous/nonmember access; revoked or invalid share tokens are denied. App Links certificates must return public JSON without a Vercel redirect.
+- Confirmed by user interview: 2026-08-30; fixed tester-origin exception approved 2026-09-26 ("vercel 로그인 없이 앱 + 카카오 로그인 만으로 볼 수 있게").
 
 #### OPS-006 — Backup and free-plan operation
 

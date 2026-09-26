@@ -48,7 +48,7 @@ Production Supabase remains Tokyo and has three applied migrations through `2026
 
 | Environment | Supabase project | Region | Vercel deployment | Access boundary |
 | --- | --- | --- | --- | --- |
-| Preview | `lehjmbgfpoemqcwxowbx` (`MOTOCAST_Preview`) | Seoul `ap-northeast-2` | `develop` Preview | Vercel Authentication plus MOTOCAST test invitation |
+| Preview | `lehjmbgfpoemqcwxowbx` (`MOTOCAST_Preview`) | Seoul `ap-northeast-2` | `develop` Preview | Fixed Android/tester origin: Kakao + membership, no Vercel login; other Preview URLs stay protected |
 | Production | `obodvbyzptxeehgpcpkd` (`motocast`) | Tokyo `ap-northeast-1`, retained under `OPS-008` | `main` Production | MOTOCAST invitation and Kakao login only |
 
 Keep Auth users, rider data, provider secrets and budget ledgers isolated between projects. The user-approved 2026-09-15 one-time transfer of the existing administrator and rider and their owned data is the only user-data exception; follow the [execution plan](../work/research/2026-09-15-production-user-migration-plan.md). The user explicitly declined backups. Preserve source Preview data and use in-memory transfer with atomic failure handling and identity/ownership validation; do not create a backup/export file or copy sessions, provider keys or budget ledgers under this exception. Migrations and Edge Function source remain shared release artifacts.
@@ -61,7 +61,7 @@ Project: `tocomboys-projects/motocast`.
 
 - Production Branch: `main`.
 - Node.js: `20.x`.
-- Vercel Authentication: `preview` only.
+- Vercel Authentication: keep Preview protection, with an OPS-005 exception for `motocast-git-develop-tocomboys-projects.vercel.app` approved 2026-09-26. Public reachability does not grant membership or remove private API authorization.
 - Production variables point to the final Production Supabase project.
 - Preview variables point to `lehjmbgfpoemqcwxowbx`.
 - Each scope keeps only `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `NEXT_PUBLIC_KAKAO_MAP_JS_KEY`.
