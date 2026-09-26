@@ -183,3 +183,18 @@ HTTP302 Vercel `/sso-api` 이동은 아래 공개 readback에서 사라졌다.
 
 이번 변경은 정책/운영/작업 기록4개만 변경하므로 이전 동일 제품 코드의 로컬 검사
 근거를 재사용한다. 비밀값 검사와 정확한 docs diff를 확인하고 기존 PR75에 반영한다.
+
+### Node.js 지원 종료 대응 후 작업 기준 갱신
+
+사용자의 Vercel Node.js 경고 수정 요청에 따라 독립 PR76이 develop에 반영됐다.
+현재 Preview 소스는 `9bcf151fa7af3ae8003fef4db980e1a5a11f1547`, 실제 Vercel
+런타임은 Node.js 24.21.0이다. 이전6826174 기준은 과거 증거이며, 이후 PR75
+승격 전 기준 검사는 새 develop SHA와 비교해야 한다. PR75에도 해당 변경을
+병합하여 Node20을 재도입하지 않도록 했다. 기존 OPS-005 공개 주소 예외,
+Play 가입/앱 링크 준비와 모든 미완료 조건은 유지한다.
+
+통합 후 로컬 Node24.12.0: lint/typecheck, Deno6 entrypoints, build PASS;
+Vitest699 PASS/0 FAIL/0 SKIP, Chromium49 PASS/2 기존 연결 전용 SKIP.
+런타임 PR의 깨끗한 Node24 의존성 설치와 동일한 의존성 버전을 사용했다.
+PR75는 CI 전용 브랜치로 유지하며 이 통합 커밋을 웹에 배포하지 않는다.
+별도 [Node24 작업 기록](2026-09-26-node24-runtime.md)에 설정/배포/복구 근거를 남겼다.

@@ -6,7 +6,7 @@
   "description": "Motorcycle route and segment weather planner for a private riding group.",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node --version && next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -36,6 +36,6 @@
     "vitest": "4.1.11"
   },
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   }
 }

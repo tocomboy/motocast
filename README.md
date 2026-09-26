@@ -55,7 +55,7 @@
 
 ## 로컬 실행
 
-Node.js 20.x가 필요합니다. 로컬, GitHub CI, Vercel 런타임을 같은 major로 고정합니다.
+Node.js 24.x가 필요합니다. 로컬은 `.nvmrc`로 버전을 선택하고 GitHub CI도 같은 파일을 읽습니다. Vercel은 `package.json`의 `engines.node`를 우선 사용하며, 프로젝트 설정도 24.x로 맞춥니다. 빌드 로그 첫 부분의 실제 Node.js 버전으로 적용 여부를 확인합니다.
 
 ```bash
 npm ci
