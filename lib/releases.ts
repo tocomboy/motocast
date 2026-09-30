@@ -12,6 +12,17 @@ export const currentVersion = packageMetadata.version;
 
 export const releaseNotes = [
   {
+    version: "0.5.1",
+    date: "2026-09-30",
+    title: "출발 일정 기본값 개선",
+    summary: "새 출발 일정에 현재 이후의 가장 가까운 5분 시각을 제안합니다.",
+    bullets: [
+      "새 일정을 열면 현재 이후 가장 가까운 5분 시각을 기본으로 제안해요.",
+      "출발 분은 00분부터 55분까지 5분 간격으로 선택해요.",
+      "직접 고른 일정은 확인할 때 다시 검사하며, 과거 출발은 설정할 수 없어요.",
+    ],
+  },
+  {
     version: "0.5.0",
     date: "2026-09-26",
     title: "Google Play 앱 가입 간소화",

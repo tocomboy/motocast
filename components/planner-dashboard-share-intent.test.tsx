@@ -64,8 +64,12 @@ function createNodeMock(element: ReactElement<unknown>) {
 }
 
 async function chooseSchedule(renderer: ReactTestRenderer) {
+  await act(async () => renderer.root.findByProps({ className: "schedule-trigger" }).props.onClick());
+  // Use the first day of the next visible month, including at Seoul month/year end.
+  await act(async () => renderer.root.findByProps({ "aria-label": "다음 달" }).props.onClick());
   const calendar = renderer.root.findByProps({ className: "calendar-grid" });
-  const dateButton = calendar.findAllByType("button").filter((button) => !button.props.disabled).at(-1)!;
+  const dateButton = calendar.findAllByType("button").find((button) => renderedText(button) === "1")!;
+  expect(dateButton.props.disabled).toBe(false);
   await act(async () => dateButton.props.onClick());
   await act(async () => renderer.root.findByProps({ className: "schedule-time-rows" }).findAllByType("button")[0].props.onClick());
   const hour = renderer.root.findByProps({ className: "clock-grid hour-grid" }).findAllByType("button").find((button) => button.children.includes("08"))!;
@@ -77,6 +81,8 @@ async function chooseSchedule(renderer: ReactTestRenderer) {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-30T08:57:00.000Z"));
   mocks.authListeners.length = 0;
   mocks.invoke.mockReset();
   mocks.rpc.mockReset().mockResolvedValue({ data: tripId, error: null });
@@ -120,7 +126,7 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("PlannerDashboard collection share intent", () => {
   it("binds owner handoff to the calculated inputs and invalidates it on account change", async () => {
@@ -147,12 +153,21 @@ describe("PlannerDashboard collection share intent", () => {
     const prepare = renderer.root.findAllByType("button").find((button) => button.children.includes("공유 준비 테스트"))!;
     await act(async () => prepare.props.onClick());
     expect(renderedText(renderer.root.findByProps({ className: "schedule-trigger" }))).toContain("날짜와 출발 시각 선택");
+    await act(async () => renderer.root.findByProps({ className: "schedule-trigger" }).props.onClick());
+    expect(renderedText(renderer.root.findByProps({ className: "schedule-selection" }))).toBe("9월 30일 · 18:00 출발");
+    expect(renderedText(renderer.root.findByProps({ className: "schedule-trigger" }))).toContain("날짜와 출발 시각 선택");
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
     await chooseSchedule(renderer);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
     mocks.summaryDialogShowModal.mockReset();
     const form = renderer.root.findByType("form");
     await act(async () => form.props.onSubmit({ preventDefault: vi.fn() }));
 
     expect(mocks.invoke.mock.calls.filter(([name]) => name === "plan-route")).toHaveLength(1);
+    const routeRequest = mocks.invoke.mock.calls.find(([name]) => name === "plan-route")![1];
+    expect(new Date(routeRequest.body.departureAt).toISOString()).toBe("2026-09-30T23:00:00.000Z");
     expect(mocks.invoke.mock.calls.filter(([name]) => name === "weather-timeline")).toHaveLength(1);
     expect(mocks.rpc.mock.calls.filter(([name]) => name === "finalize_trip_plan")).toHaveLength(1);
     expect(mocks.rpc.mock.calls.filter(([name]) => name === "publish_trip_share")).toHaveLength(0);

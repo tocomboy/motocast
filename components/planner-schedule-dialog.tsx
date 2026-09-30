@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
-import { minimumDeparture } from "@/lib/planner/departure";
+import { minimumDeparture, suggestedDeparture } from "@/lib/planner/departure";
 
 function parseTime(time: string) {
   const match = /^(\d{2}):(\d{2})$/.exec(time);
@@ -45,10 +45,13 @@ export function PlannerScheduleDialog({ date, time, minimumDate, minimumTime, di
   const actualTriggerRef = triggerRef ?? localTriggerRef;
 
   function open() {
-    setDraftDate(date);
-    setVisibleMonth(parseMonth(date || minimumDate));
-    setHour(parseTime(time).hour);
-    setMinute(parseTime(time).minute);
+    const suggested = suggestedDeparture();
+    const nextDate = date || suggested.date;
+    const nextTime = parseTime(time || suggested.time);
+    setDraftDate(nextDate);
+    setVisibleMonth(parseMonth(nextDate));
+    setHour(nextTime.hour);
+    setMinute(nextTime.minute);
     setPanel(null);
     setError("");
     dialogRef.current?.showModal();
@@ -104,7 +107,7 @@ export function PlannerScheduleDialog({ date, time, minimumDate, minimumTime, di
   const leading = new Date(Date.UTC(visibleMonth.year, visibleMonth.month, 1)).getUTCDay();
   const count = new Date(Date.UTC(visibleMonth.year, visibleMonth.month + 1, 0)).getUTCDate();
   const calendar = [...Array.from({ length: leading }, () => null), ...Array.from({ length: count }, (_, index) => index + 1)];
-  const timeValues = panel === "hour" ? Array.from({ length: 24 }, (_, value) => String(value).padStart(2, "0")) : Array.from({ length: 60 }, (_, value) => String(value).padStart(2, "0"));
+  const timeValues = panel === "hour" ? Array.from({ length: 24 }, (_, value) => String(value).padStart(2, "0")) : Array.from({ length: 12 }, (_, value) => String(value * 5).padStart(2, "0"));
 
   return <div className="planner-schedule-field">
     <button ref={actualTriggerRef} className="schedule-trigger" type="button" disabled={disabled} onClick={open} aria-label={`출발 날짜·시간, ${scheduleLabel(date, time)}`}><span>출발 날짜·시간 {date && time ? "변경" : "선택"}</span><strong>{scheduleLabel(date, time)}</strong></button>
