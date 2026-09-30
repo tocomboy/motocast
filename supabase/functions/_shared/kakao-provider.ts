@@ -1,19 +1,19 @@
 import { assertKakaoRouteMatchesPoints, normalizeKakaoRoutesPayload, RouteResponseValidationError } from "./kakao-route.ts";
 import { applyMotorcycleRoutePolicy } from "./kakao-safety.ts";
-import type { RoutePointRequest } from "./route-request.ts";
+import type { RoutablePoint } from "./route-orchestration.ts";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export type KakaoRouteRequest = {
-  origin: RoutePointRequest;
-  destination: RoutePointRequest;
-  waypoints: RoutePointRequest[];
+  origin: RoutablePoint;
+  destination: RoutablePoint;
+  waypoints: RoutablePoint[];
   departureAt: Date;
   isFuture: boolean;
   apiKey: string;
 };
 
-function pointParam(point: RoutePointRequest) {
+function pointParam(point: RoutablePoint) {
   const safeName = point.name.replace(/[|,]/g, " ").slice(0, 80).trim();
   return `${point.longitude},${point.latitude}${safeName ? `,name=${safeName}` : ""}`;
 }

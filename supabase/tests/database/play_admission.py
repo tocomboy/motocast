@@ -2,9 +2,11 @@
 Never touches hosted databases or resets an existing DB. Retains fixtures and failure evidence.
 """
 import concurrent.futures
+import argparse
 import datetime
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 import sys
@@ -14,7 +16,13 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[3]
 CONTAINER = "supabase_db_motocast"
-DATABASE = "motocast_play_20260926"
+parser = argparse.ArgumentParser()
+parser.add_argument('--database', default='motocast_play_20260926')
+parser.add_argument('--reuse', action='store_true')
+options = parser.parse_args()
+DATABASE = options.database
+if not re.fullmatch(r'motocast_play_[a-z0-9_]{8,40}', DATABASE):
+    raise ValueError('Invalid task-owned local database name')
 LOG = ROOT / "verification-logs" / "play-admission"
 LOG.mkdir(parents=True, exist_ok=True)
 BASE = ["docker", "exec", "-i", CONTAINER, "psql", "-U", "supabase_admin", "-d", DATABASE, "-X", "-q", "-At", "-v", "ON_ERROR_STOP=1"]
@@ -49,7 +57,7 @@ identity = run(["docker", "inspect", CONTAINER, "--format", '{{index .Config.Lab
 assert identity.stdout.decode().strip() == "motocast|public.ecr.aws/supabase/postgres:17.6.1.166"
 assert shutil.disk_usage(ROOT).free > 10 * 1024**3, "Insufficient safety space"
 probe = run(ADMIN, ("select count(*) from pg_database where datname=" + quote(DATABASE)).encode())
-reuse = "--reuse" in sys.argv
+reuse = options.reuse
 assert probe.returncode == 0 and probe.stdout.strip() == (b"1" if reuse else b"0"), "Unexpected database identity"
 if reuse:
     prior = json.loads((LOG / "database-resource.json").read_text())

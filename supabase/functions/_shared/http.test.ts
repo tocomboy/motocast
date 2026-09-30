@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { safeErrorCode, safeErrorMessage, safeErrorStatus } from "./http";
 
+it("reports weather storage admission failure without internal capacity details", () => {
+  const error = new Error("WEATHER_STORAGE_CAPACITY");
+  expect(safeErrorStatus(error)).toBe(503);
+  expect(safeErrorMessage(error)).toBe("현재 날씨 정보를 갱신할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+});
+
 describe("safe provider errors", () => {
   it("does not mislabel malformed provider data as user input", () => {
     const error = new Error("INVALID_PLACE_PROVIDER_RESPONSE");
