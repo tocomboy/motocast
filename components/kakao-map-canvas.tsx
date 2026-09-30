@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { bindMapLongPress } from "@/lib/places/map-long-press";
 
 export type MapMarkerRole = "origin" | "destination" | "lunch" | "dinner" | "rest" | "waypoint";
 export type MapPoint = { label: string; latitude: number; longitude: number; role?: MapMarkerRole; nonTraversed?: boolean };
@@ -61,12 +62,17 @@ export function KakaoMapCanvas({
   points,
   path,
   showLegend = true,
+  onSelectCoordinate,
 }: {
   points: MapPoint[];
   path?: PathPoint[];
   showLegend?: boolean;
+  onSelectCoordinate?: (point: { latitude: number; longitude: number }) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<InstanceType<KakaoMapsNamespace["Map"]> | null>(null);
+  const selectRef = useRef(onSelectCoordinate);
+  useEffect(() => { selectRef.current = onSelectCoordinate; }, [onSelectCoordinate]);
   const appKey = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY;
   const hasGeometry = points.length > 0 || Boolean(path?.length);
   const geometryKey = JSON.stringify({ points, path: path ?? [] });
@@ -80,6 +86,17 @@ export function KakaoMapCanvas({
       ? mapState.geometryKey === geometryKey ? mapState.status : "loading"
       : "demo";
   const isReady = state === "ready";
+
+  useEffect(() => {
+    if (!isReady || !onSelectCoordinate || !containerRef.current || !mapRef.current) return;
+    const map = mapRef.current;
+    return bindMapLongPress(containerRef.current, (x, y) => {
+      const maps = window.kakao?.maps;
+      if (!maps || !selectRef.current) return;
+      const point = map.getProjection().coordsFromContainerPoint(new maps.Point(x, y));
+      selectRef.current({ latitude: point.getLat(), longitude: point.getLng() });
+    });
+  }, [isReady, geometryKey, onSelectCoordinate]);
 
   useEffect(() => {
     if (!hasGeometry || !appKey) return;
@@ -123,6 +140,7 @@ export function KakaoMapCanvas({
             const markerPath = groupedMarkers.map((group) => new loadedMaps.LatLng(group.latitude, group.longitude));
             const routePath = geometry.path.map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
             const map = new loadedMaps.Map(containerRef.current, { center: markerPath[0] ?? routePath[0], level: 8 });
+            mapRef.current = map;
             const bounds = new loadedMaps.LatLngBounds();
             routePath.forEach((position) => bounds.extend(position));
             markerPath.forEach((position, index) => {
@@ -199,6 +217,7 @@ export function KakaoMapCanvas({
 
     return () => {
       active = false;
+      mapRef.current = null;
       window.clearTimeout(timeout);
       if (script && onLoad) script.removeEventListener("load", onLoad);
       if (script && onError) script.removeEventListener("error", onError);
@@ -209,6 +228,7 @@ export function KakaoMapCanvas({
     <div className="map-shell" aria-label="선택한 라이딩 경로 지도">
       <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert={!isReady} />
       <MapStatus state={state} actualRoute={Boolean(path?.length)} />
+      {isReady && onSelectCoordinate ? <div className="map-waypoint-actions"><p>지도를 길게 눌러 경유지를 선택하세요. 확대·이동 후 중심 지점을 선택할 수도 있어요.</p><button type="button" onClick={() => { const point = mapRef.current?.getCenter(); if (point) onSelectCoordinate({ latitude: point.getLat(), longitude: point.getLng() }); }}>지도 중심에서 경유지 선택</button></div> : null}
       {isReady && showLegend ? <MapMarkerLegend points={points} /> : null}
       {!isReady && state !== "empty" ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
     </div>

@@ -46,6 +46,12 @@
 .is-summary-view .management-grid { grid-column: 1 / -1; }
 .place-field-label { display: block; margin-bottom: 6px; color: #a83d18; font-size: 14px; font-weight: 800; }
 .place-trigger-row { display: flex; align-items: stretch; gap: 8px; }
+
+
+.map-waypoint-actions { position: absolute; z-index: 2; bottom: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; background: var(--panel); color: var(--ink); }
+.map-waypoint-actions p { flex: 1; margin: 0; font-size: 12px; }
+.map-waypoint-actions button { min-height: 48px; white-space: normal; }
+@media (max-width: 480px) { .map-waypoint-actions { flex-wrap: wrap; } .map-waypoint-actions p { flex-basis: 100%; } }
 .place-picker-trigger { flex: 1; min-width: 0; min-height: 72px; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 12px 16px; border: 1px solid #d9d2c5; border-radius: 12px; background: #fffdf8; color: #18221d; text-align: left; cursor: pointer; }
 .place-picker-trigger strong { overflow-wrap: anywhere; font-size: 18px; line-height: 1.45; }
 .place-picker-trigger span { overflow-wrap: anywhere; color: #405049; font-size: 14px; line-height: 1.55; }
@@ -4893,3 +4899,26 @@ body:has(dialog[open]) {
 }
 .riding-summary-back:has(> button) { display: block; }
 .riding-summary-back > button { background: #fffdf8; border: 1px solid #d9d2c5; border-radius: 10px; color: #18221d; font: inherit; min-width: 48px; min-height: 48px; }
+
+/* Figma M01-M06: explicit confirmation, mobile sheet and desktop dialog. */
+.map-confirmation-dialog {
+  background: var(--panel, #fffdf8); color: var(--ink, #18221d);
+  border: 0; border-radius: 20px; padding: 24px 20px 28px;
+  width: min(480px, calc(100% - 32px)); max-width: none; max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+.map-confirmation-dialog::backdrop { background: rgb(0 0 0 / 24%); }
+.map-confirmation-dialog h2 { font-size: 20px; line-height: 1.65; margin: 0 0 16px; overflow-wrap: anywhere; }
+.map-confirmation-body { color: var(--soft, #405049); line-height: 1.5; }
+.map-confirmation-body p { margin: 0 0 16px; overflow-wrap: anywhere; }
+.map-confirmation-actions { display: grid; gap: 12px; }
+.map-confirmation-actions button {
+  background: var(--panel, #fffdf8); border: 1px solid var(--line, #d9d2c5);
+  border-radius: 10px; color: var(--ink, #18221d); font: inherit; font-weight: 700;
+  min-height: 48px; padding: 10px 14px; white-space: normal; overflow-wrap: anywhere;
+}
+.map-confirmation-actions .primary-button { background: var(--ink, #18221d); color: var(--panel, #fffdf8); }
+.map-confirmation-actions button:disabled { opacity: .45; cursor: default; }
+@media (max-width: 767px) {
+  .map-confirmation-dialog { border-radius: 24px 24px 0 0; inset: auto 0 0; margin: 0; width: 100%; max-height: 92dvh; padding-bottom: max(28px, env(safe-area-inset-bottom)); }
+}

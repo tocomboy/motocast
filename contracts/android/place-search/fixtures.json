@@ -1,0 +1,341 @@
+{
+  "contractVersion": "1.1.0",
+  "sourceCommit": "55949c0562a04c05c5da86e6313a8e577fb0032b",
+  "requests": [
+    {
+      "id": "defaults-and-whitespace",
+      "input": {
+        "query": "  테스트\t 장소\n"
+      },
+      "expected": {
+        "query": "테스트 장소",
+        "page": 1,
+        "size": 10
+      }
+    },
+    {
+      "id": "unicode-whitespace",
+      "input": {
+        "query": "﻿테스트  장소　",
+        "page": 45,
+        "size": 15
+      },
+      "expected": {
+        "query": "테스트 장소",
+        "page": 45,
+        "size": 15
+      }
+    },
+    {
+      "id": "integer-json-number",
+      "input": {
+        "query": "테스트",
+        "page": 1,
+        "size": 1
+      },
+      "expected": {
+        "query": "테스트",
+        "page": 1,
+        "size": 1
+      }
+    },
+    {
+      "id": "max-utf16",
+      "input": {
+        "query": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가"
+      },
+      "expected": {
+        "query": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가",
+        "page": 1,
+        "size": 10
+      }
+    },
+    {
+      "id": "non-whitespace-next-line",
+      "input": {
+        "query": "가나"
+      },
+      "expected": {
+        "query": "가나",
+        "page": 1,
+        "size": 10
+      }
+    },
+    {
+      "id": "additional-fields",
+      "input": {
+        "query": "테스트",
+        "future": true
+      },
+      "expected": {
+        "query": "테스트",
+        "page": 1,
+        "size": 10
+      }
+    },
+    {
+      "id": "null-body",
+      "input": null,
+      "error": "INVALID_PLACE_SEARCH_REQUEST"
+    },
+    {
+      "id": "array-body",
+      "input": [],
+      "error": "INVALID_PLACE_SEARCH_REQUEST"
+    },
+    {
+      "id": "missing-query",
+      "input": {},
+      "error": "INVALID_PLACE_SEARCH_QUERY"
+    },
+    {
+      "id": "null-query",
+      "input": {
+        "query": null
+      },
+      "error": "INVALID_PLACE_SEARCH_QUERY"
+    },
+    {
+      "id": "short",
+      "input": {
+        "query": "가"
+      },
+      "error": "INVALID_PLACE_SEARCH_QUERY"
+    },
+    {
+      "id": "long",
+      "input": {
+        "query": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가"
+      },
+      "error": "INVALID_PLACE_SEARCH_QUERY"
+    },
+    {
+      "id": "astral-length",
+      "input": {
+        "query": "🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍🏍"
+      },
+      "error": "INVALID_PLACE_SEARCH_QUERY"
+    },
+    {
+      "id": "null-page",
+      "input": {
+        "query": "테스트",
+        "page": null
+      },
+      "error": "INVALID_PLACE_SEARCH_PAGE"
+    },
+    {
+      "id": "string-page",
+      "input": {
+        "query": "테스트",
+        "page": "1"
+      },
+      "error": "INVALID_PLACE_SEARCH_PAGE"
+    },
+    {
+      "id": "fractional",
+      "input": {
+        "query": "테스트",
+        "page": 1.5
+      },
+      "error": "INVALID_PLACE_SEARCH_PAGE"
+    },
+    {
+      "id": "page-low",
+      "input": {
+        "query": "테스트",
+        "page": 0
+      },
+      "error": "INVALID_PLACE_SEARCH_PAGE"
+    },
+    {
+      "id": "page-high",
+      "input": {
+        "query": "테스트",
+        "page": 46
+      },
+      "error": "INVALID_PLACE_SEARCH_PAGE"
+    },
+    {
+      "id": "size-low",
+      "input": {
+        "query": "테스트",
+        "size": 0
+      },
+      "error": "INVALID_PLACE_SEARCH_PAGE"
+    },
+    {
+      "id": "size-high",
+      "input": {
+        "query": "테스트",
+        "size": 16
+      },
+      "error": "INVALID_PLACE_SEARCH_PAGE"
+    },
+    {
+      "id": "null-size",
+      "input": {
+        "query": "테스트",
+        "size": null
+      },
+      "error": "INVALID_PLACE_SEARCH_PAGE"
+    }
+  ],
+  "provider": {
+    "documents": [
+      {
+        "id": "fixture-001",
+        "place_name": "테스트 장소",
+        "category_name": "검증용",
+        "address_name": "테스트 주소",
+        "road_address_name": "",
+        "phone": "",
+        "place_url": "http://place.map.kakao.com/123",
+        "x": "127",
+        "y": "37"
+      }
+    ],
+    "meta": {
+      "is_end": true
+    }
+  },
+  "response": {
+    "places": [
+      {
+        "kakaoPlaceId": "fixture-001",
+        "name": "테스트 장소",
+        "category": "검증용",
+        "address": "테스트 주소",
+        "roadAddress": null,
+        "phone": null,
+        "placeUrl": "https://place.map.kakao.com/123",
+        "latitude": 37,
+        "longitude": 127,
+        "verificationToken": "XIev09gEjADj9KcSBsBhnhe3z7SYLRHVwJqvhPHkarY"
+      }
+    ],
+    "isEnd": true
+  },
+  "errors": [
+    {
+      "cause": "AUTH_REQUIRED",
+      "status": 401,
+      "kind": "UNAUTHENTICATED"
+    },
+    {
+      "cause": "MEMBERSHIP_REQUIRED",
+      "status": 403,
+      "kind": "FORBIDDEN"
+    },
+    {
+      "cause": "INVALID_PLACE_SEARCH_QUERY",
+      "status": 400,
+      "kind": "INVALID_INPUT"
+    },
+    {
+      "cause": "API_DAILY_BUDGET_EXHAUSTED",
+      "status": 429,
+      "kind": "RATE_LIMITED"
+    },
+    {
+      "cause": "PROVIDER_NOT_CONFIGURED",
+      "status": 503,
+      "kind": "UNAVAILABLE"
+    },
+    {
+      "cause": "KAKAO_PLACE_SEARCH_FAILED",
+      "status": 502,
+      "kind": "UNAVAILABLE"
+    },
+    {
+      "cause": "INVALID_PLACE_PROVIDER_RESPONSE",
+      "status": 502,
+      "kind": "UNAVAILABLE"
+    },
+    {
+      "cause": "PLACE_OUTSIDE_KOREA",
+      "status": 502,
+      "kind": "UNAVAILABLE"
+    },
+    {
+      "cause": "unknown",
+      "status": 502,
+      "kind": "UNAVAILABLE"
+    }
+  ],
+  "sourceCommitMeaning": "Pre-change base; the candidate commit containing this contract is the implementation source.",
+  "coordinateRequests": [
+    {
+      "id": "coordinate-valid",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521
+      },
+      "expected": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521
+      }
+    },
+    {
+      "id": "coordinate-rounding",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 37.338811234,
+        "longitude": 127.269952145
+      },
+      "expected": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521
+      }
+    },
+    {
+      "id": "latitude-string",
+      "input": {
+        "mode": "coordinate",
+        "latitude": "37.3",
+        "longitude": 127.2699521
+      },
+      "error": "INVALID_PLACE_SEARCH_REQUEST"
+    },
+    {
+      "id": "outside-korea",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 90,
+        "longitude": 127.2699521
+      },
+      "error": "INVALID_PLACE_SEARCH_REQUEST"
+    },
+    {
+      "id": "extra-query",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "query": "test"
+      },
+      "error": "INVALID_PLACE_SEARCH_REQUEST"
+    },
+    {
+      "id": "extra-page",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "page": 1
+      },
+      "error": "INVALID_PLACE_SEARCH_REQUEST"
+    },
+    {
+      "id": "missing-longitude",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 37.3
+      },
+      "error": "INVALID_PLACE_SEARCH_REQUEST"
+    }
+  ]
+}

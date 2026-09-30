@@ -53,7 +53,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### AUTH-001 — Invite-only Kakao authentication
 
 - Status: `CONFIRMED`
-- Decision: Use Supabase Auth with a Kakao identity, with the email-free OIDC boundary defined by `AUTH-004`. Keep the Kakao subject separate from the internal Supabase user ID. Only administrators create cryptographically random, one-time invitation links. A valid invitation is required for first membership creation; an existing active member can sign in again without a fresh invite. Invitations expire and can be revoked; memberships can be revoked. A valid active membership is required to use rider data and provider functions.
+- Decision: Use Supabase Auth with a Kakao identity, with the email-free OIDC boundary defined by `AUTH-004`. Keep the Kakao subject separate from the internal Supabase user ID. Only administrators create cryptographically random, one-time invitation links. A valid invitation is required for first membership creation except for the server-verified Play admission in `AUTH-007`; an existing active member can sign in again without a fresh invite. Invitations expire and can be revoked; memberships can be revoked. A valid active membership is required to use rider data and provider functions.
 - Rationale: Access is limited to known acquaintances without maintaining a custom password system.
 - User impact: A rider enters through an invitation, signs in with Kakao, and loses access immediately after membership revocation.
 - Affected: Supabase Auth, callback route, invitations, memberships, RLS, Edge Functions, admin UI.
@@ -73,7 +73,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### AUTH-003 — Uninvited OAuth account lifecycle
 
 - Status: `CONFIRMED`
-- Decision: A Kakao OAuth completion without a valid invitation is signed out and denied all application access. It may leave only the minimum dormant `auth.users` record; it must not create a public profile or membership. Administrators receive a safe cleanup procedure for dormant records.
+- Decision: A Kakao OAuth completion without a valid invitation or a completed `AUTH-007` Play admission is signed out and denied all application access. It may leave only the minimum dormant `auth.users` record; it must not create a public profile or membership. Administrators receive a safe cleanup procedure for dormant records.
 - Rationale: Supabase OAuth creates the Auth user before the application callback can claim an invitation. The callback and database therefore prevent profile creation until a claim succeeds and retain only the unavoidable Auth record when an uninvited login is denied.
 - User impact: Both options deny app access, but the retained-record option stores minimal Kakao profile data for an uninvited person while strict cleanup needs a trusted server boundary and careful retry handling.
 - Affected: Auth hooks/callback, profile creation flow, administrator cleanup procedure, privacy notice, tests.
@@ -101,6 +101,29 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Verification: live authorize redirect scope readback and regression search showing the application no longer calls Kakao `signInWithOAuth`.
 - Deprecated by user selection of `AUTH-004`: 2026-08-31.
 
+#### AUTH-006 — Android Kakao SDK authentication
+
+- Status: `CONFIRMED`
+- Decision: Use the Kakao Android SDK for the native Android app. Prefer Kakao Talk login when available and provide Kakao Account login in the default browser when unavailable. A user cancellation ends the attempt; it must not automatically launch another login. Preserve the existing web flow in `AUTH-004`, email-free consent, first membership by invitation or the `AUTH-007` Play exception, active-member re-login, revoked-member denial, and server-side authorization.
+- Identity/session boundary: Reuse the existing Kakao Developers application identity. Verify the SDK ID token with Supabase Auth before using a Supabase session for MOTOCAST APIs; a Kakao access token is not a MOTOCAST API bearer. Bind each login to a fresh nonce and current attempt, preserve audience/nonce verification, and prove the existing Supabase user ID is retained. Never merge accounts by email, copy web cookies, spoof Origin, or ship server secrets. Application access requires the server membership gate even after authentication succeeds.
+- Affected: Android SDK dependency and callback, native platform/package/signing registration, SDK token handling, Supabase ID-token compatibility, secure app session lifecycle and membership/invitation UI. The previously proposed custom browser-to-app one-time exchange is an unselected alternative, not a required implementation.
+- Verification: Kakao Talk installed/unavailable/cancel/error paths, missing OIDC token, nonce/audience rejection, duplicate/expired/stale callback, process death, token storage/logout, no email request, same-account identity and data ownership, new/active/revoked membership, existing web regression. Local SDK tests do not establish live provider compatibility.
+- Confirmed by user: 2026-09-21, "SDK로 가자 확정해". SDK direction is final; actual registration, connected verification and deployment status must be recorded separately.
+
+#### AUTH-007 — Play-verified membership without an invitation
+
+- Status: `CONFIRMED`; implementation and hosted rollout are not yet complete.
+- Decision: A new user authenticated with Kakao may create a rider membership without an invitation only after the server verifies a fresh Play Integrity proof for an approved MOTOCAST Play build. Web/PWA and debug/sideload entry keep the invitation route. Existing active members keep normal sign-in and refresh; this exception does not require a new proof on every existing-member request.
+- Verification boundary: Require Google-verified `LICENSED` and `PLAY_RECOGNIZED` verdicts, the approved package/signing-certificate/version, and fresh request binding to the authenticated user, target environment and one-time admission challenge. A client flag, installer name, copied token, native app key or successful Kakao login alone is not admission evidence. Missing, stale, replayed, cross-user or unevaluated proofs and provider outages must not create a profile or membership.
+- Membership boundary: Create only a normal rider, atomically and idempotently. Preserve existing roles and data. A revoked membership must never be reactivated through this path, even with a valid proof. Keep server-side active-membership checks, per-user RLS and API budgets. Do not match Google and Kakao identities by email or collect a new email scope.
+- Scope: The 2026-09-30 user approval for PR #79 extends the existing Play internal-track admission to Production and supersedes the initial Preview-only rollout restriction. Public-track release is not newly authorized. Require an exact trusted runtime mapping: `PLAY_ADMISSION_ENVIRONMENT=preview` with `SUPABASE_URL=https://lehjmbgfpoemqcwxowbx.supabase.co`, or `production` with `https://obodvbyzptxeehgpcpkd.supabase.co`. Unset, unknown or mismatched settings fail closed before Auth/RPC/Google calls; request URLs and headers cannot select the environment. Certificates, versions, Cloud project ID and service-account settings remain project-local without cross-project fallback or copying. The existing project-local authenticated user, random challenge hash and database lookup bind the proof. This runtime guard adds no schema change and preserves JWT verification; rollout of the existing reviewed Play migration remains subject to the release gates. Existing Preview flag registration is not verified; configure and read back the flag before guard deployment. Live configuration activation and real device proof remain `NOT_RUN`. Before any future public-track release, reconsider admission scope; the internal tester list is not a durable server membership allowlist.
+- Revocation: Play licensing proves app entitlement, not current internal-tester-list membership. Removing a tester does not automatically revoke an existing MOTOCAST membership. Use the existing administrator membership revocation for service access.
+- Supersedes: Only the mandatory-invitation condition for eligible new Play users in `AUTH-001`, `AUTH-003` and `AUTH-006`. Other identity, session, ownership and denial requirements remain binding.
+- Acceptance: Real Google proof from a Play-installed build; new/active/revoked/admin users; altered/missing/expired/replayed/cross-user/wrong-environment/package/certificate/version proofs; provider timeout; concurrent/retried admission; role preservation; no unauthorized profile creation; web/debug invitation regression; code-free Android UI; actual installation, login and Play update evidence recorded separately.
+- Confirmed by user: 2026-09-26, "Play 설치 검증을 통과한 신규 사용자는 초대 없이 가입으로 정책 변경하자"; implementation and necessary Play internal release authorized by "필요하면 플레이스토어 배포까지 진행해". Production rollout for PR #79 approved 2026-09-30; actual hosted activation and device verification are separate evidence.
+- Plan and evidence: [Play membership implementation](../work/research/2026-09-26-play-verified-membership.md).
+- Official basis: [Integrity verdicts](https://developer.android.com/google/play/integrity/verdicts), [standard request binding](https://developer.android.com/google/play/integrity/standard).
+
 ### Ownership, collections, and sharing
 
 #### DATA-001 — Per-user ownership and RLS
@@ -116,11 +139,11 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### DATA-003 — Trusted aggregate mutation boundary
 
 - Status: `CONFIRMED`
-- Decision: The browser may request planning actions but cannot directly create or mutate route-backed trip aggregates, immutable collection versions, weather snapshots, share snapshots, or Kakao OIDC handoffs. The service role has no direct DML on any current application table, cannot execute public functions outside seven reviewed internal RPCs, and does not inherit direct table DML or function EXECUTE on future objects created by the migration role. Five RPCs own provider/budget aggregate work; two additional RPCs create and atomically consume only a hashed, encrypted, short-lived OIDC handoff. Trusted Edge Functions use these narrow SECURITY DEFINER boundaries, while direct table mutation remains denied.
+- Decision: The browser may request planning actions but cannot directly create or mutate route-backed trip aggregates, immutable collection versions, weather snapshots, share snapshots, or Kakao OIDC handoffs. The service role has no direct DML on any current application table, cannot execute public functions outside ten reviewed internal RPCs, and does not inherit direct table DML or function EXECUTE on future objects created by the migration role. Five RPCs own provider/budget aggregate work; two additional RPCs create and atomically consume only a hashed, encrypted, short-lived OIDC handoff. Three AUTH-007 RPCs issue, reserve and complete one-time Play admissions with bounded per-user/global attempts. Trusted Edge Functions use these narrow SECURITY DEFINER boundaries, while direct table mutation remains denied.
 - Rationale: RLS ownership alone cannot prove that browser-supplied route JSON came from the motorcycle-safe provider boundary or preserve multi-table invariants.
 - User impact: A new plan is saved only after its one verified `recommended` route is ready. Legacy three-route plans remain readable, while partial, expired, replayed, cross-user, or browser-forged route sets fail explicitly.
 - Affected: route Edge Function, route draft tables, trip/route/waypoint policies, finalization and selection RPCs, planner UI.
-- Verification: browser/service-role direct-DML denial across every application table and operation, future-table/function default-ACL probes, exact seven-function service-role allowlist (five provider/aggregate RPCs plus two OIDC handoff RPCs), one-route current and exact-three legacy finalization, mandatory-point/order/dwell matching, non-null route totals, durable plan-and-route payload hashes across draft cleanup, authenticated target-trip identity and `updated_at` revision binding, stale-update and wrong-target rejection, planning-id consumption, expiry, replay, cross-user, stage-versus-finalizer and two-finalizer races, and forced mid-write transaction rollback tests.
+- Verification: browser/service-role direct-DML denial across every application table and operation, future-table/function default-ACL probes, exact fourteen-function service-role allowlist (seven baseline, three Play admission, four weather budget/cache RPCs) (five provider/aggregate RPCs, two OIDC handoff RPCs and three AUTH-007 admission RPCs), one-route current and exact-three legacy finalization, mandatory-point/order/dwell matching, non-null route totals, durable plan-and-route payload hashes across draft cleanup, authenticated target-trip identity and `updated_at` revision binding, stale-update and wrong-target rejection, planning-id consumption, expiry, replay, cross-user, stage-versus-finalizer and two-finalizer races, and forced mid-write transaction rollback tests.
 - Confirmed as security implementation of `DATA-001` and `ROUTE-001`: 2026-08-30.
 
 #### DATA-002 — Riding collections
@@ -196,6 +219,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Affected: route request contract, schedule engine, planner UI, share snapshot schema, trip persistence compatibility, tests.
 - Verification: trusted-clock past/exact-boundary tests and browser minimum; lunch omitted/selected and dinner omitted/selected; direct endpoint-only route; 0/1/5/6 rest boundaries, repeated-place occurrence identity, order/add/remove/dwell; selected meal/rest/custom-waypoint dwell; midnight-crossing expected return; exact 24-hour rejection; optional `lunchStop` in the current browser/Edge/DB/share contract; schemaVersion 1/2 compatibility.
 - Confirmed by user interview: 2026-09-01 (option B; midnight-crossing candidates explicitly retained; recommended multiple-rest limit 5 accepted; lunch made optional).
+- Confirmed UX amendment, 2026-09-30: Opening an empty departure picker suggests the nearest non-past Seoul five-minute slot (00, 05, …, 55), including the next date/month/year at midnight. Existing explicit selections are preserved. The rider must confirm before the schedule is applied; opening or confirming the picker does not calculate or publish. Past dates/times remain an intentional failure, including a suggestion that expires while the dialog stays open. Reused courses still omit the source schedule and require the rider to confirm a fresh schedule.
 - Persistence note: Existing `trips.desired_return_at` and `trips.hard_return_at` remain non-public legacy columns for a non-destructive first-version migration. The trusted Edge boundary supplies an undisplayed same-day compatibility value only to satisfy the old storage function. It never filters the recommended route, appears in the current UI, or appears in current schemaVersion 3 shares. SchemaVersion 2 shares remain readable under their historical no-return-input contract. A future column cleanup requires its own reviewed migration.
 
 #### PLAN-003 — Unified ordered waypoints
@@ -306,6 +330,14 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Verification: original failure through provider adapter/orchestrator becomes accepted; signed mismatches, exact matches, integer remainders, zero road weights, invalid/unsafe inputs, geometry/point rejection, next-chunk departure/dwell and under-24-hour limits; browser and DB acceptance of the exact normalized output; actual Preview and Production route/weather checks.
 - Confirmed by user: 2026-09-16, “권장대로 진행하자”. Implementation and deployment evidence: [duration investigation](../work/research/2026-09-16-route-duration-diagnostic.md).
 
+#### ROUTE-010 — Provider distance mismatch and actionable map errors
+
+- Status: `CONFIRMED` (2026-10-01 user correction).
+- Decision: Do not reject an otherwise valid provider route solely because its summary distance differs from the sum of validated section distances. Use the section sum as the normalized distance, without redistributing or inventing road distances. This supersedes ROUTE-007's retention of that upstream equality guard only. Finite safe-integer values, road-to-section consistency, ordered requested points, geometry continuity, motorcycle restrictions, call budgets and persisted normalized totals remain enforced.
+- User correction: “전체 거리와 구간 거리 합계” was an excessive constraint intended for removal. The earlier recorded ROUTE-007 removed the timing equality while retaining distance; this correction resolves that divergence prospectively. It is not evidence that the historical request was replayed.
+- Map provider errors: Official result codes 101–107 produce closed, actionable public codes and a popup explaining the affected origin/waypoint/destination, too-close endpoints or road incident. Never reflect provider text/URLs/coordinates/secrets. Retain input and prior saved results; no automatic retry, point substitution, omission or passenger-car fallback. Unknown/malformed responses keep their failure boundary.
+- Design and verification: Figma M04 `200:2266`; backend adapter/orchestrator regression, web/Android popup and no-save/no-weather-on-failure tests; same prepared public five-point scenario before/after the candidate. Historical 2026-09-30 inputs were not retained and the user has no saved course, so exact historical replay remains unavailable.
+
 #### ROUTE-008 — Execute the summarized course in KakaoMap
 
 - Status: `CONFIRMED`. 0.4.0 deployed; phone launch USER_REPORTED PASS. 0.4.1 Figma amendments are the current release candidate; installation/device matrix remains separately unverified.
@@ -322,6 +354,14 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Superseding user decision, 2026-09-18: Shared summaries also execute directly; this replaces the previous requirement to prepare the recipient's own plan first. Owner recalculation remains unchanged. Update the existing preparation PR #67, Figma, documents, Issues and Notion only; no application implementation, merge or deployment.
 
 - Subsequent implementation authorization, 2026-09-18: Implement and verify before merging/deploying v0.4.0. The user will validate actual KakaoMap app handoff on their phone; record it as pending, never infer device success from automated tests. GPS remains separate.
+
+#### ROUTE-009 — Select a waypoint on the map
+
+- Status: `CONFIRMED` by user request on 2026-10-01; implementation and deployment are recorded separately.
+- Decision: Support map zoom/pan and long press to choose a waypoint in the owner planner on web and Android. Resolve the selected coordinate through the existing authenticated place API, show the address in a confirmation popup above the map, and add an ordinary zero-dwell waypoint only when the user presses `경유지로 추가`. The 2026-10-01 clarification requires Figma-first design of this popup; the earlier full-screen-picker WIP is superseded. Cancel, late response, provider failure and an unmapped point leave the course unchanged. Shared maps remain read-only while supporting camera gestures.
+- Boundary: Preserve the selected coordinate, including mountain parcels without a road address. Never invent a road, snap to a different POI, strip `산`, or use client-supplied unsigned coordinates as trusted places. Coordinate lookup consumes the existing Local free quota; no extra allowance or automatic retry is introduced. Existing waypoint/order/count, route recalculation and share-approval invalidation contracts remain mandatory.
+- Verification: web/native request and response parity, signed coordinate binding, member/revoked/budget denial, no-result/error/cancel/stale response, drag/pinch versus long press, unchanged shared snapshots, and actual SDK camera behavior. User real-device validation remains distinct from emulator and mock tests.
+- Evidence: [map and mountain-weather investigation](../work/research/2026-10-01-map-weather.md). Current Preview success at the reported public addresses does not establish the cause or correction of the historical weather complaint.
 
 ### Weather
 
@@ -394,7 +434,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### OPS-003 — Git and CD topology
 
 - Status: `CONFIRMED`
-- Decision: `develop` is the default development branch and deploys Preview. `main` is Production and accepts only a same-repository `develop -> main` PR. Required checks are `verify` and `develop-only`; the `verify` workflow runs the repository baseline and Deno-checks all five deployed Edge Function entrypoints, including the public `kakao-oidc` authentication boundary. Administrator enforcement, conversation resolution, no force push, and no deletion remain enabled. Human approvals remain zero until a real reviewer is designated. Other branches must not auto-deploy; deployment-excluded review/rollback branches use a slash-free `review-*` or `rollback-*` name and require live zero-deployment proof before being relied upon.
+- Decision: `develop` is the default development branch and deploys Preview. `main` is Production and accepts only a same-repository `develop -> main` PR. Required checks are `verify` and `develop-only`; the `verify` workflow runs the repository baseline and Deno-checks all six maintained Edge Function entrypoints, including the public `kakao-oidc` authentication boundary and Preview-only `play-admission`. Administrator enforcement, conversation resolution, no force push, and no deletion remain enabled. Human approvals remain zero until a real reviewer is designated. Other branches must not auto-deploy; deployment-excluded review/rollback branches use a slash-free `review-*` or `rollback-*` name and require live zero-deployment proof before being relied upon.
 - Rationale: Separate continuous development from explicit production promotion.
 - User impact: Production changes only after a visible promotion gate.
 - Affected: GitHub settings/workflows, Vercel Git integration, `vercel.json`.
@@ -405,23 +445,24 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### OPS-004 — Vercel runtime and secrets
 
 - Status: `CONFIRMED`
-- Decision: Use Vercel Hobby and the default `vercel.app` domain unless the user supplies a custom domain. Pin Node.js `20.x` consistently across `package.json`, GitHub CI, and Vercel. Vercel keeps only the three `NEXT_PUBLIC_*` variables; provider, service-role, origin, and budget secrets live in Supabase.
-- Rationale: Node.js 20 is already the locally and CI-verified baseline, so aligning Vercel down from its current 24.x setting avoids an unnecessary runtime migration while removing drift. Keeping server-only values in Supabase reduces credential exposure.
+- Decision: Use Vercel Hobby and the default `vercel.app` domain unless the user supplies a custom domain. Pin Node.js `24.x` consistently across `package.json`, `.nvmrc`, GitHub CI, and Vercel. Vercel keeps only the three `NEXT_PUBLIC_*` variables; provider, service-role, origin, and budget secrets live in Supabase.
+- Rationale: Node.js 20 reached end of life and Vercel disables new Node.js 20 builds on 2026-10-01. Use supported Node.js 24 for reproducible local, CI and deployment validation. Keeping server-only values in Supabase reduces credential exposure.
 - User impact: Stable builds with a smaller credential exposure surface.
 - Affected: package metadata, CI, Vercel project, Supabase secrets.
 - Verification: official runtime documentation, project/API readback, build output, environment-name readback.
 - Confirmed by user interview: 2026-08-30.
+- Runtime update 2026-09-26: the user requested investigation and correction of the Vercel Node.js warning. This supersedes the original Node.js 20 baseline; dependency versions, product behavior, authentication and deployment approval boundaries remain unchanged. See [runtime migration evidence](../work/research/2026-09-26-node24-runtime.md).
 - Interview update: On 2026-08-31 deployment-level readback found seven server-only values mistakenly targeted to both Preview and Production. The user confirmed that no Production credentials had been created, so those values were Preview credentials rather than Production authority. They were removed from Vercel entirely; future Production server credentials remain owned only by Supabase secrets under this confirmed decision.
 
 #### OPS-005 — Deployment protection
 
 - Status: `CONFIRMED`
-- Decision: Production is reachable through MOTOCAST invitation and Kakao authentication without Vercel-team authentication. Enable Vercel Authentication for Preview deployments only.
-- Rationale: Preview contains unreleased behavior and test data, while invited acquaintances must be able to reach Production without owning a Vercel account.
-- User impact: Preview requires authorized Vercel access; Production uses only the application's invitation and Kakao login boundary.
+- Decision: Production is reachable through MOTOCAST invitation and Kakao authentication without Vercel-team authentication. Keep Vercel Authentication on other Preview deployment URLs, but exempt the fixed Android/tester origin `https://motocast-git-develop-tocomboys-projects.vercel.app` so testers need only the app's Kakao login and membership checks. Play enrollment continues to require AUTH-007 verification; web/development enrollment retains invitations.
+- Rationale: Android App Links and testers must reach the fixed origin without a Vercel account. Other development deployment URLs remain protected.
+- User impact: The fixed tester origin's login page, explicitly published share snapshots and public App Links certificate are reachable without Vercel login. Private courses, writes and membership remain protected by application authentication and server authorization.
 - Affected: Vercel Deployment Protection, E2E automation, Preview instructions.
-- Verification: anonymous Production response reaches the application; anonymous Preview is challenged; an authorized Preview smoke test can proceed.
-- Confirmed by user interview: 2026-08-30.
+- Verification: anonymous Production and the fixed tester origin reach the application; other protected Preview URLs remain challenged. Private APIs still reject anonymous/nonmember access; revoked or invalid share tokens are denied. App Links certificates must return public JSON without a Vercel redirect.
+- Confirmed by user interview: 2026-08-30; fixed tester-origin exception approved 2026-09-26 ("vercel 로그인 없이 앱 + 카카오 로그인 만으로 볼 수 있게").
 
 #### OPS-006 — Backup and free-plan operation
 

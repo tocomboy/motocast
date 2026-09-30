@@ -1,6 +1,6 @@
 # Supabase Auth 운영 절차
 
-이 문서는 `AUTH-001`부터 `AUTH-005`까지의 운영 절차다. 실제 UUID, OAuth/OIDC credential, ID/access token, handoff, invite token은 문서·Issue·명령 인자·로그에 남기지 않는다.
+이 문서는 `AUTH-001`부터 `AUTH-007`까지의 운영 절차다. 실제 UUID, OAuth/OIDC credential, ID/access token, handoff, invite token은 문서·Issue·명령 인자·로그에 남기지 않는다.
 
 ## 이메일 없는 Kakao OIDC 설정
 
@@ -76,7 +76,7 @@ commit;
 
 ## 거부된 OAuth 사용자 정리
 
-초대 없이 OAuth를 완료한 사용자는 `auth.users`에만 남고 `profiles`나 `memberships`가 없어야 한다. 관리자가 삭제하기 전에 정확한 UUID에 대해 다음 조건을 모두 확인한다.
+초대와 유효한 Play 검증 없이 OAuth를 완료한 사용자는 `auth.users`에만 남고 `profiles`나 `memberships`가 없어야 한다. 관리자가 삭제하기 전에 정확한 UUID에 대해 다음 조건을 모두 확인한다.
 
 - `public.memberships` 행이 없다.
 - `public.profiles` 행이 없다.
@@ -91,3 +91,21 @@ commit;
 - 회수된 사용자는 소비된 과거 초대로 재활성화할 수 없다.
 - 재가입은 관리자가 새 초대를 발행한 경우에만 허용한다.
 - 초대를 소비한 Auth 사용자가 삭제돼 `consumed_by`가 비어도 `consumed_at`이 one-time tombstone으로 남으므로 링크는 재사용할 수 없다.
+
+
+## Play 설치 검증 가입 (AUTH-007)
+
+2026-09-30 사용자가 승인한 PR #79의 적용 범위는 기존 Preview `lehjmbgfpoemqcwxowbx`와 Production `obodvbyzptxeehgpcpkd`의 Play `dev.motocast.android` 내부 트랙 가입이다. 이전 Preview 전용 제한을 대체하며 공개 트랙 출시를 새로 승인하지 않는다. 기존 Preview Cloud 프로젝트는 `MOTOCAST Play` / `motocast-play-2026` / `710070840912`, 조직 없음이다. 이 역사적 Preview 설정이 Production의 구성값이나 활성화 증거는 아니다. 신규 Play 회원만 설치 증명 확인 후 일반 rider로 등록하며 기존 active 회원의 역할·profile을 바꾸지 않는다. revoked 회원은 자동 복원하지 않는다. 웹/개발 앱과 기존 code3의 초대 로그인은 유지한다.
+
+서버가 Kakao 사용자 확인 → 3분 challenge 발급 → 증명 예약 및 예산 차감 → Google decode → LICENSED / PLAY_RECOGNIZED / 패키지 / SHA256 인증서 / versionCode / 요청 hash / 시각 확인 → 원자적 회원·profile 생성 순서로 처리한다. 동일 proof 예약의 동시 요청은 하나만 Google에 전달된다. 설치자 이름·클라이언트 boolean·토큰 내용의 자체 해석은 가입 권한이 아니다. LICENSED는 Play 취득 자격이며 현재 내부 테스터 이메일 목록 조회가 아니다.
+
+- 새 migration: `20260926040355_play_verified_membership.sql`. challenge는 사용자당 한 행, 검증 예산은 전체 한 행이며 RLS와 직접 DML 거부를 유지한다. 새 service_role 전용 함수는 begin/take/complete 3개다. live Preview에 별도 날씨 함수가 있으므로 전체 기존 ACL과 새 3개를 모두 읽어 확인한다.
+- `play-admission`은 JWT 검증을 켜서 배포하고 함수 내부에서도 trusted `auth.getUser()`의 사용자 및 Kakao identity를 확인한다. 정확히 `SUPABASE_URL=https://lehjmbgfpoemqcwxowbx.supabase.co`와 `PLAY_ADMISSION_ENVIRONMENT=preview`, 또는 `SUPABASE_URL=https://obodvbyzptxeehgpcpkd.supabase.co`와 `PLAY_ADMISSION_ENVIRONMENT=production` 조합만 허용한다. unset·오타·불일치·다른 프로젝트·유사 도메인·경로/쿼리/포트가 붙은 주소는 Auth/RPC/Google 호출 전에 `PLAY_NOT_CONFIGURED` 503으로 닫는다. 요청 URL·Host·forwarded header·환경 header는 환경 선택 근거가 아니다. Origin이 있는 웹 요청은 계속 거부한다.
+- 서버 secret: `PLAY_ADMISSION_ENVIRONMENT`(위 정확한 환경 이름), `PLAY_ADMISSION_PROJECT_ID`(해당 프로젝트에 승인된 Cloud 프로젝트 ID), `PLAY_ADMISSION_SERVICE_ACCOUNT`(그 Cloud 프로젝트의 검증 전용 계정 JSON), `PLAY_ADMISSION_CERTIFICATES`(해당 환경에 승인된 Play 앱 서명 SHA256의 base64url, 쉼표 구분), `PLAY_ADMISSION_VERSIONS`(해당 환경에서 검증할 versionCode allowlist). 기존 Preview의 최초 버전은4였다. 각 Supabase 프로젝트의 기존 네 검증 설정은 그 프로젝트에서 독립적으로 관리하며 다른 프로젝트에서 fallback하거나 복사하지 않는다. 업로드 인증서를 앱 서명 인증서로 대신하지 않는다.
+- 키는 해당 환경의 승인된 Supabase secret store와 저장소 밖 사용자 전용 경로에만 보관한다. 프로젝트 IAM 관리자·Play 출시 역할을 부여하지 않는다. Android에는 공개 Cloud 프로젝트 번호만 포함하며 서비스 계정 키를 넣지 않는다.
+- 2026-09-26 Preview 비밀값4개 저장 및 digest 대조 완료. 검증 전용 계정의 로컬 생성 RSA2048 공개 인증서를 Google에 등록했고 OAuth 연결을 확인했다. 다운로드에 실패한 키2개는 승인 후 삭제했다. 현재 인증서 만료일2027-09-26 전에 교체해야 한다. 실제 Play 증명 성공은 별도 기기 확인이다.
+- 시간당 사용자5회, 서울 날짜당 전체 Google decode500회. 실패한 decode도 예산을 소모한다. 원본 proof/Google OAuth/Kakao/session token은 기록하지 않는다. Google 요청은 고정 HTTPS 목적지·각5초·64KiB 한도, 자동 재전송·redirect 없음이다.
+- 배포 전 정확한 후보 SHA CI-only PR 및 zero-deployment gate를 지킨다. 실제 Google proof와 신규 Play 사용자 가입은 로컬 합성 응답·CI로 대체하지 않는다.
+- 활성화 순서: 기존 hosted Preview의 `PLAY_ADMISSION_ENVIRONMENT` 등록은 아직 확인되지 않았으므로 새 함수를 배포하기 전에 정확한 Preview 프로젝트에 `preview`를 등록하고 비밀값을 출력하지 않는 readback으로 확인한다. 이후 그 프로젝트의 네 기존 검증 설정 및 JWT 검증 유지 여부를 확인하고 정확한 검토 SHA의 함수를 배포한다. Production도 먼저 해당 프로젝트의 기존 네 설정을 독립적으로 확인하고 `production` flag를 등록한 뒤, 승인된 승격 순서에 따라 동일 검토 소스를 배포한다. 선행 flag 없이 배포하면 정상 Preview 가입도503으로 닫힌다. 기존 project-local 사용자/challenge DB 조회와 무작위 request hash로 환경 간 proof를 격리하며 이 런타임 변경은 새 schema나 공용 challenge 저장소를 만들지 않는다. 기존 검토 Play migration의 Production 적용은 별도 release gate를 따른다. 양쪽에서 신규/active/admin/revoked 사용자, 잘못된 환경·버전·challenge 및 실제 Play 기기 proof를 각각 확인한다.
+- 현재 상태(2026-09-30): Production 적용 승인은 확인했으나 새 flag의 실제 등록/readback, hosted 함수 활성화, 실제 기기 설치·Google proof·신규 가입은 `NOT_RUN`이다. 2026-09-26 Preview 구성 기록은 보존하며 현재 활성화의 통과 증거로 대신하지 않는다. 로컬 런타임 테스트도 실제 hosted 설정·JWT gateway·Google·기기 검증을 대체하지 않는다.
+- 복구: 문제 환경의 `PLAY_ADMISSION_VERSIONS`를 비워 신규 Play 가입만 닫고, 정확한 프로젝트·복구 SHA·회원 영향과 복구 승인을 확인한 후 검증한 이전 함수 소스로 복구한다. Preview 전용 이전 함수를 Production에 복구하면 Production Play 가입은 닫힌다. 검증되지 않은 환경 flag/주소 변경으로 우회하지 않는다. 이미 가입한 회원과 새 테이블은 삭제하지 않는다. 기존 로그인·초대 API를 유지하며 Android는 이전 정상 소스를 더 높은 versionCode로 배포한다. 재활성화 전 해당 환경의 flag·네 검증 설정·JWT 검증을 다시 확인한다. 서비스 키 분실/노출 시 새 키 전달 확인 후 해당 키만 폐기하는 별도 승인 절차를 따른다.

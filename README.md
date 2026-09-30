@@ -44,6 +44,14 @@
 
 2026-09-18 사용자 결정에 따라 남은 카카오맵 실기기 검증은 버그 발생 시 대응하며, 다음 순서는 **공유 발행 상태 문구 #66 수정·검증 → Android API 기반 #30 준비**입니다. [현재 수정·검증 기록](docs/work/research/2026-09-18-share-publication-status.md)과 [Android 요구사항](docs/work/research/2026-09-08-android-ride-requirements.md)을 참조하세요. 로컬 수정과 실제 배포 상태는 구분합니다.
 
+## 0.5.1: 출발 일정 기본값 개선
+
+빈 출발 날짜·시간 선택창에는 현재 이후 가장 가까운 5분 시각을 제안합니다. 분은 00분부터 5분 단위이며, 자정을 넘으면 다음 날짜로 제안합니다. 직접 선택한 일정은 유지하고 이미 지난 날짜·시간은 계속 거부합니다. 월말 공유 준비 테스트도 미래 일정을 명확히 선택하도록 수정했습니다. [검증·배포 상태](docs/work/research/2026-09-30-departure-default.md)를 참조하세요.
+
+## 0.6.0 후보: 지도에서 경유지 선택
+
+웹과 Android는 지도에서 고른 좌표의 주소를 서버에서 확인한 뒤, 기존 장소 선택 화면의 명시 선택으로 경유지를 추가합니다. 지도 이동·확대·취소만으로 코스를 바꾸지 않으며, 추가 후 경로와 날씨를 다시 계산해야 합니다. 기존 회원·호출 한도와 장소 서명을 유지합니다. [공통 API 계약](contracts/android/place-search/README.md), [현재 검사·배포 상태와 산번지 날씨 조사](docs/work/research/2026-10-01-map-weather.md)를 참조하세요. 후보 구현과 실제 운영 배포는 구분합니다.
+
 ## 구성
 
 - Next.js 16 + TypeScript + React 19
@@ -55,7 +63,7 @@
 
 ## 로컬 실행
 
-Node.js 20.x가 필요합니다. 로컬, GitHub CI, Vercel 런타임을 같은 major로 고정합니다.
+Node.js 24.x가 필요합니다. 로컬은 `.nvmrc`로 버전을 선택하고 GitHub CI도 같은 파일을 읽습니다. Vercel은 `package.json`의 `engines.node`를 우선 사용하며, 프로젝트 설정도 24.x로 맞춥니다. 빌드 로그 첫 부분의 실제 Node.js 버전으로 적용 여부를 확인합니다.
 
 ```bash
 npm ci
@@ -98,6 +106,8 @@ PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v 
 2. Kakao를 Auth provider로 설정하되 `Allow users without an email`을 켭니다. Kakao 앱에는 이메일을 등록하지 않고 OpenID Connect, 선택 동의 닉네임·프로필 사진, 프로젝트별 `kakao-oidc/callback` URI만 등록합니다.
 3. `search-places`, `plan-route`, `weather-timeline`, `save-collection`, `kakao-oidc` Edge Function을 배포하고 서버 전용 비밀값을 Supabase Dashboard secret store에 등록합니다. `kakao-oidc`만 로그인 시작 전 공개 진입점이므로 `verify_jwt=false`이며 나머지 네 함수는 JWT 검증을 유지합니다.
 4. 최초 관리자 등록과 거부된 OAuth 사용자 정리는 [Supabase Auth 운영 절차](docs/operations/supabase-auth.md)를 따릅니다.
+
+AUTH-007의 `play-admission`은 Google Play 설치 증명을 서버에서 검증한 신규 Kakao 사용자만 초대 없이 일반 회원으로 등록합니다. 2026-09-30 승인된 PR #79의 Production 적용은 Play 내부 트랙 범위이며, 프로젝트별 `SUPABASE_URL`과 `PLAY_ADMISSION_ENVIRONMENT=preview|production`의 정확한 조합 및 해당 프로젝트의 인증서·버전·검증 계정 설정을 요구합니다. 기존 Preview의 새 환경 설정 등록은 아직 확인되지 않았으므로 함수 배포 전에 등록·readback해야 합니다. 기존 회원 권한과 회수 상태를 보존하고 웹·개발 앱의 초대 정책은 유지합니다. 실제 환경 설정 적용·기기 검증은 아직 `NOT_RUN`이며, 구성·복구·검증 한계는 [Play 가입 운영 절차](docs/operations/supabase-auth.md#play-설치-검증-가입-auth-007)를 따릅니다.
 
 프로젝트별 데이터·비밀값·배포 경계와 현재 상태는 [Preview/Production 운영 절차](docs/operations/preview-production.md)를 따릅니다.
 

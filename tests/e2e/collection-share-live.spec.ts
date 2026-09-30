@@ -35,6 +35,8 @@ function calculateRouteButton(page: Page) {
 }
 
 function seoulDepartureIn(minutesAhead: number) {
+  const slotMs = 5 * 60_000;
+  const departure = new Date(Math.ceil((Date.now() + minutesAhead * 60_000) / slotMs) * slotMs);
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
     year: "numeric",
@@ -43,7 +45,7 @@ function seoulDepartureIn(minutesAhead: number) {
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
-  }).formatToParts(new Date(Date.now() + minutesAhead * 60_000));
+  }).formatToParts(departure);
   const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
   const year = value("year");
   const month = value("month");

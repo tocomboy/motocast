@@ -47,7 +47,6 @@ describe("normalizeKakaoRoutePayload", () => {
   it.each([
     ["SECTION_DISTANCE_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].distance -= 1; }],
     ["SECTION_DURATION_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].duration -= 1; }],
-    ["ROUTE_DISTANCE_TOTAL", (value: ReturnType<typeof payload>) => { value.routes[0].summary.distance += 1; }],
     ["ROAD_VERTEX_SHAPE", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].vertexes.pop(); }],
     ["ROAD_VERTEX_RANGE", (value: ReturnType<typeof payload>) => { value.routes[0].sections[0].roads[0].vertexes[0] = 0; }],
     ["INTEGER_VALUE", (value: ReturnType<typeof payload>) => { value.routes[0].summary.duration = 0.5; }],
@@ -96,7 +95,7 @@ describe("normalizeKakaoRoutePayload", () => {
   });
 
   it.each([
-    ...[101, 102, 103, 104, 105, 106, 107, 201, 202, 203, 204, 205, 206, 207, 301, 302, 303, 304]
+    ...[201, 202, 203, 204, 205, 206, 207, 301, 302, 303, 304]
       .map((code) => ({ code, reason: `RESULT_CODE_${code}` })),
     ...[2, -1, 108, 200, 305, 9999, Number.MAX_SAFE_INTEGER]
       .map((code) => ({ code, reason: "RESULT_CODE_UNDOCUMENTED" })),
@@ -117,6 +116,54 @@ describe("normalizeKakaoRoutePayload", () => {
 
   it("accepts a complete route with geometry", () => {
     expect(normalizeKakaoRoutePayload(payload()).summary.distance).toBe(12000);
+  });
+
+  it.each([1, -1, 3000, -3000])("normalizes distance from validated sections despite supplier summary mismatch: %i", (delta) => {
+    const value = payload();
+    value.routes[0].summary.distance += delta;
+    const route = normalizeKakaoRoutePayload(value);
+    expect(route.summary.distance).toBe(12000);
+    expect(route.summary.distance).toBe(route.sections.reduce((sum, section) => sum + section.distance, 0));
+    expect(route.sections[0].roads[0].distance).toBe(12000);
+  });
+
+  it.each([0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])("retains finite positive safe-integer supplier distance validation: %s", (distance) => {
+    const value = payload();
+    value.routes[0].summary.distance = distance;
+    expect(() => normalizeKakaoRoutePayload(value)).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+  });
+
+  it("rejects an unsafe total even when each section distance is a safe integer", () => {
+    const value = payload();
+    value.routes[0].sections = [0, 1].map(() => ({
+      ...structuredClone(value.routes[0].sections[0]),
+      distance: Number.MAX_SAFE_INTEGER,
+      roads: [{ ...value.routes[0].sections[0].roads[0], distance: Number.MAX_SAFE_INTEGER }],
+    }));
+    let caught: unknown;
+    try { normalizeKakaoRoutePayload(value); } catch (error) { caught = error; }
+    expect(routeResponseDiagnostic(caught)).toBe("INTEGER_VALUE");
+  });
+
+  it.each([
+    [101, "ROUTE_WAYPOINT_ROAD_NOT_FOUND"],
+    [102, "ROUTE_ORIGIN_ROAD_NOT_FOUND"],
+    [103, "ROUTE_DESTINATION_ROAD_NOT_FOUND"],
+    [104, "ROUTE_POINTS_TOO_CLOSE"],
+    [105, "ROUTE_ORIGIN_BLOCKED"],
+    [106, "ROUTE_DESTINATION_BLOCKED"],
+    [107, "ROUTE_WAYPOINT_BLOCKED"],
+  ])("exposes fixed actionable point error for provider result %i", (resultCode, publicCode) => {
+    let caught: unknown;
+    try {
+      normalizeKakaoRoutePayload({ routes: [{ result_code: resultCode, result_msg: "fixture-private-provider-body" }] });
+    } catch (error) { caught = error; }
+    expect(caught).toBeInstanceOf(RouteResponseValidationError);
+    expect(routeResponseDiagnostic(caught)).toBe(`RESULT_CODE_${resultCode}`);
+    expect(safeErrorCode(caught)).toBe(publicCode);
+    expect(safeErrorStatus(caught)).toBe(422);
+    expect(safeErrorMessage(caught)).not.toContain("fixture-private-provider-body");
+    expect(JSON.stringify(caught)).not.toContain("fixture-private-provider-body");
   });
 
   it.each([120, -120])("allocates a signed summary mismatch while keeping exact internal totals: %i", (delta) => {
@@ -150,7 +197,7 @@ describe("normalizeKakaoRoutePayload", () => {
 
   it("maps only Kakao's documented no-directions code to safe-route absence", () => {
     expect(() => normalizeKakaoRoutePayload({ routes: [{ result_code: 1 }] })).toThrow("SAFE_ROUTE_NOT_FOUND");
-    expect(() => normalizeKakaoRoutePayload({ routes: [{ result_code: 101 }] })).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
+    expect(() => normalizeKakaoRoutePayload({ routes: [{ result_code: 101 }] })).toThrow("ROUTE_WAYPOINT_ROAD_NOT_FOUND");
     expect(() => normalizeKakaoRoutePayload({ routes: [{ result_code: 9999 }] })).toThrow("INVALID_ROUTE_PROVIDER_RESPONSE");
   });
 

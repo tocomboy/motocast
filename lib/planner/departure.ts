@@ -21,6 +21,11 @@ export function minimumDeparture(now: Date = new Date()) {
   return seoulParts(rounded);
 }
 
+export function suggestedDeparture(now: Date = new Date()) {
+  const slotMs = 5 * MINUTE_MS;
+  return seoulParts(new Date(Math.ceil(now.getTime() / slotMs) * slotMs));
+}
+
 export function isPastDeparture(rideDate: string, departureTime: string, now: Date = new Date()) {
   const departure = new Date(`${rideDate}T${departureTime}:00+09:00`);
   return Number.isNaN(departure.getTime()) || departure.getTime() < now.getTime();

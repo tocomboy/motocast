@@ -1,0 +1,46 @@
+{
+  "base_commit": "a7c1cb5057d89ebee6adb6e50731554b0cf4f9c5",
+  "candidate": "uncommitted-retention-addition",
+  "publication": "APPROVED_PENDING_EXECUTION",
+  "hosted_mutation": "APPROVED_PENDING_EXECUTION",
+  "files": {
+    "supabase/migrations/20260922075948_journey_weather_retention.sql": "981c6e5f9b1c6d280d299a9113b68b785a9f5306acb9e72329f7620bec5562d9",
+    "supabase/operations/enable_journey_weather_retention.sql": "d13cb08275f4ba86f0e0305a20307fc3a3d2f56eb4a3371374ecc4d17dc5ce99",
+    "supabase/tests/database/journey_weather_retention.py": "bcd1b060d4be12a2de24eb1cf7bd2c9dc0394e6dc7afadf765b8c64e65cf2285",
+    "supabase/tests/database/journey_weather_retention_cron.py": "68bfdff44cf7dfa5aff365b086e057ddd630c669ca658fd4f326bac27819c68d",
+    "supabase/tests/database/journey_weather_cache.py": "93f25b96716efdede121b754623129706fa12203665a8ea307828981b6d3bc82",
+    "supabase/functions/_tests/weather-cache.integration.ts": "979284ce70ecf13a37f897ce0099eea2631b2b3156d366a278058aafe26b02af",
+    "docs/work/research/2026-09-22-journey-weather-retention.md": "a85108563e50d188f27105407fb07a5b97d4b0640c38b3bf17a2bff942fc1d74"
+  },
+  "log_sha256": {
+    "retention-db-final.log": "46af164c692555a1b817e67f6b8220bf61e6314be9a3a83e13d1c92ddf3f37be",
+    "retention-cron-final.log": "f157dbc39a1d91b0e85404bcaea03a94388812885684a189e4fb67150170954e",
+    "retention-runtime-final.log": "5866f55dbdfc8fa9b6afaef5ecb1ff1b271434343b281c8fe017abf4822e1566",
+    "retention-node20-ci.log": "c9b5a33efca8bab5981fdeabc9644958ad57dcb52c0c6b7b7b45f6dd2e6783cf",
+    "retention-node20-lint.log": "66ab88bc8a7b69a39233864b834d7d4b27177900ca15adf045d8a16539fc97f0",
+    "retention-node20-types.log": "ce25cdbd5340683abd04d6774f6df6ed1488594ca64cf54eb943d56a5f8bd250",
+    "retention-node20-tests.log": "b9b4d0a943fb1f04a7d3ec0b6e5566652e33d02f5ce9463db23d53adcd068c57",
+    "retention-node20-e2e.log": "243cb9d6d4e7d1d1dbdef2ea7539156fd20a4e73df28d05148d22b981dbf64bf",
+    "retention-deno.log": "f0af1ef2dcddd6f23909b82397d41d465cac04575eca0126c8aeb9f477b15a7a"
+  },
+  "verification": {
+    "postgres_baseline": 320,
+    "cache": 12,
+    "retention": 12,
+    "cron": 6,
+    "runtime": 2,
+    "unit": 685,
+    "chromium": 49,
+    "chromium_connected_SKIP": 2,
+    "FAIL": 0,
+    "ERROR": 0,
+    "deno_entrypoints": 7,
+    "node": "20.20.2"
+  },
+  "database": "motocast_weather_230dcb8046",
+  "cron_container": "motocast-retention-cron-6012cc1dd6",
+  "cron_container_state": "stopped",
+  "real_provider_calls": 0,
+  "initial_errors": "Preserved separately in the linked retention evidence document.",
+  "file_hash_format": "SHA256 of LF-normalized UTF-8 file bytes; logs use raw bytes"
+}

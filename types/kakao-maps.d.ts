@@ -13,7 +13,11 @@ type KakaoMapsNamespace = {
   Map: new (
     container: HTMLElement,
     options: { center: KakaoLatLng; level: number },
-  ) => { setBounds(bounds: { extend(point: KakaoLatLng): void }): void };
+  ) => {
+    setBounds(bounds: { extend(point: KakaoLatLng): void }): void;
+    getProjection(): { coordsFromContainerPoint(point: unknown): KakaoLatLng };
+    getCenter(): KakaoLatLng;
+  };
   Marker: new (options: { map: unknown; position: KakaoLatLng; title: string; image?: unknown }) => unknown;
   Polyline: new (options: {
     map: unknown;

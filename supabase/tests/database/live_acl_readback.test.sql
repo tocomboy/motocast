@@ -52,6 +52,12 @@ with protected_tables(table_name) as (
     ('share_preview_grants'),
     ('kakao_oidc_handoffs')
     ,('place_favorites')
+    ,('play_admission_challenges')
+    ,('play_admission_budget')
+    ,('weather_budget_policy')
+    ,('weather_usage_daily')
+    ,('weather_fetch_cache')
+    ,('weather_fetch_attempts')
 ), dml(privilege_name) as (
   values ('INSERT'), ('UPDATE'), ('DELETE')
 )
@@ -79,7 +85,14 @@ with allowed(function_signature) as (
     ('public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)'),
     ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)'),
     ('public.create_kakao_oidc_handoff_internal(text,text,text,timestamptz)'),
-    ('public.consume_kakao_oidc_handoff_internal(text,text)')
+    ('public.consume_kakao_oidc_handoff_internal(text,text)'),
+    ('public.begin_play_admission_internal(uuid)'),
+    ('public.take_play_admission_internal(uuid,uuid,text)'),
+    ('public.complete_play_admission_internal(uuid,uuid,text)'),
+    ('public.claim_weather_fetch_internal(uuid,text,integer,integer,text,text,uuid)'),
+    ('public.start_weather_fetch_internal(uuid,text,integer,integer,text,text,uuid,bigint,integer)'),
+    ('public.finish_weather_fetch_internal(text,integer,integer,text,text,uuid,bigint,jsonb,integer,text)'),
+    ('public.block_weather_transfer_internal()')
 )
 insert into acl_results(ok, description)
 select
@@ -129,7 +142,14 @@ with allowed(function_oid) as (
     ('public.insert_weather_snapshot_internal(uuid,uuid,text,timestamptz,timestamptz,jsonb,text,timestamptz)'::regprocedure::oid),
     ('public.mark_weather_snapshot_stale_internal(uuid,uuid,text,text)'::regprocedure::oid),
     ('public.create_kakao_oidc_handoff_internal(text,text,text,timestamptz)'::regprocedure::oid),
-    ('public.consume_kakao_oidc_handoff_internal(text,text)'::regprocedure::oid)
+    ('public.consume_kakao_oidc_handoff_internal(text,text)'::regprocedure::oid),
+    ('public.begin_play_admission_internal(uuid)'::regprocedure::oid),
+    ('public.take_play_admission_internal(uuid,uuid,text)'::regprocedure::oid),
+    ('public.complete_play_admission_internal(uuid,uuid,text)'::regprocedure::oid),
+    ('public.claim_weather_fetch_internal(uuid,text,integer,integer,text,text,uuid)'::regprocedure::oid),
+    ('public.start_weather_fetch_internal(uuid,text,integer,integer,text,text,uuid,bigint,integer)'::regprocedure::oid),
+    ('public.finish_weather_fetch_internal(text,integer,integer,text,text,uuid,bigint,jsonb,integer,text)'::regprocedure::oid),
+    ('public.block_weather_transfer_internal()'::regprocedure::oid)
 )
 insert into acl_results(ok, description)
 select
