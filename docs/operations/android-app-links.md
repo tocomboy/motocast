@@ -3,6 +3,12 @@
 상태: 2026-09-26 Preview 배포 완료. 고정 공개 호스트의 인증 파일은 HTTP200이며
 Console에서 확인한 Play 서명3개와 일치한다. 실제 Android 도메인 검증은 아직 NOT_RUN이다.
 
+2026-09-30 PR79의 Play 운영 가입 배포가 승인됐다. 운영 Android 후보의 웹 origin은
+`https://motocast-three.vercel.app`이며 Preview와 링크 발행·수신을 빌드별로 분리한다.
+재조회에서 운영 인증 파일은404다. 운영 지문 설정·후보 웹 배포 후 공개200/JSON을
+확인하고, 사용자가 실제 Play 설치본의 운영 도메인 연결을 검증한다.
+[재개 기록과 실기기 확인 절차](../work/research/2026-09-30-play-production-resume.md)를 따른다.
+
 Android는 HTTPS `/share#<token>`과 `/invite#<token>`을 받고, MainActivity가 처음 실행되거나
 이미 실행 중일 때 같은 엄격한 URI 검사를 수행한다. 토큰은 fragment에 유지하고 query나
 접속 로그로 이동하지 않는다. 서버의 익명 공유 읽기, 회수 및 회원 전용 저장 권한은 유지한다.

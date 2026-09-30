@@ -103,7 +103,7 @@ PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v 
 3. `search-places`, `plan-route`, `weather-timeline`, `save-collection`, `kakao-oidc` Edge Function을 배포하고 서버 전용 비밀값을 Supabase Dashboard secret store에 등록합니다. `kakao-oidc`만 로그인 시작 전 공개 진입점이므로 `verify_jwt=false`이며 나머지 네 함수는 JWT 검증을 유지합니다.
 4. 최초 관리자 등록과 거부된 OAuth 사용자 정리는 [Supabase Auth 운영 절차](docs/operations/supabase-auth.md)를 따릅니다.
 
-AUTH-007의 Preview 전용 `play-admission`은 Google Play 설치 증명을 서버에서 검증한 신규 Kakao 사용자만 초대 없이 일반 회원으로 등록합니다. 기존 회원 권한과 회수 상태를 보존하고 웹·개발 앱의 초대 정책은 유지합니다. 구성·복구·검증 한계는 [Play 가입 운영 절차](docs/operations/supabase-auth.md#play-설치-검증-가입-auth-007)를 따릅니다.
+AUTH-007의 `play-admission`은 Google Play 설치 증명을 서버에서 검증한 신규 Kakao 사용자만 초대 없이 일반 회원으로 등록합니다. 2026-09-30 승인된 PR #79의 Production 적용은 Play 내부 트랙 범위이며, 프로젝트별 `SUPABASE_URL`과 `PLAY_ADMISSION_ENVIRONMENT=preview|production`의 정확한 조합 및 해당 프로젝트의 인증서·버전·검증 계정 설정을 요구합니다. 기존 Preview의 새 환경 설정 등록은 아직 확인되지 않았으므로 함수 배포 전에 등록·readback해야 합니다. 기존 회원 권한과 회수 상태를 보존하고 웹·개발 앱의 초대 정책은 유지합니다. 실제 환경 설정 적용·기기 검증은 아직 `NOT_RUN`이며, 구성·복구·검증 한계는 [Play 가입 운영 절차](docs/operations/supabase-auth.md#play-설치-검증-가입-auth-007)를 따릅니다.
 
 프로젝트별 데이터·비밀값·배포 경계와 현재 상태는 [Preview/Production 운영 절차](docs/operations/preview-production.md)를 따릅니다.
 

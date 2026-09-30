@@ -1,5 +1,18 @@
 # MOTOCAST Preview and Production operations
 
+## PR79 Play Production targeting — 2026-09-30
+
+The user has approved Production deployment including Play admission. The current
+0.5.1 promotion remains gated by connected Preview verification, project-local Play
+configuration, the reviewed Android Production candidate and actual device evidence.
+Production is still main `259f4866a0cb96c33e84423a048d385aacda65f0` / 0.4.2;
+its Play schema/function and App Links endpoint are absent. The new runtime guard
+requires exact project/environment binding, so configure and read back Preview's
+environment flag before replacing the existing function. Do not copy Preview secrets.
+Android's journey backends are a separate unresolved Production dependency in PR74.
+See the [current resume evidence and rollout order](../work/research/2026-09-30-play-production-resume.md).
+Historical release entries below describe their own checkpoints, not this rollout's completion.
+
 This runbook implements `OPS-002`, `OPS-004`, `OPS-005`, and `OPS-007` from `docs/product/MOTOCAST_SOT.md`. It records project references and secret ownership, never secret values.
 
 ## Mobile/desktop redesign and shared course copy release — 2026-09-17
