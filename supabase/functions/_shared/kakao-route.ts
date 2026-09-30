@@ -29,12 +29,22 @@ const kakaoResultCodeReasons = {
   302: "RESULT_CODE_302", 303: "RESULT_CODE_303", 304: "RESULT_CODE_304",
 } as const;
 
+const kakaoPointErrorCodes = {
+  RESULT_CODE_101: "ROUTE_WAYPOINT_ROAD_NOT_FOUND",
+  RESULT_CODE_102: "ROUTE_ORIGIN_ROAD_NOT_FOUND",
+  RESULT_CODE_103: "ROUTE_DESTINATION_ROAD_NOT_FOUND",
+  RESULT_CODE_104: "ROUTE_POINTS_TOO_CLOSE",
+  RESULT_CODE_105: "ROUTE_ORIGIN_BLOCKED",
+  RESULT_CODE_106: "ROUTE_DESTINATION_BLOCKED",
+  RESULT_CODE_107: "ROUTE_WAYPOINT_BLOCKED",
+} as const;
+
 const routeValidationReasons = [
   "JSON_BODY", "OBJECT_SHAPE", "INTEGER_VALUE", "SUMMARY_POINT", "ROAD_VERTEX_SHAPE",
   "ROAD_VERTEX_RANGE", "SECTION_ROADS", "SECTION_DISTANCE_TOTAL", "SECTION_DURATION_TOTAL",
   "ROAD_CONTINUITY", "ROUTES_SHAPE", "RESULT_CODE_SHAPE", "RESULT_CODE_UNDOCUMENTED",
   ...Object.values(kakaoResultCodeReasons), "SUMMARY_WAYPOINTS", "ROUTE_SECTIONS",
-  "ROUTE_DISTANCE_TOTAL", "ROUTE_DURATION_ALLOCATION", "REQUEST_POINT_COUNT", "SUMMARY_POINT_SNAP",
+  "ROUTE_DURATION_ALLOCATION", "REQUEST_POINT_COUNT", "SUMMARY_POINT_SNAP",
   "GEOMETRY_POINT_SNAP", "SECTION_CONTINUITY",
 ] as const;
 type RouteValidationReason = typeof routeValidationReasons[number];
@@ -49,7 +59,9 @@ type RouteRequestDiagnosticContext = {
 
 export class RouteResponseValidationError extends Error {
   constructor(readonly reason: RouteValidationReason, readonly requestContext?: RouteRequestDiagnosticContext) {
-    super("INVALID_ROUTE_PROVIDER_RESPONSE");
+    super(Object.hasOwn(kakaoPointErrorCodes, reason)
+      ? kakaoPointErrorCodes[reason as keyof typeof kakaoPointErrorCodes]
+      : "INVALID_ROUTE_PROVIDER_RESPONSE");
   }
 }
 
@@ -191,9 +203,9 @@ export function normalizeKakaoRoutesPayload(value: unknown): NormalizedKakaoRout
       throw new RouteResponseValidationError("ROUTE_SECTIONS");
     }
     const sections = route.sections.map(normalizeSection);
-    if (sections.reduce((sum, section) => sum + section.distance, 0) !== summary.distance) {
-      throw new RouteResponseValidationError("ROUTE_DISTANCE_TOTAL");
-    }
+    // The app consumes validated sections. A differing supplier summary must
+    // not reject otherwise valid geometry or produce inconsistent app totals.
+    summary.distance = integer(sections.reduce((sum, section) => sum + section.distance, 0), true);
     let allocatedSections: NormalizedKakaoRoute["sections"];
     try {
       allocatedSections = allocateRouteDurations(summary.duration, sections);

@@ -10,6 +10,8 @@ import { ownerHandoff } from "@/lib/planner/kakaomap-sources";
 import { KakaoMapCanvas, MapMarkerLegend } from "@/components/kakao-map-canvas";
 import { OrderedWaypointEditor } from "@/components/ordered-waypoint-editor";
 import { PlaceFavoritesProvider, usePlaceFavorites } from "@/components/place-favorites-provider";
+import { MapPointConfirmation, type MapPlacePickerHandle } from "@/components/map-point-confirmation";
+import { RouteFailureDialog } from "@/components/route-failure-dialog";
 import { PlaceSearchField } from "@/components/place-search-field";
 import { PlannerHome } from "@/components/planner-home";
 import { PlannerScheduleDialog } from "@/components/planner-schedule-dialog";
@@ -32,10 +34,11 @@ import { buildPlannerMapPoints } from "@/lib/planner/map-points";
 import {
   collectionPointFromEditableWaypoint,
   editableWaypointFromCollectionPoint,
+  roleAssignmentError,
   type EditableWaypoint,
 } from "@/lib/planner/ordered-waypoints";
 import { parseSafeRecommendedRoute, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
-import { readRouteFailureCode, routeFailureNotice } from "@/lib/planner/route-failure";
+import { readRouteFailureCode, routeFailureNotice, routeFailurePopup, type RouteFailureCode } from "@/lib/planner/route-failure";
 import { buildTimeline, formatRideTime, weatherRiskLabel } from "@/lib/planner/schedule";
 import type { PlannedSegment, RouteCandidate } from "@/lib/planner/types";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
@@ -208,6 +211,8 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     destination: null,
   });
   const [waypoints, setWaypoints] = useState<EditableWaypoint[]>([]);
+  const mapPickerRef = useRef<MapPlacePickerHandle>(null);
+  const mapSelectionGeneration = useRef<number | null>(null);
   const [liveRoute, setLiveRoute] = useState<RouteCandidate | null>(null);
   const [liveTripId, setLiveTripId] = useState<string | null>(null);
   const [weather, setWeather] = useState<WeatherTimelineResponse | null>(null);
@@ -225,6 +230,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     eventId: 0,
   });
   const [calculating, setCalculating] = useState(false);
+  const [mapFailure, setMapFailure] = useState<RouteFailureCode | null>(null);
   const [clock, setClock] = useState(() => new Date());
   const [shareIntentGeneration, setShareIntentGeneration] = useState<number | null>(null);
   const [sharePreviewRequest, setSharePreviewRequest] = useState<{ serial: number; tripId: string } | null>(null);
@@ -291,6 +297,8 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       if (userId !== undefined && userId !== next) {
         routeGenerationRef.current += 1;
         setLiveResultStale(true);
+        setMapFailure(null);
+        setPlaceSelectionRevision((current) => current + 1);
       }
       userId = next;
     }).data.subscription;
@@ -403,6 +411,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   }
 
   function markRouteInputChanged(preserveShareIntent = false) {
+    setMapFailure(null);
     routeGenerationRef.current += 1;
     setShareIntentGeneration((current) => preserveShareIntent && current !== null ? routeGenerationRef.current : null);
     invalidateShareSession();
@@ -412,6 +421,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   }
 
   function navigate(next: PlannerView, replace = false) {
+    setMapFailure(null);
     if (next !== "summary") {
       setSummaryActionsOpen(false);
       if (summaryActionsDialogRef.current?.open) summaryActionsDialogRef.current.close();
@@ -474,6 +484,25 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       setNotice("즐겨찾기를 적용할 장소를 다시 선택해 주세요.", "warning");
     }
     markRouteInputChanged();
+  }
+
+  function selectMapCoordinate(point: { latitude: number; longitude: number }) {
+    if (!connected || actionGateRef.current.planning || calculating || summarySaveBusy) return;
+    const error = roleAssignmentError(waypoints, "waypoint");
+    if (error) { setNotice(error, "error", "waypoint"); return; }
+    mapSelectionGeneration.current = routeGenerationRef.current;
+    mapPickerRef.current?.open(point);
+  }
+
+  function addMapWaypoint(place: PlaceSearchResult | null) {
+    if (!place || actionGateRef.current.planning || calculating || summarySaveBusy ||
+      mapSelectionGeneration.current !== routeGenerationRef.current) return;
+    const error = roleAssignmentError(waypoints, "waypoint");
+    if (error) { setNotice(error, "error", "waypoint"); return; }
+    mapSelectionGeneration.current = null;
+    updateWaypoints([...waypoints, { id: crypto.randomUUID(), role: "waypoint", dwellMinutes: 0, place }]);
+    setNotice("지도에서 선택한 경유지를 추가했습니다. 방문 순서를 확인하고 경로와 날씨를 다시 계산해 주세요.");
+    navigate("editor");
   }
 
   function applyFavorite(place: PlaceSearchResult) {
@@ -726,7 +755,10 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       if (result.error) {
         if (sharingForCalculation) setShareIntentGeneration(null);
         if (liveRoute) setLiveResultStale(true);
-        setNotice(routeFailureNotice(await readRouteFailureCode(result.error), Boolean(liveRoute)), "error");
+        const code = await readRouteFailureCode(result.error);
+        if (!mountedRef.current || calculationGeneration !== routeGenerationRef.current) return;
+        setNotice(routeFailureNotice(code, Boolean(liveRoute)), "error");
+        if (routeFailurePopup(code) && navigationGenerationRef.current === expectedNavigation) setMapFailure(code);
         return;
       }
       const candidate = liveRouteCandidate(parseSafeRecommendedRoute(result.data));
@@ -791,6 +823,8 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
 
   return (
     <main className={`app-shell app-view-${view}`} data-view={view}>
+      {connected ? <MapPointConfirmation key={`${view}:${placeSelectionRevision}`} onSelect={addMapWaypoint} pickerRef={mapPickerRef} /> : null}
+      {mapFailure ? <RouteFailureDialog code={mapFailure} onClose={() => setMapFailure(null)} onEdit={() => { setMapFailure(null); navigate("editor"); }} /> : null}
       <header className="app-header">
         <button className="brand" type="button" aria-label="MOTOCAST 홈" onClick={() => navigationMode === "memory" && onExit ? onExit() : navigate("home")}>
           <span>MOTOCAST</span>
@@ -944,7 +978,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
                 </dialog>
               </> : null}
             </>}
-            map={<><h2 className="summary-course-title">{routeTitle}</h2><div className="route-map-meta"><div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>{liveRoute ? <span className="live-data-badge">{liveResultStale ? "이전 실제 경로" : "실제 경로"}</span> : <span className="example-data-badge">예시 데이터</span>}</div><div className="map-area"><KakaoMapCanvas points={selectedMapPoints} path={selectedMapPath} showLegend={false} /></div></>}
+            map={<><h2 className="summary-course-title">{routeTitle}</h2><div className="route-map-meta"><div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>{liveRoute ? <span className="live-data-badge">{liveResultStale ? "이전 실제 경로" : "실제 경로"}</span> : <span className="example-data-badge">예시 데이터</span>}</div><div className="map-area"><KakaoMapCanvas points={selectedMapPoints} path={selectedMapPath} showLegend={false} onSelectCoordinate={connected && !calculating && !summarySaveBusy ? selectMapCoordinate : undefined} /></div></>}
             mapDetails={<div className="route-map-details"><p className="summary-route-order">{[selected.segments[0]?.from.label, ...selected.segments.map((segment) => segment.to.label)].filter(Boolean).join(" → ")}</p><p className="route-safety-copy">이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</p><MapMarkerLegend points={selectedMapPoints} inline /></div>}
             weather={<><div className="forecast-heading"><div><h2>구간별 날씨</h2></div><span className="forecast-issued">{weatherLoading === selected.id ? "기상청 예보 조회 중" : selectedWeatherStatus?.header ?? "날씨 미조회"}</span></div><p className="sr-only" role="status" aria-live="polite">{selectedWeatherAnnouncement}</p><div className="timeline-list">{timeline.segments.map((segment) => { const effectiveDwell = segment.to.selected ? segment.to.dwellMinutes : 0; return <RidingWeatherCard key={segment.id} time={formatRideTime(displayedDepartureAt, segment.arrivalAt)} place={segment.to.label} stopDetail={effectiveDwell ? `${effectiveDwell}분 정차` : "통과"} condition={segment.weather.condition} conditionLabel={weatherIcon(segment.weather.condition)} temperature={`${segment.weather.temperatureC ?? "–"}°`} probability={`${segment.weather.precipitationProbability ?? "–"}%`} statusNote={segment.weather.status === "outside-window" ? weatherModelLabel(segment.weather.status, segment.weather.model) : undefined} />; })}</div><details className="weather-detail"><summary>날씨 상세정보</summary><ul>{timeline.segments.map((segment) => <li key={segment.id}><strong>{segment.to.label}</strong><span>바람 {segment.weather.windSpeedMps ?? "–"}m/s · {weatherModelLabel(segment.weather.status, segment.weather.model)}</span></li>)}</ul></details></>}
             notices={<>{selectedWeatherStatus ? <div className="stale-notice"><span>i</span>{selectedWeatherStatus.notice}</div> : null}<div ref={noticeRef} className={`action-notice ${notice.severity}`} role={notice.severity === "error" ? "alert" : "status"} aria-live={notice.severity === "error" ? "assertive" : "polite"} tabIndex={-1}><span className="notice-symbol" aria-hidden="true">{notice.severity === "error" ? "!" : notice.severity === "warning" ? "△" : "i"}</span><p><strong>{notice.severity === "error" ? "계획을 완료하지 못했습니다" : notice.severity === "warning" ? "확인이 필요합니다" : "진행 상태"}</strong><span>{notice.message}</span></p></div></>}
@@ -958,7 +992,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
               {!liveRoute ? <span className="example-data-badge">{connected ? "선택한 장소" : "예시 데이터"}</span> : <span className="live-data-badge">{liveResultStale ? "이전 실제 경로" : "실제 경로"}</span>}
             </div>
             <div className="map-area">
-              <KakaoMapCanvas points={selectedMapPoints} path={selectedMapPath} showLegend={false} />
+              <KakaoMapCanvas points={selectedMapPoints} path={selectedMapPath} showLegend={false} onSelectCoordinate={connected && !calculating && !summarySaveBusy ? selectMapCoordinate : undefined} />
             </div>
             {!connected ? <div className="route-map-details">
               <MapMarkerLegend points={selectedMapPoints} inline />

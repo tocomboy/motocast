@@ -330,6 +330,14 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Verification: original failure through provider adapter/orchestrator becomes accepted; signed mismatches, exact matches, integer remainders, zero road weights, invalid/unsafe inputs, geometry/point rejection, next-chunk departure/dwell and under-24-hour limits; browser and DB acceptance of the exact normalized output; actual Preview and Production route/weather checks.
 - Confirmed by user: 2026-09-16, “권장대로 진행하자”. Implementation and deployment evidence: [duration investigation](../work/research/2026-09-16-route-duration-diagnostic.md).
 
+#### ROUTE-010 — Provider distance mismatch and actionable map errors
+
+- Status: `CONFIRMED` (2026-10-01 user correction).
+- Decision: Do not reject an otherwise valid provider route solely because its summary distance differs from the sum of validated section distances. Use the section sum as the normalized distance, without redistributing or inventing road distances. This supersedes ROUTE-007's retention of that upstream equality guard only. Finite safe-integer values, road-to-section consistency, ordered requested points, geometry continuity, motorcycle restrictions, call budgets and persisted normalized totals remain enforced.
+- User correction: “전체 거리와 구간 거리 합계” was an excessive constraint intended for removal. The earlier recorded ROUTE-007 removed the timing equality while retaining distance; this correction resolves that divergence prospectively. It is not evidence that the historical request was replayed.
+- Map provider errors: Official result codes 101–107 produce closed, actionable public codes and a popup explaining the affected origin/waypoint/destination, too-close endpoints or road incident. Never reflect provider text/URLs/coordinates/secrets. Retain input and prior saved results; no automatic retry, point substitution, omission or passenger-car fallback. Unknown/malformed responses keep their failure boundary.
+- Design and verification: Figma M04 `200:2266`; backend adapter/orchestrator regression, web/Android popup and no-save/no-weather-on-failure tests; same prepared public five-point scenario before/after the candidate. Historical 2026-09-30 inputs were not retained and the user has no saved course, so exact historical replay remains unavailable.
+
 #### ROUTE-008 — Execute the summarized course in KakaoMap
 
 - Status: `CONFIRMED`. 0.4.0 deployed; phone launch USER_REPORTED PASS. 0.4.1 Figma amendments are the current release candidate; installation/device matrix remains separately unverified.
@@ -346,6 +354,14 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Superseding user decision, 2026-09-18: Shared summaries also execute directly; this replaces the previous requirement to prepare the recipient's own plan first. Owner recalculation remains unchanged. Update the existing preparation PR #67, Figma, documents, Issues and Notion only; no application implementation, merge or deployment.
 
 - Subsequent implementation authorization, 2026-09-18: Implement and verify before merging/deploying v0.4.0. The user will validate actual KakaoMap app handoff on their phone; record it as pending, never infer device success from automated tests. GPS remains separate.
+
+#### ROUTE-009 — Select a waypoint on the map
+
+- Status: `CONFIRMED` by user request on 2026-10-01; implementation and deployment are recorded separately.
+- Decision: Support map zoom/pan and long press to choose a waypoint in the owner planner on web and Android. Resolve the selected coordinate through the existing authenticated place API, show the address in a confirmation popup above the map, and add an ordinary zero-dwell waypoint only when the user presses `경유지로 추가`. The 2026-10-01 clarification requires Figma-first design of this popup; the earlier full-screen-picker WIP is superseded. Cancel, late response, provider failure and an unmapped point leave the course unchanged. Shared maps remain read-only while supporting camera gestures.
+- Boundary: Preserve the selected coordinate, including mountain parcels without a road address. Never invent a road, snap to a different POI, strip `산`, or use client-supplied unsigned coordinates as trusted places. Coordinate lookup consumes the existing Local free quota; no extra allowance or automatic retry is introduced. Existing waypoint/order/count, route recalculation and share-approval invalidation contracts remain mandatory.
+- Verification: web/native request and response parity, signed coordinate binding, member/revoked/budget denial, no-result/error/cancel/stale response, drag/pinch versus long press, unchanged shared snapshots, and actual SDK camera behavior. User real-device validation remains distinct from emulator and mock tests.
+- Evidence: [map and mountain-weather investigation](../work/research/2026-10-01-map-weather.md). Current Preview success at the reported public addresses does not establish the cause or correction of the historical weather complaint.
 
 ### Weather
 

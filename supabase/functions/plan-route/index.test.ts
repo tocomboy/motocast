@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { parseSafeRecommendedRoute } from "../../../lib/planner/provider-contract";
 import { normalizeKakaoRoutePayload, RouteResponseValidationError } from "../_shared/kakao-route";
 import type { RouteRequest } from "../_shared/route-request";
 
@@ -33,12 +34,12 @@ function routeInput(): RouteRequest {
   };
 }
 
-function providerPayload(malformed = false) {
+function providerPayload(malformed = false, distanceDelta = 0) {
   return {
     routes: [{
       result_code: 0,
       summary: {
-        distance: 3000,
+        distance: 3000 + distanceDelta,
         duration: 840,
         origin: { x: 127, y: 37 },
         destination: { x: 127.1, y: 37 },
@@ -93,12 +94,16 @@ describe("deployed plan-route diagnostic boundary", () => {
   });
 
   it.each([
-    { code: 101, reason: "RESULT_CODE_101" },
-    { code: 104, reason: "RESULT_CODE_104" },
-    { code: 107, reason: "RESULT_CODE_107" },
-    { code: 9999, reason: "RESULT_CODE_UNDOCUMENTED" },
-    { code: "fixture-private-detail", reason: "RESULT_CODE_SHAPE" },
-  ])("keeps parsed result-code case %# server-only", async ({ code, reason }) => {
+    { code: 101, reason: "RESULT_CODE_101", publicCode: "ROUTE_WAYPOINT_ROAD_NOT_FOUND", status: 422 },
+    { code: 102, reason: "RESULT_CODE_102", publicCode: "ROUTE_ORIGIN_ROAD_NOT_FOUND", status: 422 },
+    { code: 103, reason: "RESULT_CODE_103", publicCode: "ROUTE_DESTINATION_ROAD_NOT_FOUND", status: 422 },
+    { code: 104, reason: "RESULT_CODE_104", publicCode: "ROUTE_POINTS_TOO_CLOSE", status: 422 },
+    { code: 105, reason: "RESULT_CODE_105", publicCode: "ROUTE_ORIGIN_BLOCKED", status: 422 },
+    { code: 106, reason: "RESULT_CODE_106", publicCode: "ROUTE_DESTINATION_BLOCKED", status: 422 },
+    { code: 107, reason: "RESULT_CODE_107", publicCode: "ROUTE_WAYPOINT_BLOCKED", status: 422 },
+    { code: 9999, reason: "RESULT_CODE_UNDOCUMENTED", publicCode: "ROUTE_RESPONSE_INVALID", status: 502 },
+    { code: "fixture-private-detail", reason: "RESULT_CODE_SHAPE", publicCode: "ROUTE_RESPONSE_INVALID", status: 502 },
+  ])("returns fixed public result-code case %# without provider details", async ({ code, reason, publicCode, status }) => {
     validation.mockImplementation(async () => normalizeKakaoRoutePayload({
       routes: [{ result_code: code, result_msg: "fixture-private-detail" }],
     }));
@@ -106,9 +111,12 @@ describe("deployed plan-route diagnostic boundary", () => {
       method: "POST", headers: { "content-type": "application/json" }, body: "{}",
     }));
     const body = await response.json();
-    expect(response.status).toBe(502);
-    expect(body).toEqual({ code: "ROUTE_RESPONSE_INVALID", error: "경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." });
-    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", "ROUTE_RESPONSE_INVALID", reason, "UNKNOWN");
+    expect(response.status).toBe(status);
+    expect(Object.keys(body).sort()).toEqual(["code", "error"]);
+    expect(body.code).toBe(publicCode);
+    expect(body.error).toEqual(expect.any(String));
+    if (status === 502) expect(body.error).toBe("경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", publicCode, reason, "UNKNOWN");
     expect(JSON.stringify({ body, log: log.mock.calls })).not.toContain("fixture-private-detail");
     expect(serviceClient).not.toHaveBeenCalled();
   });
@@ -123,19 +131,20 @@ describe("deployed plan-route diagnostic boundary", () => {
       method: "POST", headers: { "content-type": "application/json" }, body: "{}",
     }));
     const body = await response.json();
-    expect(response.status).toBe(502);
-    expect(body).toEqual({ code: "ROUTE_RESPONSE_INVALID", error: "경로 공급자의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." });
-    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", "ROUTE_RESPONSE_INVALID", "RESULT_CODE_106", forged ? "UNKNOWN" : "FUTURE_P1_P3_REST");
+    expect(response.status).toBe(422);
+    expect(body).toEqual({ code: "ROUTE_DESTINATION_BLOCKED", error: "도착지 주변 도로의 교통 장애로 경로를 찾지 못했습니다. 다른 도착지를 선택해 주세요." });
+    expect(log).toHaveBeenCalledExactlyOnceWith("plan-route failed", "ROUTE_DESTINATION_BLOCKED", "RESULT_CODE_106", forged ? "UNKNOWN" : "FUTURE_P1_P3_REST");
     expect(JSON.stringify({ body, log: log.mock.calls })).not.toContain("fixture-private-detail");
     expect(serviceClient).not.toHaveBeenCalled();
   });
 
-  it("stages a successfully allocated route through the production handler", async () => {
+  it.each([0, 1, -1, 700, -700])("stages section-derived distance with supplier mismatch %i through the production handler", async (distanceDelta) => {
     const input = routeInput();
     const actual = await vi.importActual<typeof import("../_shared/route-orchestration")>("../_shared/route-orchestration");
     validation.mockImplementation(async (_body: unknown, _secret: string, work: (value: RouteRequest) => Promise<unknown>) => work(input));
     orchestration.mockImplementation(actual.orchestrateRecommendedRoute);
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json(providerPayload())));
+    const fetchImpl = vi.fn(async () => Response.json(providerPayload(false, distanceDelta)));
+    vi.stubGlobal("fetch", fetchImpl);
     stage.mockResolvedValue({ error: null });
     serviceClient.mockReturnValue({ rpc: stage });
     const response = await handler(new Request("https://preview.example/functions/v1/plan-route", {
@@ -144,10 +153,22 @@ describe("deployed plan-route diagnostic boundary", () => {
     const body = await response.json();
     expect(response.status).toBe(200);
     expect(body.totalDurationSeconds).toBe(840);
+    expect(body.totalDistanceMeters).toBe(3000);
+    expect(parseSafeRecommendedRoute(body).totalDistanceMeters).toBe(3000);
     expect(body.legs.map((leg: { durationSeconds: number }) => leg.durationSeconds)).toEqual([350, 490]);
     expect(stage).toHaveBeenCalledTimes(1);
+    expect(stage.mock.calls[0][0]).toBe("stage_route_candidate_internal");
+    expect(stage.mock.calls[0][1].target_planning_id).toBe(input.planningId);
+    expect(stage.mock.calls[0][1].member_id).toBe("test-member");
+    expect(stage.mock.calls[0][1].staged_route).toEqual(body);
+    expect(stage.mock.calls[0][1].staged_route.totalDistanceMeters).toBe(3000);
+    expect(stage.mock.calls[0][1].staged_route.legs.map((leg: { distanceMeters: number }) => leg.distanceMeters)).toEqual([1200, 1800]);
+    expect(stage.mock.calls[0][1].staged_plan.origin.longitude).toBe(input.origin.longitude);
+    expect(stage.mock.calls[0][1].staged_plan.waypoints.map((point: { longitude: number }) => point.longitude)).toEqual(input.waypoints.map((point) => point.longitude));
+    expect(stage.mock.calls[0][1].staged_plan.destination.longitude).toBe(input.destination.longitude);
     expect(stage.mock.calls[0][1].staged_route.legs.map((leg: { durationSeconds: number }) => leg.durationSeconds)).toEqual([350, 490]);
     expect(consumeBudget).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(log).not.toHaveBeenCalled();
   });
 

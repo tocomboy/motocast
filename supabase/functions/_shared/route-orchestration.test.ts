@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { safeErrorCode, safeErrorStatus } from "./http";
 import { normalizeKakaoRoutePayload, routeRequestDiagnostic, routeResponseDiagnostic, RouteResponseValidationError, type NormalizedKakaoRoute } from "./kakao-route";
 import { orchestrateRecommendedRoute, type RouteChunkRequest, type RouteOperation } from "./route-orchestration";
 import type { RoutePointRequest } from "./route-request";
@@ -110,7 +111,9 @@ describe("orchestrateRecommendedRoute", () => {
     const error = await orchestrateRecommendedRoute(points, "2026-09-01T00:00:00.000Z", deps.value).then(() => null, (error: unknown) => error);
     expect(routeResponseDiagnostic(error)).toBe("RESULT_CODE_106");
     expect(routeRequestDiagnostic(error)).toBe(expected);
-    expect(error).toMatchObject({ message: "INVALID_ROUTE_PROVIDER_RESPONSE" });
+    expect(error).toMatchObject({ message: "ROUTE_DESTINATION_BLOCKED" });
+    expect(safeErrorCode(error)).toBe("ROUTE_DESTINATION_BLOCKED");
+    expect(safeErrorStatus(error)).toBe(422);
     expect(deps.provider).toHaveBeenCalledTimes(failedCall);
     expect(deps.budget).toHaveBeenCalledTimes(failedCall);
     expect(deps.operations).toEqual(["directions", "future_directions", "future_directions"].slice(0, failedCall));

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({ invoke: vi.fn(), rpc: vi.fn(), shareProps: [] 
 vi.mock("next/link", () => ({ default: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a> }));
 vi.mock("next/image", () => ({ default: ({ src }: { src: string }) => <span data-image-src={src} /> }));
 vi.mock("@/components/kakao-map-canvas", () => ({ KakaoMapCanvas: () => <div />, MapMarkerLegend: () => <div /> }));
+vi.mock("@/components/map-point-confirmation", () => ({ MapPointConfirmation: () => <div /> }));
 vi.mock("@/components/place-search-field", () => ({ PlaceSearchField: () => <div /> }));
 vi.mock("@/components/ordered-waypoint-editor", () => ({ OrderedWaypointEditor: () => <div /> }));
 vi.mock("@/components/collection-manager", () => ({
@@ -33,6 +34,10 @@ vi.mock("@/lib/supabase/browser", () => ({
 
 import { PlannerDashboard } from "./planner-dashboard";
 import { KakaoMapHandoff } from "./kakaomap-handoff";
+import { KakaoMapCanvas } from "./kakao-map-canvas";
+import { MapPointConfirmation } from "./map-point-confirmation";
+import { RouteFailureDialog } from "./route-failure-dialog";
+import { OrderedWaypointEditor } from "./ordered-waypoint-editor";
 
 const place = (id: string, longitude: number) => ({
   kakaoPlaceId: id,
@@ -45,6 +50,29 @@ const place = (id: string, longitude: number) => ({
 });
 const course: CollectionCourse = { origin: place("origin", 127), destination: place("destination", 127.2), points: [] };
 const tripId = "10000000-0000-4000-8000-000000000001";
+
+it("adds a confirmed map point once and invalidates a picker when the course changes", async () => {
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={course} navigationMode="memory" />, {createNodeMock}); });
+  const coordinate = {latitude:37.5,longitude:127.1};
+  const mapPlace = {...place("map:37.5000000:127.1000000",127.1),category:"지도에서 선택",phone:null,placeUrl:null};
+  const picker = () => renderer.root.findByType(MapPointConfirmation);
+  const map = () => renderer.root.findAllByType(KakaoMapCanvas)[0];
+  await act(async () => map().props.onSelectCoordinate(coordinate));
+  expect(renderer.root.findByType(OrderedWaypointEditor).props.waypoints).toHaveLength(0);
+  await act(async () => picker().props.onSelect(mapPlace));
+  const points = renderer.root.findByType(OrderedWaypointEditor).props.waypoints;
+  expect(points).toHaveLength(1); expect(points[0]).toMatchObject({role:"waypoint",dwellMinutes:0,place:mapPlace});
+  expect(mocks.invoke).not.toHaveBeenCalled();
+  await act(async () => picker().props.onSelect(mapPlace));
+  expect(renderer.root.findByType(OrderedWaypointEditor).props.waypoints).toHaveLength(1);
+  await act(async () => map().props.onSelectCoordinate(coordinate));
+  const staleConfirm = picker().props.onSelect;
+  await act(async () => renderer.root.findByType(OrderedWaypointEditor).props.onChange([]));
+  await act(async () => staleConfirm(mapPlace));
+  expect(renderer.root.findByType(OrderedWaypointEditor).props.waypoints).toHaveLength(0);
+  expect(mocks.invoke).not.toHaveBeenCalled(); await act(async () => renderer.unmount());
+});
 
 function renderedText(node: ReactTestRenderer["root"] | string): string {
   if (typeof node === "string") return node;
@@ -81,6 +109,8 @@ async function chooseSchedule(renderer: ReactTestRenderer) {
 }
 
 beforeEach(() => {
+  vi.stubGlobal("document", { activeElement: null, querySelector: vi.fn(() => null) });
+  vi.stubGlobal("HTMLElement", class {});
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-30T08:57:00.000Z"));
   mocks.authListeners.length = 0;
@@ -129,6 +159,26 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("PlannerDashboard collection share intent", () => {
+  it.each([
+    "ROUTE_WAYPOINT_ROAD_NOT_FOUND", "ROUTE_ORIGIN_ROAD_NOT_FOUND", "ROUTE_DESTINATION_ROAD_NOT_FOUND",
+    "ROUTE_POINTS_TOO_CLOSE", "ROUTE_ORIGIN_BLOCKED", "ROUTE_DESTINATION_BLOCKED", "ROUTE_WAYPOINT_BLOCKED",
+  ])("shows a safe map popup for %s without saving or fetching weather", async (code) => {
+    mocks.invoke.mockImplementation(async () => ({ error: { context: new Response(JSON.stringify({ code, error: "private-provider-detail" }), { status: 422 }) } }));
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={course} navigationMode="memory" />, { createNodeMock }); });
+    await chooseSchedule(renderer);
+    await act(async () => renderer.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }));
+    const popup = renderer.root.findByType(RouteFailureDialog);
+    expect(popup.props.code).toBe(code);
+    expect(renderedText(popup)).not.toContain("private-provider-detail");
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.invoke.mock.calls.map(call => call[0])).toEqual(["plan-route"]);
+    await act(async () => popup.props.onEdit());
+    expect(renderer.root.findAllByType(RouteFailureDialog)).toHaveLength(0);
+    expect(renderer.root.findByType("main").props["data-view"]).toBe("editor");
+    await act(async () => renderer.unmount());
+  });
+
   it("binds owner handoff to the calculated inputs and invalidates it on account change", async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={course} navigationMode="memory" />, { createNodeMock }); });

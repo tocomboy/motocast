@@ -9,6 +9,32 @@ it("reports weather storage admission failure without internal capacity details"
 });
 
 describe("safe provider errors", () => {
+  it.each([
+    ["ROUTE_WAYPOINT_ROAD_NOT_FOUND", "경유지"],
+    ["ROUTE_ORIGIN_ROAD_NOT_FOUND", "출발지"],
+    ["ROUTE_DESTINATION_ROAD_NOT_FOUND", "도착지"],
+    ["ROUTE_POINTS_TOO_CLOSE", "너무 가깝습니다"],
+    ["ROUTE_ORIGIN_BLOCKED", "출발지"],
+    ["ROUTE_DESTINATION_BLOCKED", "도착지"],
+    ["ROUTE_WAYPOINT_BLOCKED", "경유지"],
+  ])("provides a fixed actionable response for %s", (code, label) => {
+    const error = new Error(code);
+    expect(safeErrorCode(error)).toBe(code);
+    expect(safeErrorStatus(error)).toBe(422);
+    expect(safeErrorMessage(error)).toContain(label);
+  });
+
+  it.each([
+    "ROUTE_WAYPOINT_ROAD_NOT_FOUND: provider-private-body",
+    "RESULT_CODE_101",
+    "toString",
+    "constructor",
+  ])("does not reflect or promote an unrecognized error marker: %s", (message) => {
+    const error = new Error(message);
+    expect(safeErrorCode(error)).toBe("ROUTE_REQUEST_FAILED");
+    expect(safeErrorStatus(error)).toBe(502);
+    expect(safeErrorMessage(error)).not.toContain(message);
+  });
   it("does not mislabel malformed provider data as user input", () => {
     const error = new Error("INVALID_PLACE_PROVIDER_RESPONSE");
     expect(safeErrorMessage(error)).toContain("공급자");

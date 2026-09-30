@@ -71,8 +71,12 @@ function installMaps({ throwOnLoad = false }: { throwOnLoad?: boolean } = {}) {
   const loadCallbacks: Listener[] = [];
   const extend = vi.fn();
   const setBounds = vi.fn();
-  const MapConstructor = vi.fn(function MapInstance(this: { setBounds: typeof setBounds }) {
+  const coordinate = { getLat: () => 37.5, getLng: () => 127.1 };
+  const projection = { coordsFromContainerPoint: vi.fn(() => coordinate) };
+  const MapConstructor = vi.fn(function MapInstance(this: { setBounds: typeof setBounds; getProjection: () => typeof projection; getCenter: () => typeof coordinate }) {
     this.setBounds = setBounds;
+    this.getProjection = () => projection;
+    this.getCenter = () => coordinate;
   });
   const Marker = vi.fn(function MarkerInstance() {});
   const MarkerImage = vi.fn(function MarkerImageInstance() {});
@@ -102,8 +106,27 @@ function installMaps({ throwOnLoad = false }: { throwOnLoad?: boolean } = {}) {
     Polyline,
   };
   (window as Window).kakao = { maps: maps as unknown as KakaoMapsNamespace };
-  return { loadCallbacks, MapConstructor, Marker, MarkerImage, Polyline, extend, setBounds };
+  return { loadCallbacks, MapConstructor, Marker, MarkerImage, Polyline, extend, setBounds, projection };
 }
+
+it("enables point selection after load, removes it when disabled, and leaves the existing camera intact", async () => {
+  vi.useFakeTimers(); vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
+  const maps = installMaps(); const select = vi.fn();
+  const element = Object.assign(new EventTarget(), {getBoundingClientRect: () => ({left:0,top:0})});
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(<KakaoMapCanvas points={points} />, { createNodeMock: () => element }); });
+  await flush(maps.loadCallbacks);
+  await act(async () => renderer.update(<KakaoMapCanvas points={points} onSelectCoordinate={select} />));
+  const down = () => { const event = new Event("pointerdown"); Object.assign(event, {pointerId:1,button:0,clientX:50,clientY:60}); element.dispatchEvent(event); };
+  await act(async () => { down(); vi.advanceTimersByTime(600); });
+  expect(select).toHaveBeenCalledExactlyOnceWith({latitude:37.5,longitude:127.1});
+  expect(maps.projection.coordsFromContainerPoint).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.update(<KakaoMapCanvas points={points} />));
+  down(); vi.advanceTimersByTime(600); expect(select).toHaveBeenCalledTimes(1);
+  expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
+  expect(renderer.root.findAllByProps({className:"map-waypoint-actions"})).toHaveLength(0);
+  await act(async () => renderer.unmount());
+});
 
 async function mountMap(
   path?: typeof actualPath,

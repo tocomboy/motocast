@@ -8,6 +8,12 @@ Follow the active Codex home's global `AGENTS.md` and its personal routing sourc
 - Work on `develop`; promote to `main` only through a same-repository `develop -> main` pull request.
 - Never read `CLAUDE.md` or `.claude/` unless the user explicitly requests a Claude configuration audit or migration.
 
+## Design before screen implementation
+
+- 웹·Android의 새 화면·시트·팝업과 기존 화면의 큰 구성 변경은 항상 기존 MOTOCAST Figma에서 필요한 상태를 먼저 디자인하고 렌더 검수한 뒤 구현한다.
+- 기존 컴포넌트·색상·서체를 재사용하고 Figma 노드와 구현 상태를 작업 기록에 연결한다. 디자인 완료와 앱 적용·기기 검증 완료를 구분한다.
+- Android 대표 시안은 Galaxy S23+ 논리 화면 384×832이며 작은 화면과 큰 글자도 검증한다. 상세 절차: [디자인 선행 규칙](docs/rules/design-before-implementation.md).
+
 ## Version and release management
 
 - For each product release, choose and record the next `MAJOR.MINOR.PATCH` version before final candidate verification: patch for compatible fixes, minor for compatible features, and major for breaking changes. Do not bump the product version for every commit or for documentation-only changes.

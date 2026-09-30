@@ -1,0 +1,320 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "MOTOCAST Android place search contract",
+    "version": "1.1.0",
+    "description": "Backward-compatible keyword search plus coordinate reverse lookup. Keyword unknown fields remain ignored; coordinate mode rejects extra fields. Runtime string limits use UTF-16 units and ECMAScript whitespace normalization. Fixed candidates and live readiness are recorded separately."
+  },
+  "servers": [
+    {
+      "url": "https://lehjmbgfpoemqcwxowbx.supabase.co/functions/v1",
+      "description": "Preview"
+    },
+    {
+      "url": "https://obodvbyzptxeehgpcpkd.supabase.co/functions/v1",
+      "description": "Production only after verified compatible deployment"
+    }
+  ],
+  "paths": {
+    "/search-places": {
+      "post": {
+        "operationId": "searchPlaces",
+        "summary": "Resolve signed places as an active member within the existing Local quota",
+        "security": [
+          {
+            "userBearer": [],
+            "projectKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current signed places and pagination",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "HTTP 400; classify by status, never by translated message. Gateway errors may have a different body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "Handler emits {error:string}. Gateway may emit code/message. Never show arbitrary body text in native UI."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "HTTP 401; classify by status, never by translated message. Gateway errors may have a different body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "Handler emits {error:string}. Gateway may emit code/message. Never show arbitrary body text in native UI."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "HTTP 403; classify by status, never by translated message. Gateway errors may have a different body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "Handler emits {error:string}. Gateway may emit code/message. Never show arbitrary body text in native UI."
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "HTTP 405; classify by status, never by translated message. Gateway errors may have a different body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "Handler emits {error:string}. Gateway may emit code/message. Never show arbitrary body text in native UI."
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "HTTP 429; classify by status, never by translated message. Gateway errors may have a different body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "Handler emits {error:string}. Gateway may emit code/message. Never show arbitrary body text in native UI."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "HTTP 500; classify by status, never by translated message. Gateway errors may have a different body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "Handler emits {error:string}. Gateway may emit code/message. Never show arbitrary body text in native UI."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "HTTP 502; classify by status, never by translated message. Gateway errors may have a different body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "Handler emits {error:string}. Gateway may emit code/message. Never show arbitrary body text in native UI."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "HTTP 503; classify by status, never by translated message. Gateway errors may have a different body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "Handler emits {error:string}. Gateway may emit code/message. Never show arbitrary body text in native UI."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "userBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "projectKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "apikey",
+        "description": "Public project key only; never a service-role or secret key."
+      }
+    },
+    "schemas": {
+      "SearchRequest": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/KeywordSearchRequest"
+          },
+          {
+            "$ref": "#/components/schemas/CoordinateSearchRequest"
+          }
+        ]
+      },
+      "SearchPlace": {
+        "type": "object",
+        "required": [
+          "kakaoPlaceId",
+          "name",
+          "category",
+          "address",
+          "roadAddress",
+          "phone",
+          "placeUrl",
+          "latitude",
+          "longitude",
+          "verificationToken"
+        ],
+        "properties": {
+          "kakaoPlaceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "category": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 200
+          },
+          "address": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "roadAddress": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 300
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 40
+          },
+          "placeUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "pattern": "^https://place\\.map\\.kakao\\.com(?:[/?#]|$)"
+          },
+          "latitude": {
+            "type": "number",
+            "minimum": 32.8,
+            "maximum": 38.7
+          },
+          "longitude": {
+            "type": "number",
+            "minimum": 124.5,
+            "maximum": 132
+          },
+          "verificationToken": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "SearchResponse": {
+        "type": "object",
+        "required": [
+          "places",
+          "isEnd"
+        ],
+        "properties": {
+          "places": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchPlace"
+            }
+          },
+          "isEnd": {
+            "type": "boolean"
+          }
+        }
+      },
+      "KeywordSearchRequest": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "2-100 UTF-16 units AFTER ECMAScript whitespace normalization. These post-normalization limits intentionally are not raw JSON Schema minLength/maxLength."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 45,
+            "default": 1
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 15,
+            "default": 10
+          },
+          "mode": {
+            "const": "keyword"
+          }
+        }
+      },
+      "CoordinateSearchRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode",
+          "latitude",
+          "longitude"
+        ],
+        "properties": {
+          "mode": {
+            "const": "coordinate"
+          },
+          "latitude": {
+            "type": "number",
+            "minimum": 32.8,
+            "maximum": 38.7
+          },
+          "longitude": {
+            "type": "number",
+            "minimum": 124.5,
+            "maximum": 132
+          }
+        },
+        "description": "Round coordinates to 7 decimal places before provider call and signing. No automatic retry. Response is zero or one address, isEnd=true. Coordinates are never snapped to a different place."
+      }
+    }
+  }
+}
