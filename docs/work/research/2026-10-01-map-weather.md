@@ -61,7 +61,11 @@ Figma 기존 Android 페이지에서 384×832 확인 시트, Noto Sans KR, 기�
 
 취소·뒤로/Escape·화면/코스 교체·늦은 응답에서 추가하지 않는다. 확정 시 현재 코스 상태와 경유지 한도를 재검사한다. 작은 화면은 하단 시트, 웹은 중앙 팝업이며 내용은 세로 스크롤, 버튼 최소48px와 자동 줄바꿈, 초점 복귀를 지원한다. 공급자 오류는 고정된 안전 문구만 표시한다. Figma 성공은 앱/실기기 PASS가 아니다.
 
-수정 전 실제 Preview 비교 시나리오: 10월1일 09:30 KST, 한국외국어대학교 글로벌캠퍼스 → 용인태교의숲 → 양평역(경기) → 국립방태산자연휴양림 → 인제터미널, 모든 경유 정차0분. 기존 후보에서 실제 경로208.2km/4시간29분, 네 구간 예보 PASS(01:13 KST). 신고된 산번지 두곳 모두 경유지로 확인했으나 과거 오류는 이 요청에서 재현되지 않았다. 변경 후 같은 입력 비교는 아직 NOT_RUN. 정확한 시험 trip 정리 의무는 저장소 외부 journal에 보존한다.
+수정 전/후 실제 Preview 비교 시나리오: 10월1일 09:30 KST, 한국외국어대학교 글로벌캠퍼스 → 용인태교의숲 → 양평역(경기) → 국립방태산자연휴양림 → 인제터미널, 모든 경유 정차0분. 기존 후보(01:13 KST)와 변경 후보18fdc02(01:43 KST) 모두 실제 경로208.2km/4시간29분, 도착13:58, 네 구간 예보 PASS. 신고된 산번지 두곳 모두 경유지로 확인했으나 과거 오류는 이 요청에서 재현되지 않았다. 정확한 시험 trip 두 건은 소유자·생성/수정 시각·공개 경로를 대조하고 기존 authenticated delete_owned_trip RPC로 정리했으며 trip/waypoint/weather 잔여0을 확인했다. 저장소 외부 journal에 근거를 보존한다.
+
+PR82 고정18fdc022673df44414aa2e1f65af6dae2bb851a0의 CI36744832970 SUCCESS 후 GitHub Deployments0/Vercel checks0/commit statuses0을 확인했다. Preview의 영향받는 함수7개를 해당 Git blob closure로 배포한 뒤 전체 파일과 JWT 설정을 readback했다. develop을 동일 SHA로 fast-forward한 후 CI36745633731/PR79 CI36745640731/develop-only36745638168 PASS. Vercel Preview dpl_9maSeEkMRBsWywbCGxx7ZTV22FY8 READY와 같은 SHA를 확인했다.
+
+실제 Preview 지도 중심 선택 → Kakao 좌표 주소 조회 → 확인 팝업에서 추가 전0/취소0/명시 확인1 PASS. 세 경유지에 네 번째 통과 지점이 한 번만 추가됐고 자동 계산·저장 없이 편집 화면으로 이동했다. DB의 기존 계획 updated_at·경유지3·날씨1 유지도 확인했다. 웹 길게 누르기 입력 자체는 단위 검사이며 실제 브라우저 누름 지속시간 검증은 NOT_RUN; Android 실제 SDK 에뮬레이터 검증과 구분한다. 키보드 선택에도 맞도록 Figma 본문200:2025/201:2085/201:2187을 먼저 `지도에서 선택한 위치입니다`로 다듬고 동일 문구를 웹에 적용했다. 이 후속 변경은 문구만 변경하며 서버 closure는18fdc02와 같다.
 
 운영 백업의 격리 복원 PASS: 원본6hash, 58테이블 데이터 비교, 2시퀀스, 역할/소유권/ACL 및 DB41assertions 통과. 실제 운영/Auth HTTP/플랫폼 secrets/함수 복원과 migration replay는 별도 NOT_RUN.
 
