@@ -5,9 +5,9 @@
 
 ## 순서와 진행
 1. [완료] 최신 코드·배포 비교, Figma 선행 디자인과 공통 동작 계약.
-2. [진행 중] 웹·Android 구현 및 실제 실패 경계 검증, 프로젝트 규범과 기술 선택 제안.
-3. [대기] 고정 후보 CI·Preview 확인 → 웹 Production → 서버 준비 증거 갱신 → Android main CI·Play 내부 배포와 readback.
-4. [대기] 동일 버전·업데이트 소식·결과물 대조, 사용자 실기기 검증 안내. 정식 공개는 별도 조건 유지.
+2. [완료] 웹·Android 구현 및 실제 실패 경계 검증, 프로젝트 규범과 기술 선택 제안.
+3. [결과 연결] 웹 Production 및 준비 증거 확인 완료. Android main CI·Play 내부 배포와 readback의 최종 실행 상태는 [승격 PR31](https://github.com/tocomboy/motocast-android/pull/31)의 배포 근거가 소유한다.
+4. [별도 검증] 버전·업데이트 소식·결과물 대조와 설치 안내는 승격 PR31에 연결한다. 사용자 실기기 결과와 정식 공개는 별도 조건을 유지한다.
 
 ## 수용 기준
 - 전체화면에서 확대·이동·확인 후 경유지 추가; 취소는 코스 변경 없음.
@@ -56,3 +56,18 @@
 - 추가 후 하나의 `.map-canvas` 안에 축척/로고2개가 누적되는 기존 생명주기 결함을 확인했다. 기반53a76b4부터 geometry 변경마다 같은 컨테이너에 새 Map을 만들고 참조만 비우는 구조다. 이번 필수 경유지 추가 동작의 선행 결함으로 분류하고 PR85 운영 승격을 보류했다. 지도 하나를 유지하고 기존 마커/선을 공식 `setMap(null)`로 정리하는 최소 보완 후 새 exact-head CI-only 및 실제 Preview 검증을 진행한다.
 - 브라우저 viewport override가 실제1280×720 화면에 적용되지 않아 해당 호출을384폭 검사 PASS로 기록하지 않는다. 320/384/390/820/1440 및 가로/큰 글자 자동 브라우저 검사는 별도 PASS다.
 - 보완은 컨테이너당 Map 하나를 유지하며 geometry 변경/실패/언마운트 때 마커·선을 제거한다. SDK 정리에 실패하면 오류와 비활성 상태를 유지한다. 공식 [Marker.setMap](https://apis.map.kakao.com/web/documentation/#Marker_setMap)·[Polyline.setMap](https://apis.map.kakao.com/web/documentation/#Polyline_setMap) 대조 완료. 집중45/전체891/Chromium56 PASS, 기존 연결2 SKIP. lint/typecheck PASS; npm ci/Deno8은 변경되지 않은 lockfile·서버 범위의 앞선 PASS 재사용. 전체화면·빈 지도·지연 콜백·Strict Mode·부분 실패·언마운트 경계 검수 BLOCKER0/HIGH0.
+
+
+## 2026-10-02 최종 후보와 운영 확인
+
+앞선 보류·실패 기록은 발견 시점의 이력이며 아래 재검증 결과와 구분한다.
+
+- 웹 PR86 `9e228fc5815d63e5f0769d092344791177da9680` CI36879201719 SUCCESS 뒤 Deployments0/Vercel checks0/statuses0 확인. 동일 develop Preview `dpl_GhYy36aQ8ay65E8gafnguuVZwWJv`에서 실제 경유지 2개 추가 후 지도/로고 하나 유지 PASS.
+- 웹 PR85 정상 승격 main `b29dd215c73e48bad090990dd6c88f99a28bee75`, CI36880151029 SUCCESS, 검토 후보와 tree 동일. Production `dpl_8eCJjbPp5hB4nQdekGiu7r5evHZJ` READY 및 alias/source 일치. HTTP200/no redirect, 공지·버전0.7.0 일치. 기존 운영 관리자 세션에서 실제 타일·확대/이동·주소 조회·확인창 취소/명시추가·닫기/재열기 PASS. 초안만 사용해 기존 저장 데이터는 변경하지 않았다. [운영 readback 근거](https://github.com/tocomboy/motocast/pull/85#issuecomment-5934240508).
+- Android [PR30](https://github.com/tocomboy/motocast-android/pull/30) `ad391af870d752cb1239b33ea97f5e6f9a327745`: 동일0.7.0/code7, 웹 main의 업데이트 소식13개 내장. JVM 각341/자동화207/문서52 PASS, lint 각0 errors/14 warnings. 실제 SDK 에뮬레이터 fullscreen 동일 MapView/camera·pan/zoom/terrain-longpress·center·확인 후 추가·취소/뒤로·lifecycle·readonly/unavailable PASS. 320dp 글자150% 및832×384 가로 화면 PASS.
+- 에뮬레이터 run7 마지막 접근성 버튼 FAIL을 보존하고 창 전환 경계 분리 run8 PASS. run10은 세로용 지도 높이 가정 FAIL이며 세로 높이 확대 조건을 유지하고 가로는 실제 조작·nonzero 영역·화면 내48dp버튼으로 수정해 run11 PASS. timeout 확대/skip 없음. readonly 캡처의 빈 타일은 layout/편집불가 검증으로만 한정한다. 실제 SDK 오류/retry·실제 서버 왕복·사용자 실기기는 NOT_RUN.
+- HOLD revision8 적용과 실행 종료 확인 후 운영 `PLAY_ADMISSION_VERSIONS=5,6,7` 등록/readback(2026-10-01T14:25:22Z), digest `9988e8a737dd629d5014a04ec3c0b97444416bb63e48f3ab7aa4da48a3aeb569`. 기존5/6 보존. Observation36880182764 SUCCESS: 운영 project/웹 배포, migration20/함수8의 내용·JWT·소스 해시 기존과 동일, 함수metadata version만+1. epoch3/revision9 ACTIVE 후보는 새 앱 입력·웹 배포에 결속한다.
+- 기존 API/DB/권한/경로·날씨·공유 검증은 변경 없는 범위만 재사용한다. 이번 UI 검증은 일반/회수/신규초대 웹 계정·실제 Play 신규가입/native·OS App Links/기기 검증을 대신하지 않는다. 웹 tag/Release와 정식 Play 공개는 해당 미완료 gate를 유지한다.
+- 보존 자원: 에뮬레이터 화면설정1080×2340/450dpi/font1.0 복원 PASS. 실패/최종 캡처·로그 약5.9MB 보존; 종료48시간 뒤 처분 검토하며 자동 삭제하지 않는다. 신규 SDK/AVD 설치 없음.
+
+- Android PR30 exact-head CI36881635680 SUCCESS, 정상 병합 develop `59849660862d7f5edfb576024ce31afa258d3974`, tree 동일. [승격 PR31](https://github.com/tocomboy/motocast-android/pull/31)은 실제 main CI와 Play 내부 트랙·원본 AAB·공지 readback, 설치 안내·사용자 결과의 실행 근거를 소유한다. 이 문서 갱신 시점에는 승격 CI 진행 중이므로 Play code7 성공으로 기록하지 않는다. 웹 운영 SHA는 문서 기록 갱신만으로 바꾸지 않는다.

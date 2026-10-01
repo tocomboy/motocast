@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
 import { CollectionManager } from "@/components/collection-manager";
@@ -834,9 +833,6 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
           <button type="button" aria-current={view === "editor" ? "page" : undefined} disabled={calculating} onClick={startNewRoute}>새 경로 만들기</button>
           {connected ? <button type="button" aria-current={view === "collections" ? "page" : undefined} onClick={() => navigate("collections")}>저장한 경로</button> : null}
         </nav>
-        <div className="header-actions">
-          {connected ? <Link className="ghost-button" href="/admin/invites">초대 관리</Link> : null}
-        </div>
       </header>
 
       {view === "home" ? (

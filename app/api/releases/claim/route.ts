@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     const supabase = await createServerSupabase();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (!user && isMissingSession(authError)) return failed(401, "로그인이 필요합니다.");
-    if (authError || !user) return failed(503, "업데이트 소식을 지금 확인할 수 없습니다.");
+    if (authError || !user) return failed(503, "업데이트 내역을 지금 확인할 수 없습니다.");
 
     const { data, error } = await supabase.rpc("claim_release_announcement", {
       target_version: currentVersion,
@@ -78,14 +78,14 @@ export async function POST(request: Request) {
       if (error.code === "P0001" && error.message === "AUTH_REQUIRED") {
         return failed(401, "로그인이 필요합니다.");
       }
-      return failed(503, "업데이트 소식을 지금 확인할 수 없습니다.");
+      return failed(503, "업데이트 내역을 지금 확인할 수 없습니다.");
     }
     if (typeof data !== "boolean") {
-      return failed(503, "업데이트 소식을 지금 확인할 수 없습니다.");
+      return failed(503, "업데이트 내역을 지금 확인할 수 없습니다.");
     }
 
     return NextResponse.json({ show: data, version: currentVersion }, { headers: noStoreHeaders });
   } catch {
-    return failed(503, "업데이트 소식을 지금 확인할 수 없습니다.");
+    return failed(503, "업데이트 내역을 지금 확인할 수 없습니다.");
   }
 }

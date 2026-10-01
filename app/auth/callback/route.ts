@@ -14,7 +14,7 @@ async function deniedAfterExchange(
   supabase: Awaited<ReturnType<typeof createServerSupabase>>,
   authCookieNames: ReadonlySet<string>,
   url: URL,
-  error: "invalid_invite" | "invite_required",
+  error: "membership_required",
 ) {
   const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
   if (signOutError) console.error("local sign-out failed after denied OAuth callback");
@@ -38,7 +38,7 @@ export async function GET(request: Request) {
   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
   if (exchangeError) return callbackErrorResponse(url);
 
-  const finalization = await finalizeAuthenticatedLogin(supabase, request.headers.get("cookie"));
+  const finalization = await finalizeAuthenticatedLogin(supabase);
   if (finalization !== "accepted") {
     return deniedAfterExchange(supabase, authCookieNames, url, finalization);
   }

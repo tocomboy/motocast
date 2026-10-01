@@ -27,11 +27,12 @@ values
 insert into public.memberships(user_id, role)
 values ('74000000-0000-0000-0000-000000000001', 'admin');
 
-set role authenticated;
-select set_config('request.jwt.claim.sub', '74000000-0000-0000-0000-000000000001', false);
+-- Preserve a valid historical code as a fixture; application roles cannot issue it.
 create temp table invite_fixture on commit preserve rows as
-select invite_token from public.create_invite(interval '1 day');
-reset role;
+select repeat('v', 43) as invite_token;
+insert into public.invitations(token_hash,created_by,expires_at)
+select encode(extensions.digest(invite_token,'sha256'),'hex'),
+ '74000000-0000-0000-0000-000000000001', now()+interval '1 day' from invite_fixture;
 
 create function public.test_claim_invite(raw_token text)
 returns text
@@ -41,8 +42,8 @@ as $$
 begin
   perform public.claim_invite(raw_token);
   return 'OK';
-exception when others then
-  return sqlerrm;
+exception when insufficient_privilege then
+  return 'INVITATION_EXECUTION_DENIED';
 end;
 $$;
 grant execute on function public.test_claim_invite(text) to authenticated;
@@ -217,8 +218,10 @@ insert into tap_results values
   ((select array_agg(result order by result) = array['1', 'API_DAILY_BUDGET_EXHAUSTED'] from budget_results), 'concurrent budget calls allow exactly one provider request'),
   ((select calls = 1 and hard_limit = 1 from public.api_usage_daily where provider = 'kakao' and operation = 'future_directions'), 'concurrent budget ledger never exceeds its hard limit'),
   ((select usage_date = (timezone('Asia/Seoul', now()))::date from public.api_usage_daily where provider = 'kakao' and operation = 'future_directions'), 'budget ledger uses the Seoul calendar date'),
-  ((select array_agg(result order by result) = array['INVITE_ALREADY_USED', 'OK'] from invite_results), 'two different users cannot both consume one invitation'),
-  ((select count(*) = 1 from public.memberships where user_id in ('74000000-0000-0000-0000-000000000002', '74000000-0000-0000-0000-000000000003')), 'one-time invitation creates exactly one rider membership'),
+  ((select array_agg(result order by result) = array['INVITATION_EXECUTION_DENIED', 'INVITATION_EXECUTION_DENIED'] from invite_results), 'both concurrent legacy claims are denied'),
+  ((select count(*) = 0 from public.memberships where user_id in ('74000000-0000-0000-0000-000000000002', '74000000-0000-0000-0000-000000000003')), 'concurrent legacy claims create no memberships'),
+  ((select count(*) = 0 from public.profiles where id in ('74000000-0000-0000-0000-000000000002', '74000000-0000-0000-0000-000000000003')), 'concurrent legacy claims create no profiles'),
+  ((select consumed_at is null and consumed_by is null and revoked_at is null from public.invitations where token_hash=encode(extensions.digest((select invite_token from invite_fixture),'sha256'),'hex')), 'concurrent legacy claims preserve invitation history'),
   ((select array_agg(result order by result) = array['OK', 'SHARE_PREVIEW_REQUIRED'] from share_results), 'one preview capability cannot publish two shares concurrently'),
   ((select count(*) = 1 from public.share_links where owner_id = '74000000-0000-0000-0000-000000000001'), 'concurrent publication creates exactly one immutable share');
 

@@ -3,6 +3,7 @@
 import { useEffect, useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { parsePlaceSearchResponse, type PlaceSearchResult } from "@/lib/places/search";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
+import { KakaoMapCanvas } from "@/components/kakao-map-canvas";
 
 type Point = { latitude: number; longitude: number };
 export type MapPlacePickerHandle = { open: (point: Point) => void };
@@ -17,6 +18,7 @@ export function MapPointConfirmation({ pickerRef, onSelect }: {
   const focus = useRef<HTMLElement | null>(null);
   const sequence = useRef(0);
   const pending = useRef<Point | null>(null);
+  const [preview, setPreview] = useState<Point | null>(null);
   const [selection, setSelection] = useState<Selection>({ status: "loading" });
   useEffect(() => () => { sequence.current += 1; pending.current = null; }, []);
 
@@ -46,6 +48,7 @@ export function MapPointConfirmation({ pickerRef, onSelect }: {
   useImperativeHandle(pickerRef, () => ({ open(point) {
     focus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     pending.current = point;
+    setPreview(point);
     dialog.current?.showModal();
     void resolve(point);
   } }));
@@ -53,6 +56,7 @@ export function MapPointConfirmation({ pickerRef, onSelect }: {
   function close() {
     sequence.current += 1;
     pending.current = null;
+    setPreview(null);
     setSelection({ status: "loading" });
     dialog.current?.close();
     focus.current?.focus();
@@ -68,10 +72,11 @@ export function MapPointConfirmation({ pickerRef, onSelect }: {
   const status = selection.status;
   return <dialog ref={dialog} className="map-confirmation-dialog" aria-labelledby={titleId}
     onCancel={(event) => { event.preventDefault(); close(); }}
-    onClose={() => { sequence.current += 1; pending.current = null; }}>
+    onClose={() => { sequence.current += 1; pending.current = null; setPreview(null); }}>
     <h2 id={titleId}>{status === "ready" ? "이 지점을 경유지로 추가할까요?" : status === "loading" ? "선택한 위치를 확인하고 있어요" : status === "empty" ? "이 지점의 주소를 찾지 못했어요" : "선택한 위치를 확인하지 못했어요"}</h2>
+    {preview ? <KakaoMapCanvas points={[{ ...preview, label: "선택한 위치" }]} showLegend={false} selectionPreview /> : null}
     <div className="map-confirmation-body" aria-live="polite">
-      {selection.status === "ready" ? <><p>{selection.place.roadAddress ?? selection.place.address}</p><p>지도에서 선택한 위치입니다. 추가하면 마지막 경유지에 통과 지점으로 들어갑니다.</p></>
+      {selection.status === "ready" ? <><p>{selection.place.roadAddress ?? selection.place.address}</p><p>이 위치를 마지막 경유지로 추가합니다.</p></>
         : <p>{status === "loading" ? "주소를 확인한 뒤 경유지로 추가할 수 있어요. 아직 코스에는 반영되지 않았습니다."
           : status === "empty" ? "지도의 다른 지점을 선택하거나 장소 이름으로 검색해 주세요. 코스는 변경되지 않았습니다."
             : "주소 조회에 실패했습니다. 다시 시도하거나 지도의 다른 지점을 선택해 주세요. 코스는 변경되지 않았습니다."}</p>}

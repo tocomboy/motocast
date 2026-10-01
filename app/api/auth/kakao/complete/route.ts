@@ -38,7 +38,7 @@ function invalidCompletion() {
 async function deniedCompletion(
   supabase: Awaited<ReturnType<typeof createServerSupabase>>,
   authCookieNames: ReadonlySet<string>,
-  redirect: "/login?error=invalid_invite" | "/login?error=invite_required",
+  redirect: "/login?error=membership_required",
 ) {
   const { error } = await supabase.auth.signOut({ scope: "local" });
   if (error) console.error("local sign-out failed after denied Kakao OIDC completion");
@@ -83,12 +83,9 @@ export async function POST(request: Request) {
       (credentials) => supabase.auth.signInWithIdToken(credentials),
     );
 
-    const finalization = await finalizeAuthenticatedLogin(supabase, request.headers.get("cookie"));
-    if (finalization === "invalid_invite") {
-      return deniedCompletion(supabase, authCookieNames, "/login?error=invalid_invite");
-    }
-    if (finalization === "invite_required") {
-      return deniedCompletion(supabase, authCookieNames, "/login?error=invite_required");
+    const finalization = await finalizeAuthenticatedLogin(supabase);
+    if (finalization === "membership_required") {
+      return deniedCompletion(supabase, authCookieNames, "/login?error=membership_required");
     }
     return completionResponse("/", 200, true);
   } catch {

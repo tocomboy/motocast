@@ -38,8 +38,8 @@ insert into tap_results values
   (not has_function_privilege('anon', 'public.create_invite(interval)', 'EXECUTE'), 'anon cannot execute create_invite'),
   (not has_function_privilege('anon', 'public.consume_daily_api_budget(text,text,integer)', 'EXECUTE'), 'anon cannot execute budget RPC'),
   (not has_function_privilege('anon', 'public.delete_owned_trip(uuid)', 'EXECUTE'), 'anon cannot execute owned trip deletion'),
-  (has_function_privilege('authenticated', 'public.claim_invite(text)', 'EXECUTE'), 'authenticated can execute claim_invite'),
-  (has_function_privilege('authenticated', 'public.create_invite(interval)', 'EXECUTE'), 'authenticated can execute create_invite'),
+  (not has_function_privilege('authenticated', 'public.claim_invite(text)', 'EXECUTE'), 'authenticated cannot claim retired invitations'),
+  (not has_function_privilege('authenticated', 'public.create_invite(interval)', 'EXECUTE'), 'authenticated cannot create retired invitations'),
   (not has_function_privilege('authenticated', 'public.consume_daily_api_budget(text,text,integer)', 'EXECUTE'), 'authenticated cannot supply a budget limit directly'),
   (has_function_privilege('authenticated', 'public.delete_owned_trip(uuid)', 'EXECUTE'), 'authenticated can request exact-owner trip deletion'),
   (has_function_privilege('service_role', 'public.consume_daily_api_budget_internal(text,text,integer,uuid)', 'EXECUTE'), 'trusted Edge role can execute the fixed-input budget RPC');
@@ -74,72 +74,42 @@ $$;
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
 insert into tap_results values ((select count(*) from public.memberships) = 4, 'admin reads all memberships');
 
-create temp table new_invite on commit drop as
-select * from public.create_invite(interval '1 day');
-grant select on new_invite to authenticated;
-insert into tap_results values ((select char_length(invite_token) from new_invite) = 43, 'invite token is 32-byte base64url');
+do $$
+declare rejected boolean := false;
+begin
+  begin perform public.create_invite(interval '1 day');
+  exception when insufficient_privilege then rejected := true; end;
+  insert into tap_results values (rejected, 'even an active administrator cannot issue invitations');
+end;
+$$;
 
 select set_config('request.jwt.claim.sub', '50000000-0000-0000-0000-000000000005', true);
-select public.claim_invite((select invite_token from new_invite));
-select public.claim_invite((select invite_token from new_invite));
-insert into tap_results values
-  ((select count(*) from public.memberships where user_id = '50000000-0000-0000-0000-000000000005') = 1, 'first invited user claims successfully'),
-  ((select count(*) from public.memberships where user_id = '50000000-0000-0000-0000-000000000005') = 1, 'same user can retry a committed invitation claim idempotently'),
-  ((select avatar_url = 'https://example.invalid/kakao-picture.png' from public.profiles where id = '50000000-0000-0000-0000-000000000005'), 'direct Kakao OIDC picture metadata is preserved in the rider profile');
-
-reset role;
-insert into tap_results values
-  ((select consumed_at is not null from public.invitations where consumed_by = '50000000-0000-0000-0000-000000000005'), 'claim stores the consumed tombstone');
-create temp table invite_audit on commit drop as
-select id, consumed_at from public.invitations
-where consumed_by = '50000000-0000-0000-0000-000000000005';
-grant select on invite_audit to authenticated;
-delete from auth.users where id = '50000000-0000-0000-0000-000000000005';
-insert into tap_results values (
-  (select consumed_by is null and consumed_at is not null from public.invitations where id = (select id from invite_audit)),
-  'deleting Auth user keeps a consumed tombstone'
-);
-
-insert into public.invitations(token_hash, created_by, created_at, expires_at, revoked_at)
-values
-  (encode(extensions.digest(repeat('e', 43), 'sha256'), 'hex'), '10000000-0000-0000-0000-000000000001', now() - interval '2 minutes', now() - interval '1 minute', null),
-  (encode(extensions.digest(repeat('r', 43), 'sha256'), 'hex'), '10000000-0000-0000-0000-000000000001', now(), now() + interval '1 day', now());
-
-set local role authenticated;
-select set_config('request.jwt.claim.sub', '60000000-0000-0000-0000-000000000006', true);
 do $$
-declare
-  reused_rejected boolean := false;
-  unknown_rejected boolean := false;
-  expired_rejected boolean := false;
-  revoked_rejected boolean := false;
+declare rejected boolean := false;
 begin
-  begin
-    perform public.claim_invite((select invite_token from new_invite));
-  exception when sqlstate 'P0001' then
-    reused_rejected := sqlerrm = 'INVITE_ALREADY_USED';
-  end;
-  begin perform public.claim_invite(repeat('z', 43));
-  exception when sqlstate 'P0001' then unknown_rejected := sqlerrm = 'INVALID_INVITE'; end;
-  begin perform public.claim_invite(repeat('e', 43));
-  exception when sqlstate 'P0001' then expired_rejected := sqlerrm = 'INVALID_INVITE'; end;
-  begin perform public.claim_invite(repeat('r', 43));
-  exception when sqlstate 'P0001' then revoked_rejected := sqlerrm = 'INVALID_INVITE'; end;
+  begin perform public.claim_invite(repeat('a', 43));
+  exception when insufficient_privilege then rejected := true; end;
   insert into tap_results values
-    (reused_rejected, 'a deleted consumer does not make the invite reusable'),
-    (unknown_rejected, 'unknown invitation tokens are rejected without membership'),
-    (expired_rejected, 'expired invitations are rejected without membership'),
-    (revoked_rejected, 'revoked invitations are rejected without membership'),
-    ((select count(*) from public.memberships where user_id = '60000000-0000-0000-0000-000000000006') = 0, 'rejected invitation states do not create membership');
+    (rejected, 'authenticated non-member cannot enroll through a legacy invitation'),
+    (not public.is_active_member(), 'non-member stays inactive');
+end;
+$$;
+
+select set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000004', true);
+do $$
+declare rejected boolean := false;
+begin
+  begin perform public.claim_invite(repeat('a', 43));
+  exception when insufficient_privilege then rejected := true; end;
+  insert into tap_results values (rejected and not public.is_active_member(), 'legacy invitation cannot restore revoked membership');
 end;
 $$;
 reset role;
-insert into tap_results values (
-  (select invitation.consumed_at = audit.consumed_at
-   from public.invitations invitation cross join invite_audit audit
-   where invitation.id = audit.id),
-  'failed second claim preserves the first consumed_at'
-);
+insert into tap_results values
+  ((select count(*) from public.memberships where user_id in ('50000000-0000-0000-0000-000000000005', '60000000-0000-0000-0000-000000000006')) = 0, 'denied enrollment creates no memberships'),
+  ((select count(*) from public.profiles where id in ('50000000-0000-0000-0000-000000000005', '60000000-0000-0000-0000-000000000006')) = 0, 'denied enrollment creates no public profiles'),
+  ((select role = 'admin' and revoked_at is null from public.memberships where user_id = '10000000-0000-0000-0000-000000000001'), 'existing administrator role remains intact'),
+  ((select role = 'rider' and revoked_at is not null from public.memberships where user_id = '40000000-0000-0000-0000-000000000004'), 'existing revocation remains intact');
 
 set local role service_role;
 insert into tap_results values

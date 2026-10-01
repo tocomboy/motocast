@@ -467,9 +467,9 @@ test.describe("planner responsive shell", () => {
     await expect(footnote).toBeVisible();
     expect(await footnote.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(14);
 
-    await page.route("**/api/invites/accept", (route) => route.abort("failed"));
     await page.goto(`/invite#${"a".repeat(43)}`);
-    const memberLogin = page.getByRole("link", { name: "기존 멤버 로그인" });
+    await expect(page).toHaveURL(/\/login\?error=membership_required$/);
+    const memberLogin = page.getByRole("button", { name: "카카오로 계속하기" });
     await expect(memberLogin).toBeVisible();
     expect((await memberLogin.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await expect(page).not.toHaveURL(/#/);

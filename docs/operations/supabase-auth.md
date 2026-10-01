@@ -18,7 +18,7 @@ Supabase의 기본 Kakao `signInWithOAuth()` 경로는 `account_email`을 고정
 ## 최초 관리자 bootstrap
 
 1. 고정 SHA 독립 리뷰를 통과한 전체 migration, OIDC Edge Function, Auth completion endpoint를 먼저 배포하고 위 Kakao/Supabase 설정을 완료한다.
-2. 운영 `/login`에서 서비스 소유자의 Kakao 로그인을 한 번 수행한다. 초대가 없으므로 callback은 이용을 거부하고 로컬 세션을 제거하지만, Supabase `auth.users`에는 최소 Auth 사용자만 남는다.
+2. 운영 `/login`에서 서비스 소유자의 Kakao 로그인을 한 번 수행한다. 기존 활성 membership이 없으므로 callback은 이용을 거부하고 로컬 세션을 제거하지만, Supabase `auth.users`에는 최소 Auth 사용자만 남는다.
 3. Supabase Dashboard의 Authentication 사용자 화면과 `auth.identities`의 `provider = 'kakao'` 정보를 사용해 본인 계정의 정확한 UUID를 확인한다. 닉네임만으로 선택하지 않는다.
 4. SQL Editor에서 아래 transaction의 `TARGET-UUID`를 확인한 UUID로 바꿔 실행한다. 실행 전후 대상이 한 행인지 확인한다.
 
@@ -68,15 +68,13 @@ commit;
 ```
 
 5. `/login`에서 다시 Kakao 로그인한다. 기존 active member는 초대 링크 없이 로그인할 수 있어야 한다.
-6. `/admin/invites`에서 첫 초대를 생성한 뒤 원문 token이 DB, 로그, 브라우저 분석 도구에 남지 않는지 확인한다.
+6. 기존 관리자 역할이 그대로 유지되고 초대 관리 메뉴는 표시되지 않는지 확인한다. 신규 회원은 AUTH-007의 Play 앱 가입을 사용한다.
 
-초대 fragment는 고정 `/api/invites/accept`로만 보내며, 이 endpoint는 동일 출처 `application/json` POST만 허용한다. 브라우저 개발자 도구에서 cross-site·`text/plain` 요청이 generic `400`과 `no-store`로 거부되고 `motocast_invite` cookie를 만들지 않는지 확인한다.
-
-`/login?bootstrap=1`은 로컬 개발 편의만을 위한 표시 조건이며 Production bootstrap 경로가 아니다.
+초대 가입은 2026-10-02 결정으로 폐기했다. 이전 `/invite`는 fragment를 서버로 전송하거나 소비하지 않고 앱 가입 안내로 이동한다. `/api/invites/accept`는 동일 출처 JSON 요청에는 `410`, 그 외에는 `400`과 `no-store`로 거절한다. 새 가입 cookie를 만들지 않고 기존 초대 cookie는 만료시킨다. `create_invite`, `claim_invite`, `revoke_invite`의 앱 역할 EXECUTE와 `invitations` 테이블 접근은 거절되며 과거 데이터는 보존한다. UI만 이전 버전으로 돌려 초대 가입을 재개하지 않는다.
 
 ## 거부된 OAuth 사용자 정리
 
-초대와 유효한 Play 검증 없이 OAuth를 완료한 사용자는 `auth.users`에만 남고 `profiles`나 `memberships`가 없어야 한다. 관리자가 삭제하기 전에 정확한 UUID에 대해 다음 조건을 모두 확인한다.
+활성 membership 및 유효한 Play 검증 없이 OAuth를 완료한 사용자는 `auth.users`에만 남고 `profiles`나 `memberships`가 없어야 한다. 관리자가 삭제하기 전에 정확한 UUID에 대해 다음 조건을 모두 확인한다.
 
 - `public.memberships` 행이 없다.
 - `public.profiles` 행이 없다.
@@ -85,17 +83,16 @@ commit;
 
 조건을 만족한 한 사용자만 Supabase Dashboard의 Authentication 사용자 화면에서 삭제한다. 일괄 삭제하지 않는다. 삭제 후 같은 UUID의 profile/membership이 0행이고 기존 초대의 `consumed_at` 감사정보가 유지되는지 확인한다.
 
-## 회수와 재초대
+## 회원 이용 회수
 
 - 이용 회수는 `memberships.revoked_at`을 설정한다. Auth 사용자 삭제와 동일한 작업이 아니다.
-- 회수된 사용자는 소비된 과거 초대로 재활성화할 수 없다.
-- 재가입은 관리자가 새 초대를 발행한 경우에만 허용한다.
+- 회수된 사용자는 과거 초대, 웹 로그인, 유효한 Play 증명으로도 자동 재활성화할 수 없다. 별도 복원 운영 결정 없이 회수 상태를 변경하지 않는다.
 - 초대를 소비한 Auth 사용자가 삭제돼 `consumed_by`가 비어도 `consumed_at`이 one-time tombstone으로 남으므로 링크는 재사용할 수 없다.
 
 
 ## Play 설치 검증 가입 (AUTH-007)
 
-2026-09-30 사용자가 승인한 PR #79의 적용 범위는 기존 Preview `lehjmbgfpoemqcwxowbx`와 Production `obodvbyzptxeehgpcpkd`의 Play `dev.motocast.android` 내부 트랙 가입이다. 이전 Preview 전용 제한을 대체하며 공개 트랙 출시를 새로 승인하지 않는다. 기존 Preview Cloud 프로젝트는 `MOTOCAST Play` / `motocast-play-2026` / `710070840912`, 조직 없음이다. 이 역사적 Preview 설정이 Production의 구성값이나 활성화 증거는 아니다. 신규 Play 회원만 설치 증명 확인 후 일반 rider로 등록하며 기존 active 회원의 역할·profile을 바꾸지 않는다. revoked 회원은 자동 복원하지 않는다. 웹/개발 앱과 기존 code3의 초대 로그인은 유지한다.
+2026-09-30 사용자가 승인한 PR #79의 적용 범위는 기존 Preview `lehjmbgfpoemqcwxowbx`와 Production `obodvbyzptxeehgpcpkd`의 Play `dev.motocast.android` 내부 트랙 가입이다. 이전 Preview 전용 제한을 대체하며 공개 트랙 출시를 새로 승인하지 않는다. 기존 Preview Cloud 프로젝트는 `MOTOCAST Play` / `motocast-play-2026` / `710070840912`, 조직 없음이다. 이 역사적 Preview 설정이 Production의 구성값이나 활성화 증거는 아니다. 신규 Play 회원만 설치 증명 확인 후 일반 rider로 등록하며 기존 active 회원의 역할·profile을 바꾸지 않는다. revoked 회원은 자동 복원하지 않는다. 웹/개발 앱은 기존 활성 회원만 허용한다. 초대 입력이 남은 구형 앱도 초대로 신규 가입할 수 없으며, code7의 기존 회원 로그인·Play 가입은 유지한다.
 
 서버가 Kakao 사용자 확인 → 3분 challenge 발급 → 증명 예약 및 예산 차감 → Google decode → LICENSED / PLAY_RECOGNIZED / 패키지 / SHA256 인증서 / versionCode / 요청 hash / 시각 확인 → 원자적 회원·profile 생성 순서로 처리한다. 동일 proof 예약의 동시 요청은 하나만 Google에 전달된다. 설치자 이름·클라이언트 boolean·토큰 내용의 자체 해석은 가입 권한이 아니다. LICENSED는 Play 취득 자격이며 현재 내부 테스터 이메일 목록 조회가 아니다.
 
@@ -106,6 +103,6 @@ commit;
 - 2026-09-26 Preview 비밀값4개 저장 및 digest 대조 완료. 검증 전용 계정의 로컬 생성 RSA2048 공개 인증서를 Google에 등록했고 OAuth 연결을 확인했다. 다운로드에 실패한 키2개는 승인 후 삭제했다. 현재 인증서 만료일2027-09-26 전에 교체해야 한다. 실제 Play 증명 성공은 별도 기기 확인이다.
 - 시간당 사용자5회, 서울 날짜당 전체 Google decode500회. 실패한 decode도 예산을 소모한다. 원본 proof/Google OAuth/Kakao/session token은 기록하지 않는다. Google 요청은 고정 HTTPS 목적지·각5초·64KiB 한도, 자동 재전송·redirect 없음이다.
 - 배포 전 정확한 후보 SHA CI-only PR 및 zero-deployment gate를 지킨다. 실제 Google proof와 신규 Play 사용자 가입은 로컬 합성 응답·CI로 대체하지 않는다.
-- 활성화 순서: 기존 hosted Preview의 `PLAY_ADMISSION_ENVIRONMENT` 등록은 아직 확인되지 않았으므로 새 함수를 배포하기 전에 정확한 Preview 프로젝트에 `preview`를 등록하고 비밀값을 출력하지 않는 readback으로 확인한다. 이후 그 프로젝트의 네 기존 검증 설정 및 JWT 검증 유지 여부를 확인하고 정확한 검토 SHA의 함수를 배포한다. Production도 먼저 해당 프로젝트의 기존 네 설정을 독립적으로 확인하고 `production` flag를 등록한 뒤, 승인된 승격 순서에 따라 동일 검토 소스를 배포한다. 선행 flag 없이 배포하면 정상 Preview 가입도503으로 닫힌다. 기존 project-local 사용자/challenge DB 조회와 무작위 request hash로 환경 간 proof를 격리하며 이 런타임 변경은 새 schema나 공용 challenge 저장소를 만들지 않는다. 기존 검토 Play migration의 Production 적용은 별도 release gate를 따른다. 양쪽에서 신규/active/admin/revoked 사용자, 잘못된 환경·버전·challenge 및 실제 Play 기기 proof를 각각 확인한다.
-- 현재 상태(2026-09-30): Production 적용 승인은 확인했으나 새 flag의 실제 등록/readback, hosted 함수 활성화, 실제 기기 설치·Google proof·신규 가입은 `NOT_RUN`이다. 2026-09-26 Preview 구성 기록은 보존하며 현재 활성화의 통과 증거로 대신하지 않는다. 로컬 런타임 테스트도 실제 hosted 설정·JWT gateway·Google·기기 검증을 대체하지 않는다.
-- 복구: 문제 환경의 `PLAY_ADMISSION_VERSIONS`를 비워 신규 Play 가입만 닫고, 정확한 프로젝트·복구 SHA·회원 영향과 복구 승인을 확인한 후 검증한 이전 함수 소스로 복구한다. Preview 전용 이전 함수를 Production에 복구하면 Production Play 가입은 닫힌다. 검증되지 않은 환경 flag/주소 변경으로 우회하지 않는다. 이미 가입한 회원과 새 테이블은 삭제하지 않는다. 기존 로그인·초대 API를 유지하며 Android는 이전 정상 소스를 더 높은 versionCode로 배포한다. 재활성화 전 해당 환경의 flag·네 검증 설정·JWT 검증을 다시 확인한다. 서비스 키 분실/노출 시 새 키 전달 확인 후 해당 키만 폐기하는 별도 승인 절차를 따른다.
+- 활성화 순서: hosted Preview의 `PLAY_ADMISSION_ENVIRONMENT`를 현재 배포 후보에 대해 확인하고 새 함수를 배포하기 전에 정확한 Preview 프로젝트에 `preview`를 등록하고 비밀값을 출력하지 않는 readback으로 확인한다. 이후 그 프로젝트의 네 기존 검증 설정 및 JWT 검증 유지 여부를 확인하고 정확한 검토 SHA의 함수를 배포한다. Production도 먼저 해당 프로젝트의 기존 네 설정을 독립적으로 확인하고 `production` flag를 등록한 뒤, 승인된 승격 순서에 따라 동일 검토 소스를 배포한다. 선행 flag 없이 배포하면 정상 Preview 가입도503으로 닫힌다. 기존 project-local 사용자/challenge DB 조회와 무작위 request hash로 환경 간 proof를 격리하며 이 런타임 변경은 새 schema나 공용 challenge 저장소를 만들지 않는다. 기존 검토 Play migration의 Production 적용은 별도 release gate를 따른다. 양쪽에서 신규/active/admin/revoked 사용자, 잘못된 환경·버전·challenge 및 실제 Play 기기 proof를 각각 확인한다.
+- 현재 상태의 정본은 [공동 출시 기록](../work/research/2026-10-02-shared-ui-parity.md)과 해당 기록이 연결한 직전 출시 근거다. 환경·함수 배포와 실제 기기 설치·Google proof·신규 가입을 구분한다. 과거 Preview 구성이나 로컬 합성 응답을 현재 가입 성공 증거로 대신하지 않는다.
+- 복구: 문제 환경의 `PLAY_ADMISSION_VERSIONS`를 비워 신규 Play 가입만 닫고, 정확한 프로젝트·복구 SHA·회원 영향과 복구 승인을 확인한 후 검증한 이전 함수 소스로 복구한다. Preview 전용 이전 함수를 Production에 복구하면 Production Play 가입은 닫힌다. 검증되지 않은 환경 flag/주소 변경으로 우회하지 않는다. 이미 가입한 회원과 새 테이블은 삭제하지 않는다. 기존 활성 회원 로그인과 초대 폐기 경계를 유지하며 Android는 이전 정상 소스를 더 높은 versionCode로 배포한다. 재활성화 전 해당 환경의 flag·네 검증 설정·JWT 검증을 다시 확인한다. 서비스 키 분실/노출 시 새 키 전달 확인 후 해당 키만 폐기하는 별도 승인 절차를 따른다.

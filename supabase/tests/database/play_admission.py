@@ -188,7 +188,7 @@ try:
             complete(uid, challenge)
             assert sql("select role from public.memberships where user_id="+quote(uid)) == role
             assert sql("select nickname from public.profiles where id="+quote(uid)) == "기존 이름"
-    check("concurrent invited/admin members keep their role and profile", role_preservation)
+    check("concurrent existing rider/admin members keep their role and profile", role_preservation)
 
     def concurrent_admission():
         uid = user(); challenge = begin(uid)
@@ -209,8 +209,11 @@ try:
         uid, admin = user(), user()
         challenge = begin(uid); take(uid, challenge)
         sql("insert into public.memberships(user_id,role) values(" + quote(admin) + ",'admin');")
-        invite = sql("set role authenticated;select set_config('request.jwt.claim.sub'," + quote(admin) +
-            ",false);select invite_token from public.create_invite(interval '1 day');").splitlines()[-1]
+        invite = "v" * 43
+        # A pre-retirement valid code is a direct local owner fixture, never a new issued code.
+        sql("insert into public.invitations(token_hash,created_by,expires_at) values(" +
+            "encode(extensions.digest(" + quote(invite) + ",'sha256'),'hex')," + quote(admin) +
+            ",clock_timestamp()+interval '1 day');")
         assert sql("select to_regprocedure('public.play_admission_test_pause()') is null") == "t"
         # Widen the real RPC race at its first INSERT, without replacing the production lock or RPC.
         sql("""create function public.play_admission_test_pause() returns trigger language plpgsql as $$
@@ -232,13 +235,16 @@ try:
                     quote(uid) + ",false);select public.claim_invite("+quote(invite)+");").encode())
                 results = [play.result(), invited.result()]
             (LOG / "invitation-overlap.log").write_bytes(b"\n".join(r.stdout+r.stderr for r in results))
-            assert all(r.returncode == 0 for r in results), "Concurrent Play/invite admission failed; see retained overlap log"
+            assert results[0].returncode == 0, "Verified Play admission failed; see retained overlap log"
+            assert results[1].returncode != 0 and b"permission denied for function claim_invite" in results[1].stderr
+            assert sql("select consumed_at is null and consumed_by is null from public.invitations "
+                "where token_hash=encode(extensions.digest("+quote(invite)+",'sha256'),'hex')") == "t"
             assert sql("select count(*) from public.memberships where user_id="+quote(uid)) == "1"
             assert sql("select count(*) from public.profiles where id="+quote(uid)) == "1"
         finally:
             # These two exact test-owned objects were created above; keep all result/fixture evidence.
             sql("drop trigger play_admission_test_pause on public.memberships; drop function public.play_admission_test_pause();")
-    check("simultaneous Play and invite registration complete without a foreign-key lock cycle", invitation_overlap)
+    check("verified Play registration completes while a concurrent legacy invite is denied", invitation_overlap)
 
     def throttles():
         uid = user()

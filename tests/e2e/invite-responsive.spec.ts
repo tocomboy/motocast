@@ -6,7 +6,6 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 let plannerMarkup = "";
-let inviteMarkup = "";
 
 test.beforeAll(() => {
   const outputDirectory = mkdtempSync(path.join(os.tmpdir(), "motocast-invite-markup-"));
@@ -22,9 +21,8 @@ test.beforeAll(() => {
       stdio: "pipe",
       timeout: 30_000,
     });
-    ({ plannerMarkup, inviteMarkup } = JSON.parse(readFileSync(outputPath, "utf8")) as {
+    ({ plannerMarkup } = JSON.parse(readFileSync(outputPath, "utf8")) as {
       plannerMarkup: string;
-      inviteMarkup: string;
     });
   } finally {
     if (existsSync(outputPath)) unlinkSync(outputPath);
@@ -63,32 +61,13 @@ for (const viewport of [
   { name: "tablet 820", width: 820, height: 1180 },
   { name: "desktop 1440", width: 1440, height: 900 },
 ]) {
-  test(`${viewport.name} keeps the connected invite header action visible and unclipped`, async ({ page }) => {
+  test(`${viewport.name} keeps member navigation and saved routes without retired invite actions`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await setProductionMarkup(page, plannerMarkup);
 
-    const inviteLink = page.getByRole("link", { name: "초대 관리" });
-    await expect(inviteLink).toBeVisible();
-    await expect(inviteLink).toHaveAttribute("href", "/admin/invites");
-
-    const layout = await page.locator(".app-header").evaluate((header) => {
-      const invite = header.querySelector<HTMLElement>(".ghost-button")!;
-      const inviteBox = invite.getBoundingClientRect();
-      return {
-        documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
-        headerHasNoHorizontalOverflow: header.scrollWidth <= header.clientWidth,
-        inviteHeight: inviteBox.height,
-        inviteInsideViewport: inviteBox.left >= 0 && inviteBox.right <= window.innerWidth,
-        inviteIsClickable: getComputedStyle(invite).pointerEvents !== "none",
-      };
-    });
-    expect(layout).toMatchObject({
-      documentHasNoHorizontalOverflow: true,
-      headerHasNoHorizontalOverflow: true,
-      inviteInsideViewport: true,
-      inviteIsClickable: true,
-    });
-    expect(layout.inviteHeight).toBeGreaterThanOrEqual(44);
+    await expect(page.getByRole("link", { name: "초대 관리" })).toHaveCount(0);
+    expect(await page.locator(".app-header").evaluate(header =>
+      header.scrollWidth <= header.clientWidth && document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
     const homeCollectionFrame = await page.locator(".planner-home-collections .collection-manager-home").evaluate((manager) => {
       const style = getComputedStyle(manager);
@@ -152,34 +131,20 @@ for (const viewport of [
     }
   });
 
-  test(`${viewport.name} keeps invite creation and copy actions visible and unclipped`, async ({ page }) => {
+  test(`${viewport.name} explains app-first membership on web login`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    await setProductionMarkup(page, inviteMarkup);
-
-    const createButton = page.getByRole("button", { name: "초대 링크 생성" });
-    const copyButton = page.getByRole("button", { name: "복사" });
-    await expect(createButton).toBeVisible();
-    await expect(copyButton).toBeVisible();
-
-    const layout = await page.locator(".admin-page").evaluate((adminPage) => {
-      const controls = Array.from(adminPage.querySelectorAll<HTMLElement>(".primary-button, .ghost-button.dark"));
-      const nav = adminPage.querySelector<HTMLElement>(".admin-nav")!;
-      return {
-        controls: controls.map((control) => {
-          const box = control.getBoundingClientRect();
-          return {
-            height: box.height,
-            insideViewport: box.left >= 0 && box.right <= window.innerWidth,
-            visible: box.width > 0 && box.height > 0 && getComputedStyle(control).visibility === "visible",
-          };
-        }),
-        documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
-        navHasNoHorizontalOverflow: nav.scrollWidth <= nav.clientWidth,
-      };
-    });
-    expect(layout.documentHasNoHorizontalOverflow).toBe(true);
-    expect(layout.navHasNoHorizontalOverflow).toBe(true);
-    expect(layout.controls).toHaveLength(2);
-    expect(layout.controls.every((control) => control.visible && control.insideViewport && control.height >= 44)).toBe(true);
+    await page.goto("/login?error=membership_required");
+    await expect(page.getByText("앱에서 먼저 가입해 주세요", { exact: true })).toBeVisible();
+    await expect(page.locator(".login-error[role=alert]")).toContainText("MOTOCAST 앱");
+    await expect(page.getByRole("button", { name: "카카오로 계속하기" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
+
+test("legacy invitation bookmarks never redeem a token", async ({ page }) => {
+  let accepts = 0;
+  page.on("request", request => { if (new URL(request.url()).pathname === "/api/invites/accept") accepts++; });
+  await page.goto("/invite#retired-synthetic-fixture");
+  await expect(page).toHaveURL(/\/login\?error=membership_required$/);
+  expect(accepts).toBe(0);
+});

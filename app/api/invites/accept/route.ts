@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isInviteToken } from "@/lib/auth/invite-cookie";
-import { isTrustedInviteAcceptanceRequest } from "@/lib/auth/invite-request";
+import { isTrustedSameOriginJsonRequest } from "@/lib/auth/request-policy";
 
 const noStoreHeaders = {
   "cache-control": "private, no-store, max-age=0",
@@ -16,27 +15,11 @@ function invalidRequest() {
 }
 
 export async function POST(request: Request) {
-  if (!isTrustedInviteAcceptanceRequest(request)) return invalidRequest();
-
-  let token: unknown;
-  try {
-    token = (await request.json() as { token?: unknown }).token;
-  } catch {
-    token = null;
-  }
-  if (typeof token !== "string" || !isInviteToken(token)) {
-    return invalidRequest();
-  }
-
-  const response = NextResponse.json({ accepted: true }, {
+  if (!isTrustedSameOriginJsonRequest(request)) return invalidRequest();
+  const response = NextResponse.json({ error: "초대 코드 가입은 종료됐습니다. Play 스토어의 MOTOCAST 앱에서 가입해 주세요." }, {
+    status: 410,
     headers: noStoreHeaders,
   });
-  response.cookies.set("motocast_invite", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 60 * 30,
-    path: "/",
-  });
+  response.cookies.delete("motocast_invite");
   return response;
 }

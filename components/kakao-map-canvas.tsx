@@ -17,7 +17,10 @@ const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; c
   waypoint: { label: "경유", symbol: "경", color: "#5f6d63" },
 };
 
-function markerImage(maps: KakaoMapsNamespace, points: MapPoint[]) {
+function markerImage(maps: KakaoMapsNamespace, points: MapPoint[], selectionPreview = false) {
+  if (selectionPreview) {
+    return new maps.MarkerImage("/map-selection-marker.svg", new maps.Size(40, 48), { offset: new maps.Point(20, 46) });
+  }
   const markerKinds = Array.from(new Map(points.map((point) => {
     const role = point.role ?? "waypoint";
     return [`${role}:${Boolean(point.nonTraversed)}`, { role, nonTraversed: Boolean(point.nonTraversed) }] as const;
@@ -63,11 +66,14 @@ export function KakaoMapCanvas({
   path,
   showLegend = true,
   onSelectCoordinate,
+  selectionPreview = false,
 }: {
   points: MapPoint[];
   path?: PathPoint[];
   showLegend?: boolean;
   onSelectCoordinate?: (point: { latitude: number; longitude: number }) => void;
+  /** A temporary, non-editable position inside the waypoint confirmation. */
+  selectionPreview?: boolean;
 }) {
   const titleId = useId();
   const surfaceRef = useRef<HTMLDialogElement>(null);
@@ -93,6 +99,8 @@ export function KakaoMapCanvas({
       ? mapState.geometryKey === geometryKey ? mapState.status : "loading"
       : "demo";
   const isReady = state === "ready";
+  const previewLatitude = selectionPreview ? points[0]?.latitude : undefined;
+  const previewLongitude = selectionPreview ? points[0]?.longitude : undefined;
 
   function keepFocusInMap(event: KeyboardEvent<HTMLDialogElement>) {
     if (!fullscreen || event.key !== "Tab") return;
@@ -129,7 +137,10 @@ export function KakaoMapCanvas({
     const map = mapRef.current;
     const observer = new ResizeObserver(() => {
       try {
-        const center = map.getCenter();
+        // A read-only preview remains centered on the selected raw point even
+        // when the SDK adjusts its camera during a viewport resize.
+        const center = previewLatitude !== undefined && previewLongitude !== undefined && window.kakao?.maps
+          ? new window.kakao.maps.LatLng(previewLatitude, previewLongitude) : map.getCenter();
         const level = map.getLevel();
         map.relayout();
         map.setLevel(level);
@@ -140,7 +151,7 @@ export function KakaoMapCanvas({
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, [isReady, geometryKey]);
+  }, [isReady, geometryKey, previewLatitude, previewLongitude]);
 
   useEffect(() => {
     if (!isReady || !onSelectCoordinate || !containerRef.current || !mapRef.current) return;
@@ -221,8 +232,8 @@ export function KakaoMapCanvas({
               overlays.push(new loadedMaps.Marker({
                 map,
                 position,
-                title: group.points.map((point) => `${markerAppearance[point.role ?? "waypoint"].label} · ${point.label}`).join(" / "),
-                image: markerImage(loadedMaps, group.points),
+                title: selectionPreview ? "선택한 위치" : group.points.map((point) => `${markerAppearance[point.role ?? "waypoint"].label} · ${point.label}`).join(" / "),
+                image: markerImage(loadedMaps, group.points, selectionPreview),
               }));
             });
             if (routePath.length) {
@@ -235,7 +246,10 @@ export function KakaoMapCanvas({
                 strokeStyle: "solid",
               }));
             }
-            map.setBounds(bounds);
+            if (selectionPreview && markerPath[0]) {
+              map.setCenter(markerPath[0]);
+              map.setLevel(4);
+            } else map.setBounds(bounds);
             window.clearTimeout(timeout);
             setMapState({ status: "ready", geometryKey });
           } catch {
@@ -294,7 +308,14 @@ export function KakaoMapCanvas({
       if (script && onError) script.removeEventListener("error", onError);
       clearOverlays();
     };
-  }, [appKey, geometryKey, hasGeometry]);
+  }, [appKey, geometryKey, hasGeometry, selectionPreview]);
+
+  if (selectionPreview) return <div className="map-shell map-selection-preview" aria-label="선택한 위치 미리보기">
+    <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert />
+    <div className={`map-status ${isReady ? "is-visually-hidden" : ""}`} role="status">
+      {isReady ? "선택한 위치가 지도에 표시되었습니다." : state === "loading" ? "선택한 위치의 지도를 불러오는 중" : "위치 지도를 불러오지 못했어요. 주소를 확인하거나 취소 후 다시 선택해 주세요."}
+    </div>
+  </div>;
 
   return (
     <div className="map-shell" aria-label="선택한 라이딩 경로 지도">

@@ -1,6 +1,6 @@
-"""Local-only claim/revoke races in an identity-verified isolated DB; retain evidence."""
+"""Local-only concurrent retired invitation denial in an identity-verified isolated DB."""
 from pathlib import Path
-import argparse, re, subprocess, time, uuid
+import argparse, re, subprocess, uuid
 
 CONTAINER = "supabase_db_motocast"
 parser = argparse.ArgumentParser(description=__doc__)
@@ -36,13 +36,6 @@ def start(query):
     child.stdin.write(query); child.stdin.close(); child.stdin = None
     return child
 
-def wait_for(predicate):
-    deadline = time.monotonic() + 12
-    while time.monotonic() < deadline:
-        if sql(predicate) == "t": return
-        time.sleep(0.05)
-    raise AssertionError("expected database concurrency phase not reached")
-
 identity = subprocess.run(["docker", "inspect", CONTAINER, "--format", "{{.Id}}|{{index .Config.Labels \"com.supabase.cli.project\"}}|{{.Config.Image}}|{{.State.Running}}"], capture_output=True, text=True, check=True).stdout.strip()
 if identity != CONTAINER_ID + "|motocast|public.ecr.aws/supabase/postgres:17.6.1.166|true":
     raise RuntimeError("Local container identity mismatch")
@@ -52,8 +45,7 @@ if sql("select pg_get_userbyid(datdba)||'|'||coalesce(shobj_description(oid,'pg_
     raise RuntimeError("Task database ownership marker mismatch")
 print("Dedicated database: " + DATABASE, flush=True)
 assert sql("select count(*) from auth.users where id in (" + quoted(USERS) + ");") == "0"
-assert sql("select to_regprocedure('public.revoke_invite(uuid)') is null;") == "t"
-migration = Path(__file__).resolve().parents[2] / "migrations/20260921155004_invite_management_revoke.sql"
+migration = Path(__file__).resolve().parents[2] / "migrations/20261001160839_retire_invitation_enrollment.sql"
 setup = "begin;set local role postgres;" + migration.read_text(encoding="utf-8") + "\ninsert into auth.users(id,aud,role,raw_user_meta_data) values "
 setup += ",".join("('%s','authenticated','authenticated','{}')" % user for user in USERS) + ";"
 setup += "insert into public.memberships(user_id,role) values ('%s','admin');" % ADMIN
@@ -63,28 +55,25 @@ setup += "commit;"
 children = []
 try:
     sql(setup)
-    for index, winner in enumerate(("revoke", "claim")):
-        item, token, user = INVITES[index], TOKENS[index], USERS[index+1]
-        claim = "select public.claim_invite('%s');" % token
-        revoke = "select public.revoke_invite('%s');" % item
-        first_user, first = (ADMIN, revoke) if winner == "revoke" else (user, claim)
-        second_user, second = (user, claim) if winner == "revoke" else (ADMIN, revoke)
-        first_sql = "set application_name='%s_winner';begin;set local role authenticated;set local \"request.jwt.claim.sub\"='%s';%s select pg_sleep(4);commit;" % (APPLICATION,first_user,first)
-        a = start(first_sql); children.append(a)
-        wait_for("select exists(select 1 from pg_stat_activity where datname=current_database() and application_name='%s_winner' and wait_event='PgSleep');" % APPLICATION)
-        b = start("set application_name='%s_waiter';begin;set local role authenticated;set local \"request.jwt.claim.sub\"='%s';%s commit;" % (APPLICATION,second_user,second)); children.append(b)
-        wait_for("select exists(select 1 from pg_stat_activity where datname=current_database() and application_name='%s_waiter' and wait_event_type='Lock');" % APPLICATION)
-        out_a, err_a = a.communicate(timeout=12); out_b, err_b = b.communicate(timeout=12)
-        assert a.returncode == 0, err_a
-        if winner == "revoke":
-            assert b.returncode != 0 and "INVALID_INVITE" in err_b
-            assert sql("select revoked_at is not null and consumed_at is null from public.invitations where id='%s';" % item) == "t"
-            assert sql("select count(*) from public.memberships where user_id='%s';" % user) == "0"
-        else:
-            assert b.returncode == 0 and out_b.strip() == "used", err_b
-            assert sql("select revoked_at is null and consumed_at is not null from public.invitations where id='%s';" % item) == "t"
-            assert sql("select count(*) from public.memberships where user_id='%s' and revoked_at is null;" % user) == "1"
-        print("PASS: " + winner + " wins; competing operation waited for the row lock")
+    operations = [
+        ("create", "select public.create_invite(interval '1 day');"),
+        ("claim", "select public.claim_invite('%s');" % TOKENS[0]),
+        ("revoke", "select public.revoke_invite('%s');" % INVITES[0]),
+    ]
+    for operation, query in operations:
+        attempts = [start("set application_name='%s_%s';begin;set local role authenticated;"
+            "set local \"request.jwt.claim.sub\"='%s';%s commit;" %
+            (APPLICATION, operation, user, query)) for user in USERS[1:]]
+        children.extend(attempts)
+        for child in attempts:
+            output, error = child.communicate(timeout=12)
+            assert child.returncode != 0 and "permission denied for function" in error, (output, error)
+        assert sql("select count(*) from public.memberships where user_id in (" + quoted(USERS[1:]) + ");") == "0"
+        assert sql("select count(*) from public.profiles where id in (" + quoted(USERS[1:]) + ");") == "0"
+        assert sql("select bool_and(consumed_at is null and consumed_by is null and revoked_at is null) "
+            "from public.invitations where id in (" + quoted(INVITES) + ");") == "t"
+        assert sql("select role||'|'||(revoked_at is null)::text from public.memberships where user_id='%s';" % ADMIN) == "admin|true"
+        print("PASS: concurrent " + operation + " denied; member/profile/history unchanged")
 finally:
     for child in children:
         if child.poll() is None: child.terminate(); child.wait(timeout=5)
