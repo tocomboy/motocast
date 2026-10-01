@@ -99,6 +99,8 @@ export function KakaoMapCanvas({
       ? mapState.geometryKey === geometryKey ? mapState.status : "loading"
       : "demo";
   const isReady = state === "ready";
+  const previewLatitude = selectionPreview ? points[0]?.latitude : undefined;
+  const previewLongitude = selectionPreview ? points[0]?.longitude : undefined;
 
   function keepFocusInMap(event: KeyboardEvent<HTMLDialogElement>) {
     if (!fullscreen || event.key !== "Tab") return;
@@ -135,7 +137,10 @@ export function KakaoMapCanvas({
     const map = mapRef.current;
     const observer = new ResizeObserver(() => {
       try {
-        const center = map.getCenter();
+        // A read-only preview remains centered on the selected raw point even
+        // when the SDK adjusts its camera during a viewport resize.
+        const center = previewLatitude !== undefined && previewLongitude !== undefined && window.kakao?.maps
+          ? new window.kakao.maps.LatLng(previewLatitude, previewLongitude) : map.getCenter();
         const level = map.getLevel();
         map.relayout();
         map.setLevel(level);
@@ -146,7 +151,7 @@ export function KakaoMapCanvas({
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, [isReady, geometryKey]);
+  }, [isReady, geometryKey, previewLatitude, previewLongitude]);
 
   useEffect(() => {
     if (!isReady || !onSelectCoordinate || !containerRef.current || !mapRef.current) return;

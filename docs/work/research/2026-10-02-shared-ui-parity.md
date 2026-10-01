@@ -61,3 +61,11 @@
 - Android 실제 SDK 검사에서 전체화면 Dialog 안에 중첩한 확인 시트가 뒤에 가려지는 기존 구조 문제를 발견했다. 확인 시트를 전체화면 Dialog 다음에 생성하고, 화면 좌표 터치로 확인이 실제 작동하는 검사를 추가했다. 수정 후 실제 SDK 지도·확대·이동·선택·취소·한 번 추가·오류 팝업 검사는 PASS. API 주소/경로는 합성 fixture이며 실제 Play 가입은 아니다.
 - Android Compose 홈·업데이트 등 세 크기48단계 PASS, 로그인 UI4단계 PASS. 신규 단위334×2와 최종 native 원본/CI 검증은 구분한다. 기존 지도 getter/팝업 제거 확인의 비동기 관찰 실패와 JRE 설정 빌드 실패는 로그에 보존한다.
 - 운영 설정 변경 전 Android PR32→33으로 control revision10/HOLD(CONFIG_CHANGE)를 main `98498a75b5dde6428d08a777e1625a007213e4d2`에 반영했다. epoch3 및 code7 원본은 보존한다. Main CI·실행 drain 확인 전 Production 설정 변경은 하지 않는다.
+
+
+## 화면 크기 전환 검수 보완
+
+- PR89 `64e80af21df7ddf774f0222e95e3c07d2ce657e8`, CI36896977117 SUCCESS 뒤 Deployments0/statuses0/verify 단독을 확인하고 develop21cdd2b에서 exact SHA로 승격했다. Preview deployment6790720701 성공. 실제 로그인된 Preview에서 제목·지도·주소·버튼 겹침 해소를 확인했다.
+- 데스크톱 확인 창을 연 채320폭으로 바꾸면 Kakao SDK가 observer 이전에 중심을 이동해 선택 핀이 오른쪽으로 밀렸다. 읽기 전용 선택 미리보기의 resize는 원좌표로 재중심화하고, 편집 지도는 기존 카메라 유지 규칙을 보존한다. 실제 관찰을 재현한 SDK 상태 테스트를 추가했으며 집중24개/lint/typecheck PASS. 후속 exact-head CI와 Preview 실제 재검증 전 Production 미승격이다.
+- Android 가로 화면 첫 검사는 스크롤 아래의 버튼을 곧바로 찾는 가정 때문에 CENTER_LOADING FAIL이었다. 디자인대로 지도와 제목을 먼저 확인한 뒤 시트를 스크롤해48dp 버튼 접근/비활성 로딩/취소를 검사하고 위로 복귀하도록 수정했다. 동일 SDK/가로 화면 재실행19단계 PASS. 앱의 스크롤이나 assertion을 약화하지 않았다. 원본 FAIL과 수정 후 로그를 함께 보존했다.
+- Android main98498a75의 Main CI36896631544 SUCCESS, queued/running0 확인. control10/HOLD는 활성화됐지만 운영 웹/앱은 여전히0.7.0/code7이다.

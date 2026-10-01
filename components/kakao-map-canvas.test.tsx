@@ -140,6 +140,11 @@ function installMaps({ throwOnLoad = false, synchronousLoad = false }: { throwOn
 it("shows the exact temporary selected point and disposes it without a route or edit controls", async () => {
   vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
   const maps = installMaps();
+  const resized: Array<() => void> = [];
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(callback: () => void) { resized.push(callback); }
+    observe = vi.fn(); disconnect = vi.fn();
+  });
   const selected = { latitude: 38.03, longitude: 128.38, label: "선택한 위치" };
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(<KakaoMapCanvas points={[selected]} selectionPreview />, rendererOptions); });
@@ -149,6 +154,12 @@ it("shows the exact temporary selected point and disposes it without a route or 
   expect([marker.position.getLat(), marker.position.getLng(), marker.title]).toEqual([selected.latitude, selected.longitude, "선택한 위치"]);
   expect(maps.setCenter).toHaveBeenCalledWith(marker.position);
   expect(maps.setLevel).toHaveBeenCalledWith(4);
+  // Reproduce the real SDK changing its center before our resize observer runs.
+  maps.setCenter({ getLat: () => 37, getLng: () => 127 });
+  await act(async () => resized.at(-1)!());
+  const resizedMap = maps.MapConstructor.mock.instances[0] as unknown as InstanceType<KakaoMapsNamespace["Map"]>;
+  expect([resizedMap.getCenter().getLat(), resizedMap.getCenter().getLng()]).toEqual([selected.latitude, selected.longitude]);
+
   expect(maps.Polyline).not.toHaveBeenCalled();
   expect(renderer.root.findAllByType("button")).toHaveLength(0);
   expect(renderer.root.findAllByProps({ className: "route-sketch" })).toHaveLength(0);
