@@ -77,6 +77,7 @@ export function KakaoMapCanvas({
   const [fullscreen, setFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<InstanceType<KakaoMapsNamespace["Map"]> | null>(null);
+  const overlayCleanupFailedRef = useRef(false);
   const selectRef = useRef(onSelectCoordinate);
   useEffect(() => { selectRef.current = onSelectCoordinate; }, [onSelectCoordinate]);
   const appKey = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY;
@@ -160,18 +161,35 @@ export function KakaoMapCanvas({
     let script: HTMLScriptElement | null = null;
     let onLoad: (() => void) | null = null;
     let onError: (() => void) | null = null;
+    const overlays: Array<{ setMap(map: null): void }> = [];
     const timeout = window.setTimeout(() => {
       if (active) setMapState({ status: "error", geometryKey });
     }, KAKAO_MAP_LOAD_TIMEOUT_MS);
 
+    const clearOverlays = () => {
+      for (const overlay of overlays.splice(0)) {
+        try {
+          overlay.setMap(null);
+        } catch {
+          overlayCleanupFailedRef.current = true;
+          console.error("지도 표시 요소를 정리하지 못했습니다.");
+        }
+      }
+    };
+
     const fail = () => {
       if (!active) return;
       window.clearTimeout(timeout);
+      clearOverlays();
       setMapState({ status: "error", geometryKey });
     };
 
     const renderMap = () => {
       if (!containerRef.current) return;
+      if (overlayCleanupFailedRef.current) {
+        fail();
+        return;
+      }
       const maps = window.kakao?.maps;
       if (!maps) {
         fail();
@@ -193,29 +211,29 @@ export function KakaoMapCanvas({
             const groupedMarkers = markerGroups(geometry.points);
             const markerPath = groupedMarkers.map((group) => new loadedMaps.LatLng(group.latitude, group.longitude));
             const routePath = geometry.path.map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
-            const map = new loadedMaps.Map(containerRef.current, { center: markerPath[0] ?? routePath[0], level: 8 });
+            const map = mapRef.current ?? new loadedMaps.Map(containerRef.current, { center: markerPath[0] ?? routePath[0], level: 8 });
             mapRef.current = map;
             const bounds = new loadedMaps.LatLngBounds();
             routePath.forEach((position) => bounds.extend(position));
             markerPath.forEach((position, index) => {
               bounds.extend(position);
               const group = groupedMarkers[index];
-              new loadedMaps.Marker({
+              overlays.push(new loadedMaps.Marker({
                 map,
                 position,
                 title: group.points.map((point) => `${markerAppearance[point.role ?? "waypoint"].label} · ${point.label}`).join(" / "),
                 image: markerImage(loadedMaps, group.points),
-              });
+              }));
             });
             if (routePath.length) {
-              new loadedMaps.Polyline({
+              overlays.push(new loadedMaps.Polyline({
                 map,
                 path: routePath,
                 strokeWeight: 5,
                 strokeColor: "#ef6a3a",
                 strokeOpacity: 0.9,
                 strokeStyle: "solid",
-              });
+              }));
             }
             map.setBounds(bounds);
             window.clearTimeout(timeout);
@@ -271,10 +289,10 @@ export function KakaoMapCanvas({
 
     return () => {
       active = false;
-      mapRef.current = null;
       window.clearTimeout(timeout);
       if (script && onLoad) script.removeEventListener("load", onLoad);
       if (script && onError) script.removeEventListener("error", onError);
+      clearOverlays();
     };
   }, [appKey, geometryKey, hasGeometry]);
 

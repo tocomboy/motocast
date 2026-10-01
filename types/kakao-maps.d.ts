@@ -22,7 +22,7 @@ type KakaoMapsNamespace = {
     setLevel(level: number): void;
     relayout(): void;
   };
-  Marker: new (options: { map: unknown; position: KakaoLatLng; title: string; image?: unknown }) => unknown;
+  Marker: new (options: { map: unknown; position: KakaoLatLng; title: string; image?: unknown }) => { setMap(map: unknown): void };
   Polyline: new (options: {
     map: unknown;
     path: KakaoLatLng[];
@@ -30,7 +30,7 @@ type KakaoMapsNamespace = {
     strokeColor: string;
     strokeOpacity: number;
     strokeStyle: string;
-  }) => unknown;
+  }) => { setMap(map: unknown): void };
 };
 
 interface Window {

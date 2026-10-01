@@ -49,3 +49,10 @@
 - 전체 브라우저 첫 실행53 PASS/3 FAIL/기존 연결2 SKIP. 실패3개는 최신 공지에 이전0.6 문구와 총12개 이력을 기대하던 assertion이었다. 새0.7 문구·13개 이력으로 대조하고 이전 소식 검증은 보존했다. 영향받은 공지5개 재검사 PASS; 변경 없는51개 통과 근거 재사용, 최종56 PASS/기존 연결2 SKIP. build/lint/typecheck/diff check PASS. CI는 고정 후보에서 전체 실행한다.
 - 웹 메인 검수: 동일 DOM/SDK 객체와 카메라 보존, native modal의 확인창 우선순위·초점·스크롤, 지도 로딩/오류·읽기 전용 상태를 확인했다. 인증·서버 API·DB/예산 변경 없음. 실제 SDK 및 연결 사용자 동작은 Preview 배포 후 확인해야 하며 모의 검사로 대신하지 않는다.
 - Android JVM 각341 PASS, lint0 ERROR/14 WARNING, instrumentation APK 컴파일 PASS. 실제 SDK 에뮬레이터에서는 지도 렌더링과 테스트 접근성 관찰을 구분해 실패를 진단 중이다. 실기기는 NOT_RUN.
+
+## Preview에서 발견한 필수 보완
+- PR84 `a107f316949c96c033d7676990dd650142bf36dd` CI36876718637 SUCCESS, 완료 후 Deployments0/Vercel checks0/statuses0 확인. 동일 SHA를 develop에 fast-forward했고 Preview `dpl_HJ4WXzA8S1zR3VM5Ksu5XkoZHCpN` READY, GitHub Deployment6786984989와 일치한다. develop CI36877106778 및 PR85 CI36877242665/develop-only36877242884 PASS.
+- 실제 로그인된 Preview에서0.7 공지·버전, Kakao 장소 검색, 전체화면, 이동/확대(30m→20m), 주소 확인, Escape가 확인창만 닫음, 지도 닫기/재진입 후20m와 동일 중심 주소 보존, 명시 확인1개추가 PASS. 초안만 사용하며 저장/공유 데이터는 변경하지 않았다. 웹 실제 길게 누르기 지속시간 입력은 NOT_RUN; 기존 단위 및 Android SDK 검사와 구분한다.
+- 추가 후 하나의 `.map-canvas` 안에 축척/로고2개가 누적되는 기존 생명주기 결함을 확인했다. 기반53a76b4부터 geometry 변경마다 같은 컨테이너에 새 Map을 만들고 참조만 비우는 구조다. 이번 필수 경유지 추가 동작의 선행 결함으로 분류하고 PR85 운영 승격을 보류했다. 지도 하나를 유지하고 기존 마커/선을 공식 `setMap(null)`로 정리하는 최소 보완 후 새 exact-head CI-only 및 실제 Preview 검증을 진행한다.
+- 브라우저 viewport override가 실제1280×720 화면에 적용되지 않아 해당 호출을384폭 검사 PASS로 기록하지 않는다. 320/384/390/820/1440 및 가로/큰 글자 자동 브라우저 검사는 별도 PASS다.
+- 보완은 컨테이너당 Map 하나를 유지하며 geometry 변경/실패/언마운트 때 마커·선을 제거한다. SDK 정리에 실패하면 오류와 비활성 상태를 유지한다. 공식 [Marker.setMap](https://apis.map.kakao.com/web/documentation/#Marker_setMap)·[Polyline.setMap](https://apis.map.kakao.com/web/documentation/#Polyline_setMap) 대조 완료. 집중45/전체891/Chromium56 PASS, 기존 연결2 SKIP. lint/typecheck PASS; npm ci/Deno8은 변경되지 않은 lockfile·서버 범위의 앞선 PASS 재사용. 전체화면·빈 지도·지연 콜백·Strict Mode·부분 실패·언마운트 경계 검수 BLOCKER0/HIGH0.
