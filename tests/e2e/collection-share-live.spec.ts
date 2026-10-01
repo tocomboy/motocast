@@ -304,6 +304,25 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const departure = seoulDepartureIn(30);
     await selectFirstPlace(page, "출발지", liveQueries.origin!);
     await selectFirstPlace(page, "도착지", liveQueries.destination!);
+    // Cancel-only coordinate readback: the real confirmation must stay above
+    // fullscreen and consume Escape before fullscreen itself can close.
+    const fullscreenTrigger = page.getByRole("button", { name: "전체화면", exact: true });
+    await fullscreenTrigger.click();
+    const fullscreenMap = page.getByRole("dialog", { name: "경로 지도", exact: true });
+    const selectCenter = fullscreenMap.getByRole("button", { name: "지도 중심에서 경유지 선택" });
+    await expect(selectCenter).toBeVisible();
+    await selectCenter.click();
+    const pointConfirmation = page.locator("dialog.map-confirmation-dialog[open]");
+    await expect(pointConfirmation).toBeVisible();
+    await page.keyboard.press("Tab");
+    expect(await pointConfirmation.evaluate(node => node.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(pointConfirmation).toBeHidden();
+    await expect(fullscreenMap).toBeVisible();
+    await expect(selectCenter).toBeFocused();
+    await expect(page.locator(".ordered-waypoint")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(fullscreenTrigger).toBeFocused();
     const addWaypoint = page.getByRole("button", { name: /^\+ 경유지 추가/ });
     await addWaypoint.click();
     let addDialog = page.getByRole("dialog", { name: "경유지 설정" });

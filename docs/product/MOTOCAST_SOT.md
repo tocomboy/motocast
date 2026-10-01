@@ -48,6 +48,16 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Verification: connected-mode failure tests and DOM assertions that distinguish demo, loading, error, stale, and live data.
 - Confirmed: 2026-08-30.
 
+#### SCOPE-003 — 웹·Android 기능 및 출시 일치
+
+- Status: `CONFIRMED`
+- Decision: 웹과 Android는 같은 제품의 사용자 기능·버그 수정을 같은 출시 단위로 진행한다. 두 플랫폼의 공통 서비스 버전(`MAJOR.MINOR.PATCH`)과 업데이트 소식을 함께 관리한다. Android의 `versionCode`, AAB 식별자와 웹 배포 SHA/ID는 플랫폼별로 따로 보존한다. 한쪽 구현·배포만으로 공동 출시 완료를 선언하지 않는다.
+- Delivery: 하나의 작업 기록에 공통 수용 기준, 양쪽 PR·고정 SHA·버전/업데이트 소식, 플랫폼별 검사·배포·실기기 상태를 연결한다. 배포는 기존 호환성 의존 순서대로 실행하며, 웹 선행·Play 심사/전파 등 중간 상태는 명시한다. 필수 gate와 데이터 보존, Preview/Production 분리, 내부 테스트/정식 트랙 경계를 낮추지 않는다. 문서·자동화만 바뀌면 제품 버전이나 이미 게시된 바이너리를 불필요하게 바꾸지 않는다.
+- Exceptions: 플랫폼 고유 인증·권한·주행 생명주기 등 기존에 확정된 차이는 유지하고 그 범위를 명시한다. 새로 한쪽 기능을 제외하거나 출시를 별도로 끝내려면 달라지는 범위를 사용자에게 확정받는다. 기존 역사적 업데이트를 양쪽 구현 완료로 소급 표시하지 않는다.
+- Development: 공통 Figma 상태/동작, 서버 API·오류 계약, 테스트 사례와 업데이트 소식 정본을 우선 공유한다. 기술 스택 통일은 별도 비교·검증 후 결정하며 이 규칙만으로 기존 웹/Android 재작성이나 인증·저장소 이전을 허용하지 않는다.
+- Verification: 같은 사용자 흐름을 양쪽에서 검사하고 `PASS/FAIL/ERROR/SKIP/NOT_RUN`을 분리한다. 전체화면 지도에서도 확대·이동, 경유지 확인 후 추가, 취소 시 코스 보존, 읽기 전용 공유 경계가 일치해야 한다. 실제 사용자 실기기 결과는 자동 검사·브라우저·서버·Play 게시 결과와 구분한다.
+- Confirmed: 2026-10-01, 사용자의 웹·앱 동일 업데이트 및 프로젝트 규범 기록 요청.
+
 ### Authentication and membership
 
 #### AUTH-001 — Invite-only Kakao authentication

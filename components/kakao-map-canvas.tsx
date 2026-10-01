@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { bindMapLongPress } from "@/lib/places/map-long-press";
 
 export type MapMarkerRole = "origin" | "destination" | "lunch" | "dinner" | "rest" | "waypoint";
@@ -69,6 +69,12 @@ export function KakaoMapCanvas({
   showLegend?: boolean;
   onSelectCoordinate?: (point: { latitude: number; longitude: number }) => void;
 }) {
+  const titleId = useId();
+  const surfaceRef = useRef<HTMLDialogElement>(null);
+  const expandRef = useRef<HTMLButtonElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const modalRef = useRef(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<InstanceType<KakaoMapsNamespace["Map"]> | null>(null);
   const selectRef = useRef(onSelectCoordinate);
@@ -86,6 +92,54 @@ export function KakaoMapCanvas({
       ? mapState.geometryKey === geometryKey ? mapState.status : "loading"
       : "demo";
   const isReady = state === "ready";
+
+  function keepFocusInMap(event: KeyboardEvent<HTMLDialogElement>) {
+    if (!fullscreen || event.key !== "Tab") return;
+    const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+      "button, a[href], input, select, textarea, [tabindex]",
+    )).filter(element => element.tabIndex >= 0 && !element.matches(":disabled")
+      && !element.closest("[inert]") && element.getClientRects().length > 0);
+    const first = controls[0]; const last = controls.at(-1);
+    if (first && last && ((event.shiftKey && document.activeElement === first)
+      || (!event.shiftKey && document.activeElement === last))) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    }
+  }
+
+  useLayoutEffect(() => {
+    const surface = surfaceRef.current;
+    if (!surface || fullscreen === modalRef.current) return;
+    // Keep the same map container in place when moving it into the top layer.
+    // A modeless dialog must first close before it can become modal.
+    surface.close();
+    if (fullscreen) {
+      surface.showModal();
+      closeRef.current?.focus({ preventScroll: true });
+    } else {
+      surface.show();
+      expandRef.current?.focus({ preventScroll: true });
+    }
+    modalRef.current = fullscreen;
+  }, [fullscreen]);
+
+  useEffect(() => {
+    if (!isReady || !containerRef.current || !mapRef.current) return;
+    const map = mapRef.current;
+    const observer = new ResizeObserver(() => {
+      try {
+        const center = map.getCenter();
+        const level = map.getLevel();
+        map.relayout();
+        map.setLevel(level);
+        map.setCenter(center);
+      } catch {
+        setMapState({ status: "error", geometryKey });
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [isReady, geometryKey]);
 
   useEffect(() => {
     if (!isReady || !onSelectCoordinate || !containerRef.current || !mapRef.current) return;
@@ -226,11 +280,25 @@ export function KakaoMapCanvas({
 
   return (
     <div className="map-shell" aria-label="선택한 라이딩 경로 지도">
-      <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert={!isReady} />
-      <MapStatus state={state} actualRoute={Boolean(path?.length)} />
-      {isReady && onSelectCoordinate ? <div className="map-waypoint-actions"><p>지도를 길게 눌러 경유지를 선택하세요. 확대·이동 후 중심 지점을 선택할 수도 있어요.</p><button type="button" onClick={() => { const point = mapRef.current?.getCenter(); if (point) onSelectCoordinate({ latitude: point.getLat(), longitude: point.getLng() }); }}>지도 중심에서 경유지 선택</button></div> : null}
-      {isReady && showLegend ? <MapMarkerLegend points={points} /> : null}
-      {!isReady && state !== "empty" ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
+      <dialog ref={surfaceRef} open className={`map-surface${fullscreen ? " is-fullscreen" : ""}`}
+        role={fullscreen ? "dialog" : "region"} aria-modal={fullscreen || undefined}
+        aria-label={fullscreen ? undefined : "선택한 라이딩 경로 지도"} aria-labelledby={fullscreen ? titleId : undefined}
+        onKeyDown={keepFocusInMap}
+        onCancel={(event) => { event.preventDefault(); setFullscreen(false); }}>
+        <header className="map-fullscreen-header" hidden={!fullscreen}>
+          <h2 id={titleId}>경로 지도</h2>
+          <button type="button" ref={closeRef} onClick={() => setFullscreen(false)}>닫기</button>
+        </header>
+        <div className="map-viewport">
+          <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert={!isReady} />
+          <MapStatus state={state} actualRoute={Boolean(path?.length)} />
+          <button type="button" ref={expandRef} className="map-fullscreen-trigger" hidden={fullscreen} onClick={() => setFullscreen(true)}>전체화면</button>
+          {isReady && showLegend ? <MapMarkerLegend points={points} /> : null}
+          {!isReady && state !== "empty" ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
+        </div>
+        {isReady && onSelectCoordinate ? <div className="map-waypoint-actions"><p>{fullscreen ? "확대·이동하거나 지도를 길게 눌러 경유지를 선택하세요." : "지도를 길게 눌러 경유지를 선택하세요. 확대·이동 후 중심 지점을 선택할 수도 있어요."}</p><button type="button" onClick={() => { const point = mapRef.current?.getCenter(); if (point) onSelectCoordinate({ latitude: point.getLat(), longitude: point.getLng() }); }}>지도 중심에서 경유지 선택</button></div>
+          : fullscreen && isReady ? <div className="map-viewing-hint"><p>확대·이동하며 경로를 확인하세요.</p></div> : null}
+      </dialog>
     </div>
   );
 }

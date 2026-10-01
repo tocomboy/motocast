@@ -3109,7 +3109,7 @@ textarea:focus-visible {
   width: 100%;
 }
 
-body:has(dialog[open]) {
+body:has(dialog:modal) {
   overflow: hidden;
 }
 
@@ -4921,4 +4921,53 @@ body:has(dialog[open]) {
 .map-confirmation-actions button:disabled { opacity: .45; cursor: default; }
 @media (max-width: 767px) {
   .map-confirmation-dialog { border-radius: 24px 24px 0 0; inset: auto 0 0; margin: 0; width: 100%; max-height: 92dvh; padding-bottom: max(28px, env(safe-area-inset-bottom)); }
+}
+
+/* Figma F01-F06: one SDK surface, inline or in the dialog top layer. */
+.map-surface {
+  background: var(--panel); border: 0; color: var(--ink); height: 100%;
+  inset: 0; margin: 0; max-height: none; max-width: none; overflow: hidden;
+  padding: 0; position: absolute; width: 100%;
+}
+.map-viewport { height: 100%; min-height: 0; min-width: 0; position: relative; }
+.map-fullscreen-trigger {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  color: var(--ink); font: inherit; font-weight: 700; min-height: 48px;
+  padding: 10px 16px; position: absolute; right: 12px; top: 12px; z-index: 7;
+}
+.map-fullscreen-header[hidden], .map-fullscreen-trigger[hidden] { display: none; }
+.map-surface.is-fullscreen {
+  display: flex; flex-direction: column; height: 100dvh; position: fixed; width: 100vw;
+}
+.map-surface.is-fullscreen::backdrop { background: var(--panel); }
+.map-fullscreen-header {
+  align-items: center; display: flex; flex: none; gap: 12px;
+  padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 12px max(20px, env(safe-area-inset-left));
+}
+.map-fullscreen-header h2 { flex: 1; font-size: 1.25rem; line-height: 1.5; margin: 0; overflow-wrap: anywhere; }
+.map-fullscreen-header button,
+.map-surface.is-fullscreen .map-waypoint-actions button {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  color: var(--ink); font: inherit; font-weight: 700; min-height: 48px;
+  padding: 10px 14px; white-space: normal; overflow-wrap: anywhere;
+}
+.map-fullscreen-header button { flex: none; min-width: 80px; }
+.map-surface.is-fullscreen .map-viewport { flex: 1; height: auto; }
+.map-surface.is-fullscreen .map-waypoint-actions,
+.map-viewing-hint {
+  background: var(--panel); border-radius: 0; display: flex; flex: none; flex-direction: column;
+  align-items: stretch; gap: 8px; margin: 0; padding: 12px max(20px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  position: static;
+}
+.map-surface.is-fullscreen .map-waypoint-actions p,
+.map-viewing-hint p { color: var(--ink-soft); flex-basis: auto; font-size: .875rem; line-height: 1.5; margin: 0; }
+@media (min-width: 768px) {
+  .map-surface.is-fullscreen .map-waypoint-actions { align-items: center; flex-direction: row; }
+  .map-surface.is-fullscreen .map-waypoint-actions button { flex: none; }
+}
+@media (max-height: 480px) {
+  .map-surface.is-fullscreen { overflow-y: auto; }
+  .map-surface.is-fullscreen .map-viewport { flex-shrink: 0; min-height: 120px; }
+  .map-surface.is-fullscreen .map-waypoint-actions,
+  .map-viewing-hint { padding-block: 8px max(8px, env(safe-area-inset-bottom)); }
 }
