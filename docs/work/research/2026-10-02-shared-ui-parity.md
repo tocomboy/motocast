@@ -12,10 +12,10 @@
 ## 계획과 진행
 
 1. **완료**: 기존 코드·정책 및 Figma 확인, 화면 상태 디자인, 회원 가입 계약·공통 UI 결정 반영.
-2. **진행 중**: 웹·앱 화면과 출발 기본값, 초대 코드 폐기, 간결한 업데이트 내역 및 배포 스킬 수정. 출발 기본값 집중 JVM 검사 양쪽 43 PASS; 전체 후보 검사와 구분한다.
-3. **대기**: 고정 후보의 자동 검사, DB 권한·기존 회원/회수/미가입·Play 가입 호환성, Preview 실제 검증. 실패·취소·미실행을 분리한다.
-4. **대기**: 서버 호환 준비 → 웹 develop→main → Android develop→main 내부 배포. 같은 서비스 버전·각 artifact/readback 및 사용자 설치 안내를 기록한다.
-5. **대기**: 공통 UI 첫 수직 기능을 별도 검증 가능한 변경으로 이관하고 로그인·지도·주행의 기존 네이티브 계약을 보존한다.
+2. **완료**: 현행 웹·앱 화면과 출발 기본값, 초대 코드 폐기, 간결한 업데이트 내역 및 배포 스킬 수정. 최종 Android 양쪽 JVM334 PASS이며 출발 기본값 집중43을 중복 합산하지 않는다.
+3. **완료/한계 유지**: 고정 후보 자동 검사·실제 DB563·Preview UI/기존 Kakao 회원 검증 완료. 미실행 일반/회수 계정 실제 로그인·Play 가입·사용자 실기기는 아래 범위와 기존 조건부 결정을 유지한다.
+4. **배포 실행**: 서버 호환 준비와 웹0.8.0 운영 반영, Android0.8.0/code8 main 승격 완료. Play 게시·원본 artifact/readback의 최종 상태와 기기 안내는 [Android PR37](https://github.com/tocomboy/motocast-android/pull/37)의 배포 결과 기록이 소유한다. main 병합을 Play 완료로 간주하지 않는다.
+5. **설계 완료/구현 대기**: [공통 업데이트 화면 첫 이관 계획](2026-10-02-shared-release-ui-plan.md). 현행 공동 배포 뒤 같은 RN 화면을 웹·앱에 연결하며 로그인·지도·주행의 기존 네이티브 계약을 보존한다.
 
 ## 기반과 소유권
 
@@ -69,3 +69,13 @@
 - 데스크톱 확인 창을 연 채320폭으로 바꾸면 Kakao SDK가 observer 이전에 중심을 이동해 선택 핀이 오른쪽으로 밀렸다. 읽기 전용 선택 미리보기의 resize는 원좌표로 재중심화하고, 편집 지도는 기존 카메라 유지 규칙을 보존한다. 실제 관찰을 재현한 SDK 상태 테스트를 추가했으며 집중24개/lint/typecheck PASS. 후속 exact-head CI와 Preview 실제 재검증 전 Production 미승격이다.
 - Android 가로 화면 첫 검사는 스크롤 아래의 버튼을 곧바로 찾는 가정 때문에 CENTER_LOADING FAIL이었다. 디자인대로 지도와 제목을 먼저 확인한 뒤 시트를 스크롤해48dp 버튼 접근/비활성 로딩/취소를 검사하고 위로 복귀하도록 수정했다. 동일 SDK/가로 화면 재실행19단계 PASS. 앱의 스크롤이나 assertion을 약화하지 않았다. 원본 FAIL과 수정 후 로그를 함께 보존했다.
 - Android main98498a75의 Main CI36896631544 SUCCESS, queued/running0 확인. control10/HOLD는 활성화됐지만 운영 웹/앱은 여전히0.7.0/code7이다.
+
+## 0.8.0 운영 승격과 앱 후보
+
+- 최종 웹 PR90 head775e7d30의 CI36899433306 SUCCESS 및 zero-deployment 확인 후 develop 승격, 통합 CI36900055737 SUCCESS. Preview dpl_8sc2Q7bgkqy8yVbMcEf7Y6BiNCDe에서320/390/820/1440폭의 핀 중심·제목/주소/버튼 무겹침, 취소0/확인1, 초대 링크의 앱 가입 안내 PASS. 실제 기존 회원 Kakao roundtrip은 resize-only 직전 동일 인증 후보에서 PASS이며 일반/회수 계정 연결 검증을 대신하지 않는다.
+- 웹 PR91 required CI36900862751 PASS 후 main88ecefaeab27837a001470fc9f168b13b571bb33, main CI36902179824 SUCCESS. Production dpl_89A6HVDWX7EjyXuZdueTNy6oTTyj READY/alias 일치. 운영 기존 회원 세션에서 공개 장소의 실제 지도·주황색 ＋ 핀·주소·취소0/확인1과 업데이트0.8.0 표시를 확인하고 저장하지 않은 초안을 정리했다. 이번 검사는 새 Kakao 재인증이 아니다. 공개 updates/assetlinks200(JSON·redirect없음), retired accept410/no-store 확인.
+- Production 초대 폐기 migration20261001173717 적용 후 회원/프로필/초대 aggregate SHA25632516e5e64e078011efd14480dacc9475b4551022264501ed138095a5c752f91 보존, 회원2(admin1/rider1)·프로필2·초대2·코스5 유지, retired RPC 역할 조합9개 거부/service-role RPC14 유지. 기존 백업·격리 복원 근거를 재사용했고 새 full backup을 실행했다고 주장하지 않는다. advisor 기존 종류 외 신규 발견 없음; 기존 warning은 남아 있다.
+- HOLD10 및 drain0 후 PLAY_ADMISSION_VERSIONS=5,6,7,8 저장, readback2026-10-01T17:32:54Z/SHA25691c38c12fdbcbdee421a34bb33566525fa21badb8c49644f2d957faf675d2a5d. 새 비밀값·키·권한 확대 없음. Android PR34/35와 main CI36901822290 SUCCESS 뒤 [관찰36902895480](https://github.com/tocomboy/motocast-android/actions/runs/36902895480) SUCCESS:21 migrations/8 functions, 기존20 statements·8 body/JWT 불변, 설정 저장에 따른 metadata version+1. 검토 API/function47개와21 SQL source hash 일치.
+- Android PR36 head7a4724fa51f060fd2c33757d975eff0347b44777/Required36903662862 SUCCESS, PR37 Required36904860215 SUCCESS 후 maina61b109f9c962a07f760f53c0235919c571022f5로 승격했다. 최종 tree 동일, 입력 hash66c39d4ed79ea426ccbcd15ffc9d7145f64923f7812156c3fa7238724cfa3846 일치. 공지14개는 웹88ecefae에서 가져왔고 역사적0.6.0의 웹 전용 범위는 보존했다. epoch4/revision12 ACTIVE 기준9269768a7a4efc3e9492a5910b6d9e46c6a3886832b4ead217a1f9dd99da0af9를 사용한다.
+- Android 양쪽 최종 JVM334/0fail/0skip, 자동화207/0fail/0skip, docs3·actionlint·PowerShell PASS. gitleaks8.30.1을 공식 배포 SHA 검증 후 작업 범위에 설치했다. 최종 Android 커밋 검사1건은 baseline.json의 api_contract_sha256가 정본의 공개 계약 해시와 동일한 오탐이며 확인된 credential0; scanner를 완화하지 않았다. 기존 Next/개발 의존성 audit 경고는0으로 보고하지 않는다.
+- [실제 main CI·자동 내부 배포36905968631](https://github.com/tocomboy/motocast-android/actions/runs/36905968631)의 서명·업로드·트랙 readback은 PR37 결과 기록을 확인한다. 검토 후보와 운영 서버 준비 완료를 기기 설치/Play 신규 가입 성공으로 확대하지 않는다. 웹 tag/Release와 정식 Play 공개는 미완료 실제 gate를 유지한다.
