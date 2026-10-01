@@ -55,6 +55,10 @@ afterEach(() => {
 
 function stubBrowser() {
   const scripts: FakeScript[] = [];
+  vi.stubGlobal("ResizeObserver", class {
+    observe = vi.fn();
+    disconnect = vi.fn();
+  });
   vi.stubGlobal("window", {
     clearTimeout: (...args: Parameters<typeof clearTimeout>) => globalThis.clearTimeout(...args),
     setTimeout: (...args: Parameters<typeof setTimeout>) => globalThis.setTimeout(...args),
@@ -67,20 +71,43 @@ function stubBrowser() {
   return scripts;
 }
 
-function installMaps({ throwOnLoad = false }: { throwOnLoad?: boolean } = {}) {
+function installMaps({ throwOnLoad = false, synchronousLoad = false }: { throwOnLoad?: boolean; synchronousLoad?: boolean } = {}) {
   const loadCallbacks: Listener[] = [];
   const extend = vi.fn();
   const setBounds = vi.fn();
   const coordinate = { getLat: () => 37.5, getLng: () => 127.1 };
+  let center = coordinate;
+  let level = 8;
+  const setCenter = vi.fn((point: typeof coordinate) => { center = point; });
+  const setLevel = vi.fn((value: number) => { level = value; });
+  const relayout = vi.fn(() => {
+    center = { getLat: () => 0, getLng: () => 0 };
+    level = 1;
+  });
   const projection = { coordsFromContainerPoint: vi.fn(() => coordinate) };
-  const MapConstructor = vi.fn(function MapInstance(this: { setBounds: typeof setBounds; getProjection: () => typeof projection; getCenter: () => typeof coordinate }) {
+  const mapLayers = new Map<HTMLElement, unknown[]>();
+  const activeMarkers = new Set<InstanceType<KakaoMapsNamespace["Marker"]>>();
+  const activePolylines = new Set<InstanceType<KakaoMapsNamespace["Polyline"]>>();
+  const MapConstructor = vi.fn(function MapInstance(this: InstanceType<KakaoMapsNamespace["Map"]>, container: HTMLElement) {
+    const layers = mapLayers.get(container) ?? [];
+    layers.push(this); mapLayers.set(container, layers);
     this.setBounds = setBounds;
     this.getProjection = () => projection;
-    this.getCenter = () => coordinate;
+    this.getCenter = () => center;
+    this.setCenter = setCenter;
+    this.getLevel = () => level;
+    this.setLevel = setLevel;
+    this.relayout = relayout;
   });
-  const Marker = vi.fn(function MarkerInstance() {});
+  const Marker = vi.fn(function MarkerInstance(this: InstanceType<KakaoMapsNamespace["Marker"]>) {
+    activeMarkers.add(this);
+    this.setMap = vi.fn(() => { activeMarkers.delete(this); });
+  });
   const MarkerImage = vi.fn(function MarkerImageInstance() {});
-  const Polyline = vi.fn(function PolylineInstance() {});
+  const Polyline = vi.fn(function PolylineInstance(this: InstanceType<KakaoMapsNamespace["Polyline"]>) {
+    activePolylines.add(this);
+    this.setMap = vi.fn(() => { activePolylines.delete(this); });
+  });
   const Size = vi.fn(function SizeInstance() {});
   const Point = vi.fn(function PointInstance() {});
   class LatLng {
@@ -94,7 +121,8 @@ function installMaps({ throwOnLoad = false }: { throwOnLoad?: boolean } = {}) {
   const maps = {
     load: vi.fn((callback: Listener) => {
       if (throwOnLoad) throw new Error("partial SDK");
-      loadCallbacks.push(callback);
+      if (synchronousLoad) callback();
+      else loadCallbacks.push(callback);
     }),
     LatLng,
     LatLngBounds,
@@ -106,8 +134,102 @@ function installMaps({ throwOnLoad = false }: { throwOnLoad?: boolean } = {}) {
     Polyline,
   };
   (window as Window).kakao = { maps: maps as unknown as KakaoMapsNamespace };
-  return { loadCallbacks, MapConstructor, Marker, MarkerImage, Polyline, extend, setBounds, projection };
+  return { loadCallbacks, MapConstructor, Marker, MarkerImage, Polyline, Point, extend, setBounds, projection, setCenter, setLevel, relayout, mapLayers, activeMarkers, activePolylines };
 }
+
+it("keeps one SDK map and its camera across fullscreen, return, and viewport resize", async () => {
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
+  const maps = installMaps();
+  const resized: Array<() => void> = [];
+  const disconnect = vi.fn();
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(callback: () => void) { resized.push(callback); }
+    observe = vi.fn();
+    disconnect = disconnect;
+  });
+  const surface = { close: vi.fn(), show: vi.fn(), showModal: vi.fn() };
+  const expanded = { focus: vi.fn() }; const closed = { focus: vi.fn() };
+  const canvas = {};
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(<KakaoMapCanvas points={points} path={actualPath} showLegend={false} />, {
+      createNodeMock: (node) => node.type === "dialog" ? surface : (node.props as { className?: string }).className === "map-fullscreen-trigger" ? expanded : node.type === "button" ? closed : canvas,
+    });
+  });
+  await flush(maps.loadCallbacks);
+  const camera = { getLat: () => 38.1, getLng: () => 128.3 };
+  maps.setCenter(camera); maps.setLevel(4);
+  const resize = async () => act(async () => resized.at(-1)!());
+  await act(async () => renderer.root.findByProps({ className: "map-fullscreen-trigger" }).props.onClick());
+  await resize();
+  expect(surface.showModal).toHaveBeenCalledTimes(1);
+  expect(renderer.root.findByType("dialog").props.role).toBe("dialog");
+  expect(closed.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+  await resize();
+  const preventDefault = vi.fn();
+  await act(async () => renderer.root.findByType("dialog").props.onCancel({ preventDefault }));
+  await resize();
+  expect(preventDefault).toHaveBeenCalledTimes(1);
+  expect(surface.show).toHaveBeenCalledTimes(1);
+  expect(renderer.root.findByType("dialog").props.role).toBe("region");
+  expect(expanded.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+  expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
+  expect(maps.Polyline).toHaveBeenCalledTimes(1);
+  expect(maps.setBounds).toHaveBeenCalledTimes(1);
+  const map = maps.MapConstructor.mock.instances[0] as unknown as InstanceType<KakaoMapsNamespace["Map"]>;
+  expect(map.getCenter()).toBe(camera); expect(map.getLevel()).toBe(4);
+  expect(maps.relayout).toHaveBeenCalledTimes(3);
+  await act(async () => renderer.unmount());
+  expect(disconnect).toHaveBeenCalledTimes(1);
+});
+
+it("retains a closable truthful fullscreen error without enabling coordinate selection", async () => {
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); const scripts = stubBrowser();
+  const surface = { close: vi.fn(), show: vi.fn(), showModal: vi.fn() };
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(<KakaoMapCanvas points={points} path={actualPath} onSelectCoordinate={vi.fn()} />, {
+    createNodeMock: node => node.type === "dialog" ? surface : { focus: vi.fn() },
+  }); });
+  await act(async () => renderer.root.findByProps({ className: "map-fullscreen-trigger" }).props.onClick());
+  await act(async () => scripts[0].emit("error"));
+  expect(statusText(renderer)).toContain("카카오 지도 로드 실패 · 실제 경로 선을 표시할 수 없습니다");
+  expect(mapCanvas(renderer).props.inert).toBe(true);
+  expect(renderer.root.findAllByProps({ className: "map-waypoint-actions" })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ className: "route-sketch" })).toHaveLength(0);
+  await act(async () => renderer.root.findAllByType("button").find(node => node.children.includes("닫기"))!.props.onClick());
+  expect(surface.show).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+});
+
+it("uses the same owner selection callback in fullscreen and never enables it for readonly maps", async () => {
+  vi.useFakeTimers(); vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
+  const maps = installMaps(); const select = vi.fn();
+  const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ left: 20, top: 72 }) });
+  const surface = { close: vi.fn(), show: vi.fn(), showModal: vi.fn() };
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(<KakaoMapCanvas points={points} onSelectCoordinate={select} />, {
+    createNodeMock: node => node.type === "dialog" ? surface : node.type === "button" ? { focus: vi.fn() } : canvas,
+  }); });
+  await flush(maps.loadCallbacks);
+  await act(async () => renderer.root.findByProps({ className: "map-fullscreen-trigger" }).props.onClick());
+  const chooseCenter = () => renderer.root.findAllByType("button").find(node => node.children.includes("지도 중심에서 경유지 선택"));
+  await act(async () => chooseCenter()!.props.onClick());
+  const down = () => {
+    const event = new Event("pointerdown");
+    Object.assign(event, { pointerId: 1, button: 0, clientX: 50, clientY: 100 });
+    canvas.dispatchEvent(event);
+  };
+  await act(async () => { down(); vi.advanceTimersByTime(600); });
+  expect(select.mock.calls).toEqual([[{ latitude: 37.5, longitude: 127.1 }], [{ latitude: 37.5, longitude: 127.1 }]]);
+  expect(maps.Point).toHaveBeenCalledWith(30, 28);
+  await act(async () => renderer.update(<KakaoMapCanvas points={points} />));
+  expect(chooseCenter()).toBeUndefined();
+  await act(async () => { down(); vi.advanceTimersByTime(600); });
+  expect(select).toHaveBeenCalledTimes(2);
+  expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
+  expect(renderer.root.findByProps({ className: "map-viewing-hint" }).children).toHaveLength(1);
+  await act(async () => renderer.unmount());
+});
 
 it("enables point selection after load, removes it when disabled, and leaves the existing camera intact", async () => {
   vi.useFakeTimers(); vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
@@ -158,6 +280,99 @@ function mapCanvas(renderer: ReactTestRenderer) {
 }
 
 describe("KakaoMapCanvas", () => {
+  it("keeps one SDK root while replacing overlays across repeated additions, empty geometry, and delayed redraws", async () => {
+    vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
+    const maps = installMaps();
+    const renderer = await mountMap(actualPath);
+    await flush(maps.loadCallbacks);
+    const firstMarkers = [...maps.activeMarkers]; const firstLine = [...maps.activePolylines][0];
+    for (let count = 1; count <= 2; count += 1) {
+      const changedPoints = [...points, ...Array.from({ length: count }, (_, index) => ({
+        label: `추가 경유지 ${index + 1}`, latitude: 37.51 + index / 100, longitude: 127.12 + index / 100, role: "waypoint" as const,
+      }))];
+      await act(async () => renderer.update(<StrictMode><KakaoMapCanvas points={changedPoints} path={actualPath} /></StrictMode>));
+      expect(maps.activeMarkers.size).toBe(0); expect(maps.activePolylines.size).toBe(0);
+      expect(mapCanvas(renderer).props.inert).toBe(true);
+      await flush(maps.loadCallbacks);
+      expect(maps.activeMarkers.size).toBe(changedPoints.length); expect(maps.activePolylines.size).toBe(1);
+      expect(maps.mapLayers.size).toBe(1); expect([...maps.mapLayers.values()][0]).toHaveLength(1);
+    }
+    firstMarkers.forEach(marker => expect(marker.setMap).toHaveBeenCalledExactlyOnceWith(null));
+    expect(firstLine.setMap).toHaveBeenCalledExactlyOnceWith(null);
+    expect(maps.setBounds).toHaveBeenCalledTimes(3);
+
+    // Cancel a geometry redraw before the SDK callback settles, then show empty.
+    await act(async () => renderer.update(<StrictMode><KakaoMapCanvas points={points} /></StrictMode>));
+    await act(async () => renderer.update(<StrictMode><KakaoMapCanvas points={[]} /></StrictMode>));
+    await flush(maps.loadCallbacks);
+    expect(statusText(renderer)).toContain("장소를 선택하면 지도에 표시해요");
+    expect(maps.activeMarkers.size).toBe(0); expect(maps.activePolylines.size).toBe(0);
+    expect(maps.setBounds).toHaveBeenCalledTimes(3);
+
+    await act(async () => renderer.update(<StrictMode><KakaoMapCanvas points={points} /></StrictMode>));
+    await flush(maps.loadCallbacks);
+    expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
+    expect(maps.setBounds).toHaveBeenCalledTimes(4);
+    expect(maps.activeMarkers.size).toBe(2); expect(maps.activePolylines.size).toBe(0);
+    expect(mapCanvas(renderer).props.inert).toBe(false);
+    await act(async () => renderer.unmount());
+    expect(maps.activeMarkers.size).toBe(0); expect(maps.activePolylines.size).toBe(0);
+  });
+
+  it("removes replayed overlays and reuses the map when a ready SDK calls back synchronously under Strict Mode", async () => {
+    vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
+    const maps = installMaps({ synchronousLoad: true });
+    const renderer = await mountMap(actualPath);
+    expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
+    expect(maps.Marker).toHaveBeenCalledTimes(points.length * 2);
+    expect(maps.setBounds).toHaveBeenCalledTimes(2);
+    expect([...maps.mapLayers.values()][0]).toHaveLength(1);
+    expect(maps.activeMarkers.size).toBe(2); expect(maps.activePolylines.size).toBe(1);
+    expect(statusText(renderer)).toContain("실제 경로 지도 준비 완료");
+    await act(async () => renderer.unmount());
+    expect(maps.activeMarkers.size).toBe(0); expect(maps.activePolylines.size).toBe(0);
+    for (const marker of maps.Marker.mock.instances as unknown as Array<InstanceType<KakaoMapsNamespace["Marker"]>>) expect(marker.setMap).toHaveBeenCalledExactlyOnceWith(null);
+    for (const line of maps.Polyline.mock.instances as unknown as Array<InstanceType<KakaoMapsNamespace["Polyline"]>>) expect(line.setMap).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it("hides a partial redraw and detaches its already created overlays before reusing the map", async () => {
+    vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
+    const maps = installMaps();
+    maps.Marker.mockImplementationOnce(maps.Marker.getMockImplementation()!)
+      .mockImplementationOnce(function () { throw new Error("partial marker failure"); });
+    const renderer = await mountMap(actualPath);
+    await flush(maps.loadCallbacks);
+    expect(statusText(renderer)).toContain("카카오 지도 로드 실패");
+    expect(mapCanvas(renderer).props.inert).toBe(true);
+    expect(maps.activeMarkers.size).toBe(0); expect(maps.activePolylines.size).toBe(0);
+    await act(async () => renderer.update(<StrictMode><KakaoMapCanvas points={points} /></StrictMode>));
+    await flush(maps.loadCallbacks);
+    expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
+    expect(maps.activeMarkers.size).toBe(2);
+    expect(mapCanvas(renderer).props.inert).toBe(false);
+    await act(async () => renderer.unmount());
+    expect(maps.activeMarkers.size).toBe(0);
+  });
+
+  it("keeps the canvas inert if an old overlay cannot detach instead of exposing mixed geometry", async () => {
+    vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
+    const maps = installMaps();
+    const renderer = await mountMap(actualPath);
+    await flush(maps.loadCallbacks);
+    const diagnostics = vi.spyOn(console, "error").mockImplementation(() => {});
+    const stuckMarker = [...maps.activeMarkers][0];
+    vi.mocked(stuckMarker.setMap).mockImplementation(() => { throw new Error("SDK cleanup failure"); });
+    await act(async () => renderer.update(<StrictMode><KakaoMapCanvas points={[points[0]]} /></StrictMode>));
+    expect(diagnostics).toHaveBeenCalledWith("지도 표시 요소를 정리하지 못했습니다.");
+    expect(statusText(renderer)).toContain("카카오 지도 로드 실패");
+    expect(mapCanvas(renderer).props.inert).toBe(true);
+    expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
+    expect(maps.Marker).toHaveBeenCalledTimes(2);
+    expect(maps.activeMarkers.size).toBe(1); expect(maps.activePolylines.size).toBe(0);
+    await act(async () => renderer.unmount());
+    diagnostics.mockRestore();
+  });
+
   it("shows an explicit empty state and loads the map after the first place is selected", async () => {
     vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "test-public-key");
     stubBrowser();
