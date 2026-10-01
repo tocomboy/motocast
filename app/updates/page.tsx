@@ -6,7 +6,7 @@ import { currentVersion, releaseNotes } from "@/lib/releases";
 import styles from "./updates.module.css";
 
 export const metadata: Metadata = {
-  title: "업데이트 소식 | MOTOCAST",
+  title: "업데이트 내역 | MOTOCAST",
 };
 
 export default function UpdatesPage() {
@@ -21,7 +21,7 @@ export default function UpdatesPage() {
       </nav>
 
       <header className={styles.header}>
-        <h1>업데이트 소식</h1>
+        <h1>업데이트 내역</h1>
         <p>라이딩 준비가 어떻게 달라졌는지, 중요한 소식만 모았어요.</p>
       </header>
 

@@ -16,7 +16,8 @@ Follow the active Codex home's global `AGENTS.md` and its personal routing sourc
 
 ## Version and release management
 
-- 웹과 Android의 사용자 기능·수정은 하나의 출시 단위로 설계·구현·검증한다. 공통 서비스 버전과 해당 업데이트 소식을 양쪽에 함께 반영하며, 한쪽만 배포된 상태를 출시 완료로 보고하지 않는다. 플랫폼 고유 차이·순차 배포 중간 상태는 명시하고 필요한 예외는 사용자 결정으로 기록한다. 정본: `docs/product/MOTOCAST_SOT.md`의 `SCOPE-003`.
+- 웹과 Android의 사용자 기능·수정은 하나의 출시 단위로 설계·구현·검증한다. 공통 서비스 버전과 해당 업데이트 내역을 양쪽에 함께 반영하며, 한쪽만 배포된 상태를 출시 완료로 보고하지 않는다. 플랫폼 고유 차이·순차 배포 중간 상태는 명시하고 필요한 예외는 사용자 결정으로 기록한다. 정본: `docs/product/MOTOCAST_SOT.md`의 `SCOPE-003`.
+- UI 기술도 공통 React Native/Expo·React Native Web 화면으로 단계적으로 통일한다. 현행 수정의 공동 배포를 먼저 완료하고 이관을 계속하며 인증·지도·주행 네이티브 계약과 저장된 데이터를 보존한다. 상세 결정은 SCOPE-003을 따른다.
 - 출시 기록 하나에 양쪽 PR·고정 SHA·버전·웹 배포 ID·Android versionCode/AAB/Play 트랙과 항목별 검증 상태를 연결한다. 서버 호환성 → 웹 운영 확인 → Android 내부 배포 순서와 실기기·정식 공개 조건을 유지한다. 문서만 바뀌면 바이너리를 다시 배포하지 않는다.
 - For each product release, choose and record the next `MAJOR.MINOR.PATCH` version before final candidate verification: patch for compatible fixes, minor for compatible features, and major for breaking changes. Do not bump the product version for every commit or for documentation-only changes.
 - Use `package.json` as the current-version source of truth. Update its version, the root package versions in `package-lock.json`, and the matching entry in `lib/releases.ts` together. Preserve published release history and write concise, user-facing Korean update notes.

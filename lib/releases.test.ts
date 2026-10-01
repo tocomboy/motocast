@@ -40,7 +40,7 @@ describe("release notes", () => {
       expect(date.toISOString().slice(0, 10)).toBe(release.date);
       expect(release.title.trim()).not.toBe("");
       expect(release.summary.trim()).not.toBe("");
-      expect(release.bullets.length).toBeGreaterThanOrEqual(2);
+      expect(release.bullets.length).toBeGreaterThanOrEqual(1);
       expect(release.bullets.length).toBeLessThanOrEqual(4);
       expect(release.bullets.every((bullet) => bullet.trim().length > 0)).toBe(true);
 

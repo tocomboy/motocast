@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export function KakaoLoginButton({ inviteReady }: { inviteReady: boolean }) {
+export function KakaoLoginButton() {
   const [loading, setLoading] = useState(false);
 
   return (
@@ -13,7 +13,7 @@ export function KakaoLoginButton({ inviteReady }: { inviteReady: boolean }) {
           {loading ? "카카오로 이동 중…" : "카카오로 계속하기"}
         </button>
       </form>
-      {!inviteReady ? <p>기존 멤버는 로그인할 수 있습니다. 처음 가입하는 라이더는 관리자 초대 링크가 필요합니다.</p> : null}
+      <p>이미 가입했다면 같은 카카오 계정으로 로그인하세요.</p>
     </div>
   );
 }

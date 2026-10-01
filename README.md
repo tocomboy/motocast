@@ -22,7 +22,7 @@
 - 공유는 사용자가 명시적으로 만든 불변 스냅샷만 허용하며, 기본값은 비공개입니다. 컬렉션의 `공유 준비`는 완전한 코스를 적용한 뒤 새 안전 경로와 아직 유효한 최신 날씨가 저장되어야 간결한 여행 루트·날씨 미리보기를 한 번 열며 자동 게시하지 않습니다.
 - 유료 API 사용은 켜지 않습니다. 내부 일일 한도를 소진하면 새 외부 계산을 거부하고 저장된 계획만 읽습니다.
 
-## 버전과 업데이트 소식
+## 버전과 업데이트 내역
 
 0.2.3은 카카오 전체 소요시간을 유지하면서 구간 도착 시각을 비례 배분하는 수정입니다. 도착 시각은 추정값으로 안내하며, 정차·날씨 조회·저장에도 같은 시간을 사용합니다. 거리·경유지·도로 연결성과 이륜차 안전 조건 검증은 유지합니다. [수정 범위와 실제 배포·검증 상태](docs/work/research/2026-09-16-route-duration-diagnostic.md)를 참조하세요.
 
@@ -50,7 +50,7 @@
 
 ## 0.7.0 후보: 웹·앱 전체화면 지도
 
-웹과 Android에서 같은 지도 확대·이동·경유지 확인 동작을 전체화면에서도 지원합니다. 닫을 때 보던 지도와 코스를 유지하며, 공유 지도는 읽기 전용입니다. 공통 기능은 같은 서비스 버전과 업데이트 소식으로 함께 출시하는 [SCOPE-003 규범](docs/product/MOTOCAST_SOT.md)을 따릅니다. [디자인·검증·배포 상태와 개발 구조 제안](docs/work/research/2026-10-01-fullscreen-map.md)에 실제 진행 상태를 기록합니다.
+웹과 Android에서 같은 지도 확대·이동·경유지 확인 동작을 전체화면에서도 지원합니다. 닫을 때 보던 지도와 코스를 유지하며, 공유 지도는 읽기 전용입니다. 공통 기능은 같은 서비스 버전과 업데이트 내역으로 함께 출시하는 [SCOPE-003 규범](docs/product/MOTOCAST_SOT.md)을 따릅니다. [디자인·검증·배포 상태와 개발 구조 제안](docs/work/research/2026-10-01-fullscreen-map.md)에 실제 진행 상태를 기록합니다.
 
 ## 0.6.0: 지도에서 경유지 선택
 
@@ -111,11 +111,11 @@ PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v 
 3. `search-places`, `plan-route`, `weather-timeline`, `save-collection`, `kakao-oidc` Edge Function을 배포하고 서버 전용 비밀값을 Supabase Dashboard secret store에 등록합니다. `kakao-oidc`만 로그인 시작 전 공개 진입점이므로 `verify_jwt=false`이며 나머지 네 함수는 JWT 검증을 유지합니다.
 4. 최초 관리자 등록과 거부된 OAuth 사용자 정리는 [Supabase Auth 운영 절차](docs/operations/supabase-auth.md)를 따릅니다.
 
-AUTH-007의 `play-admission`은 Google Play 설치 증명을 서버에서 검증한 신규 Kakao 사용자만 초대 없이 일반 회원으로 등록합니다. 2026-09-30 승인된 PR #79의 Production 적용은 Play 내부 트랙 범위이며, 프로젝트별 `SUPABASE_URL`과 `PLAY_ADMISSION_ENVIRONMENT=preview|production`의 정확한 조합 및 해당 프로젝트의 인증서·버전·검증 계정 설정을 요구합니다. 기존 Preview의 새 환경 설정 등록은 아직 확인되지 않았으므로 함수 배포 전에 등록·readback해야 합니다. 기존 회원 권한과 회수 상태를 보존하고 웹·개발 앱의 초대 정책은 유지합니다. 실제 환경 설정 적용·기기 검증은 아직 `NOT_RUN`이며, 구성·복구·검증 한계는 [Play 가입 운영 절차](docs/operations/supabase-auth.md#play-설치-검증-가입-auth-007)를 따릅니다.
+AUTH-007의 `play-admission`은 Google Play 설치 증명을 검증한 신규 Kakao 사용자만 일반 회원으로 등록합니다. 웹과 개발 앱은 기존 활성 회원만 로그인할 수 있으며, 미가입자에게 앱에서 먼저 가입하도록 안내합니다. 초대 가입·관리 화면과 클라이언트는 폐기하고 과거 초대 기록·회원 역할·회수 상태는 보존합니다. 프로젝트별 정확한 환경 flag·인증서·versionCode·검증 계정 및 JWT 검증을 유지합니다. 실제 배포와 Play 가입·기기 검증은 [공동 출시 기록](docs/work/research/2026-10-02-shared-ui-parity.md)에서 구분하며, [Play 가입 운영 절차](docs/operations/supabase-auth.md#play-설치-검증-가입-auth-007)를 따릅니다.
 
 프로젝트별 데이터·비밀값·배포 경계와 현재 상태는 [Preview/Production 운영 절차](docs/operations/preview-production.md)를 따릅니다.
 
-관리자는 로그인 후 `/admin/invites`에서 7일짜리 일회용 초대 링크를 만들 수 있습니다. 데이터베이스에는 링크 원문 대신 SHA-256 해시만 저장되고, 링크는 `/invite#<token>` 형식이라 최초 HTTP 요청 경로와 호스팅 로그에 토큰을 넣지 않습니다. 고정 accept API는 동일 출처 `application/json` 요청만 처리하고 cross-site 요청에는 claim cookie를 설정하지 않습니다.
+이전 `/admin/invites` 주소는 홈으로 이동하고 `/invite`는 앱 가입 안내로 이동합니다. `/api/invites/accept`는 초대 사용을 처리하지 않습니다. 데이터베이스의 초대 발급·사용·회수 함수는 모든 앱 역할에서 호출을 거절하며, 이미 저장된 감사 기록은 삭제하지 않습니다.
 
 Edge Function 배포 예시는 다음과 같습니다. 실제 프로젝트 연결과 비밀값 등록은 Supabase CLI 로그인 후 수행합니다.
 

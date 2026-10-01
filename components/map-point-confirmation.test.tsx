@@ -1,6 +1,7 @@
 import { createRef } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { KakaoMapCanvas } from "./kakao-map-canvas";
 import { MapPointConfirmation, type MapPlacePickerHandle } from "./map-point-confirmation";
 
 const api = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -22,9 +23,10 @@ function button(label: string) { return renderer.root.findAllByType("button").fi
 it("shows a confirmation popup and commits one point only after explicit confirmation", async () => {
   api.invoke.mockResolvedValue(response);
   const { onSelect } = await mount();
-  expect(renderer.root.findByType("dialog").props.className).toBe("map-confirmation-dialog");
+  expect(renderer.root.findByProps({ className: "map-confirmation-dialog" }).props.className).toBe("map-confirmation-dialog");
   expect(renderer.root.findByType("h2").children.join("")).toBe("이 지점을 경유지로 추가할까요?");
   expect(onSelect).not.toHaveBeenCalled();
+  expect(renderer.root.findByType(KakaoMapCanvas).props.points).toEqual([{ ...point, label: "선택한 위치" }]);
   const confirm = button("경유지로 추가").props.onClick;
   await act(async () => { confirm(); confirm(); });
   expect(onSelect).toHaveBeenCalledExactlyOnceWith(place);
@@ -36,14 +38,18 @@ it.each(["cancel", "escape", "unmount"])("discards a delayed lookup after %s", a
   api.invoke.mockReturnValue(new Promise(done => { resolve = done; }));
   const { onSelect } = await mount();
   expect(button("주소 확인 중").props.disabled).toBe(true);
+  expect(renderer.root.findByType(KakaoMapCanvas).props.points[0]).toMatchObject(point);
   await act(async () => {
     if (mode === "cancel") button("취소").props.onClick();
-    else if (mode === "escape") renderer.root.findByType("dialog").props.onCancel({ preventDefault: vi.fn() });
+    else if (mode === "escape") renderer.root.findByProps({ className: "map-confirmation-dialog" }).props.onCancel({ preventDefault: vi.fn() });
     else renderer.unmount();
   });
   await act(async () => resolve(response));
   expect(onSelect).not.toHaveBeenCalled();
-  if (mode !== "unmount") expect(button("경유지로 추가")).toBeUndefined();
+  if (mode !== "unmount") {
+    expect(button("경유지로 추가")).toBeUndefined();
+    expect(renderer.root.findAllByType(KakaoMapCanvas)).toHaveLength(0);
+  }
 });
 
 it("retries the same selected point only after the user requests it", async () => {
@@ -65,6 +71,7 @@ it.each([
   const { onSelect } = await mount();
   expect(button("경유지로 추가")).toBeUndefined();
   expect(button("다시 시도")).toBeDefined();
+  expect(renderer.root.findByType(KakaoMapCanvas).props.points[0]).toMatchObject(point);
   expect(onSelect).not.toHaveBeenCalled();
 });
 

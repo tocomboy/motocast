@@ -137,6 +137,25 @@ function installMaps({ throwOnLoad = false, synchronousLoad = false }: { throwOn
   return { loadCallbacks, MapConstructor, Marker, MarkerImage, Polyline, Point, extend, setBounds, projection, setCenter, setLevel, relayout, mapLayers, activeMarkers, activePolylines };
 }
 
+it("shows the exact temporary selected point and disposes it without a route or edit controls", async () => {
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
+  const maps = installMaps();
+  const selected = { latitude: 38.03, longitude: 128.38, label: "선택한 위치" };
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(<KakaoMapCanvas points={[selected]} selectionPreview />, rendererOptions); });
+  await flush(maps.loadCallbacks);
+  expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
+  const marker = (maps.Marker.mock.calls[0] as unknown as [{ position: { getLat(): number; getLng(): number }; title: string }])[0];
+  expect([marker.position.getLat(), marker.position.getLng(), marker.title]).toEqual([selected.latitude, selected.longitude, "선택한 위치"]);
+  expect(maps.setCenter).toHaveBeenCalledWith(marker.position);
+  expect(maps.setLevel).toHaveBeenCalledWith(4);
+  expect(maps.Polyline).not.toHaveBeenCalled();
+  expect(renderer.root.findAllByType("button")).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ className: "route-sketch" })).toHaveLength(0);
+  await act(async () => renderer.unmount());
+  expect(maps.activeMarkers.size).toBe(0);
+});
+
 it("keeps one SDK map and its camera across fullscreen, return, and viewport resize", async () => {
   vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
   const maps = installMaps();

@@ -27,7 +27,7 @@ test.describe("public update notes", () => {
     const dialog = page.getByRole("dialog", { name: "새로운 소식을 확인해 보세요" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`현재 v${currentVersion}`)).toBeVisible();
-    await expect(dialog.getByText("지도에서 전체화면을 누르면 경로를 더 넓게 볼 수 있어요.")).toBeVisible();
+    await expect(dialog.getByText("경유지를 추가하기 전에 지도에서 선택 위치를 확인해요.")).toBeVisible();
     const layout = await dialog.evaluate((element) => ({
       dialogHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
       documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
@@ -39,7 +39,7 @@ test.describe("public update notes", () => {
       fitsViewport: true,
     });
 
-    const closeButton = dialog.getByRole("button", { name: "업데이트 소식 닫기" });
+    const closeButton = dialog.getByRole("button", { name: "업데이트 내역 닫기" });
     await expect(closeButton).toBeFocused();
     for (let index = 0; index < 4; index += 1) {
       await page.keyboard.press("Tab");
@@ -67,7 +67,7 @@ test.describe("public update notes", () => {
     await dialog.getByRole("link", { name: "자세히 보기" }).click();
     await expect(page).toHaveURL("/updates");
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(page.getByRole("heading", { level: 1, name: "업데이트 소식" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "업데이트 내역" })).toBeVisible();
     expect(presentationIds).toHaveLength(4);
   });
 
@@ -75,16 +75,16 @@ test.describe("public update notes", () => {
     await page.goto("/");
     await page.getByRole("button", { name: "MOTOCAST 홈" }).click();
 
-    const releaseLink = page.getByRole("link", { name: `업데이트 소식 · v${currentVersion}` });
+    const releaseLink = page.getByRole("link", { name: `업데이트 내역 · v${currentVersion}` });
     await expect(releaseLink).toBeVisible();
     await releaseLink.click();
 
     await expect(page).toHaveURL("/updates");
-    await expect(page).toHaveTitle("업데이트 소식 | MOTOCAST");
-    await expect(page.getByRole("heading", { level: 1, name: "업데이트 소식" })).toBeVisible();
+    await expect(page).toHaveTitle("업데이트 내역 | MOTOCAST");
+    await expect(page.getByRole("heading", { level: 1, name: "업데이트 내역" })).toBeVisible();
 
     const releases = page.getByRole("article");
-    const expectedVersions = [currentVersion, "0.6.0", "0.5.1", "0.5.0", "0.4.2", "0.4.1", "0.4.0", "0.3.0", "0.2.3", "0.2.2", "0.2.1", "0.2.0", "0.1.0"];
+    const expectedVersions = [currentVersion, "0.7.0", "0.6.0", "0.5.1", "0.5.0", "0.4.2", "0.4.1", "0.4.0", "0.3.0", "0.2.3", "0.2.2", "0.2.1", "0.2.0", "0.1.0"];
     await expect(releases).toHaveCount(expectedVersions.length);
     for (const [index, version] of expectedVersions.entries()) {
       await expect(releases.nth(index)).toContainText(`v${version}`);
@@ -105,7 +105,7 @@ test.describe("public update notes", () => {
     });
 
     await page.goto("/");
-    const errorNotice = page.getByRole("status").filter({ hasText: "업데이트 소식을 불러오지 못했습니다." });
+    const errorNotice = page.getByRole("status").filter({ hasText: "업데이트 내역을 불러오지 못했습니다." });
     const actions = page.locator(".riding-summary-actions");
     await expect(errorNotice).toBeVisible();
     await expect(actions).toBeVisible();
@@ -133,11 +133,11 @@ test.describe("public update notes", () => {
       await page.goto("/updates");
       await page.evaluate(() => document.fonts.ready);
 
-      await expect(page.getByRole("heading", { level: 1, name: "업데이트 소식" })).toBeVisible();
-      await expect(page.getByRole("article")).toHaveCount(13);
-      await expect(page.getByText("지도에서 전체화면을 누르면 경로를 더 넓게 볼 수 있어요.")).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: "업데이트 내역" })).toBeVisible();
+      await expect(page.getByRole("article")).toHaveCount(14);
+      await expect(page.getByText("경유지를 추가하기 전에 지도에서 선택 위치를 확인해요.")).toBeVisible();
       await expect(page.getByText("지도를 이동하거나 확대해 원하는 지점을 길게 눌러 선택해요.")).toBeVisible();
-      await expect(page.getByText("새 일정을 열면 현재 이후 가장 가까운 5분 시각을 기본으로 제안해요.")).toBeVisible();
+      await expect(page.getByText("일정을 열면 지금 이후 가장 가까운 5분 시각을 먼저 보여 줘요.")).toBeVisible();
       await expect(page.getByText("Google Play 앱에서 카카오 로그인과 설치 확인을 마치면 바로 시작할 수 있어요.")).toBeVisible();
       await expect(page.getByText("링크를 발행하면 공유 완료 안내로 바뀌어요.")).toBeVisible();
       await expect(page.getByText("경유지 최대 5개와 자동차전용도로 제외 안내를 강조했어요.")).toBeVisible();
