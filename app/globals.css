@@ -4909,7 +4909,7 @@ body:has(dialog:modal) {
 }
 .map-confirmation-dialog::backdrop { background: rgb(0 0 0 / 24%); }
 .map-confirmation-dialog h2 { font-size: 20px; line-height: 1.65; margin: 0 0 16px; overflow-wrap: anywhere; }
-.map-confirmation-dialog .map-selection-preview { height: 180px; min-height: 180px; border-radius: 12px; margin: 0 0 16px; }
+.map-confirmation-dialog .map-selection-preview { position: relative; inset: auto; overflow: hidden; height: 180px; min-height: 180px; border-radius: 12px; margin: 0 0 16px; }
 .map-selection-preview .map-status { white-space: normal; max-width: calc(100% - 24px); }
 .map-confirmation-body { color: var(--soft, #405049); line-height: 1.5; }
 .login-membership-notice { background: var(--paper); border-radius: 12px; padding: 16px; }

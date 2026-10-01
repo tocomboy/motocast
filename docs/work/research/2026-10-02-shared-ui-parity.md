@@ -50,3 +50,14 @@
 - DB 실행 원본/hash/adapter/로그/자원manifest는 저장소 밖 `verification-logs/shared-parity-db-20261002`에 보존한다. 소유 target은 `supabase_db_motocast-production-validation166-202609`/127.0.0.1:55434이며 합성 fixture를 보존한다. 완료48시간 후 처분 검토만 가능하고 자동삭제하지 않는다.
 - npm audit: 기존 lockfile의 Next16.3.3에 GHSA-vcvr-r3jv-pc5j, 개발용 brace-expansion에 알려진 취약점2건을 보고했다. 공식 advisory와 실제 소스 검색을 대조한 결과 next/og·ImageResponse 사용이 없고 brace-expansion은 lint 의존성이다. 이번 변경으로 추가된 경로가 없으므로 별도 의존성 보완으로 분리하며 audit0이라고 보고하지 않는다. 현재 기능 후보의 배포 전 보안검수에서 이 범위를 다시 명시한다.
 - 실제 Preview/Production 후보, Play code8 게시, 사용자 실기기 검증은 아직 NOT_RUN이다. 사용자 지도 제스처 정상 보고만 별도로 보존한다.
+
+
+## Preview 적용과 시각 검수 (2026-10-02)
+
+- PR88 exact head `21cdd2b400be0f582897875ea493a95570703c6c`, CI36894380095 SUCCESS: 단위884/Chromium57 PASS, 기존 연결2 SKIP. CI 완료 뒤 GitHub Deployments0/Vercel checks0/statuses0을 확인했다.
+- PR 미병합 상태에서 Preview에 source 그대로 `retire_invitation_enrollment`를 적용했다. 관리 도구 기록 version은20261001165655이며 source filename과 다르므로 이름·SQL hash로 결속한다. 기존 회원3/admin1/rider2, profiles3/invitations3/trips23 보존, 회원·프로필·초대 aggregate SHA256 `c83412810edf04741568c890e1a507a2704779fb89426337eaad4365d474c5f7` 전후 일치. 세 역할×세 초대 RPC 모두 실행 불가, invitation SELECT 불가, service-role14 RPC 유지.
+- 원격 develop 기반d4d3843 불변 재확인 후 정확히21cdd2b로 fast-forward. Preview `dpl_FxvZ1rroBz5sqBoG85PkwCoTcQUf` READY/alias 일치. 기존 로그인으로 홈·저장 목록·0.8.0 업데이트 내역 표시와 한 번 확인을 관찰했다. 실제 Kakao 공개 장소 검색·좌표 주소 조회도 성공했다.
+- 시각 검수에서 웹 미리보기가 공통 map-shell의 absolute 배치를 상속해 제목·주소를 가리는 회귀를 발견했다. 미리보기만 relative/normal flow로 고쳐 기존 지도 배치는 보존한다. 이 후속 후보의 CI와 실제 반응형 검수를 완료하기 전 운영 승격하지 않는다.
+- Android 실제 SDK 검사에서 전체화면 Dialog 안에 중첩한 확인 시트가 뒤에 가려지는 기존 구조 문제를 발견했다. 확인 시트를 전체화면 Dialog 다음에 생성하고, 화면 좌표 터치로 확인이 실제 작동하는 검사를 추가했다. 수정 후 실제 SDK 지도·확대·이동·선택·취소·한 번 추가·오류 팝업 검사는 PASS. API 주소/경로는 합성 fixture이며 실제 Play 가입은 아니다.
+- Android Compose 홈·업데이트 등 세 크기48단계 PASS, 로그인 UI4단계 PASS. 신규 단위334×2와 최종 native 원본/CI 검증은 구분한다. 기존 지도 getter/팝업 제거 확인의 비동기 관찰 실패와 JRE 설정 빌드 실패는 로그에 보존한다.
+- 운영 설정 변경 전 Android PR32→33으로 control revision10/HOLD(CONFIG_CHANGE)를 main `98498a75b5dde6428d08a777e1625a007213e4d2`에 반영했다. epoch3 및 code7 원본은 보존한다. Main CI·실행 drain 확인 전 Production 설정 변경은 하지 않는다.
