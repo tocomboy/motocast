@@ -23,6 +23,9 @@
       }
     ],
     "paths": {
+      "react-native": [
+        "./app/updates/react-native-web-types.d.ts"
+      ],
       "@/*": [
         "./*"
       ]

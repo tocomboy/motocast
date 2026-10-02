@@ -4,6 +4,10 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 const currentVersion = (JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as { version: string }).version;
+const expectedVersions = Array.from(
+  readFileSync(path.join(process.cwd(), "lib/releases.ts"), "utf8").matchAll(/version: "(\d+\.\d+\.\d+)"/g),
+  (match) => match[1],
+);
 
 test.describe("public update notes", () => {
   test("shows one current-version announcement per server identity decision", async ({ page }) => {
@@ -27,7 +31,7 @@ test.describe("public update notes", () => {
     const dialog = page.getByRole("dialog", { name: "새로운 소식을 확인해 보세요" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`현재 v${currentVersion}`)).toBeVisible();
-    await expect(dialog.getByText("앱 홈에서 아래로 스크롤하면 마지막에 로그아웃 버튼이 나타나요.")).toBeVisible();
+    await expect(dialog.getByText("홈의 즐겨찾기 페이지에서 장소를 관리하고, 추가·삭제 전에 한 번 더 확인해요.")).toBeVisible();
     const layout = await dialog.evaluate((element) => ({
       dialogHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
       documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
@@ -84,7 +88,6 @@ test.describe("public update notes", () => {
     await expect(page.getByRole("heading", { level: 1, name: "업데이트 내역" })).toBeVisible();
 
     const releases = page.getByRole("article");
-    const expectedVersions = [currentVersion, "0.8.0", "0.7.0", "0.6.0", "0.5.1", "0.5.0", "0.4.2", "0.4.1", "0.4.0", "0.3.0", "0.2.3", "0.2.2", "0.2.1", "0.2.0", "0.1.0"];
     await expect(releases).toHaveCount(expectedVersions.length);
     for (const [index, version] of expectedVersions.entries()) {
       await expect(releases.nth(index)).toContainText(`v${version}`);
@@ -95,6 +98,11 @@ test.describe("public update notes", () => {
     await backLink.focus();
     await expect(backLink).toBeFocused();
     await backLink.click();
+    await expect(page).toHaveURL("/");
+    await page.goBack();
+    await expect(page).toHaveURL("/updates");
+    await expect(page.getByRole("article")).toHaveCount(expectedVersions.length);
+    await page.goBack();
     await expect(page).toHaveURL("/");
   });
 
@@ -126,15 +134,34 @@ test.describe("public update notes", () => {
 
   for (const viewport of [
     { name: "mobile 320", width: 320, height: 800 },
+    { name: "mobile 390", width: 390, height: 844 },
+    { name: "tablet 820", width: 820, height: 1180 },
     { name: "desktop 1440", width: 1440, height: 900 },
   ]) {
     test(`${viewport.name} keeps update notes visible without horizontal overflow`, async ({ page }) => {
+      const pageErrors: string[] = [];
+      const hydrationErrors: string[] = [];
+      page.on("pageerror", (error) => pageErrors.push(error.message));
+      page.on("console", (message) => {
+        if (message.type() === "error" && /hydrat|did not match|server rendered/i.test(message.text())) {
+          hydrationErrors.push(message.text());
+        }
+      });
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto("/updates");
       await page.evaluate(() => document.fonts.ready);
 
       await expect(page.getByRole("heading", { level: 1, name: "업데이트 내역" })).toBeVisible();
-      await expect(page.getByRole("article")).toHaveCount(15);
+      const articles = page.getByRole("article");
+      await expect(articles).toHaveCount(expectedVersions.length);
+      for (const [index, version] of expectedVersions.entries()) {
+        const article = articles.nth(index);
+        await expect(article).toContainText(`v${version}`);
+        await expect(article.getByRole("heading", { level: 2 })).toBeVisible();
+        const date = article.locator("time");
+        await expect(date).toHaveAttribute("datetime", (await date.innerText()).trim());
+        await expect(article.getByRole("listitem").first()).toBeVisible();
+      }
       await expect(page.getByText("경유지를 추가하기 전에 지도에서 선택 위치를 확인해요.")).toBeVisible();
       await expect(page.getByText("지도를 이동하거나 확대해 원하는 지점을 길게 눌러 선택해요.")).toBeVisible();
       await expect(page.getByText("일정을 열면 지금 이후 가장 가까운 5분 시각을 먼저 보여 줘요.")).toBeVisible();
@@ -157,6 +184,60 @@ test.describe("public update notes", () => {
         documentHasNoHorizontalOverflow: true,
         articlesHaveNoHorizontalOverflow: true,
       });
+
+      await articles.last().scrollIntoViewIfNeeded();
+      await expect(articles.last()).toBeInViewport();
+      expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+      const typography = await articles.first().getByRole("heading", { level: 2 }).evaluate((element) => ({
+        fontFamily: getComputedStyle(element).fontFamily,
+        loadedNotoFaces: Array.from(document.fonts).filter((face) => face.family.includes("Noto Sans KR Variable") && face.status === "loaded").length,
+      }));
+      expect(typography.fontFamily).toContain("Noto Sans KR Variable");
+      expect(typography.loadedNotoFaces).toBeGreaterThan(0);
+      await articles.first().scrollIntoViewIfNeeded();
+      await page.screenshot({ path: test.info().outputPath(`updates-${viewport.width}.png`) });
+      expect(pageErrors).toEqual([]);
+      expect(hydrationErrors).toEqual([]);
     });
   }
+
+  test("server-renders readable styled history before JavaScript runs", async ({ browser, baseURL }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 320, height: 800 } });
+    try {
+      const page = await context.newPage();
+      await page.goto(`${baseURL}/updates`);
+      await expect(page.getByRole("article")).toHaveCount(expectedVersions.length);
+      await expect(page.locator("style#react-native-stylesheet")).toHaveCount(1);
+      const first = page.getByRole("article").first();
+      expect(await first.evaluate((element) => ({
+        padding: getComputedStyle(element).padding,
+        borderRadius: getComputedStyle(element).borderRadius,
+        background: getComputedStyle(element).backgroundColor,
+        headingFontSize: getComputedStyle(element.querySelector("h2")!).fontSize,
+      }))).toEqual({ padding: "16px", borderRadius: "12px", background: "rgb(244, 240, 231)", headingFontSize: "20px" });
+      await expect(first.locator("time")).toHaveAttribute("datetime", (await first.locator("time").innerText()).trim());
+      await page.getByRole("link", { name: "플래너로 돌아가기" }).click();
+      await expect(page).toHaveURL("/");
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("keeps history and home navigation usable at 200 percent zoom", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/updates");
+    await page.evaluate(() => { document.documentElement.style.zoom = "2"; });
+    await page.getByRole("article").last().scrollIntoViewIfNeeded();
+    await expect(page.getByRole("article").last().getByRole("listitem").last()).toBeInViewport();
+    expect(await page.evaluate(() => ({
+      documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      cardOverflow: Array.from(document.querySelectorAll("article")).some((article) => article.scrollWidth > article.clientWidth),
+    }))).toEqual({ documentOverflow: false, cardOverflow: false });
+    const home = page.getByRole("link", { name: "플래너로 돌아가기" });
+    await home.scrollIntoViewIfNeeded();
+    await home.focus();
+    await expect(home).toBeFocused();
+    await home.click();
+    await expect(page).toHaveURL("/");
+  });
 });

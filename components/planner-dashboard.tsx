@@ -9,6 +9,7 @@ import { ownerHandoff } from "@/lib/planner/kakaomap-sources";
 import { KakaoMapCanvas, MapMarkerLegend } from "@/components/kakao-map-canvas";
 import { OrderedWaypointEditor } from "@/components/ordered-waypoint-editor";
 import { PlaceFavoritesProvider, usePlaceFavorites } from "@/components/place-favorites-provider";
+import { PlaceFavoritesManager } from "@/components/place-favorites-manager";
 import { MapPointConfirmation, type MapPlacePickerHandle } from "@/components/map-point-confirmation";
 import { RouteFailureDialog } from "@/components/route-failure-dialog";
 import { PlaceSearchField } from "@/components/place-search-field";
@@ -63,7 +64,7 @@ type PlannerNotice = {
   eventId: number;
 };
 
-type PlannerView = "home" | "editor" | "summary" | "collections";
+type PlannerView = "home" | "editor" | "summary" | "collections" | "favorites";
 type PlannerDashboardProps = {
   connected: boolean;
   initialCourse?: CollectionCourse | null;
@@ -314,7 +315,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     if (navigationMode !== "browser") return;
     const sync = () => {
       const hash = window.location.hash;
-      const next: PlannerView = hash === "#collections" ? "collections" : hash === "#editor" ? "editor" : hash === "#summary" ? "summary" : "home";
+      const next: PlannerView = hash === "#favorites" ? "favorites" : hash === "#collections" ? "collections" : hash === "#editor" ? "editor" : hash === "#summary" ? "summary" : "home";
       navigationGenerationRef.current += 1;
       setView(next);
       resetViewScroll();
@@ -836,7 +837,9 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       </header>
 
       {view === "home" ? (
-        <PlannerHome connected={connected} busy={calculating} status={homeStatus} onNewRoute={startNewRoute} onCollections={() => navigate("collections")} collections={connected ? <CollectionManager mode="home" currentCourse={currentCourse} onApply={applyCollection} onShare={prepareCollectionShare} disabled={calculating} /> : undefined} />
+        <PlannerHome connected={connected} busy={calculating} status={homeStatus} onNewRoute={startNewRoute} onCollections={() => navigate("collections")} onFavorites={() => navigate("favorites")} collections={connected ? <CollectionManager mode="home" currentCourse={currentCourse} onApply={applyCollection} onShare={prepareCollectionShare} disabled={calculating} /> : undefined} />
+      ) : view === "favorites" ? (
+        <PlaceFavoritesManager favorites={favoriteControls} onBack={() => navigate("home")} />
       ) : view === "collections" ? (
         <section className="collections-view" id="collections" aria-labelledby="collections-view-title">
           <div className="view-heading"><button className="collections-back" type="button" onClick={() => navigate("home")} aria-label="홈으로">←</button><div><h1 id="collections-view-title" data-view-title="collections" tabIndex={-1}><span className="desktop-collections-title">저장한 경로 모음</span><span className="mobile-collections-title">저장한 경로</span></h1><p className="collections-desktop-intro">경로를 고르면 새로운 출발 날짜와 시간을 설정해요.</p></div></div>

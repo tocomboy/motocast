@@ -30,7 +30,7 @@ function favorite(slot: 1 | 2 | 3, kakaoPlaceId: string, name: string): PlaceFav
 }
 
 function favoriteControls(favorites: PlaceFavorite[]): PlaceFavoritesControls {
-  return { favorites, status: "ready", busy: false, message: "즐겨찾기는 최대 3개까지 등록할 수 있어요.", retry: vi.fn(), add: vi.fn(), remove: vi.fn() };
+  return { favorites, status: "ready", busy: false, message: "즐겨찾기는 최대 3개까지 등록할 수 있어요.", retry: vi.fn(), add: vi.fn(), remove: vi.fn(), captureSnapshot: () => () => true };
 }
 
 function textOf(node: { children: unknown[] }): string {
@@ -84,32 +84,19 @@ describe("PlaceSearchField collection application", () => {
     await act(async () => renderer.unmount());
   });
 
-  it("renders one manage completion action and explicit enabled or disabled registration controls", async () => {
+  it("offers favorite selection without any management or registration controls", async () => {
     vi.stubGlobal("window", { scrollTo: vi.fn(), setTimeout, location: { href: "http://localhost/" } });
-    supabase.invoke.mockResolvedValue({ data: { places: [place("new", "새 즐겨찾기 후보")], isEnd: true }, error: null });
-    const full = favoriteControls([
-      favorite(1, "a", "첫 장소"), favorite(2, "b", "둘째 장소"), favorite(3, "c", "셋째 장소"),
-    ]);
+    const controls = favoriteControls([favorite(1, "a", "첫 장소")]);
+    const onSelect = vi.fn();
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<PlaceSearchField label="출발" accessibleLabel="출발지" placeholder="검색" selected={null} onSelect={vi.fn()} favorites={full} />);
+      renderer = create(<PlaceSearchField label="출발" accessibleLabel="출발지" placeholder="검색" selected={null} onSelect={onSelect} favorites={controls} />);
     });
-    const manage = renderer.root.findAllByType("button").find((button) => textOf(button) === "관리")!;
-    await act(async () => manage.props.onClick());
-    expect(textOf(renderer.root.findAllByType("h3").find((heading) => textOf(heading).includes("공용 즐겨찾기"))!)).toBe("공용 즐겨찾기 3 / 3");
-    expect(renderer.root.findAllByType("button").filter((button) => textOf(button) === "완료")).toHaveLength(1);
-    const registerMode = renderer.root.findAllByType("button").find((button) => button.props.className?.includes("favorite-register-button"))!;
-    expect(registerMode.props.className).toContain("primary-button");
-    await act(async () => registerMode.props.onClick());
-    await act(async () => renderer.root.findByType("input").props.onChange({ target: { value: "새 장소" } }));
-    await act(async () => renderer.root.findAllByType("button").find((button) => button.props.className?.includes("place-search-button"))!.props.onClick());
-    const fullRegister = renderer.root.findAllByType("button").find((button) => button.props.className === "favorite-register-result")!;
-    expect(textOf(fullRegister)).toBe("등록");
-    expect(fullRegister.props.disabled).toBe(true);
-
-    await act(async () => renderer.update(<PlaceSearchField label="출발" accessibleLabel="출발지" placeholder="검색" selected={null} onSelect={vi.fn()} favorites={favoriteControls(full.favorites.slice(0, 2))} />));
-    const enabledRegister = renderer.root.findAllByType("button").find((button) => button.props.className === "favorite-register-result")!;
-    expect(enabledRegister.props.disabled).toBe(false);
+    expect(renderer.root.findAllByType("button").some((button) => /관리|등록|추가|삭제/.test(textOf(button)))).toBe(false);
+    await act(async () => renderer.root.findAllByType("button").find((button) => textOf(button).includes("첫 장소"))!.props.onClick());
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ kakaoPlaceId: "a", name: "첫 장소" }));
+    expect(controls.add).not.toHaveBeenCalled();
+    expect(controls.remove).not.toHaveBeenCalled();
     await act(async () => renderer.unmount());
     vi.unstubAllGlobals();
   });

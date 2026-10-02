@@ -1,9 +1,12 @@
 {
   "name": "motocast",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "description": "Motorcycle route and segment weather planner for a private riding group.",
+  "workspaces": [
+    "packages/shared-ui"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "node --version && next build",
@@ -17,11 +20,13 @@
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-kr": "5.3.0",
+    "@motocast/shared-ui": "0.1.0",
     "@supabase/ssr": "0.10.0",
     "@supabase/supabase-js": "2.100.1",
     "next": "16.3.3",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "react-native-web": "0.21.3"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
@@ -31,6 +36,7 @@
     "@types/react-test-renderer": "19.1.0",
     "eslint": "^9.39.1",
     "eslint-config-next": "16.3.3",
+    "react-native": "0.86.3",
     "react-test-renderer": "19.2.8",
     "typescript": "5.9.3",
     "vitest": "4.1.11"

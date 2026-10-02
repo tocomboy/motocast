@@ -4286,6 +4286,7 @@ body:has(dialog:modal) {
   transform: translateY(-50%);
 }
 .place-picker-shell.mode-search .place-picker-back { display: none; }
+.place-picker-shell.selection-only .place-picker-close { align-items: center; display: inline-flex; justify-content: center; }
 .place-picker-shell.mode-search .place-picker-content {
   align-items: start;
   gap: 24px;
@@ -4369,6 +4370,7 @@ body:has(dialog:modal) {
 
   .place-picker-shell.mode-search.show-favorites .place-picker-results { display: none; }
   .place-picker-shell.mode-search.show-results .place-favorites { display: none; }
+  .place-picker-shell.mode-search.selection-only.show-results .place-favorites { display: block; }
   .place-picker-shell.mode-search { gap: 0; padding: 0; }
   .place-picker-shell.mode-search .place-picker-header { border-bottom: 1px solid #d9d2c5; padding: 12px 16px; }
   .place-picker-shell.mode-search .place-picker-search { border-bottom: 1px solid #d9d2c5; padding: 12px 20px; }

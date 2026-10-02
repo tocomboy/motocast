@@ -12,6 +12,18 @@ export const currentVersion = packageMetadata.version;
 
 export const releaseNotes = [
   {
+    version: "0.9.0",
+    date: "2026-10-02",
+    title: "즐겨찾기와 화면 이동을 더 편하게",
+    summary: "즐겨찾기를 따로 관리하고 화면을 더 쉽게 닫을 수 있어요.",
+    bullets: [
+      "홈의 즐겨찾기 페이지에서 장소를 관리하고, 추가·삭제 전에 한 번 더 확인해요.",
+      "앱의 뒤로가기 버튼과 휴대폰 뒤로가기로 이전 화면에 돌아가요.",
+      "앱 팝업의 X 버튼으로 내용을 닫을 수 있어요.",
+      "웹과 앱의 업데이트 내역을 같은 화면 구성으로 정리했어요.",
+    ],
+  },
+  {
     version: "0.8.1",
     date: "2026-10-02",
     title: "홈 화면 스크롤 개선",

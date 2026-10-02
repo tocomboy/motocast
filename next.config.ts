@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  transpilePackages: ["@motocast/shared-ui"],
   outputFileTracingRoot: process.cwd(),
   experimental: {
     // The CLI checker cannot parse `tsc --showConfig` output reliably in the
@@ -11,6 +12,13 @@ const nextConfig: NextConfig = {
   },
   turbopack: {
     root: process.cwd(),
+    resolveAlias: { "react-native": "react-native-web" },
+    resolveExtensions: [".web.tsx", ".web.ts", ".tsx", ".ts", ".jsx", ".js", ".mjs", ".json"],
+  },
+  webpack(config) {
+    config.resolve.alias = { ...config.resolve.alias, "react-native$": "react-native-web" };
+    config.resolve.extensions = [".web.tsx", ".web.ts", ...config.resolve.extensions];
+    return config;
   },
   async headers() {
     return [

@@ -58,6 +58,17 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Verification: 같은 사용자 흐름을 양쪽에서 검사하고 `PASS/FAIL/ERROR/SKIP/NOT_RUN`을 분리한다. 전체화면 지도에서도 확대·이동, 경유지 확인 후 추가, 취소 시 코스 보존, 읽기 전용 공유 경계가 일치해야 한다. 실제 사용자 실기기 결과는 자동 검사·브라우저·서버·Play 게시 결과와 구분한다.
 - Confirmed: 2026-10-01, 사용자의 웹·앱 동일 업데이트 및 프로젝트 규범 기록 요청.
 
+### Navigation and favorites
+
+#### UI-001 — 화면 복귀와 즐겨찾기 관리
+
+- Status: `CONFIRMED`
+- Decision: Android의 홈 이동 버튼은 제거하고 화면 상단 뒤로가기와 휴대폰 자체 뒤로가기로 직전 화면에 복귀한다. 팝업에는 닫기 X를 표시한다. 닫기·복귀가 실행 중 저장의 불명확한 결과나 이미 완료한 서버 변경을 되돌린 것처럼 표시해서는 안 된다.
+- Favorites: 웹과 Android의 즐겨찾기 추가·삭제는 홈에서 여는 전용 즐겨찾기 페이지가 소유한다. 장소 검색 화면은 장소와 기존 즐겨찾기를 선택하는 역할만 갖는다. 추가 검색은 즐겨찾기 관리 흐름 안에서 열고 닫으면 관리 화면으로 돌아온다. 기존 계정별 소유권, 최대3개, 중복·동시 변경·불명확 결과 재조회 보호를 유지한다.
+- Confirmation: 추가와 삭제 모두 화면 중앙의 작은 팝업에서 대상 장소와 동작을 다시 확인한다. 확인 버튼에서만 한 번 요청하며 취소·X·뒤로가기는 자료를 변경하지 않는다. 처리 중 중복 요청과 결과를 숨기는 닫기를 막는다.
+- Verification: 선택 화면에 추가·삭제가 없음, 전용 페이지 추가·삭제·빈 상태·한도·실패·재진입, 실제 진입 위치로 뒤로가기, 팝업 X 및 시스템 뒤로가기, 작은 화면과 큰 글자를 검증한다.
+- Confirmed: 2026-10-02, 사용자의 홈 버튼 제거·팝업 X·즐겨찾기 관리 분리 요청.
+
 ### Authentication and membership
 
 #### AUTH-001 — Kakao authentication with active membership
