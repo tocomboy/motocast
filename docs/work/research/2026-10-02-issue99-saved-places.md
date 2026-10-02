@@ -135,3 +135,15 @@ Android 후보는 기존 검사기의 지원 경로인 baseline=null/control HOL
 LOCAL_UI 실제컴포넌트+합성계정 검증:320(글자130%)/384/820/1440 각각 추가→식사70분→즐겨찾기→뒤로복귀→식당(비별표 포함)→확인취소→확정 및 같은 장소 식사3회 PASS. unique ID3, dwell70/60/60, RPC/검색/좌표호출0, console오류0. 증거 `C:/Users/User/.codex/verification-logs/issue99-meal-favorites-ui`; 기존 esbuild 재사용,3198포트; 실제 SDK/회원검증과 별개. 초기 fixture import/locator 오류 수정 이력 보존. 최종 전체 검사와 Preview 적용은 진행 중이다.
 
 후속 최종 후보 검증: npm ci/lint/typecheck/build PASS, Vitest90files948PASS, Deno8PASS, Chromium63PASS/연결전용2 expected SKIP. 기존 연결전용E2E도 식사 반복 허용 계약으로 갱신했고 실제 실행은 별도 연결 검증과 구분한다. PostgreSQL owned final 재사용에서 meal55 + optional_meal13 + plan_collection_share125 + live_acl193 =386PASS/FAIL0/SKIP0. 후보에 DDL4함수 확장만 포함하며 데이터변경0, JWT/소유권/RLS/예산/이륜차/24시간 제한을 유지했다. 초기 검증 실패(구지도문자 기대값1, 공지4개제한1, 신규test 위치TS5097)는 계약을 유지한 수정 후 PASS. 메인 변경검수: 현재 범위 BLOCKER/HIGH0, DB와 Edge reader 선반영 후 웹 exactSHA Preview 배포.
+
+### 2026-10-02 Figma–실제 화면 대조 보완
+
+사용자가 실제 구현과 Figma의 일치 검증을 명시했다. 기존 기능 검사 PASS를 시각 일치로 확대하지 않았다. CONNECTED_PREVIEW c2ee8e5의 384×832 화면에서 중앙 확인 팝업/역할 select/2열 종류 버튼 불일치를 실제 확인했다. 추가 Figma 렌더 대조에서 목록 지도 높이·탭 순서·분류/별표 카드·상세 지도·등록 분류·저장 성공 상세 전환 차이를 확인했다.
+
+- 작업: `review-issue99-design-parity-20261002`, 기반 `c2ee8e595b210647cf2350af1d4ebd6af46bef04`, 기존 전용 worktree 재사용.
+- 대응: 목록 `238:1322`, 상세 `238:1402`, 방문 설정 `238:1457`, 등록 `239:1563`, 저장 확인 `248:1723`, PC `240:1584`, 상태 `241:1616`/`241:1657`. Figma 원본을 구현에 맞춰 바꾸지 않았다.
+- 수정: 모바일 지도188px와 지도 아래3탭, 분류·별표 카드, 하단 등록; 상세192px 지도/가로관리/고정CTA; 방문3버튼·stepper·고정CTA; 등록2분류·선택장소 요약·고정CTA; PC 왼쪽목록/오른쪽지도·선택상세. 저장 성공 후 새로 읽은 원본 장소 ID로 상세를 연다. 필터 결과0/전체0/오류를 구분하고 5개한도에서 관리 진입을 제공한다.
+- 반응형/접근성 차이: 브라우저에는 Android 상태바를 복제하지 않는다. 저장 장소 검색과 전체 한도, 지도 재시도, 직접 분 단위 숫자 입력은 기존 기능/접근성을 위해 유지한다. 320폭·큰 글자는 줄바꿈과 세로 스크롤을 사용한다. 별표 탭의 공통 지도/핀필터는 기존 확정 계약을 유지한다. 따라서 픽셀 단위 완전 동일이라고 주장하지 않는다.
+- 로컬 근거: 외부 `issue99-figma-web-readonly-20261002` Figma8렌더/FINDINGS; `issue99-meal-favorites-ui/preview-before-confirm.jpg`, `parity-confirm-{320,384,820,1440}.png`. LOCAL_UI4폭(320은글자130%) 모두 식사70분 유지·취소0개·같은장소3회 고유ID·추가 후70/60/60·가로넘침0·consoleerror0 PASS. RPC/검색/좌표변환0; SDK미연결 합성 API로 CONNECTED 근거를 대신하지 않는다.
+- 기능 후보 c2ee8e5 CI37009594847 PASS, PR104 develop 반영. Preview migration source20261002124012→hosted20261002130259; 원본3행 md5 `cc941f07da653aa1eb71ee648d306ab7` 보존, private invoker4함수ACL 유지. Edge plan-route46/save-collection40/journey-route16/journey-weather16 JWTtrue 및 전체 파일 exactGitblob 읽기확인. Vercel `dpl_3vySk1fvDHQG6LgoF9EJwxVCEbKr` Ready exactc2ee8e5. 이번 시각 보완 후보는 별도 최종검사/PR/Preview 실측 후 Issue99에 결과를 갱신한다.
+- 후보 검증: lint/typecheck PASS, 단위90파일949 PASS. 전체브라우저62 PASS/1 FAIL/연결전용2 expected SKIP의 최초 실패는 한도 문구가 헤더에서 탭·목록으로 이동한 기존 assertion이었다. 새 위치에서 전체0/1000·자주찾는곳0/5를 각각 확인하도록 수정하고 해당2개 테스트5폭/큰글자/키보드/포커스/등록취소 재실행 PASS. assertion 삭제·skip으로 우회하지 않았다. npm ci/Deno8/Chromium 설치는 같은 lock·서버 원본의 선행후보 유효 근거 재사용; build와 exact-SHA CI는 새후보에서 실행한다. 별표/삭제 중앙 확인 보호는 유지하고 Figma R3 저장 확인만 전체 화면으로 적용한다.

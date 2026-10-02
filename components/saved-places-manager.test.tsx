@@ -11,7 +11,7 @@ vi.mock("./saved-places-provider", () => ({
   useSavedPlaces: () => mocks.controls,
 }));
 vi.mock("./kakao-map-canvas", () => ({ KakaoMapCanvas: () => null }));
-vi.mock("./place-search-field", () => ({ PlaceSearchField: () => null }));
+vi.mock("./place-search-field", () => ({ PlaceSearchField: ({ onSelect }: { onSelect: (place: unknown) => void }) => <button onClick={() => onSelect(saved.place)}>시험 장소 선택</button> }));
 vi.mock("./map-point-confirmation", async () => {
   const { useEffect } = await import("react");
   return {
@@ -106,22 +106,35 @@ it("explicit waypoint confirmation forwards role and dwell with the immutable or
   );
   await act(async () => button(r, "경유지에 추가").props.onClick());
   expect(props.onAddWaypoint).not.toHaveBeenCalled();
-  const role = r.root
-    .findAllByType("select")
-    .find((s) => s.props.value === "waypoint")!;
-  await act(async () => role.props.onChange({ target: { value: "rest" } }));
+  await act(async () => button(r, "휴식").props.onClick());
   await act(async () =>
     r.root
       .findByProps({ type: "number" })
       .props.onChange({ target: { value: "45" } }),
   );
-  await act(async () => button(r, "확인하고 추가").props.onClick());
+  await act(async () => button(r, "경유지 추가하기").props.onClick());
   expect(props.onAddWaypoint).toHaveBeenCalledExactlyOnceWith(
     saved.place,
     "rest",
     45,
   );
   expect(saved.place.name).toBe("원래 장소");
+  await act(async () => r.unmount());
+});
+it("opens the saved place detail only after a confirmed save and fresh list", async () => {
+  mocks.controls.places = [];
+  mocks.controls.favorites = [];
+  mocks.controls.save = vi.fn(async () => { mocks.controls.places = [saved]; return true; });
+  const r = await mount();
+  await act(async () => button(r, "＋ 장소 등록").props.onClick());
+  await act(async () => button(r, "시험 장소 선택").props.onClick());
+  await act(async () => button(r, "저장 내용 확인").props.onClick());
+  expect(mocks.controls.save).not.toHaveBeenCalled();
+  await act(async () => button(r, "확인하고 저장").props.onClick());
+  expect(mocks.controls.save).toHaveBeenCalledTimes(1);
+  expect(r.root.findAllByProps({ "aria-label": "장소 상세" })).toHaveLength(1);
+  expect(button(r, "경유지에 추가")).toBeDefined();
+  expect(props.onAddWaypoint).not.toHaveBeenCalled();
   await act(async () => r.unmount());
 });
 it("account change discards all former-owner dialogs and coordinate/search selection", async () => {

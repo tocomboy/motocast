@@ -8,9 +8,9 @@ test("saved places tabs, region, four map layers and registration cancel work at
     await page.goto("/#home");
     await page.getByRole("button", { name: "즐겨찾기", exact: true }).click();
     const manager = page.getByRole("region", { name: "즐겨찾기", exact: true });
-    await expect(manager).toContainText(
-      "저장 장소 0 / 1,000 · 자주 찾는 곳 0 / 5",
-    );
+    await expect(manager).toContainText("전체 0/1,000");
+    await manager.getByRole("button", { name: "자주 찾는 곳", exact: true }).click();
+    await expect(manager).toContainText("자주 찾는 곳 0/5");
     await expect(
       manager.getByRole("combobox", { name: "시·도" }).getByRole("option"),
     ).toHaveCount(19);

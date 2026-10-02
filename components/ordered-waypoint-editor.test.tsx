@@ -144,7 +144,7 @@ it("selects repeated saved meals only on confirmation and preserves add settings
     await act(async () => renderer.root.findByProps({ "aria-label": "내 별명 상세 보기" }).props.onClick());
     await click("경유지에 추가");
     expect(renderer.root.findAllByProps({ className: "ordered-waypoint waypoint-card" })).toHaveLength(i);
-    await click("확인하고 추가");
+    await click("경유지 추가하기");
   }
   const cards = renderer.root.findAllByProps({ className: "ordered-waypoint waypoint-card" });
   expect(cards).toHaveLength(3);
