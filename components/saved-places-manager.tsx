@@ -224,17 +224,12 @@ function SavedPlacesManagerContent({
                   : undefined
               }
               coordinateActionLabel="지도 중심에서 등록 위치 선택"
+              coordinateActionInFullscreenOnly
             />
           </div>
-          <p className={styles.helper}>
-            S 원형: 라이딩 스팟 · 식 사각형: 식당. 핀은 상세 정보만 열어요.
+          <details className={styles.mapHelp}><summary>지도 도움말·다시 불러오기</summary><p className={styles.helper}>
+            S 원형은 라이딩 스팟, 식 사각형은 식당이에요. 핀을 누르면 상세가 열려요. 지도를 길게 눌러 장소를 등록하거나, 전체화면에서 중심 지점을 선택하세요.
           </p>
-          {!spots && !restaurants ? (
-            <p role="status">
-              저장 장소 핀을 모두 숨겼어요. 현재 일정의 지점과 지도는
-              유지됩니다.
-            </p>
-          ) : null}
           <button
             type="button"
             onClick={() => {
@@ -252,6 +247,8 @@ function SavedPlacesManagerContent({
           >
             지도 다시 불러오기
           </button>
+          </details>
+          {!spots && !restaurants ? <p role="status">저장 장소 핀을 모두 숨겼어요. 현재 일정의 지점과 지도는 유지됩니다.</p> : null}
           {selected && wide ? <section className={styles.desktopDetail} aria-label="장소 상세">
             <span className={styles.placeKind}>{selected.kind === "restaurant" ? "식당" : "라이딩 스팟"}</span>
             <h2>{savedPlaceName(selected)}</h2>

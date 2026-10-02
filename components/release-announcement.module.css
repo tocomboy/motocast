@@ -116,6 +116,12 @@
   min-height: 44px;
 }
 
+:global(body:has(#saved-places-title)) .error {
+  position: relative;
+  inset: auto;
+  margin: 16px auto;
+}
+
 .confirm {
   background: #18221d;
   border: 0;

@@ -121,6 +121,8 @@
   color: var(--ink-soft);
   font-size: 0.875rem;
 }
+.mapHelp { margin-top: 8px; font-size: .8125rem; color: var(--ink-soft); }
+.mapHelp summary { cursor: pointer; min-height: 32px; }
 .list {
   display: grid;
   gap: 12px;

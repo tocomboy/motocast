@@ -272,10 +272,11 @@ it("uses the same owner selection callback in fullscreen and never enables it fo
   const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ left: 20, top: 72 }) });
   const surface = { close: vi.fn(), show: vi.fn(), showModal: vi.fn() };
   let renderer!: ReactTestRenderer;
-  await act(async () => { renderer = create(<KakaoMapCanvas points={points} onSelectCoordinate={select} />, {
+  await act(async () => { renderer = create(<KakaoMapCanvas points={points} onSelectCoordinate={select} coordinateActionInFullscreenOnly />, {
     createNodeMock: node => node.type === "dialog" ? surface : node.type === "button" ? { focus: vi.fn() } : canvas,
   }); });
   await flush(maps.loadCallbacks);
+  expect(renderer.root.findAllByType("button").some(node => node.children.includes("지도 중심에서 경유지 선택"))).toBe(false);
   await act(async () => renderer.root.findByProps({ className: "map-fullscreen-trigger" }).props.onClick());
   const chooseCenter = () => renderer.root.findAllByType("button").find(node => node.children.includes("지도 중심에서 경유지 선택"));
   await act(async () => chooseCenter()!.props.onClick());

@@ -74,6 +74,7 @@ export function KakaoMapCanvas({
   savedViewportKey = "",
   allowEmptyMap = false,
   coordinateActionLabel,
+  coordinateActionInFullscreenOnly = false,
 }: {
   points: MapPoint[];
   path?: PathPoint[];
@@ -86,6 +87,7 @@ export function KakaoMapCanvas({
   savedViewportKey?: string;
   allowEmptyMap?: boolean;
   coordinateActionLabel?: string;
+  coordinateActionInFullscreenOnly?: boolean;
 }) {
   const titleId = useId();
   const surfaceRef = useRef<HTMLDialogElement>(null);
@@ -391,7 +393,7 @@ export function KakaoMapCanvas({
           {isReady && showLegend ? <MapMarkerLegend points={points} /> : null}
           {!isReady && state !== "empty" && !allowEmptyMap ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
         </div>
-        {isReady && onSelectCoordinate ? <div className="map-waypoint-actions"><p>{coordinateActionLabel ? "지도를 길게 누르거나 중심 지점을 선택해 장소를 등록하세요." : fullscreen ? "확대·이동하거나 지도를 길게 눌러 경유지를 선택하세요." : "지도를 길게 눌러 경유지를 선택하세요. 확대·이동 후 중심 지점을 선택할 수도 있어요."}</p><button type="button" onClick={() => { const point = mapRef.current?.getCenter(); if (point) onSelectCoordinate({ latitude: point.getLat(), longitude: point.getLng() }); }}>{coordinateActionLabel ?? "지도 중심에서 경유지 선택"}</button></div>
+        {isReady && onSelectCoordinate && (!coordinateActionInFullscreenOnly || fullscreen) ? <div className="map-waypoint-actions"><p>{coordinateActionLabel ? "지도를 길게 누르거나 중심 지점을 선택해 장소를 등록하세요." : fullscreen ? "확대·이동하거나 지도를 길게 눌러 경유지를 선택하세요." : "지도를 길게 눌러 경유지를 선택하세요. 확대·이동 후 중심 지점을 선택할 수도 있어요."}</p><button type="button" onClick={() => { const point = mapRef.current?.getCenter(); if (point) onSelectCoordinate({ latitude: point.getLat(), longitude: point.getLng() }); }}>{coordinateActionLabel ?? "지도 중심에서 경유지 선택"}</button></div>
           : fullscreen && isReady ? <div className="map-viewing-hint"><p>확대·이동하며 경로를 확인하세요.</p></div> : null}
       </dialog>
     </div>

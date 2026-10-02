@@ -151,3 +151,11 @@ LOCAL_UI 실제컴포넌트+합성계정 검증:320(글자130%)/384/820/1440 각
 ### 상세 지도 Esc 회귀 보완
 
 시각 보완 `010cfd3`/PR105는 CI37013360987 SUCCESS, Preview `dpl_3tbvRkDFbxHkLJVx7eHnLSzPzJcD` Ready로 반영했다. 이후 메인 실제 LOCAL_UI에서 상세 지도 전체화면→Esc가 상위 장소 상세까지 닫는 것을 재현했다. 지도 dialog의 cancel 이벤트 전파를 멈추어 지도만 닫고 상세·확대 버튼 포커스를 보존한다. 기능과 데이터·SDK 호출 경계는 바꾸지 않는다. `review-issue99-map-cancel-20261002`에서 단위949, lint/typecheck, fresh production build를 포함한 지도/즐겨찾기 브라우저9 PASS와 실제 동일 UI 경로 재현 PASS, 이미지 `map-escape-fixed.jpg`를 보존했다. 선행 npm ci/Deno8·나머지62브라우저 근거는 변경 영향 밖이며 exact-head CI는 전체 실행한다.
+
+### 실제 SDK 화면의 추가 발견과 수정 (PR106)
+
+실제 Preview010cfd3의188px 지도에서 좌표 안내 패널이 핀을 가리는 것을 확인했다. 즐겨찾기 작은 지도에서는 길게 누르기를 유지하고 중심 좌표 선택 버튼은 전체화면에서 제공한다. 지도 도움말·재시도는 접을 수 있게 하되 두 핀 종류를 모두 숨긴 상태 안내는 항상 보인다. 상세 지도 전체화면의 Esc가 상위 상세까지 닫는 결함도 native cancel 전파를 막아 수정했다. LOCAL_UI 재현 후 상세 유지·전체화면 버튼 focus 복귀 PASS.
+
+작은 지도 보완의 첫 관련 E2E는8 PASS/1 FAIL이었다. 공지 조회 실패 안내가 즐겨찾기 하단 등록 버튼 위에 겹쳐 실제 클릭을 막았으므로, 즐겨찾기 화면에서 해당 오류 안내를 문서 흐름으로 배치했다. 오류 문구·재시도는 유지한다. 수정 후 지도 전체화면·즐겨찾기·공지18 E2E PASS, lint/typecheck PASS, 관련 지도·즐겨찾기 단위31 PASS. 새 SDK 생성이나 서버 변경은 없다.
+
+CONNECTED_PREVIEW010cfd3에서 실제 계정으로 식사3개70/60/60분 추가를 확인했다(새 로컬 초안만, 서버 일정 저장·자동 계산 없음). 공개 양평역을 별명 QA-FIGMA-20261002-2241로 시험해 최종 저장 취소 시 시험행0, 확인 저장 후 해당 새 장소 상세 자동 진입과 경기 지역 표시, 시험 장소만 삭제를 확인했다. 최종 canonical3/시험행0 및 기존place hash cc941f07da653aa1eb71ee648d306ab7 일치. 외부 증거 preview-new-save-detail-384.jpg 및 preview-parity-save-confirm-384.jpg. 최종PR106 exact CI와 배포 확인은 PR본문·Issue99에 연결한다.
