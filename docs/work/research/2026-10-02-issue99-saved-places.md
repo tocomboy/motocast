@@ -159,3 +159,5 @@ LOCAL_UI 실제컴포넌트+합성계정 검증:320(글자130%)/384/820/1440 각
 작은 지도 보완의 첫 관련 E2E는8 PASS/1 FAIL이었다. 공지 조회 실패 안내가 즐겨찾기 하단 등록 버튼 위에 겹쳐 실제 클릭을 막았으므로, 즐겨찾기 화면에서 해당 오류 안내를 문서 흐름으로 배치했다. 오류 문구·재시도는 유지한다. 수정 후 지도 전체화면·즐겨찾기·공지18 E2E PASS, lint/typecheck PASS, 관련 지도·즐겨찾기 단위31 PASS. 새 SDK 생성이나 서버 변경은 없다.
 
 CONNECTED_PREVIEW010cfd3에서 실제 계정으로 식사3개70/60/60분 추가를 확인했다(새 로컬 초안만, 서버 일정 저장·자동 계산 없음). 공개 양평역을 별명 QA-FIGMA-20261002-2241로 시험해 최종 저장 취소 시 시험행0, 확인 저장 후 해당 새 장소 상세 자동 진입과 경기 지역 표시, 시험 장소만 삭제를 확인했다. 최종 canonical3/시험행0 및 기존place hash cc941f07da653aa1eb71ee648d306ab7 일치. 외부 증거 preview-new-save-detail-384.jpg 및 preview-parity-save-confirm-384.jpg. 최종PR106 exact CI와 배포 확인은 PR본문·Issue99에 연결한다.
+
+최종 저장 확인도 Figma248:1723의 분류·별표·원래 이름/주소 카드와 카드 밖 설명 구조로 맞췄다. 수정 확인은 기존 starSlot을 표시하고 별표를 바꾸지 않는다. 첫 typecheck의 잘못된 starred 필드 참조를 starSlot 계약으로 수정한 뒤 typecheck/관련단위4/즐겨찾기E2E2 PASS. LOCAL_UI384 수정 확인에서 별표 유지·분류·원본 주소 표시를 직접 확인했고 실제 저장 API는 앞선 동일 callback 근거를 재사용한다.

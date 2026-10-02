@@ -38,6 +38,7 @@ type Pending = {
   run: () => Promise<boolean>;
   destructive?: boolean;
   fullScreen?: boolean;
+  placeSummary?: { kind: string; originalName: string; address: string; starred: boolean };
 };
 
 export function SavedPlacesManager(props: SavedPlacesManagerProps) {
@@ -406,7 +407,8 @@ function SavedPlacesManagerContent({
                 ? "장소 정보를 수정할까요?"
                 : "이 장소를 저장할까요?",
               name: alias.trim() || place.name,
-              description: `${kind === "restaurant" ? "식당" : "라이딩 스팟"} · 원래 장소명 ${place.name}${starred ? " · 자주 찾는 곳에 추가" : ""}`,
+              description: `${kind === "restaurant" ? "식당" : "라이딩 스팟"}으로 ${existing ? "수정" : "저장"}해요. ${existing ? "기존 별표 설정은 유지돼요." : starred ? "자주 찾는 곳에 별표를 표시해요." : "별표 없이 저장해요."}`,
+              placeSummary: { kind: kind === "restaurant" ? "식당" : "라이딩 스팟", originalName: place.name, address: place.roadAddress ?? place.address, starred: existing ? existing.starSlot !== null : starred },
               action: existing ? "확인하고 수정" : "확인하고 저장",
               fullScreen: true,
               valid: saved.captureSnapshot(),
@@ -702,7 +704,12 @@ function SavedConfirmation({
     <SavedDialog title={pending.fullScreen ? "즐겨찾기" : pending.title} accessibleTitle={pending.title} locked={running} onClose={onClose} fullScreen={pending.fullScreen}>
       <div className={pending.fullScreen ? styles.waypointBody : undefined}>
       {pending.fullScreen ? <h3>{pending.title}</h3> : null}
-      <div className={styles.placeSummary}><strong>{pending.name}</strong><p>{pending.description}</p></div>
+      <div className={styles.placeSummary}>
+        {pending.placeSummary ? <span className={styles.placeKind}>{pending.placeSummary.kind}<span aria-label={pending.placeSummary.starred ? "별표 있음" : "별표 없음"}>{pending.placeSummary.starred ? "★" : "☆"}</span></span> : null}
+        <strong>{pending.name}</strong>
+        {pending.placeSummary ? <span>원래 장소명 {pending.placeSummary.originalName} · {pending.placeSummary.address}</span> : <p>{pending.description}</p>}
+      </div>
+      {pending.placeSummary ? <><p>{pending.description}</p><p>원래 장소명과 위치는 유지됩니다.</p></> : null}
       {!valid && !running ? (
         <p role="alert">
           목록이나 계정이 바뀌었어요. 닫고 최신 장소를 다시 선택해 주세요.
