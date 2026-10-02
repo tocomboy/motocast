@@ -505,6 +505,7 @@ function SavedPlaceForm({
   ) => void;
 }) {
   const [place, setPlace] = useState(initial);
+  const favorites = useSavedPlaces();
   const [alias, setAlias] = useState(existing?.alias ?? "");
   const [kind, setKind] = useState<SavedPlaceKind>(
     existing?.kind ?? "riding_spot",
@@ -520,6 +521,7 @@ function SavedPlaceForm({
           label="저장할 장소"
           placeholder="장소명 또는 주소 검색"
           selected={place}
+          favorites={favorites}
           onSelect={setPlace}
           selectionActionLabel="이 장소 선택"
         />
