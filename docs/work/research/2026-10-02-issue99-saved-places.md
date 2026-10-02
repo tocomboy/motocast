@@ -1,6 +1,6 @@
 # Issue99 개인 저장 장소 통합
 
-상태: 사용자 후속 승인에 따라 0.10.0 후보 게시·Preview 적용 진행 중. 연결 후보·제공사 실제 쿼터 측정·출시 gate 미완료이므로 Issue는 OPEN이다.
+상태: 0.10.0 Preview DB·웹 적용 및 실제 계정 주요 흐름 PASS, Android develop 통합·Preview APK 설치 완료. Android 직접 로그인과 제공사 측정·출시 gate가 남아 Issue는 OPEN이다.
 
 ## 범위와 확정 결정
 
@@ -14,8 +14,10 @@
 
 | 대상 | 기반 | 작업 브랜치 | 상태 |
 |---|---|---|---|
-| Web/server | develop `ed8c46e` | `review-issue99-saved-places-20261002` | 로컬 변경, PR/commit/push 없음 |
-| Android | develop `0a63d283b187beea0d6cfb9522ee788e10bd7d31` | `feat/issue99-saved-places-20261002` | 로컬 변경, PR/commit/push 없음 |
+| Web/server | develop `ed8c46e` | `review-issue99-saved-places-20261002` | PR101/239b213 MERGED, Preview 적용 |
+| Web 연결 회귀 | `239b213` | `review-issue99-connected-fix-20261002` | PR102/7d26424 MERGED, 등록 검색창의 실제 별표 목록 연결 |
+| Web 실행 근거 | `7d26424` | `review-issue99-preview-evidence-20261002` | 이 기록의 후속 갱신 |
+| Android | develop `0a63d283b187beea0d6cfb9522ee788e10bd7d31` | `feat/issue99-saved-places-20261002` | PR46/b269954 CI SUCCESS, develop merge5825995, Preview debug 설치 |
 
 Web worktree: `C:/Users/User/.codex/worktrees/motocast-issue99/MOTOCAST` (Codex 관리). Android: `C:/Users/User/Desktop/worktrees/motocast-android-issue99`. 원래 웹 dirty develop과 원래 Android checkout은 보존한다. 메인은 웹·통합 검수, backend worker는 migration/SQL, Android worker는 Android 파일을 소유했다.
 
@@ -58,8 +60,8 @@ Migration `20261002094511_saved_places.sql`은 `place_favorites`를 `saved_place
 | PostgreSQL | 320 PASS / 최종 FAIL0·SKIP0 | 이행10 + canonical78 + concurrency17 + legacy20/2 + ACL193 |
 | Web filled LOCAL_UI | PASS | 등록/수정/별표해제/삭제/역할정차/취소, 320/384/820/1440, 글자1.3 |
 | Android | 양 flavor 단위365개씩·최종 빌드/lint/manifest PASS | 실제 기기시험은 아래 별도 기록 |
-| Connected candidate | NOT_RUN | hosted canonical migration 및 해당 후보 미적용 |
-| Web SDK 실측 | NOT_RUN | 원본 로컬 설정에 JS 공개키 부재, keyless/합성 API와 구분 |
+| Connected candidate | 웹 주요 흐름 PASS / Android 실회원 NOT_RUN | hosted canonical 적용·보존 및 실제 웹 등록/수정/삭제 PASS; Android 직접 로그인 대기 |
+| Web SDK 실측 | Preview 지도·20회 토글 PASS / 별도 핀수별 계측 미완료 | 실제 SDK 화면·공급자 집계와 로컬 최초 로더401 실패를 구분 |
 | Native SDK UI | S23+ / 320폭·글자1.3 / 820폭 각각23 PASS, 합계69 PASS | 소유 AVD, 실제 SDK·합성 계정 API; 쿼터 귀속 미확정 |
 | Production / Play | NOT_RUN | 이번 후보 배포 없음 |
 
@@ -85,7 +87,7 @@ Android 소유 AVD는 원래1080×2340/density450/font1.0으로 복원 후 readb
 
 ## 남은 완료 조건
 
-승인된 웹/Android의 변경만 commit·push하고 CI-only PR을 게시해 고정 SHA를 검수한다. 웹 review 브랜치의 배포0을 확인한 뒤 Preview DB/후보를 적용하고 develop 반영은 저장소 gate를 따른다. 실제 계정/서버·Web SDK·쿼터/예산 검증을 이어가야 한다. 핀0/1/5/50/100, 토글20, 지역·이동·확대·재진입, 오류와 재계산의 사용량을 실제 공급자 집계와 대조한다. 남은 검증을 생략해 Issue99를 닫지 않는다. Production/Play 승격은 별도 gate와 해당 배포 권한을 따른다.
+게시·Preview DB/웹 적용은 아래 기록대로 실행했다. Android 실제 회원 연결은 에뮬레이터의 정상 카카오 로그인에서 비밀번호 직접 입력이 필요하다. 핀0/1/5/50/100, 토글20, 지역·이동·확대·재진입, 오류와 재계산의 사용량을 실제 공급자 집계와 대조하고 플랫폼별 미완료를 구분한다. 남은 검증을 생략해 Issue99를 닫지 않는다. Production/Play 승격은 별도 gate와 해당 배포 권한을 따른다.
 
 ## 0.10.0 Preview 적용 준비
 
@@ -94,3 +96,31 @@ Android 소유 AVD는 원래1080×2340/density450/font1.0으로 복원 후 readb
 Android 후보는 기존 검사기의 지원 경로인 baseline=null/control HOLD(BASELINE_NOT_CONFIGURED)를 사용해 code10 운영 승인 승계를 막는다. 후보 revision18/epoch6이며 실제 원격main ACTIVE/control과 운영 설정은 변경하지 않는다. 검사기 guard는 수정하지 않는다. 번들의 기존 source.main_sha 필드는 이 단계에서 고정 웹 Preview 후보 출처이며 실제 main 운영 출처로 해석하지 않는다.
 
 버전 변경 뒤 단위913/typecheck/lint PASS. 전체 브라우저 최초62 PASS/1 FAIL/2 expected SKIP은 공지 검사에 남은0.9.0 문구가 원인이었으며0.10.0 확정 문구로 대조를 갱신하고 공지9개·fresh build PASS를 확인했다. 실패 로그를 보존한다. 기존 API/SDK/DB 검증은 구현·의존성이 변하지 않아 재사용한다. 게시한 고정SHA의 CI는 전체 suite를 다시 실행한다.
+
+## Preview 적용 및 실제 계정 검증
+
+- 웹 PR101 고정 `239b2130d04e265b154563fa35ea74dd7270ca63`, CI37000598888 SUCCESS. review 브랜치의 GitHub deployment0 및 Vercel check 부재를 두 번 확인한 후 DB를 먼저 적용하고, 기존 develop ed8c46e를 같은 SHA로 일반 fast-forward했다. Vercel `dpl_HmVUmnBTCf79NejAx6BRLuerVzRR` READY/Preview/develop/동일 SHA 및 branch alias binding을 확인했다.
+- Preview `saved_places` migration 도구는 source filename `20261002094511_saved_places.sql`을 hosted version `20261002112456`/name `saved_places`로 등록했다. source SHA256 `0E1CB7E1CCACB4D199A67650651E49FB5A5269A255C85C516CE6DD956886943B`; history22건. 이 timestamp mapping을 기록하며 고정 source나 remote history를 다시 쓰지 않았다. Edge8개는 변경하지 않았다.
+- 적용 전후 기존3행/2소유자의 원본·생성시각·순서 combined SHA256 `8d707558018f3c807ed2a154ddf1bdca1207ad0710fb1494f619a96935ffe389` 일치. canonical3/legacy3, RLS=true, legacy view security_invoker=true. 변경 RPC6개의 empty search_path/SECURITY DEFINER 및 authenticated 전용 EXECUTE 확인. 무조건 DML 권한을 추가하지 않았다.
+- 실제 로그인 계정의 0.10.0 첫 공지와 확인, 기존1행 표시, 세 목록/지역 필터/실제 Web SDK 표시 PASS. 검색 시험 공개 장소1건 저장→별표만 해제→별명 수정→휴식45분 경유지 추가 및 원래 장소명 보존 PASS. 저장 확인창 취소 시 DB 시험행0을 확인했고, 저장/해제/수정 후 revision3·원본 보존을 readback했다. 지도 중심 임의 좌표의 실제 주소 확인·서명 경로→별명 등록 PASS. 이 연결 실행의 좌표 선택은 중심 버튼이며 길게 누르기 제스처는 이전 로컬/기기 검증과 구분한다.
+- 위 시험 장소2건만 UI로 정확히 삭제했다. 최종 canonical3/시험 alias0, 기존 legacy3행 hash 일치. 기존 코스·공유·사용자 장소는 수정하지 않았다. 경유지 추가는 새 로컬 편집 초안에만 적용했고 서버 일정 저장/계산은 실행하지 않았다. 실제 브라우저 error console0.
+- 실제 지도에서 네 조합20회/80 checkbox 변경 완료, 카메라 축척30m 및 준비 완료 표시 유지. 초기 locator 역할 오인 1회와 긴 단일 호출 timeout의 미계수 부분 반복은 성공 횟수에서 제외하고 보존했다. 이 관찰만으로 내부 지도 객체 수나 네트워크 바이트를 주장하지 않는다.
+- 제공사 console20:32경 기준 Web5/Native199/keyword12/coord20/current4/future4. 토글20회 뒤 변화0. 검색·좌표·등록/수정·경유지 추가·삭제 뒤20:42경 Web5/Native199/keyword13/coord21/current4/future4. 지도 최초 진입은 앞선 Web4→5 관측과 별도다. 공유 앱 집계와 통계 지연 때문에 조작별 과금 보장은 아니며 네트워크 바이트와 구분한다. Preview 당일 내부 ledger는 Local 공용operation `local_keyword_search`11/10000·잔여9989, weather 당일행0. 실제 검색+좌표의 합계가 내부 보수적 예약 단위와 공급자 개별 통계에서 다르게 표시됨을 유지한다.
+- 등록 검색창의 즐겨찾기 연결 누락을 실계정 검증에서 발견하여 PR102에서 동일 provider를 연결했다(2줄). 관련6단위/typecheck 및 고정 `7d26424ede0f4ad8909ad5ad6c66c1eced1ffb6c` CI37002201009 전체913단위/63브라우저/2 expected SKIP/Deno8/lint/build PASS. 동일한 review 배포0·개발 기반 readback 후 fast-forward했다. API/DB/SDK 코드는 동일하다.
+- Android 실제 설치 후보의 정확한 SHA256은 `51a6906b7d514dfff7ec4ded53ee5f261dd9175b219101add1b2899778aec334`이며 기기 base.apk와 일치한다. 내장공지0.10.0/17건/원문239b213 PASS. 기존 개발용 manifest0.1.0-dev/code1은 release 후보0.10.0/code11과 별개다. 기존 userdata를 보존한 install-r 후 정상 Guest→Kakao SDK→계정선택→비밀번호 단계까지 확인했고 인증값 추출·웹 세션 복사 없이 멈췄다. 실제 회원 공지/저장 API는 NOT_RUN. Production debug 빌드와 실제 Production 설치/Play 제공을 혼동하지 않는다.
+
+- PR102의 Preview `dpl_Dg8BkRzRzFXKFnrPHAouxAr3zvBj`는7d26424/develop/branch alias READY로 확인했다. 새로고침 후 등록 검색창의 현재 별표1/5 표시 PASS, 공지 재노출 없음. 앱/API/공지 변경이 없는 이후 문서 커밋은 이 실행 근거와 구분한다.
+- Android PR46 CI37001101575의 필수 Required 포함 전부 SUCCESS. 원격 Gradle20분50초, 양 flavor 각365 tests/실패0/오류0/skip0 및 manifest PASS. merge58259950d7da7107c5cfd2c2ed1a9b07b7967b7e와 후보b269954의 tree `01312d1f088c3c054c38af366ff0ee02df112c9b` 일치. main은527fd2c/ACTIVE17/epoch6 그대로이며 Play 배포 없음. 소유 AVD는 직접 로그인 재개를 위해 hidden으로 보존한다.
+- Android 기록 PR47/96f3816은 CI37003756850 SUCCESS 후 develop3ec432e7d4b67e0f1d763523d9f81d69f80b396a로 병합했다. 후보/병합 tree일치. 기능·문서 브랜치는 로컬/원격 정리했고 detached/clean worktree와 검증 APK·로그·소유 AVD는 실제 로그인 검증 재개를 위해 보존한다. 사용자용 APK는 `C:/Users/User/Desktop/worktrees/motocast-android-issue99/app/build/issue99-preview-service0100-debug.apk`(63,031,816B)다.
+
+### 별도 Web SDK 핀수별 계측 차단
+
+실제제품239b213 지도·좌표 코드 blob을 고정한 외부 `issue99-web-sdk-network-20261002-1126` fixture를 준비했다. 현재배포7d26424는 검색창만2줄 변경해 지도코드는 같으며, 공개 배포 JS의 SDK client 식별자만 로컬에서 사용했다. 로그인 상태·쿠키·비밀키·실사용자 데이터는 사용하지 않고 공개 합성좌표와 기존 경로 마커2개를 둔다. saved0은 전체marker0이 아니며 cold0 이후1/5/50/100은 warm 단계로 분리한다. 실제SDK 생성img count·숨김 검증을 props 개수와 따로 작성했다.
+
+첫 실행11:50:28~11:50:43 UTC는 SDK bootstrap1개 실패/나머지 NOT_RUN. 진단 실행11:53:40에는 SDK bootstrap HTTP401과 `net::ERR_BLOCKED_BY_ORB`를 관측했다. 요청 후36ms에 실패하고 canceled=false였으므로15초 UI대기나 종료취소가 원인이 아니다. 수신 바이트는 UNKNOWN이며 실패집계0을 성공0바이트로 해석하지 않는다. 최초실행과진단결과를 각각 보존했다.
+
+카카오 콘솔을 읽어 지도사용ON 및 JavaScript 허용 도메인이 기존 Preview·Production URL 두 개뿐임을 확인했다. localhost/127.0.0.1/3000/5173/3199는 등록되지 않아 현재 허용 범위 안에서 이 로컬계측을 실행할 수 없다. 설정 변경0, 추가 요청중단, 소유서버 종료/listener3199=0.11:47 및11:53 집계 Web6/Native199/keyword13/coord21/current4/future4로 같았다. 도메인 `http://localhost:3199` 하나 추가는 사용자에게 별도 확인했고 답변 전 보류한다.
+
+상태: 로컬 SDK계측 ERROR2, 핀수별/80토글 DOM assertion0·네트워크matrix NOT_RUN. 실제 Preview의 지도표시·20토글 통과를 이 matrix의 성공으로 확대하지 않는다. 재개는 기존식별자·동일fixture·명시적으로 승인된 도메인에서 수행하고 전후 공급자 집계/HTTP바이트를 구분한다. 월간/브라우저SDK 예산은 내부서버 daily reservation으로 강제되지 않는 기존 OPS-007 경계를 유지한다. 따라서 #34규모의 모든 행동별 쿼터/일일예산 충족 및 Issue99완료를 주장하지 않는다.
+
+외부 증거: `C:/Users/User/.codex/verification-logs/issue99-preview-applied.json`, 웹 CI37000598888/37002201009 로그, Android 소유 `docs/artifacts/issue99-connected-20261002-203315`와 `app/build/issue99-pr46-android-job.log`. 로그인 화면의 계정 정보가 담긴 기기 캡처는 외부 게시하지 않는다.
