@@ -56,7 +56,7 @@ describe("ordered route waypoints", () => {
     ].map(collectionPointFromEditableWaypoint) as CollectionPoint[];
 
     expect(points.map(editableWaypointFromCollectionPoint).map(({ id, role, dwellMinutes }) => ({ id, role, dwellMinutes }))).toEqual([
-      { id: "lunch", role: "lunch", dwellMinutes: 60 },
+      { id: "lunch", role: "meal", dwellMinutes: 60 },
       { id: "pass", role: "waypoint", dwellMinutes: 0 },
       { id: "rest", role: "rest", dwellMinutes: 45 },
     ]);
@@ -69,7 +69,7 @@ describe("ordered route waypoints", () => {
   });
 
   it("enforces one lunch, one dinner, five rests, twenty route waypoints, and thirty total occurrences", () => {
-    expect(roleAssignmentError([waypoint("lunch", "lunch")], "lunch")).toBe("점심은 하나만 추가할 수 있습니다.");
+    expect(roleAssignmentError([waypoint("lunch", "lunch")], "lunch")).toBe("기존 식사 구분은 하나만 추가할 수 있습니다.");
     expect(roleAssignmentError(Array.from({ length: 5 }, (_, index) => waypoint(`rest-${index}`, "rest")), "rest"))
       .toBe("휴식은 최대 5개까지 추가할 수 있습니다.");
     expect(roleAssignmentError(Array.from({ length: 20 }, (_, index) => waypoint(`pass-${index}`, "waypoint")), "waypoint"))
@@ -86,5 +86,16 @@ describe("ordered route waypoints", () => {
       place: null,
       dwellMinutes: 30,
     })).toBeNull();
+  });
+
+  it("allows repeated meal places through thirty total occurrences and preserves each identity", () => {
+    const meals = Array.from({ length: 30 }, (_, i) => ({ ...waypoint(`meal-${i}`, "meal"), place: waypoint("same", "meal").place }));
+    expect(roleAssignmentError(meals.slice(0, 2), "meal")).toBeNull();
+    expect(roleAssignmentError(meals.slice(0, 29), "meal")).toBeNull();
+    expect(roleAssignmentError(meals, "meal")).toBe("경유지는 전체 30개까지 추가할 수 있습니다.");
+    expect(roleAssignmentError(meals, "meal", meals[0].id)).toBeNull();
+    const points = meals.map(collectionPointFromEditableWaypoint);
+    expect(new Set(points.map((p) => p?.id)).size).toBe(30);
+    expect(points.every((p) => p?.stopRole === "meal" && p.kind === "stop" && p.dwellMinutes === 60 && p.winding === false)).toBe(true);
   });
 });

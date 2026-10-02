@@ -27,7 +27,7 @@ vi.mock("@/lib/supabase/browser", () => ({
   getBrowserSupabase: () => ({
     functions: { invoke: mocks.invoke },
     rpc: mocks.rpc,
-    from: () => ({ select() { return this; }, order: async () => ({ data: [], error: null }) }),
+    from: () => ({ select() { return this; }, order() { return this; }, limit: async () => ({ data: [], error: null }) }),
     auth: { onAuthStateChange: (listener: (event: string, session: { user: { id: string } } | null) => void) => { mocks.authListeners.push(listener); return { data: { subscription: { unsubscribe: vi.fn() } } }; } },
   }),
 }));
@@ -38,6 +38,8 @@ import { KakaoMapCanvas } from "./kakao-map-canvas";
 import { MapPointConfirmation } from "./map-point-confirmation";
 import { RouteFailureDialog } from "./route-failure-dialog";
 import { OrderedWaypointEditor } from "./ordered-waypoint-editor";
+import { SavedPlacesManager } from "./saved-places-manager";
+import { PlannerHome } from "./planner-home";
 
 const place = (id: string, longitude: number) => ({
   kakaoPlaceId: id,
@@ -159,6 +161,20 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("PlannerDashboard collection share intent", () => {
+  it("adds repeated saved places with separate occurrence IDs, keeps stale summary recoverable and waits for explicit recalculation",async()=>{
+    let r!:ReactTestRenderer;await act(async()=>{r=create(<PlannerDashboard connected initialCourse={course} navigationMode="memory"/>,{createNodeMock});});await chooseSchedule(r);
+    await act(async()=>r.root.findByType("form").props.onSubmit({preventDefault:vi.fn()}));const calls=mocks.invoke.mock.calls.length;
+    const saved={...place("saved",127.1),category:"",phone:null,placeUrl:null};
+    async function add(role:string,dwell:number){await act(async()=>r.root.findByProps({"aria-label":"MOTOCAST 홈"}).props.onClick());await act(async()=>r.root.findByType(PlannerHome).props.onFavorites());await act(async()=>{expect(r.root.findByType(SavedPlacesManager).props.onAddWaypoint(saved,role,dwell)).toBeNull();});}
+    await add("rest",45);await add("waypoint",0);
+    const points=r.root.findByType(OrderedWaypointEditor).props.waypoints;expect(points).toHaveLength(2);expect(points.map((p:{role:string;dwellMinutes:number})=>[p.role,p.dwellMinutes])).toEqual([["rest",45],["waypoint",0]]);expect(points[0].id).not.toBe(points[1].id);expect(mocks.invoke).toHaveBeenCalledTimes(calls);
+    expect(r.root.findAllByType(KakaoMapCanvas)[0].props.path).toBeUndefined();
+    await act(async()=>r.root.findByProps({"aria-label":"경로 요약으로"}).props.onClick());expect(renderedText(r.root)).toContain("경로 업데이트 필요");expect(r.root.findAllByType(KakaoMapHandoff)).toHaveLength(0);
+    await act(async()=>r.root.findAllByType("button").find(b=>renderedText(b)==="경로 편집으로")!.props.onClick());
+    expect(renderedText(r.root.findByProps({className:"primary-button calculate"}))).toBe("경로 다시 계산");
+    mocks.invoke.mockResolvedValueOnce({data:null,error:{message:"budget exhausted"}});await act(async()=>r.root.findByType("form").props.onSubmit({preventDefault:vi.fn()}));
+    expect(r.root.findByType(OrderedWaypointEditor).props.waypoints).toEqual(points);expect(mocks.invoke).toHaveBeenCalledTimes(calls+1);await act(async()=>r.unmount());
+  });
   it.each([
     "ROUTE_WAYPOINT_ROAD_NOT_FOUND", "ROUTE_ORIGIN_ROAD_NOT_FOUND", "ROUTE_DESTINATION_ROAD_NOT_FOUND",
     "ROUTE_POINTS_TOO_CLOSE", "ROUTE_ORIGIN_BLOCKED", "ROUTE_DESTINATION_BLOCKED", "ROUTE_WAYPOINT_BLOCKED",
@@ -191,7 +207,7 @@ describe("PlannerDashboard collection share intent", () => {
     await act(async () => { for (const listener of mocks.authListeners) listener("TOKEN_REFRESHED", { user: { id: "first" } }); });
     expect(result().status).toBe("ready");
     await act(async () => { for (const listener of mocks.authListeners) listener("SIGNED_IN", { user: { id: "second" } }); });
-    expect(result()).toEqual({ status: "blocked", reason: "stale" });
+    expect(renderer.root.findAllByType(KakaoMapHandoff)).toHaveLength(0);
     expect(mocks.invoke).toHaveBeenCalledTimes(calls);
     await act(async () => renderer.unmount());
   });

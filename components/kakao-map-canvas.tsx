@@ -3,16 +3,18 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { bindMapLongPress } from "@/lib/places/map-long-press";
 
-export type MapMarkerRole = "origin" | "destination" | "lunch" | "dinner" | "rest" | "waypoint";
+export type MapMarkerRole = "origin" | "destination" | "meal" | "lunch" | "dinner" | "rest" | "waypoint";
 export type MapPoint = { label: string; latitude: number; longitude: number; role?: MapMarkerRole; nonTraversed?: boolean };
 type PathPoint = { latitude: number; longitude: number };
+export type SavedMapPin = PathPoint & { id: string; label: string; kind: "riding_spot" | "restaurant" };
 type MapDisplayState = "empty" | "loading" | "ready" | "demo" | "error";
 const KAKAO_MAP_LOAD_TIMEOUT_MS = 10_000;
 const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; color: string }> = {
   origin: { label: "출발", symbol: "출", color: "#18372b" },
   destination: { label: "복귀", symbol: "복", color: "#3e5873" },
-  lunch: { label: "점심", symbol: "점", color: "#cc5d32" },
-  dinner: { label: "저녁", symbol: "저", color: "#764a78" },
+  meal: { label: "식사", symbol: "식", color: "#cc5d32" },
+  lunch: { label: "식사", symbol: "식", color: "#cc5d32" },
+  dinner: { label: "식사", symbol: "식", color: "#cc5d32" },
   rest: { label: "휴식", symbol: "휴", color: "#277b74" },
   waypoint: { label: "경유", symbol: "경", color: "#5f6d63" },
 };
@@ -67,6 +69,12 @@ export function KakaoMapCanvas({
   showLegend = true,
   onSelectCoordinate,
   selectionPreview = false,
+  savedPins = [],
+  onSelectSavedPin,
+  savedViewportKey = "",
+  allowEmptyMap = false,
+  coordinateActionLabel,
+  coordinateActionInFullscreenOnly = false,
 }: {
   points: MapPoint[];
   path?: PathPoint[];
@@ -74,6 +82,12 @@ export function KakaoMapCanvas({
   onSelectCoordinate?: (point: { latitude: number; longitude: number }) => void;
   /** A temporary, non-editable position inside the waypoint confirmation. */
   selectionPreview?: boolean;
+  savedPins?: SavedMapPin[];
+  onSelectSavedPin?: (id: string) => void;
+  savedViewportKey?: string;
+  allowEmptyMap?: boolean;
+  coordinateActionLabel?: string;
+  coordinateActionInFullscreenOnly?: boolean;
 }) {
   const titleId = useId();
   const surfaceRef = useRef<HTMLDialogElement>(null);
@@ -85,9 +99,13 @@ export function KakaoMapCanvas({
   const mapRef = useRef<InstanceType<KakaoMapsNamespace["Map"]> | null>(null);
   const overlayCleanupFailedRef = useRef(false);
   const selectRef = useRef(onSelectCoordinate);
+  const savedSelectRef = useRef(onSelectSavedPin);
+  useEffect(() => { savedSelectRef.current = onSelectSavedPin; }, [onSelectSavedPin]);
+  const fittedSavedRef = useRef<string | null>(null);
   useEffect(() => { selectRef.current = onSelectCoordinate; }, [onSelectCoordinate]);
   const appKey = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY;
-  const hasGeometry = points.length > 0 || Boolean(path?.length);
+  const hasGeometry = allowEmptyMap || points.length > 0 || Boolean(path?.length);
+  const savedKey = JSON.stringify(savedPins);
   const geometryKey = JSON.stringify({ points, path: path ?? [] });
   const [mapState, setMapState] = useState<{ status: "loading" | "ready" | "error"; geometryKey: string }>({
     status: "loading",
@@ -174,7 +192,10 @@ export function KakaoMapCanvas({
     let onError: (() => void) | null = null;
     const overlays: Array<{ setMap(map: null): void }> = [];
     const timeout = window.setTimeout(() => {
-      if (active) setMapState({ status: "error", geometryKey });
+      if (active) {
+        if (script && script.dataset.motocastKakaoMapStatus === "loading" && !window.kakao?.maps) script.dataset.motocastKakaoMapStatus = "error";
+        setMapState({ status: "error", geometryKey });
+      }
     }, KAKAO_MAP_LOAD_TIMEOUT_MS);
 
     const clearOverlays = () => {
@@ -222,7 +243,7 @@ export function KakaoMapCanvas({
             const groupedMarkers = markerGroups(geometry.points);
             const markerPath = groupedMarkers.map((group) => new loadedMaps.LatLng(group.latitude, group.longitude));
             const routePath = geometry.path.map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
-            const map = mapRef.current ?? new loadedMaps.Map(containerRef.current, { center: markerPath[0] ?? routePath[0], level: 8 });
+            const map = mapRef.current ?? new loadedMaps.Map(containerRef.current, { center: markerPath[0] ?? routePath[0] ?? new loadedMaps.LatLng(37.5665, 126.978), level: 8 });
             mapRef.current = map;
             const bounds = new loadedMaps.LatLngBounds();
             routePath.forEach((position) => bounds.extend(position));
@@ -249,7 +270,7 @@ export function KakaoMapCanvas({
             if (selectionPreview && markerPath[0]) {
               map.setCenter(markerPath[0]);
               map.setLevel(4);
-            } else map.setBounds(bounds);
+            } else if (markerPath.length || routePath.length) map.setBounds(bounds);
             window.clearTimeout(timeout);
             setMapState({ status: "ready", geometryKey });
           } catch {
@@ -310,6 +331,43 @@ export function KakaoMapCanvas({
     };
   }, [appKey, geometryKey, hasGeometry, selectionPreview]);
 
+  useEffect(() => {
+    if (!isReady) return;
+    const maps = window.kakao?.maps;
+    const map = mapRef.current;
+    if (!isReady || !maps || !map) return;
+    const pins = JSON.parse(savedKey) as SavedMapPin[];
+    let active = true;
+    const owned: Array<{ marker: { setMap(map: unknown): void }; select: () => void }> = [];
+    try {
+      if (overlayCleanupFailedRef.current) throw new Error("OVERLAY_CLEANUP_FAILED");
+      const bounds = new maps.LatLngBounds();
+      for (const pin of pins) {
+        const position = new maps.LatLng(pin.latitude, pin.longitude);
+        bounds.extend(position);
+        const restaurant = pin.kind === "restaurant";
+        const symbol = restaurant ? "식" : "S";
+        const color = restaurant ? "#aa3b14" : "#18372b";
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48"><rect x="2" y="2" width="36" height="38" rx="${restaurant ? 8 : 18}" fill="${color}" stroke="white" stroke-width="2"/><path d="M14 39L20 47L26 39" fill="${color}"/><text x="20" y="27" text-anchor="middle" font-family="sans-serif" font-size="14" fill="white">${symbol}</text></svg>`;
+        const marker = new maps.Marker({ map, position, title: `${restaurant ? "식당" : "라이딩 스팟"} · ${pin.label}`, image: new maps.MarkerImage(`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, new maps.Size(40, 48), { offset: new maps.Point(20, 47) }) });
+        const select = () => { if (active && !overlayCleanupFailedRef.current) savedSelectRef.current?.(pin.id); };
+        owned.push({ marker, select });
+        maps.event.addListener(marker, "click", select);
+      }
+      // Explicit region selection may adjust the camera; toggles and aliases never do.
+      if (pins.length && fittedSavedRef.current !== savedViewportKey) { map.setBounds(bounds); fittedSavedRef.current = savedViewportKey; }
+    } catch { queueMicrotask(() => { if (active) setMapState({ status: "error", geometryKey }); }); }
+    return () => {
+      active = false;
+      for (const { marker, select } of owned) {
+        for (const remove of [() => maps.event.removeListener(marker, "click", select), () => marker.setMap(null)]) {
+          try { remove(); } catch { overlayCleanupFailedRef.current = true; console.error("저장 장소 핀을 정리하지 못했습니다."); }
+        }
+      }
+      if (overlayCleanupFailedRef.current) setMapState({ status: "error", geometryKey });
+    };
+  }, [isReady, savedKey, savedViewportKey, geometryKey]);
+
   if (selectionPreview) return <div className="map-shell map-selection-preview" aria-label="선택한 위치 미리보기">
     <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert />
     <div className={`map-status ${isReady ? "is-visually-hidden" : ""}`} role="status">
@@ -323,19 +381,19 @@ export function KakaoMapCanvas({
         role={fullscreen ? "dialog" : "region"} aria-modal={fullscreen || undefined}
         aria-label={fullscreen ? undefined : "선택한 라이딩 경로 지도"} aria-labelledby={fullscreen ? titleId : undefined}
         onKeyDown={keepFocusInMap}
-        onCancel={(event) => { event.preventDefault(); setFullscreen(false); }}>
+        onCancel={(event) => { event.preventDefault(); event.stopPropagation(); setFullscreen(false); }}>
         <header className="map-fullscreen-header" hidden={!fullscreen}>
           <h2 id={titleId}>경로 지도</h2>
           <button type="button" ref={closeRef} onClick={() => setFullscreen(false)}>닫기</button>
         </header>
         <div className="map-viewport">
           <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert={!isReady} />
-          <MapStatus state={state} actualRoute={Boolean(path?.length)} />
+          <MapStatus state={state} actualRoute={Boolean(path?.length)} savedPlaces={allowEmptyMap} />
           <button type="button" ref={expandRef} className="map-fullscreen-trigger" hidden={fullscreen} onClick={() => setFullscreen(true)}>전체화면</button>
           {isReady && showLegend ? <MapMarkerLegend points={points} /> : null}
-          {!isReady && state !== "empty" ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
+          {!isReady && state !== "empty" && !allowEmptyMap ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
         </div>
-        {isReady && onSelectCoordinate ? <div className="map-waypoint-actions"><p>{fullscreen ? "확대·이동하거나 지도를 길게 눌러 경유지를 선택하세요." : "지도를 길게 눌러 경유지를 선택하세요. 확대·이동 후 중심 지점을 선택할 수도 있어요."}</p><button type="button" onClick={() => { const point = mapRef.current?.getCenter(); if (point) onSelectCoordinate({ latitude: point.getLat(), longitude: point.getLng() }); }}>지도 중심에서 경유지 선택</button></div>
+        {isReady && onSelectCoordinate && (!coordinateActionInFullscreenOnly || fullscreen) ? <div className="map-waypoint-actions"><p>{coordinateActionLabel ? "지도를 길게 누르거나 중심 지점을 선택해 장소를 등록하세요." : fullscreen ? "확대·이동하거나 지도를 길게 눌러 경유지를 선택하세요." : "지도를 길게 눌러 경유지를 선택하세요. 확대·이동 후 중심 지점을 선택할 수도 있어요."}</p><button type="button" onClick={() => { const point = mapRef.current?.getCenter(); if (point) onSelectCoordinate({ latitude: point.getLat(), longitude: point.getLng() }); }}>{coordinateActionLabel ?? "지도 중심에서 경유지 선택"}</button></div>
           : fullscreen && isReady ? <div className="map-viewing-hint"><p>확대·이동하며 경로를 확인하세요.</p></div> : null}
       </dialog>
     </div>
@@ -408,14 +466,14 @@ function SchematicRoute({ state, points, actualRoute }: { state: "loading" | "de
   );
 }
 
-function MapStatus({ state, actualRoute }: { state: MapDisplayState; actualRoute: boolean }) {
+function MapStatus({ state, actualRoute, savedPlaces = false }: { state: MapDisplayState; actualRoute: boolean; savedPlaces?: boolean }) {
   return (
     <div className={`map-status ${state === "ready" ? "is-visually-hidden" : ""}`} role="status" aria-live="polite">
       <span className={`status-dot ${state}`} />
       {state === "empty" ? "장소를 선택하면 지도에 표시해요" : null}
       {state === "loading" ? actualRoute ? "실제 경로 지도를 불러오는 중" : "카카오 지도를 불러오는 중" : null}
       {state === "ready" ? actualRoute ? "실제 경로 지도 준비 완료" : "카카오 지도 준비 완료" : null}
-      {state === "demo" ? actualRoute ? "카카오 지도 키 미설정 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 키 미설정 · 예시 경로 개요 표시 중" : null}
+      {state === "demo" ? savedPlaces ? "지도 연결이 설정되지 않았어요. 저장 장소 목록은 확인할 수 있어요." : actualRoute ? "카카오 지도 키 미설정 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 키 미설정 · 예시 경로 개요 표시 중" : null}
       {state === "error" ? actualRoute ? "카카오 지도 로드 실패 · 실제 경로 선을 표시할 수 없습니다" : "카카오 지도 로드 실패 · 설정 확인 후 새로고침해 주세요" : null}
     </div>
   );

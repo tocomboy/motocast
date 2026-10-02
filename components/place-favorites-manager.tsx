@@ -17,7 +17,7 @@ type PendingFavoriteChange = {
 } & ({ action: "add"; place: PlaceSearchResult } | { action: "remove"; favorite: PlaceFavorite });
 
 export function PlaceFavoritesHomeEntry({ onOpen }: { onOpen: () => void }) {
-  return <button className={styles.homeEntry} type="button" onClick={onOpen} aria-label="즐겨찾기"><span><strong>즐겨찾기</strong><small>자주 가는 장소를 최대 3개까지 저장해요.</small></span><span aria-hidden="true">→</span></button>;
+  return <button className={styles.homeEntry} type="button" onClick={onOpen} aria-label="즐겨찾기"><span><strong>즐겨찾기</strong><small>내 장소 1,000개 · 자주 찾는 곳 5개</small></span><span aria-hidden="true">→</span></button>;
 }
 
 export function PlaceFavoritesManager({ favorites, onBack }: { favorites: PlaceFavoritesControls; onBack: () => void }) {
@@ -54,14 +54,14 @@ export function PlaceFavoritesManager({ favorites, onBack }: { favorites: PlaceF
     <section className={styles.page} aria-labelledby="favorites-view-title">
       <header className={styles.heading}><h1 id="favorites-view-title" data-view-title="favorites" tabIndex={-1}>즐겨찾기</h1><button type="button" onClick={onBack} aria-label="즐겨찾기에서 뒤로">뒤로</button></header>
       <div className={styles.content}>
-        <h2>공용 즐겨찾기 {favorites.favorites.length} / 3</h2>
+        <h2>자주 찾는 곳 {favorites.favorites.length} / 3</h2>
         {favorites.status === "loading" ? <p role="status">즐겨찾기를 불러오는 중입니다.</p> : favorites.status === "error" ? (
           <div className={styles.notice}><strong>{favorites.message.includes("결과") ? "변경 결과를 확인하지 못했어요." : "즐겨찾기를 확인하지 못했어요."}</strong><p role="alert">{favorites.message}</p><button type="button" disabled={favorites.busy} onClick={favorites.retry}>목록 다시 확인</button></div>
         ) : favorites.favorites.length ? (
           <ul className={styles.list}>{favorites.favorites.map((favorite) => <li key={favorite.slot}><strong>{favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span><button type="button" disabled={favorites.busy} aria-label={`${favorite.place.name} 즐겨찾기 삭제`} onClick={(event) => requestRemove(favorite, event?.currentTarget)}>삭제</button></li>)}</ul>
         ) : <div className={styles.notice}><strong>저장한 즐겨찾기가 없어요.</strong><p>자주 가는 장소를 추가해 보세요.</p></div>}
         <button ref={addButtonRef} className={`primary-button ${styles.add}`} type="button" disabled={favorites.status !== "ready" || favorites.busy || favorites.favorites.length >= 3} onClick={() => setRegistrationOpen(true)}>+ 즐겨찾기 추가</button>
-        <p className={styles.helper}>자주 가는 장소를 최대 3개까지 저장해요.<br />출발·경유·도착에서 함께 사용할 수 있어요.</p>
+        <p className={styles.helper}>내 장소 1,000개 · 자주 찾는 곳 5개<br />출발·경유·도착에서 함께 사용할 수 있어요.</p>
         {favorites.status === "ready" ? <p className={styles.message} role="status" aria-live="polite">{favorites.message}{favorites.favorites.length >= 3 ? " 새 장소를 추가하려면 기존 장소를 삭제해 주세요." : ""}</p> : null}
       </div>
       {registrationOpen ? <FavoriteRegistrationDialog favorites={favorites} onRequestAdd={requestAdd} onClose={closeRegistration} /> : null}

@@ -26,6 +26,28 @@
 
 ## 현재 증거와 자원
 
+### 2026-10-02 0.9.0 웹 운영 반영·Android 고정 후보 검증
+
+웹 후보 `30449f274f36827d0fd481498ce663437ddbc263`는 PR97/정확한 head CI36970203660 SUCCESS와 해당 SHA의 배포0건을 확인한 뒤 develop을 같은 SHA로 fast-forward했다. Preview `dpl_BjAt6KurjZBhhKGfUybp4HqugKMf` READY, PR98의 verify/develop-only/Vercel PASS 후 운영 main `7df5b96fb120d14d31ec911c06180954f8031a01`으로 병합했다. main CI36971039099 SUCCESS, Production `dpl_9JfteBiNGd9nUakorNFaKFnmFv82` READY 및 GitHub deployment6802284402의 SHA/URL/status success가 일치한다.
+
+Preview와 Production의 기존 회원 세션에서 실제 장소 검색, 즐겨찾기 중앙 확인/취소/X/ESC, 확인1회 추가·삭제, 재접속을 검증했다. 초기 목록에 없던 공개 장소만 검증용으로 추가하고 삭제해1→2→1 및 기존 항목 보존을 확인했다. 계정별0.9.0공지·확인 후 재표시 없음, 업데이트16개·footer 일치, HTTP200/설정된 보안 헤더 PASS이며 runtime-error 조회는 없음이다.320·384·820·1440폭의 팝업 중앙/글자/동작 버튼/가로 overflow0을 직접 확인했다. 경로 검색에는 조회·선택만 있고 관리 쓰기는 없다. 실제 사용자 장소명·세션·token은 기록하지 않는다.
+
+Android 기능 commit `1d3e809`에 이전 main의 merge 이력만 포함한 고정 후보 `21f7a2814ebd4290c5954c8b09c6a35611cdfbe3`는 제품 tree가 동일하다. PR42의 정확한 head CI36974443601 SUCCESS 후 develop6dcd4db로 병합했다. PR43의 CI36976156685 SUCCESS 및 제품 tree 일치를 확인하고 main77c70175로 승격했다. 이 HOLD main의 병합 후 CI36977518220도 SUCCESS이며 배포만 BASELINE_NOT_CONFIGURED에 따른 expected SKIP이다. 입력해시 `e32581f3f3782fb19bdb6967491148f7feb831158867f6c62334eba2d7bb4cd6`,0.9.0/code10, 내장16개 공지의 출처는 실제 웹 main7df5b96이다.
+
+두 Android 환경 각347단위 PASS(실패/오류/생략0), APK/testAPK/lint/공통 UI typecheck 및 실제 merged manifest PASS. 기존 lint warning24/error0다. 동일 제품 APK의 실제 UI는384·320/글자1.3·820 각28 PASS, 실제 Kakao SDK 지도 제스처24/전체화면15씩 PASS다. 마지막 검사 helper 보완 뒤 wide15·작은 가로 화면의 실제 스크롤19 PASS를 확인했다. 메인이 작은/넓은 화면의 확인 팝업 PNG를 직접 검수했다. 제품 APK SHA `92814d2bdd51b324c3dad57564d721d76debe1cac39aacad3e4c96dba43dc976`, 최종 testAPK local/install SHA `cab7d9f79205102f7699bfebe380531a6d5a648145fec86fe79a2a856daa7867`이 일치한다.
+
+중간 FAIL을 보존했다. 빠른 동일 목록 재조회가 StateFlow 중간값을 생략하는 문제는 owner revision을 관찰 상태에 포함하고 확인 시 다시 검사해 해결했다. RN의 x86 ABI 추가가 ARM 전용 Kakao Map 초기화를 깨뜨린 문제는 SDK 공통 ARMv7/ARM64로 정렬했다. ARM 번역 에뮬레이터의 SoLoader 문제는 debug JNI 추출에만 적용하며 release/AAB 패키징·16KB·서명 검사를 유지했다. 지도 검사의 가로 화면/스크롤 존재 가정은 실제 viewport 포함 판정으로 고쳤고, 화면 밖 접근성 노드 부재는 스크롤 필요로 처리한 후 기존48dp/가시성/스크롤 성공 단언을 유지했다. 검사 완화·skip으로 실패를 숨기지 않았다.
+
+검증 자원: 기존 AVD 이름·소유권과1080×2340/450dpi/font1.0 복원을 메인이 읽어 확인한 뒤 emulator-5680만 종료했다. SDK/VM/DB 추가 설치 없이 기존 환경을 재사용했고 npm11.19.0은 사용자 cache에서 사용했다. task worktree와 실패/최종 로그·PNG는 보존하며 완료 후48시간 처분 검토만 가능하다. 물리 ARM 기기·실제 Play 신규 가입·OS App Links·정식 공개는 NOT_RUN이다. 공통 UI는 업데이트 첫 화면 이관 완료 범위이며 전체 화면 이관 완료가 아니다.
+
+Android HOLD main과 배포 없음이 확인된 뒤 Production의 기존 PLAY_ADMISSION_VERSIONS에 code10만 추가했다. 2026-10-02T07:15:58Z 저장 후 새로 읽은 digest e363a359a4879c5f031d75fe96ea0ef31ff006037232c0d3bcf87404caf9e5ea가 일치한다. 관찰 run36977733932 SUCCESS/artifact11214495544에서 migration21개·function8개 본문/JWT 불변과 운영 웹 출처47개 hash를 확인했다. 공개 assetlinks는 별도 HTTPS200/no redirect/기대 서명 지문 PASS이며 hash a1efb05f1384d4acc8cdadbed4d5f8c9a4d16b32aac8fa030ccc5004f8e822d9다.
+
+새 baseline680624f39a370ce7595652dd00d944008fcb4b09e8bdebb917f62d79c77f9edd와 ACTIVE revision17/config_epoch6만 PR44/45로 검증·병합했다. CI36978243986·36978425976 SUCCESS이며 최종 Android main은527fd2cd95e21ccea1742756ccd29fc106dedd92다. 최종 main CI36978580101의 필수 검사·live readiness·서명·내부 게시 모두 SUCCESS다. 2026-10-02T08:01:15Z Play internal VERIFIED, code10/0.9.0 completed를 새 API readback으로 확인했다. Play Console 새로고침에서도 code10 활성·최신0.9.0·내부 테스터에게 제공됨(17:01 KST)을 확인했다. 원본 artifact11216345121과 receipt11216235624를 private 보관했다. AAB53737259 bytes/SHA256 f5279e3ee8f79bd0f73979db6c7d6a7fcf1303e59ee379dd2ea8f3893413adce가 Play bundle·receipt와 일치한다. 내장16개 공지/최신0.9.0/웹 main7df5b96·한국어 게시 문구·ARMv7/ARM64만 포함·서명/16KB 검사 PASS다. 공개 트랙은 게시하지 않았다. 원본과 upload/commit intent·receipt는 C:/Users/User/AppData/Local/MOTOCAST-PrivateReleases/code10-527fd2cd-36978580101에 최소2027-01-01 및 출시/복구 완료까지 보존하며 자동 삭제하지 않는다.
+
+웹 v0.9.0 tag와 GitHub Release를 검증된 실제 운영 main7df5b96에 게시했고 API로 태그 대상·공개 상태를 재확인했다. 새 제품 버전을 추가하지 않는다.
+
+이번 작업의 검증 자료615개/205537620 bytes를 C:/Users/User/AppData/Local/MOTOCAST-PrivateReleases/ui090-validation-20261002로 복사하고 파일별 SHA256 readback PASS를 확인했다. manifest.json에 기존 Android/web worktree 경로와 대응 파일을 기록했다. 사용자 원본 dirty checkout은 보존한다. 병합 후 필수 검사와 후속 기반을 확인한 웹 review-shared-release-ui-20261002 및 앱 feat/shared-release-ui-20261002의 로컬/원격 브랜치는 정리했다. 남은 release/code10-readiness-20261002, 기록용 review-ui090-release-evidence-20261002와 두 일반 task worktree는 최종 증거 보관·기록 PR 병합 후 안전한 Git 제거 대상으로 둔다. 보존 자료와 사용자 원본 dirty 작업 공간은 삭제하지 않는다.
+
 ### 2026-10-02 즐겨찾기·복귀 동작과 공동 0.9.0 후보
 
 사용자는 앱 홈 버튼 제거, 화면/휴대폰 뒤로가기, 팝업 X 닫기, 장소 검색과 즐겨찾기 관리 분리 및 이번 병합·배포까지 병렬 진행을 승인했다. UI-001에 동작을 확정했고 메인은 통합·검수·출시, 웹/Android 작업자는 겹치지 않는 플랫폼 UI와 회귀 검사를 소유한다. 기존 dirty 사용자 workspace는 보존한다.
@@ -38,7 +60,7 @@
 
 기존 웹0ca7c7d의 CI36965973277은 SUCCESS(단위886·LOCAL_UI61 PASS/연결전용2 expected SKIP). Android7e76beb의 최초CI36965587753은 PR 설명 수정이 edited 이벤트를 발생시켜 취소됐고 Required FAIL이다. 같은head 재시작36966792582도 두환경 빌드·단위 뒤 Production lint 단계에서20분 job 제한으로 취소됐다. Android job만40분으로 변경하고 검사목록·assertion·필수집계는 유지했다. 새로운 기능 후보의 최종 검증을 이 과거 결과로 대체하지 않는다.
 
-승격 순서: 변경별 로컬/실제 UI 검사와 최종 CI → 정확한 웹 develop Preview 및 연결 동작 → 웹 Production → Android main HOLD 확인과 code10 운영 준비 → 새 baseline의 실제 main CI/CD → 같은 원본 AAB와 Play 내부 트랙 readback. 공개 Play·실기기·실제 신규가입의 기존 별도 조건은 유지한다. 현재 새 후보 병합·배포는 NOT_RUN이다.
+승격 순서: 변경별 로컬/실제 UI 검사와 최종 CI → 정확한 웹 develop Preview 및 연결 동작 → 웹 Production → Android main HOLD 확인과 code10 운영 준비 → 새 baseline의 실제 main CI/CD → 같은 원본 AAB와 Play 내부 트랙 readback. 공개 Play·실기기·실제 신규가입의 기존 별도 조건은 유지한다. 이하 후보 준비 시점에는 병합·배포 NOT_RUN이었으며 최신 반영 상태는 위 고정 후보/운영 기록을 따른다.
 
 웹 최종 기능 검증: npm11.19.0 ci, lint, typecheck, Deno8, Chromium 설치 PASS. 단위86 files/900 PASS, fresh production server의 전체 LOCAL_UI63 PASS/연결 전용2 expected SKIP. 모바일 등록 X의 기존 CSS 가림, 중복 접근성 이름, modal close 이전 포커스 복귀 실패를 수정하고 동일 사용자 경로를 재검증했다. 확인/취소/X/ESC·stale owner·중복 확인 회귀 PASS. 연결 후보의 실제 중앙 팝업 렌더와 서버 저장/삭제는 Preview 승격 후 검증한다. 증거는 외부 motocast-web-favorites-verification-20261002 폴더에 보존한다.
 

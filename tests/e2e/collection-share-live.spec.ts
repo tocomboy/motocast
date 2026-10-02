@@ -326,10 +326,10 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     const addWaypoint = page.getByRole("button", { name: /^\+ 경유지 추가/ });
     await addWaypoint.click();
     let addDialog = page.getByRole("dialog", { name: "경유지 설정" });
-    await addDialog.getByRole("button", { name: "점심", exact: true }).click();
+    await addDialog.getByRole("button", { name: "식사", exact: true }).click();
     await addDialog.getByRole("button", { name: "추가하고 장소 선택" }).click();
     await expect(page.locator("dialog.place-picker-dialog[open] input")).toBeFocused();
-    const lunchName = await selectFirstPlace(page, "1번째 점심 장소", liveQueries.lunch!);
+    const lunchName = await selectFirstPlace(page, "1번째 식사 장소", liveQueries.lunch!);
     await expect(page.locator(".ordered-waypoint").nth(0).locator(".place-picker-trigger")).toBeFocused();
     await addWaypoint.click();
     addDialog = page.getByRole("dialog", { name: "경유지 설정" });
@@ -351,14 +351,9 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(page.locator(".ordered-waypoint").nth(2).locator(".place-picker-trigger")).toBeFocused();
     await page.getByRole("button", { name: "경유 3 설정" }).click();
     let settingsDialog = page.getByRole("dialog", { name: "경유지 설정" });
-    await settingsDialog.getByRole("button", { name: "점심", exact: true }).click();
+    await settingsDialog.getByRole("button", { name: "식사", exact: true }).click();
     await settingsDialog.getByRole("button", { name: "설정 적용" }).click();
-    const duplicateRoleError = settingsDialog.getByRole("alert");
-    await expect(duplicateRoleError).toBeFocused();
-    await expect(duplicateRoleError).toContainText("점심은 하나만 추가할 수 있습니다.");
-    await settingsDialog.getByRole("button", { name: "저녁", exact: true }).click();
-    await settingsDialog.getByRole("button", { name: "설정 적용" }).click();
-    await expect(page.locator(".ordered-waypoint").nth(2)).toContainText("저녁 60분");
+    await expect(page.locator(".ordered-waypoint").nth(2)).toContainText("식사 60분");
     await page.getByRole("button", { name: "경유 3 설정" }).click();
     settingsDialog = page.getByRole("dialog", { name: "경유지 설정" });
     await settingsDialog.getByRole("button", { name: "휴식", exact: true }).click();
@@ -405,7 +400,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
       role: point.stopRole ?? "waypoint",
       dwellMinutes: point.dwellMinutes,
     }));
-    expect(expectedWaypointSequence?.map((point) => point.role)).toEqual(["lunch", "waypoint", "rest"]);
+    expect(expectedWaypointSequence?.map((point) => point.role)).toEqual(["meal", "waypoint", "rest"]);
     await finalizationStarted;
     cleanup.tripMutationStarted = true;
     const finalizedResponse = await finalizedTrip;
@@ -419,7 +414,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(page.locator(".candidate-card")).toHaveCount(0);
     await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/출발/);
     await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/복귀/);
-    await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/점심/);
+    await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/식사/);
     await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/휴식/);
     await expect(page.getByRole("list", { name: "지도 지점 표시 안내" })).toContainText(/경유/);
     await expect(page.getByRole("status").filter({ hasText: /추천 경로 날씨:/ })).toBeVisible({ timeout: 60_000 });
@@ -504,7 +499,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(orderedItems.nth(0)).toContainText(lunchName);
     await expect(orderedItems.nth(1)).toContainText(waypointName);
     await expect(orderedItems.nth(2)).toContainText(restName);
-    await expect(orderedItems.nth(0)).toContainText("점심 60분");
+    await expect(orderedItems.nth(0)).toContainText("식사 60분");
     await expect(orderedItems.nth(1)).toContainText("통과");
     await expect(orderedItems.nth(2)).toContainText("휴식 30분");
     expect(planRouteRequestCount).toBe(routeCountBeforePreparation);

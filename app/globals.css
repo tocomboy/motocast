@@ -90,11 +90,16 @@
 .waypoint-settings-dialog { width: min(520px, calc(100vw - 40px)); padding: 0; border: 1px solid #d9d2c5; border-radius: 18px; background: #fffdf8; color: #18221d; }
 .waypoint-settings-shell > *:not(header) { margin-inline: 24px; }
 .waypoint-settings-shell fieldset { margin-top: 20px; border: 0; padding: 0; }
-.waypoint-role-pills { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; }
+.waypoint-role-pills { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
 .waypoint-role-pills button, .clock-grid button, .calendar-grid button { min-height: 44px; border: 1px solid #d9d2c5; border-radius: 10px; background: #fffdf8; }
 .waypoint-role-pills button[aria-pressed="true"], .clock-grid button[aria-pressed="true"], .calendar-grid button[aria-pressed="true"] { border-color: #ef6a3a; background: #fff0e9; color: #a83d18; font-weight: 800; }
 .dwell-stepper { display: grid; grid-template-columns: 1fr 48px 80px 48px; align-items: center; gap: 6px; margin-top: 20px; }
 .dwell-stepper button { min-height: 48px; }
+.waypoint-role-pills button { min-height: 48px; }
+.waypoint-role-pills button[aria-pressed="true"] { border-color: #18221d; background: #18221d; color: #fffdf8; }
+.dwell-stepper { border: 1px solid #d9d2c5; border-radius: 10px; grid-template-columns: minmax(0, 1fr) 48px auto 48px; }
+.dwell-stepper button { border: 0; background: transparent; font: inherit; }
+.dwell-stepper > span { padding-left: 12px; }
 .waypoint-settings-actions, .schedule-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 20px 0 24px; }
 .planner-schedule-field > span { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 800; }
 .schedule-trigger { width: 100%; min-height: 52px; padding: 0 14px; border: 1px solid #d9d2c5; border-radius: 12px; background: #fffdf8; color: #18221d; text-align: left; font-weight: 750; }
@@ -4619,6 +4624,7 @@ body:has(dialog:modal) {
 .waypoint-add-row .text-button { color: #18221d; font-size: 16px; font-weight: 700; justify-content: center; min-height: 48px; width: 100%; }
 .waypoint-settings-shell header h2 { flex: 1; }
 .waypoint-setting-place button,
+.waypoint-saved-entry,
 .waypoint-settings-actions button,
 .place-favorites-error button,
 .editor-favorites-error button,
@@ -4633,6 +4639,9 @@ body:has(dialog:modal) {
 }
 .waypoint-settings-actions .primary-button { background: #18221d; color: #fffdf8; }
 .waypoint-settings-actions .danger-text { color: #a83d18; }
+.waypoint-saved-entry { width: calc(100% - 48px); margin-top: 16px; }
+.waypoint-saved-dialog { width: min(1100px, 100vw); height: 100dvh; max-width: 100vw; max-height: 100dvh; padding: 0; border: 0; background: #fffdf8; color: #18221d; }
+.waypoint-saved-dialog::backdrop { background: rgb(24 34 29 / .48); }
 .manager-operation-feedback { background: #fff0e8; border-radius: 10px; color: #a83d18; font-size: 14px; margin: 16px 0; padding: 12px 16px; }
 .collection-actions > .primary-button { background: #18221d; color: #fffdf8; }
 .collection-save-actions > button {

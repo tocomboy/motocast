@@ -1,7 +1,7 @@
 import type { CollectionPoint } from "../collections/contracts";
 import type { PlaceSearchResult } from "../places/search";
 
-export type WaypointRole = "waypoint" | "lunch" | "dinner" | "rest";
+export type WaypointRole = "waypoint" | "meal" | "lunch" | "dinner" | "rest";
 
 export type EditableWaypoint = {
   id: string;
@@ -12,26 +12,27 @@ export type EditableWaypoint = {
 
 export const waypointRoleOptions: ReadonlyArray<{ value: WaypointRole; label: string }> = [
   { value: "waypoint", label: "경유지" },
-  { value: "lunch", label: "점심" },
-  { value: "dinner", label: "저녁" },
+  { value: "meal", label: "식사" },
   { value: "rest", label: "휴식" },
 ];
 
 export const waypointLimits = {
   total: 30,
   waypoint: 20,
+  meal: 30,
   lunch: 1,
   dinner: 1,
   rest: 5,
 } as const;
 
 export function waypointRoleLabel(role: WaypointRole) {
+  if (role === "lunch" || role === "dinner") return "식사";
   return waypointRoleOptions.find((option) => option.value === role)?.label ?? "경유지";
 }
 
 export function defaultDwellMinutes(role: WaypointRole) {
   if (role === "rest") return 30;
-  if (role === "lunch" || role === "dinner") return 60;
+  if (role === "meal" || role === "lunch" || role === "dinner") return 60;
   return 0;
 }
 
@@ -45,14 +46,14 @@ export function roleAssignmentError(
   }
   const assigned = waypoints.filter((waypoint) => waypoint.id !== replacingId && waypoint.role === role).length;
   if (assigned >= waypointLimits[role]) {
-    if (role === "lunch" || role === "dinner") return `${waypointRoleLabel(role)}은 하나만 추가할 수 있습니다.`;
+    if (role === "lunch" || role === "dinner") return "기존 식사 구분은 하나만 추가할 수 있습니다.";
     return `${waypointRoleLabel(role)}${role === "waypoint" ? "는" : "은"} 최대 ${waypointLimits[role]}개까지 추가할 수 있습니다.`;
   }
   return null;
 }
 
 export function editableWaypointFromCollectionPoint(point: CollectionPoint): EditableWaypoint {
-  const role: WaypointRole = point.stopRole ?? "waypoint";
+  const role: WaypointRole = point.stopRole === "lunch" || point.stopRole === "dinner" ? "meal" : point.stopRole ?? "waypoint";
   return {
     id: point.id,
     role,

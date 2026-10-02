@@ -29,9 +29,10 @@ type Props = {
   onActivate?: () => void;
   favorites?: Pick<PlaceFavoritesControls, "favorites" | "status" | "message" | "retry">;
   presentation?: "default" | "waypoint";
+  selectionActionLabel?: string;
 };
 
-export function PlaceSearchField({ label, accessibleLabel, placeholder, required = false, autoFocus = false, selected, onSelect, onActivate, favorites, presentation = "default" }: Props) {
+export function PlaceSearchField({ label, accessibleLabel, placeholder, required = false, autoFocus = false, selected, onSelect, onActivate, favorites, presentation = "default", selectionActionLabel }: Props) {
   const titleId = useId();
   const statusId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -132,7 +133,7 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
     closePicker();
   }
 
-  const choiceLabel = roleLabel.includes("출발") ? "출발지로 선택" : roleLabel.includes("도착") || roleLabel.includes("복귀") ? "도착지로 선택" : "경유지로 선택";
+  const choiceLabel = selectionActionLabel ?? (roleLabel.includes("출발") ? "출발지로 선택" : roleLabel.includes("도착") || roleLabel.includes("복귀") ? "도착지로 선택" : "경유지로 선택");
 
   return (
     <div className={`place-field ${presentation === "waypoint" ? "is-waypoint-presentation" : ""}`}>
@@ -166,9 +167,9 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
           </div>
           <div className="place-picker-content">
             <aside className="place-favorites" aria-labelledby={`${titleId}-favorites`}>
-              <div className="place-favorites-heading"><h3 id={`${titleId}-favorites`}>공용 즐겨찾기</h3><span>{favorites?.favorites.length ?? 0}/3</span></div>
+              <div className="place-favorites-heading"><h3 id={`${titleId}-favorites`}>자주 찾는 곳</h3><span>{favorites?.favorites.length ?? 0}/5</span></div>
               {!favorites ? <p>즐겨찾기 연결 전입니다.</p> : favorites.status === "loading" ? <p role="status">즐겨찾기를 불러오는 중입니다.</p> : favorites.status === "error" ? <div className="place-favorites-error"><p role="alert">{favorites.message}</p><button type="button" onClick={favorites.retry}>다시 시도</button></div> : favorites.favorites.length ? (
-                <ul>{favorites.favorites.map((favorite) => <li key={favorite.slot}><button type="button" onClick={() => choose(favoriteAsSearchResult(favorite))}><strong>★ {favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span></button></li>)}</ul>
+                <ul>{favorites.favorites.map((favorite) => <li key={favorite.slot}><button type="button" onClick={() => choose(favoriteAsSearchResult(favorite))}><strong>★ {favorite.displayName ?? favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span></button></li>)}</ul>
               ) : <p>저장한 즐겨찾기가 없습니다. 홈의 즐겨찾기에서 장소를 추가할 수 있어요.</p>}
               {favorites && favorites.status !== "loading" && favorites.status !== "error" ? <p className="place-favorite-status" role="status">{favorites.message}</p> : null}
             </aside>

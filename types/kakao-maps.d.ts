@@ -4,6 +4,7 @@ type KakaoLatLng = {
 };
 
 type KakaoMapsNamespace = {
+  event: { addListener(target: unknown, event: string, callback: () => void): void; removeListener(target: unknown, event: string, callback: () => void): void };
   load(callback: () => void): void;
   LatLng: new (latitude: number, longitude: number) => KakaoLatLng;
   LatLngBounds: new () => { extend(point: KakaoLatLng): void };

@@ -1,4 +1,4 @@
-import type { Coordinate, WaypointKind } from "./types";
+import type { Coordinate, RoutePoint, WaypointKind } from "./types";
 import { parseStrictRfc3339 } from "../../supabase/functions/_shared/strict-time";
 
 const KOREA_BOUNDS = {
@@ -22,6 +22,7 @@ export type TripWaypointInput = {
   dwellMinutes: number;
   selected: boolean;
   winding: boolean;
+  stopRole?: RoutePoint["stopRole"];
 };
 
 export type TripInput = {
@@ -116,6 +117,11 @@ export function parseTripWaypoint(value: unknown): TripWaypointInput {
   if (!Number.isInteger(raw.dwellMinutes) || Number(raw.dwellMinutes) < 0 || Number(raw.dwellMinutes) > 1440) {
     throw new PlannerInputError("INVALID_DWELL_MINUTES");
   }
+  if (raw.stopRole !== undefined && (
+    !["meal", "lunch", "dinner", "rest"].includes(String(raw.stopRole)) ||
+    raw.kind !== (raw.stopRole === "rest" ? "optional" : "stop") ||
+    Number(raw.dwellMinutes) <= 0 || raw.winding
+  )) throw new PlannerInputError("INVALID_WAYPOINT_ROLE");
 
   return {
     place: parseSelectedPlace(raw.place),
@@ -123,6 +129,7 @@ export function parseTripWaypoint(value: unknown): TripWaypointInput {
     dwellMinutes: Number(raw.dwellMinutes),
     selected: raw.selected,
     winding: raw.winding,
+    ...(raw.stopRole !== undefined ? { stopRole: raw.stopRole as RoutePoint["stopRole"] } : {}),
   };
 }
 

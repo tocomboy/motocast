@@ -73,6 +73,24 @@ function dependencies(now: number) {
 }
 
 describe("orchestrateRecommendedRoute", () => {
+  it.each([[1, "CURRENT_P0_P1_MEAL"], [31, "FUTURE_P30_P31_DESTINATION"]])(
+    "keeps closed diagnostics for thirty meals and the endpoint failure at call %i", async (failedCall, expected) => {
+      const deps = dependencies(Date.parse("2026-09-01T00:00:00.000Z"));
+      deps.provider.mockImplementation(async (request) => {
+        if (deps.provider.mock.calls.length === failedCall) throw new RouteResponseValidationError("RESULT_CODE_106");
+        return providerResult(request);
+      });
+      const points = [point(0), ...Array.from({ length: 30 }, (_, index) => ({
+        ...point(index + 1, 1), stopRole: "meal" as const,
+      })), point(31)];
+      const error = await orchestrateRecommendedRoute(points, "2026-09-01T00:00:00.000Z", deps.value)
+        .then(() => null, (error: unknown) => error);
+      expect(routeRequestDiagnostic(error)).toBe(expected);
+      expect(deps.provider).toHaveBeenCalledTimes(failedCall);
+      expect(deps.budget).toHaveBeenCalledTimes(failedCall);
+    },
+  );
+
   it.each([[1, "CURRENT_P0_P6_WAYPOINT"], [2, "FUTURE_P6_P7_DESTINATION"]])("labels waypoint-limit chunk %i without regrouping points", async (failedCall, expected) => {
     const deps = dependencies(Date.parse("2026-09-01T00:00:00.000Z"));
     deps.provider.mockImplementation(async (request) => {

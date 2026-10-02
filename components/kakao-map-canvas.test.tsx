@@ -132,10 +132,43 @@ function installMaps({ throwOnLoad = false, synchronousLoad = false }: { throwOn
     Size,
     Point,
     Polyline,
+    event: { addListener: vi.fn(), removeListener: vi.fn() },
   };
   (window as Window).kakao = { maps: maps as unknown as KakaoMapsNamespace };
-  return { loadCallbacks, MapConstructor, Marker, MarkerImage, Polyline, Point, extend, setBounds, projection, setCenter, setLevel, relayout, mapLayers, activeMarkers, activePolylines };
+  return { loadCallbacks, MapConstructor, Marker, MarkerImage, Polyline, Point, extend, setBounds, projection, setCenter, setLevel, relayout, mapLayers, activeMarkers, activePolylines, event: maps.event };
 }
+
+it("updates 100 saved pins and twenty toggle cycles on one map without moving the camera or removing draft points",async()=>{
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY","fixture-key");stubBrowser();const maps=installMaps();const select=vi.fn();
+  const pins=Array.from({length:100},(_,n)=>({id:String(n),label:`공개 장소 ${n}`,kind:n%2?"restaurant" as const:"riding_spot" as const,latitude:37.5+n/1000,longitude:127.1}));
+  let renderer!:ReactTestRenderer;
+  await act(async()=>{renderer=create(<KakaoMapCanvas points={points} path={actualPath} savedPins={pins} onSelectSavedPin={select} allowEmptyMap/>,rendererOptions);});await flush(maps.loadCallbacks);
+  const bounds=maps.setBounds.mock.calls.length;const routes=maps.Polyline.mock.calls.length;
+  await act(async()=>{maps.event.addListener.mock.calls[0][2]();});expect(select).toHaveBeenCalledWith("0");
+  for(let n=0;n<20;n++)for(const visible of [pins.filter(p=>p.kind==="restaurant"),[],pins.filter(p=>p.kind==="riding_spot"),pins]){
+    await act(async()=>renderer.update(<KakaoMapCanvas points={points} path={actualPath} savedPins={visible} onSelectSavedPin={select} allowEmptyMap/>));
+    expect(maps.activeMarkers.size).toBe(visible.length+2);expect(maps.activePolylines.size).toBe(1);
+  }
+  expect(maps.MapConstructor).toHaveBeenCalledTimes(1);expect(maps.setBounds).toHaveBeenCalledTimes(bounds);expect(maps.Polyline).toHaveBeenCalledTimes(routes);
+  await act(async()=>renderer.unmount());expect(maps.activeMarkers.size).toBe(0);expect(maps.event.removeListener.mock.calls.length).toBe(maps.event.addListener.mock.calls.length);
+});
+
+it("keeps an empty saved-place map available with no route points or pins",async()=>{
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY","fixture-key");stubBrowser();const maps=installMaps();let renderer!:ReactTestRenderer;
+  await act(async()=>{renderer=create(<KakaoMapCanvas points={[]} savedPins={[]} allowEmptyMap/>,rendererOptions);});await flush(maps.loadCallbacks);
+  expect(maps.MapConstructor).toHaveBeenCalledTimes(1);expect(maps.Marker).not.toHaveBeenCalled();expect(maps.setBounds).not.toHaveBeenCalled();await act(async()=>renderer.unmount());
+});
+
+it("hides saved-pin cleanup failures and disables stale click callbacks while still attempting every removal",async()=>{
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY","fixture-key");stubBrowser();const maps=installMaps();const select=vi.fn();
+  const pins=[{id:"1",label:"공개 장소",kind:"riding_spot" as const,latitude:37.5,longitude:127.1}];let r!:ReactTestRenderer;
+  await act(async()=>{r=create(<KakaoMapCanvas points={[]} savedPins={pins} onSelectSavedPin={select} allowEmptyMap/>,rendererOptions);});await flush(maps.loadCallbacks);
+  const click=maps.event.addListener.mock.calls[0][2];const marker=maps.Marker.mock.instances[0] as unknown as {setMap:ReturnType<typeof vi.fn>};
+  maps.event.removeListener.mockImplementationOnce(()=>{throw new Error("SDK cleanup error");});
+  await act(async()=>r.update(<KakaoMapCanvas points={[]} savedPins={[]} onSelectSavedPin={select} allowEmptyMap/>));
+  expect(marker.setMap).toHaveBeenCalledWith(null);expect(mapCanvas(r).props["aria-hidden"]).toBe(true);expect(mapCanvas(r).props.inert).toBe(true);
+  click();expect(select).not.toHaveBeenCalled();await act(async()=>r.unmount());
+});
 
 it("shows the exact temporary selected point and disposes it without a route or edit controls", async () => {
   vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
@@ -197,7 +230,9 @@ it("keeps one SDK map and its camera across fullscreen, return, and viewport res
   expect(closed.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
   await resize();
   const preventDefault = vi.fn();
-  await act(async () => renderer.root.findByType("dialog").props.onCancel({ preventDefault }));
+  const stopPropagation = vi.fn();
+  await act(async () => renderer.root.findByType("dialog").props.onCancel({ preventDefault, stopPropagation }));
+  expect(stopPropagation).toHaveBeenCalledOnce();
   await resize();
   expect(preventDefault).toHaveBeenCalledTimes(1);
   expect(surface.show).toHaveBeenCalledTimes(1);
@@ -237,10 +272,11 @@ it("uses the same owner selection callback in fullscreen and never enables it fo
   const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ left: 20, top: 72 }) });
   const surface = { close: vi.fn(), show: vi.fn(), showModal: vi.fn() };
   let renderer!: ReactTestRenderer;
-  await act(async () => { renderer = create(<KakaoMapCanvas points={points} onSelectCoordinate={select} />, {
+  await act(async () => { renderer = create(<KakaoMapCanvas points={points} onSelectCoordinate={select} coordinateActionInFullscreenOnly />, {
     createNodeMock: node => node.type === "dialog" ? surface : node.type === "button" ? { focus: vi.fn() } : canvas,
   }); });
   await flush(maps.loadCallbacks);
+  expect(renderer.root.findAllByType("button").some(node => node.children.includes("지도 중심에서 경유지 선택"))).toBe(false);
   await act(async () => renderer.root.findByProps({ className: "map-fullscreen-trigger" }).props.onClick());
   const chooseCenter = () => renderer.root.findAllByType("button").find(node => node.children.includes("지도 중심에서 경유지 선택"));
   await act(async () => chooseCenter()!.props.onClick());
@@ -514,14 +550,14 @@ describe("KakaoMapCanvas", () => {
     expect(markerCalls.map(([options]) => options.title)).toEqual([
       "출발 · 출발지",
       "복귀 · 복귀지",
-      "점심 · 점심지",
-      "저녁 · 저녁지",
+      "식사 · 점심지",
+      "식사 · 저녁지",
       "휴식 · 휴식지",
       "경유 · 경유지",
     ]);
     const legend = renderer.root.findByProps({ "aria-label": "지도 지점 표시 안내" });
     expect(legend.findAllByType("li").map((item) => item.children.at(-1))).toEqual([
-      "출발", "복귀", "점심", "저녁", "휴식", "경유",
+      "출발", "복귀", "식사", "식사", "휴식", "경유",
     ]);
     await act(async () => renderer.unmount());
   });
@@ -552,10 +588,10 @@ describe("KakaoMapCanvas", () => {
     expect(maps.Marker).toHaveBeenCalledTimes(1);
     expect(maps.MarkerImage).toHaveBeenCalledTimes(1);
     const markerCall = maps.Marker.mock.calls[0] as unknown as [{ title: string }];
-    expect(markerCall[0].title).toBe("점심 · 점심 / 경유 · 점심 · 선택 경로 미통과");
+    expect(markerCall[0].title).toBe("식사 · 점심 / 경유 · 점심 · 선택 경로 미통과");
     const markerImageCall = maps.MarkerImage.mock.calls[0] as unknown as [string];
     const compositeSvg = decodeURIComponent(markerImageCall[0].replace("data:image/svg+xml;charset=UTF-8,", ""));
-    expect(compositeSvg).toContain(">점</text>");
+    expect(compositeSvg).toContain(">식</text>");
     expect(compositeSvg).toContain(">경×</text>");
     expect(maps.extend).toHaveBeenCalledTimes(1);
     await act(async () => renderer.unmount());

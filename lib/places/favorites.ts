@@ -2,9 +2,10 @@ import { parseSelectedPlace, type SelectedPlace } from "@/lib/planner/input";
 import type { PlaceSearchResult } from "@/lib/places/search";
 
 export type PlaceFavorite = {
-  slot: 1 | 2 | 3;
+  slot: 1 | 2 | 3 | 4 | 5;
   place: SelectedPlace;
   createdAt: string;
+  displayName?: string;
 };
 
 export function favoritePlacePayload(value: unknown): SelectedPlace {
@@ -23,10 +24,10 @@ export function favoritePlacePayload(value: unknown): SelectedPlace {
 export function parsePlaceFavorite(value: unknown): PlaceFavorite {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_PLACE_FAVORITE");
   const row = value as Record<string, unknown>;
-  if (![1, 2, 3].includes(Number(row.slot)) || typeof row.created_at !== "string" || !Number.isFinite(Date.parse(row.created_at))) {
+  if (![1, 2, 3, 4, 5].includes(Number(row.slot)) || typeof row.created_at !== "string" || !Number.isFinite(Date.parse(row.created_at))) {
     throw new Error("INVALID_PLACE_FAVORITE");
   }
-  return { slot: Number(row.slot) as 1 | 2 | 3, place: favoritePlacePayload(row.place), createdAt: row.created_at };
+  return { slot: Number(row.slot) as PlaceFavorite["slot"], place: favoritePlacePayload(row.place), createdAt: row.created_at };
 }
 
 export function favoriteAsSearchResult(favorite: PlaceFavorite): PlaceSearchResult {

@@ -38,7 +38,7 @@ export function buildSharedMapPoints(input: {
   routePoints: Array<SharedPlace & {
     kind?: "pass-through" | "stop" | "optional";
     winding?: boolean;
-    stopRole?: "lunch" | "dinner" | "rest";
+    stopRole?: "meal" | "lunch" | "dinner" | "rest";
   }>;
   waypoints: SharedWaypoint[];
   lunchStop: SharedPlace | null;
@@ -51,12 +51,12 @@ export function buildSharedMapPoints(input: {
     point: SharedPlace & {
       kind?: "pass-through" | "stop" | "optional";
       winding?: boolean;
-      stopRole?: "lunch" | "dinner" | "rest";
+      stopRole?: "meal" | "lunch" | "dinner" | "rest";
     },
     waypoint?: SharedWaypoint,
   ): MapMarkerRole => {
     if (point.stopRole) {
-      if (point.stopRole !== "rest") assignedStops[point.stopRole] = true;
+      if (point.stopRole === "lunch" || point.stopRole === "dinner") assignedStops[point.stopRole] = true;
       return point.stopRole;
     }
     if (point.winding || waypoint?.winding) return "waypoint";

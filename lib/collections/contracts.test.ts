@@ -44,7 +44,7 @@ function collectionRow(points: unknown[]) {
   };
 }
 
-function stopPoint(id: string, stopRole: "lunch" | "dinner" | "rest") {
+function stopPoint(id: string, stopRole: "meal" | "lunch" | "dinner" | "rest") {
   return {
     ...point,
     id,
@@ -56,6 +56,22 @@ function stopPoint(id: string, stopRole: "lunch" | "dinner" | "rest") {
 }
 
 describe("parseCollectionRows", () => {
+  it("reads thirty meals without regrouping or replacing original roles and dwell", () => {
+    const meals = Array.from({ length: 30 }, (_, index) => ({
+      ...stopPoint(`meal-${index}`, "meal"), dwellMinutes: index + 1,
+    }));
+    expect(parseCollectionRows([collectionRow(meals)])[0].latestVersion.course.points).toEqual(meals);
+    expect(() => parseCollectionRows([collectionRow([...meals, stopPoint("meal-31", "meal")])]))
+      .toThrow("INVALID_COLLECTION_VERSION");
+  });
+
+  it.each([{ dwellMinutes: 0 }, { kind: "optional" }, { kind: "pass-through" }, { winding: true }])(
+    "rejects invalid persisted meal semantics %#", (overrides) => {
+      expect(() => parseCollectionRows([collectionRow([{ ...stopPoint("meal", "meal"), ...overrides }])]))
+        .toThrow("INVALID_COLLECTION_POINT");
+    },
+  );
+
   it("selects the latest immutable version", () => {
     const parsed = parseCollectionRows([{
       id: "collection-1",
