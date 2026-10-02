@@ -27,7 +27,7 @@ test.describe("public update notes", () => {
     const dialog = page.getByRole("dialog", { name: "새로운 소식을 확인해 보세요" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`현재 v${currentVersion}`)).toBeVisible();
-    await expect(dialog.getByText("경유지를 추가하기 전에 지도에서 선택 위치를 확인해요.")).toBeVisible();
+    await expect(dialog.getByText("앱 홈에서 아래로 스크롤하면 마지막에 로그아웃 버튼이 나타나요.")).toBeVisible();
     const layout = await dialog.evaluate((element) => ({
       dialogHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
       documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
@@ -84,7 +84,7 @@ test.describe("public update notes", () => {
     await expect(page.getByRole("heading", { level: 1, name: "업데이트 내역" })).toBeVisible();
 
     const releases = page.getByRole("article");
-    const expectedVersions = [currentVersion, "0.7.0", "0.6.0", "0.5.1", "0.5.0", "0.4.2", "0.4.1", "0.4.0", "0.3.0", "0.2.3", "0.2.2", "0.2.1", "0.2.0", "0.1.0"];
+    const expectedVersions = [currentVersion, "0.8.0", "0.7.0", "0.6.0", "0.5.1", "0.5.0", "0.4.2", "0.4.1", "0.4.0", "0.3.0", "0.2.3", "0.2.2", "0.2.1", "0.2.0", "0.1.0"];
     await expect(releases).toHaveCount(expectedVersions.length);
     for (const [index, version] of expectedVersions.entries()) {
       await expect(releases.nth(index)).toContainText(`v${version}`);
@@ -134,7 +134,7 @@ test.describe("public update notes", () => {
       await page.evaluate(() => document.fonts.ready);
 
       await expect(page.getByRole("heading", { level: 1, name: "업데이트 내역" })).toBeVisible();
-      await expect(page.getByRole("article")).toHaveCount(14);
+      await expect(page.getByRole("article")).toHaveCount(15);
       await expect(page.getByText("경유지를 추가하기 전에 지도에서 선택 위치를 확인해요.")).toBeVisible();
       await expect(page.getByText("지도를 이동하거나 확대해 원하는 지점을 길게 눌러 선택해요.")).toBeVisible();
       await expect(page.getByText("일정을 열면 지금 이후 가장 가까운 5분 시각을 먼저 보여 줘요.")).toBeVisible();

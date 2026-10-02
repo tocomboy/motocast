@@ -19,6 +19,21 @@ A focused, mocked, docs-only, local, or shared-baseline result cannot be general
 
 ## 2. Decision-to-change traceability
 
+<a id="agent-owned-e2e"></a>
+
+### E2E 실행 책임
+
+2026-10-02 사용자 결정: 에이전트가 실행 가능한 E2E 검사를 직접 완료한다. 변경에 영향받는 사용자 동작을 기존 브라우저·에뮬레이터·연결 서비스 도구로 재현하고 정상·실패·취소·재진입과 필요한 화면 크기를 확인한다. 기존 유효한 고정 후보 근거는 재사용하며 필수 최종 후보·병합 후 검사는 유지한다.
+
+- 검증 계획에서 자동 실행 가능 항목과 사용자 직접 단계가 필요한 항목을 구분한다. 브라우저/ADB/기존 로그인 및 실행기의 실제 가용성을 확인하기 전에 사용자 실기기 대기로 분류하지 않는다. 승인된 개발 도구가 없으면 설치 가능한 경로를 확인한다.
+- 화면은 렌더링·터치/클릭·스크롤·관찰 결과로 확인한다. 빌드, 단위 검사, Figma만으로 버튼 위치·클리핑·안전 영역·동작 완료를 주장하지 않는다. 실패 시 보호 조건이나 assertion을 낮추지 말고 원인 수정 후 영향받는 경로를 재검증한다.
+- `LOCAL_UI`(합성 API 포함), `CONNECTED_PREVIEW`, `CONNECTED_PRODUCTION`, `PLAY_READBACK`, `USER_DEVICE`를 결과에 함께 명시한다. 실제 SDK를 사용해도 API 응답이나 GPS가 합성이면 그 경계를 기록한다. UI 콜백 성공과 실제 서버 로그아웃도 구분한다.
+- 연결 브라우저 세션은 도구의 허용된 UI 조작으로 사용한다. 인증정보를 추출하거나 Preview 세션을 Production으로 복사하지 않는다. 기존 연결 Playwright의 origin·비밀파일 권한·mutation/cleanup 규칙을 유지한다.
+- 계정 비밀번호·MFA·실제 Play 설치 검증·물리 GPS 등 사용자 직접 수행이 필요한 남은 부분만 요청한다. 사용자가 조작한 단계와 에이전트 관찰을 분리하고, 연결 가능해지면 나머지 에이전트 검사를 이어서 완료한다.
+- `NOT_RUN`/`ERROR`에는 대상 후보·환경, 시도한 실행 경로, 구체적 차단 원인, 최소 사용자 조치 또는 재개 조건을 남긴다. 테스트용 저장·공유는 승인된 환경의 소유 자원만 만들고 정확한 ID로 정리·확인하며 결과 불명은 성공으로 처리하지 않는다.
+
+웹 실행 절차는 [프로젝트 스킬](../../.agents/skills/motocast-web-e2e/SKILL.md), Android 실행 절차는 [Android 스킬](https://github.com/tocomboy/motocast-android/blob/develop/.agents/skills/motocast-android-e2e/SKILL.md)을 따른다. 이 정책은 배포·권한 확대·정식 공개 승인이나 모든 기능의 매번 전체 재검사를 추가하지 않는다.
+
 For each logical slice, record:
 
 1. Applicable Decision IDs from `docs/product/MOTOCAST_SOT.md`.

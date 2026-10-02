@@ -12,6 +12,15 @@ export const currentVersion = packageMetadata.version;
 
 export const releaseNotes = [
   {
+    version: "0.8.1",
+    date: "2026-10-02",
+    title: "홈 화면 스크롤 개선",
+    summary: "앱 홈의 로그아웃 위치를 다듬었습니다.",
+    bullets: [
+      "앱 홈에서 아래로 스크롤하면 마지막에 로그아웃 버튼이 나타나요.",
+    ],
+  },
+  {
     version: "0.8.0",
     date: "2026-10-02",
     title: "웹과 앱을 더 편하게",
