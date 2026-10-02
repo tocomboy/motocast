@@ -29,6 +29,7 @@ const place: PlaceSearchResult = {
 const row = { slot: 1, place: { kakaoPlaceId: place.kakaoPlaceId, verificationToken: place.verificationToken, name: place.name, address: place.address, roadAddress: null, longitude: place.longitude, latitude: place.latitude }, created_at: "2026-09-17T00:00:00Z" };
 const secondPlace = { ...place, kakaoPlaceId: "place-2", verificationToken: "b".repeat(43), name: "양평역" };
 const secondRow = { ...row, slot: 2, place: { ...row.place, kakaoPlaceId: secondPlace.kakaoPlaceId, verificationToken: secondPlace.verificationToken, name: secondPlace.name } };
+let captureSnapshot: ReturnType<typeof usePlaceFavorites>["captureSnapshot"];
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -38,7 +39,7 @@ function deferred<T>() {
 
 function Harness() {
   const favorites = usePlaceFavorites();
-  return <div><output data-state>{favorites.status}|{favorites.busy ? "busy" : "idle"}|{favorites.favorites.length}|{favorites.message}</output><button onClick={() => void favorites.add(place)}>첫 장소 추가</button><button onClick={() => void favorites.add(secondPlace)}>둘째 장소 추가</button><button onClick={favorites.retry}>재시도</button></div>;
+  return <div><output data-state>{favorites.status}|{favorites.busy ? "busy" : "idle"}|{favorites.favorites.length}|{favorites.message}</output><button onClick={() => void favorites.add(place)}>첫 장소 추가</button><button onClick={() => void favorites.add(secondPlace)}>둘째 장소 추가</button><button onClick={favorites.retry}>재시도</button><button onClick={() => { captureSnapshot = favorites.captureSnapshot; }}>스냅샷 캡처</button></div>;
 }
 
 async function renderProvider() {
@@ -62,6 +63,26 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PlaceFavoritesProvider", () => {
+  it("invalidates pending confirmation snapshots on a new read or account and preserves a same-user refresh", async () => {
+    mocks.reads.push(Promise.resolve({ data: [row], error: null }), Promise.resolve({ data: [row], error: null }));
+    const renderer = await renderProvider();
+    await act(async () => renderer.root.findAllByType("button")[3].props.onClick());
+    await act(async () => mocks.authListener?.("INITIAL_SESSION", { user: { id: "user-a" } }));
+    const beforeRefresh = captureSnapshot();
+    expect(beforeRefresh()).toBe(true);
+    await act(async () => mocks.authListener?.("TOKEN_REFRESHED", { user: { id: "user-a" } }));
+    expect(beforeRefresh()).toBe(true);
+    await act(async () => renderer.root.findAllByType("button")[2].props.onClick());
+    expect(beforeRefresh()).toBe(false);
+    const beforeOwnerChange = captureSnapshot();
+    expect(beforeOwnerChange()).toBe(true);
+    await act(async () => mocks.authListener?.("SIGNED_IN", { user: { id: "user-b" } }));
+    expect(beforeOwnerChange()).toBe(false);
+    const beforeUnmount = captureSnapshot();
+    await act(async () => renderer.unmount());
+    expect(beforeUnmount()).toBe(false);
+  });
+
   it("keeps a mutation failure visible after the reconciliation read succeeds", async () => {
     mocks.reads.push(Promise.resolve({ data: [], error: null }), Promise.resolve({ data: [], error: null }));
     mocks.rpc.mockResolvedValue({ data: null, error: { message: "WRITE_FAILED" } });

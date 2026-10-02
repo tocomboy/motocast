@@ -31,7 +31,7 @@ test.describe("public update notes", () => {
     const dialog = page.getByRole("dialog", { name: "새로운 소식을 확인해 보세요" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`현재 v${currentVersion}`)).toBeVisible();
-    await expect(dialog.getByText("앱 홈에서 아래로 스크롤하면 마지막에 로그아웃 버튼이 나타나요.")).toBeVisible();
+    await expect(dialog.getByText("홈의 즐겨찾기 페이지에서 장소를 관리하고, 추가·삭제 전에 한 번 더 확인해요.")).toBeVisible();
     const layout = await dialog.evaluate((element) => ({
       dialogHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
       documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,

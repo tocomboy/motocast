@@ -15,6 +15,7 @@ export type PlaceFavoritesControls = {
   retry: () => void;
   add: (place: PlaceSearchResult) => Promise<boolean>;
   remove: (favorite: PlaceFavorite) => Promise<boolean>;
+  captureSnapshot: () => () => boolean;
 };
 
 type Props = {
@@ -26,7 +27,7 @@ type Props = {
   selected: PlaceSearchResult | null;
   onSelect: (place: PlaceSearchResult | null) => void;
   onActivate?: () => void;
-  favorites?: PlaceFavoritesControls;
+  favorites?: Pick<PlaceFavoritesControls, "favorites" | "status" | "message" | "retry">;
   presentation?: "default" | "waypoint";
 };
 
@@ -44,7 +45,6 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
   const [searching, setSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [searchSettled, setSearchSettled] = useState(false);
-  const [pickerMode, setPickerMode] = useState<"search" | "manage" | "register">("search");
   const roleLabel = accessibleLabel ?? label;
 
   useEffect(() => {
@@ -58,7 +58,6 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
     setResults([]);
     setShowResults(false);
     setSearchSettled(false);
-    setPickerMode("search");
     setStatus(selected ? `${selected.name}이(가) 현재 선택되어 있습니다.` : "검색어를 입력해 주세요.");
     dialogRef.current?.showModal();
     window.setTimeout(() => searchInputRef.current?.focus(), 0);
@@ -76,20 +75,6 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
 
   function back() {
     invalidateSearch();
-    if (pickerMode === "register") {
-      setPickerMode("manage");
-      setShowResults(false);
-      setResults([]);
-      setStatus("즐겨찾기를 관리하거나 새 장소를 등록할 수 있습니다.");
-      return;
-    }
-    if (pickerMode === "manage") {
-      setPickerMode("search");
-      setShowResults(false);
-      setStatus("검색어를 입력해 주세요.");
-      window.setTimeout(() => searchInputRef.current?.focus(), 0);
-      return;
-    }
     if (showResults) {
       setQuery("");
       setResults([]);
@@ -168,10 +153,10 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
       </div>
 
       <dialog ref={dialogRef} className="place-picker-dialog" aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); event.stopPropagation(); back(); }} onClose={() => triggerRef.current?.focus()} onKeyDown={(event) => event.stopPropagation()}>
-        <div className={`place-picker-shell mode-${pickerMode} ${showResults ? "show-results" : "show-favorites"}`}>
+        <div className={`place-picker-shell mode-search selection-only ${showResults ? "show-results" : "show-favorites"}`}>
           <header className="place-picker-header">
-            <button type="button" className="place-picker-back" onClick={back} aria-label={pickerMode === "register" ? "즐겨찾기 관리로 돌아가기" : pickerMode === "manage" || showResults ? `${roleLabel} 선택으로 돌아가기` : `${roleLabel} 검색 닫기`}>←</button>
-            <div><h2 id={titleId}>{pickerMode === "manage" ? "즐겨찾기 관리" : pickerMode === "register" ? "즐겨찾기 등록" : <><span className="desktop-place-picker-title">{roleLabel} 선택</span><span className="mobile-place-picker-title">{showResults ? "장소 검색" : `${roleLabel} 선택`}</span></>}</h2></div>
+            <button type="button" className="place-picker-back" onClick={back} aria-label={showResults ? `${roleLabel} 선택으로 돌아가기` : `${roleLabel} 선택에서 뒤로`}>←</button>
+            <div><h2 id={titleId}>{roleLabel} 선택</h2></div>
             <button type="button" className="place-picker-close" onClick={closePicker} aria-label={`${roleLabel} 검색 닫기`}>×</button>
           </header>
           <div className="place-picker-search" role="search">
@@ -181,25 +166,19 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
           </div>
           <div className="place-picker-content">
             <aside className="place-favorites" aria-labelledby={`${titleId}-favorites`}>
-              <div className="place-favorites-heading"><h3 id={`${titleId}-favorites`}>{pickerMode === "manage" ? <>공용 즐겨찾기 <span>{favorites?.favorites.length ?? 0} / 3</span></> : "공용 즐겨찾기"}</h3>{pickerMode !== "manage" ? <span>{favorites?.favorites.length ?? 0}/3</span> : null}{favorites && pickerMode === "search" ? <button className="mobile-favorites-manage" type="button" onClick={() => { invalidateSearch(); setPickerMode("manage"); }}>관리</button> : null}</div>
+              <div className="place-favorites-heading"><h3 id={`${titleId}-favorites`}>공용 즐겨찾기</h3><span>{favorites?.favorites.length ?? 0}/3</span></div>
               {!favorites ? <p>즐겨찾기 연결 전입니다.</p> : favorites.status === "loading" ? <p role="status">즐겨찾기를 불러오는 중입니다.</p> : favorites.status === "error" ? <div className="place-favorites-error"><p role="alert">{favorites.message}</p><button type="button" onClick={favorites.retry}>다시 시도</button></div> : favorites.favorites.length ? (
-                <ul>{favorites.favorites.map((favorite) => <li key={favorite.slot}><button type="button" disabled={pickerMode !== "search"} onClick={() => { if (pickerMode === "search") choose(favoriteAsSearchResult(favorite)); }}><strong>{pickerMode === "search" ? "★ " : ""}{favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span></button>{pickerMode === "manage" ? <button type="button" disabled={favorites.busy} aria-label={`${favorite.place.name} 즐겨찾기 삭제`} onClick={() => void favorites.remove(favorite)}>삭제</button> : null}</li>)}</ul>
-              ) : <p>검색 결과에서 별을 눌러 최대 3개를 저장하세요.</p>}
-              {favorites && favorites.status !== "loading" && favorites.status !== "error" && pickerMode !== "manage" ? <p className="place-favorite-status" role="status">{favorites.message}</p> : null}
-              {favorites && pickerMode === "search" ? <div className="desktop-favorites-footer"><p>출발 · 경유 · 도착에서 함께 사용</p><button type="button" onClick={() => { invalidateSearch(); setPickerMode("manage"); }}>즐겨찾기 관리</button></div> : null}
-              {pickerMode === "manage" ? <div className="favorite-manage-controls"><button className="primary-button favorite-register-button" type="button" onClick={() => { invalidateSearch(); setQuery(""); setResults([]); setShowResults(false); setSearchSettled(false); setPickerMode("register"); window.setTimeout(() => searchInputRef.current?.focus(), 0); }}><span aria-hidden="true">+ </span>즐겨찾기 등록</button><p className="favorite-manage-helper" role="status">{favorites?.message || "즐겨찾기는 최대 3개까지 등록할 수 있어요."}</p></div> : null}
+                <ul>{favorites.favorites.map((favorite) => <li key={favorite.slot}><button type="button" onClick={() => choose(favoriteAsSearchResult(favorite))}><strong>★ {favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span></button></li>)}</ul>
+              ) : <p>저장한 즐겨찾기가 없습니다. 홈의 즐겨찾기에서 장소를 추가할 수 있어요.</p>}
+              {favorites && favorites.status !== "loading" && favorites.status !== "error" ? <p className="place-favorite-status" role="status">{favorites.message}</p> : null}
             </aside>
-            {pickerMode !== "manage" ? <section className="place-picker-results" aria-labelledby={`${titleId}-results`}>
+            <section className="place-picker-results" aria-labelledby={`${titleId}-results`}>
               <div><h3 id={`${titleId}-results`}>검색 결과</h3><span>{results.length ? `${results.length}개` : ""}</span></div>
-              {results.length ? <ul>{results.map((place) => {
-                const saved = favorites?.favorites.some((favorite) => favorite.place.kakaoPlaceId === place.kakaoPlaceId) ?? false;
-                return <li key={place.kakaoPlaceId}><div><strong>{place.name}</strong><span>{place.roadAddress ?? place.address}</span>{place.category ? <small>{place.category}</small> : null}</div><div>{pickerMode === "register" ? <button className="favorite-register-result" type="button" disabled={!favorites || favorites.busy || saved || favorites.favorites.length >= 3} onClick={() => favorites && void favorites.add(place)} aria-label={`${place.name} 즐겨찾기 저장`}>{saved ? "저장됨" : "등록"}</button> : <button type="button" className="primary-button place-result-select" onClick={() => choose(place)}>{choiceLabel}</button>}</div></li>;
-              })}</ul> : <div className="place-picker-empty"><span aria-hidden="true">⌕</span><p>{status}</p>{status.includes("못했습니다") || status.includes("확인할 수 없습니다") ? <button type="button" onClick={() => void search()}>다시 검색</button> : null}</div>}
+              {results.length ? <ul>{results.map((place) => <li key={place.kakaoPlaceId}><div><strong>{place.name}</strong><span>{place.roadAddress ?? place.address}</span>{place.category ? <small>{place.category}</small> : null}</div><div><button type="button" className="primary-button place-result-select" onClick={() => choose(place)}>{choiceLabel}</button></div></li>)}</ul> : <div className="place-picker-empty"><span aria-hidden="true">⌕</span><p>{status}</p>{status.includes("못했습니다") || status.includes("확인할 수 없습니다") ? <button type="button" onClick={() => void search()}>다시 검색</button> : null}</div>}
               {results.length ? <p id={statusId} className="place-status" role="status" aria-live="polite">{status}</p> : null}
-            </section> : null}
+            </section>
           </div>
-          {pickerMode === "manage" ? <footer className="favorite-manage-footer"><button className="favorite-manage-done" type="button" onClick={back}>완료</button></footer> : null}
-          {pickerMode === "search" && selected ? <div className="current-place-clear-row"><button type="button" className="current-place-clear" onClick={() => { onSelect(null); closePicker(); }}>현재 장소 선택 해제</button></div> : null}
+          {selected ? <div className="current-place-clear-row"><button type="button" className="current-place-clear" onClick={() => { onSelect(null); closePicker(); }}>현재 장소 선택 해제</button></div> : null}
         </div>
       </dialog>
     </div>

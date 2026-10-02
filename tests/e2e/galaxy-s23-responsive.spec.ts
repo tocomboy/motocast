@@ -147,15 +147,7 @@ test.describe("Galaxy S23+ CSS viewport emulation", () => {
       horizontalOverflow: dialog.scrollWidth > dialog.clientWidth,
     }));
     expect(placeLayout).toEqual({ width: 384, height: 832, horizontalOverflow: false });
-    await placeDialog.getByRole("button", { name: "관리", exact: true }).click();
-    const manageDialog = page.getByRole("dialog", { name: "즐겨찾기 관리" });
-    await manageDialog.getByRole("button", { name: "즐겨찾기 등록", exact: true }).click();
-    const registerDialog = page.getByRole("dialog", { name: "즐겨찾기 등록" });
-    await expect(registerDialog.getByRole("button", { name: /로 선택$/ })).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(manageDialog).toBeVisible();
-    await manageDialog.getByRole("button", { name: "출발지 선택으로 돌아가기" }).first().click();
-    await expect(placeDialog).toBeVisible();
+    await expect(placeDialog.getByRole("button", { name: /즐겨찾기 (관리|등록|추가|삭제)|^관리$/ })).toHaveCount(0);
     await placeDialog.getByRole("button", { name: "출발지 검색 닫기" }).first().click();
     await expect(placeDialog).toBeHidden();
     await expect(originTrigger).toBeFocused();
@@ -192,7 +184,7 @@ test.describe("Galaxy S23+ CSS viewport emulation", () => {
       searchActionInsideInput: true,
     });
     expect(desktopSearchLayout.titleLeft).toBeCloseTo(32, 0);
-    await expect(desktopPlaceDialog.getByRole("button", { name: "즐겨찾기 관리", exact: true })).toBeVisible();
+    await expect(desktopPlaceDialog.getByRole("button", { name: /즐겨찾기 (관리|등록|추가|삭제)|^관리$/ })).toHaveCount(0);
     await desktopPlaceDialog.getByRole("button", { name: "출발지 검색 닫기" }).click();
     await page.setViewportSize({ width: 384, height: 832 });
 

@@ -1,6 +1,6 @@
 # 공통 UI 첫 이관 실행 계획 — 업데이트 내역
 
-정본 작업 기록: docs/work/research/2026-10-02-shared-ui-parity.md. SCOPE-003 사용자 결정에 따라 0.8.1 웹·앱 공동 배포 후 첫 화면을 이관 중이다. 구현과 로컬 빌드 검증은 진행했으며 운영 반영 완료는 아니다.
+현재 실행 정본은 이 문서다. 앞선 공동 배포는 docs/work/research/2026-10-02-shared-ui-parity.md에 보존한다. SCOPE-003·UI-001에 따라 첫 공통 화면과 즐겨찾기·뒤로가기 변경의0.9.0 공동 출시를 진행한다. 최종 후보 검증·병합·운영 반영 상태는 아래 최신 기록에서 구분한다.
 
 ## 첫 수직 기능과 완료 조건
 
@@ -25,6 +25,28 @@
 5. 첫 화면이 완료되면 출발 일정/확인창/홈 순으로 동일한 사용자 동작 단위로 이관한다. 지도와 주행 네이티브 모듈은 후속 별도 실패 경계를 갖는다.
 
 ## 현재 증거와 자원
+
+### 2026-10-02 즐겨찾기·복귀 동작과 공동 0.9.0 후보
+
+사용자는 앱 홈 버튼 제거, 화면/휴대폰 뒤로가기, 팝업 X 닫기, 장소 검색과 즐겨찾기 관리 분리 및 이번 병합·배포까지 병렬 진행을 승인했다. UI-001에 동작을 확정했고 메인은 통합·검수·출시, 웹/Android 작업자는 겹치지 않는 플랫폼 UI와 회귀 검사를 소유한다. 기존 dirty 사용자 workspace는 보존한다.
+
+기존 Figma의 Noto Sans KR·색상 변수·버튼과 장소 카드를 재사용해 코드 수정 전에 [H01–H08](https://www.figma.com/design/wVNriNWb1OlF21DVq8rqlJ?node-id=226-2209)을 디자인하고 렌더를 확인했다. 대응: 관리227:2211, 추가 검색227:2242, 선택 전용227:2273, 업데이트 뒤로227:2305, 팝업 X227:2330, 빈 상태227:2390, 불명확/실패227:2408, 320폭/큰 글자227:2425. 디자인 확인은 실제 앱 검증과 구분한다.
+
+호환되는 즐겨찾기 관리 기능 추가로 공동 버전0.9.0을 선택했다. 웹 package/lock/lib/releases를 함께 변경하고 과거15개 소식을 보존한다. Play Console 모든 번들8개를 읽어 현재 최대code9/0.8.1 활성임을 확인했으므로 새 후보code10을 선택했다. 이 조회는 새 업로드를 뜻하지 않는다. Android 공지는 검증된 웹 commit으로 결속하고 운영 웹 승격 후 실제 main 출처로 갱신한다.
+
+추가 사용자 결정: 즐겨찾기 추가·삭제는 중앙 작은 확인 팝업에서 한 번 더 확인한다. [H09/H10](https://www.figma.com/design/wVNriNWb1OlF21DVq8rqlJ?node-id=231-2284) 추가231:2285/삭제231:2323을 기존 버튼·색상·서체로 디자인하고 렌더 검수했다. 확인 전 요청0, 취소/X/ESC/OS뒤로 변경0, 확인1회만 mutation과 작은 폭/큰 글자·포커스 복귀를 검사한다. 캡처 motocast-favorite-confirm-design-20261002.png에 대상 장소명·중앙 배치·취소/확인·X를 확인했다.
+
+기존 웹0ca7c7d의 CI36965973277은 SUCCESS(단위886·LOCAL_UI61 PASS/연결전용2 expected SKIP). Android7e76beb의 최초CI36965587753은 PR 설명 수정이 edited 이벤트를 발생시켜 취소됐고 Required FAIL이다. 같은head 재시작36966792582도 두환경 빌드·단위 뒤 Production lint 단계에서20분 job 제한으로 취소됐다. Android job만40분으로 변경하고 검사목록·assertion·필수집계는 유지했다. 새로운 기능 후보의 최종 검증을 이 과거 결과로 대체하지 않는다.
+
+승격 순서: 변경별 로컬/실제 UI 검사와 최종 CI → 정확한 웹 develop Preview 및 연결 동작 → 웹 Production → Android main HOLD 확인과 code10 운영 준비 → 새 baseline의 실제 main CI/CD → 같은 원본 AAB와 Play 내부 트랙 readback. 공개 Play·실기기·실제 신규가입의 기존 별도 조건은 유지한다. 현재 새 후보 병합·배포는 NOT_RUN이다.
+
+웹 최종 기능 검증: npm11.19.0 ci, lint, typecheck, Deno8, Chromium 설치 PASS. 단위86 files/900 PASS, fresh production server의 전체 LOCAL_UI63 PASS/연결 전용2 expected SKIP. 모바일 등록 X의 기존 CSS 가림, 중복 접근성 이름, modal close 이전 포커스 복귀 실패를 수정하고 동일 사용자 경로를 재검증했다. 확인/취소/X/ESC·stale owner·중복 확인 회귀 PASS. 연결 후보의 실제 중앙 팝업 렌더와 서버 저장/삭제는 Preview 승격 후 검증한다. 증거는 외부 motocast-web-favorites-verification-20261002 폴더에 보존한다.
+
+메인 변경 검수: 즐겨찾기 기존 RPC·최대3·owner/조회세대·결과불명 재조회 계약을 유지하고 검색 선택 경로에서 쓰기 진입을 제거했다. 새 확인창은 대상 snapshot을 검증하고 취소 시 쓰기0, 확인 중 중복0이다. Android 화면/OS 뒤로가기와 공유 링크 회수 후 목록 실패의 상태 보존을 대조했다. 현재 UI 회귀를 차단하는 미해결 코드 finding은 없으며 실제 화면 결과는 별도로 기록한다.
+
+의존성 감사의 기존 Next16.3.3 advisory GHSA-vcvr-r3jv-pc5j 및 dev brace-expansion 경고는 보존한다. 공식 Next advisory의 Node ImageResponse/next/og SVG 경로를 app/components/lib/packages에서 검색했으나 사용0, production 의존성의 brace-expansion0을 확인했다. 이번 변경은 해당 버전을 바꾸지 않으며 기존 독립 의존성 후속 범위를 유지한다. audit 경고0이나 전체 보안 완료로 보고하지 않는다.
+
+Android 새 UI의 두 variant 단위 각346 PASS, 양쪽 APK/lint/instrumentation Kotlin/typecheck PASS. 실제 s23 첫 실행에서 추가·삭제 확인/취소/X/OS뒤로·owner교체/불명결과 재조회11단계 PASS 후 요청 중 뒤로가기 fixture에서 NoSuchElementException이 나와 원인을 수정 중이다. 해당 실행은 FAIL이며 앞선 단위 결과로 대체하지 않는다. C: 여유93.2GiB를 확인했고 이번 native/RN 산출물 보존 예산을24GiB로 조정하며 여유80GiB를 유지한다. 기존 소유 AVD emulator-5680을 재사용하며 새 VM/DB는 만들지 않는다.
 
 ### 2026-10-02 검토 PR과 원격 CI
 

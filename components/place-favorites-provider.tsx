@@ -16,6 +16,7 @@ type FavoriteContextValue = {
   retry: () => void;
   add: (place: PlaceSearchResult) => Promise<boolean>;
   remove: (favorite: PlaceFavorite) => Promise<boolean>;
+  captureSnapshot: () => () => boolean;
 };
 
 const PlaceFavoritesContext = createContext<FavoriteContextValue | null>(null);
@@ -190,7 +191,13 @@ export function PlaceFavoritesProvider({ children, enabled }: { children: ReactN
     }
   }, [beginMutation, enabled, finishMutation, load, operationCurrent]);
 
-  const value = useMemo(() => ({ favorites, status, busy, message, retry: () => { if (!mutationRef.current) void load(); }, add, remove }), [add, busy, favorites, load, message, remove, status]);
+  const captureSnapshot = useCallback(() => {
+    const read = readGenerationRef.current;
+    const session = sessionGenerationRef.current;
+    return () => mountedRef.current && read === readGenerationRef.current && session === sessionGenerationRef.current;
+  }, []);
+
+  const value = useMemo(() => ({ favorites, status, busy, message, retry: () => { if (!mutationRef.current) void load(); }, add, remove, captureSnapshot }), [add, busy, captureSnapshot, favorites, load, message, remove, status]);
   return <PlaceFavoritesContext.Provider value={value}>{children}</PlaceFavoritesContext.Provider>;
 }
 
