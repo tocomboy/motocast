@@ -15,6 +15,8 @@
 - `adb devices -l` 결과 연결 기기0, 기존 `MOTOCAST_S23Plus_API34` AVD 존재 확인. 새로운 로그아웃 수용 기준 확정 전 UI 변경 검사와 Play 실기기 검사는 NOT_RUN. 에뮬레이터 부재만으로 사용자가 검사해야 한다고 결론 내리지 않으며 다음 UI 수정에서 기존 소유 AVD를 실행해 검사한다.
 - 이번 변경은 기존 작업공간만 재사용하고 새 VM/DB/AVD·도구 설치 없음. 웹 로컬 E2E 서버는 검사 종료로 정리됐다. PR/고정 SHA/CI와 원격 반영은 연결 PR의 최종 결과를 따른다.
 
+원격 후보 검증: [웹 PR93](https://github.com/tocomboy/motocast/pull/93), [Android PR38](https://github.com/tocomboy/motocast-android/pull/38). Android 최초 fd612e4/CI36954946552에서 `BASELINE_INPUT_MISMATCH`가 발생했다. 로컬 초기 검사는 변경 전 Git HEAD의 입력 해시를 읽어 이 차이를 발견하지 못했다. 커밋된 CI 경로표/스킬 파일 추가에 기존 ACTIVE 근거를 재사용할 수 없다는 올바른 차단이다. develop 후보만 baseline null/control revision13 HOLD로 전환하고 main의 운영 revision12 ACTIVE·code8 원본/receipt는 보존한다. 새 출시 후보는 새 입력·실제 서버 확인에 결속된 baseline을 확정한 뒤 main으로 승격해야 한다. 스킬 Markdown의 docs 분류를 입력 해시·원본 재사용 경계에도 일치시켰으며 스킬 실행 스크립트/잘못 실행 검사로 매핑한 문서는 여전히 거절한다. guard를 제거하지 않았고 공개/내부 업로드 재시도도 하지 않았다. 후속 `check_ci.py`208 PASS/0FAIL/0ERROR/0SKIP, 원격 최종 결과는 해당 PR에 기록한다.
+
 ## 목표와 확정 범위
 
 2026-10-02 사용자 요청: 앱 출발 기본값을 웹과 일치시키고, 지도 경유지 확인 팝업에 선택 위치를 표시한다. 홈 로그아웃은 화면 하단에 고정한다. 초대 관리·가입 코드는 폐기하고 사용자 공지는 `업데이트 내역`으로 통일해 짧고 쉬운 문장으로 쓴다.
