@@ -26,6 +26,12 @@
 
 ## 현재 증거와 자원
 
+### 2026-10-02 검토 PR과 원격 CI
+
+웹 PR97과 Android PR42를 develop 대상 draft로 게시했다. 웹 review-* 브랜치는 배포가 차단되어 있으며 PR 생성 후 해당 SHA의 deployment 0건을 확인했다. 병합·Preview/Production·Play 게시·버전 변경은 수행하지 않았다.
+
+웹 최초 CI36965580883은 npm11.19의 잠금 파일 검사에서 @emnapi/core 및 @emnapi/runtime1.11.3 항목 누락으로 FAIL했다. CI와 같은 npm11.19.0을 npx 사용자 cache에서 실행해 lockfile을 보완했다. 기존 패키지 버전은 유지했고 peer/devOptional metadata를 재계산했다. 실제 npm ci(587 packages)와 typecheck PASS, 로그 shared-ui-npm11-ci.log. 전역 npm/Node 설정은 변경하지 않았다. 최종 원격 CI 결과는 PR97/42의 현재 head에 결속해 기록한다.
+
 ### 2026-10-02 ADB 복구와 native UI 완료
 
 이전 ADB 오류 원인은 Windows의 TCP5533–5632 예약 범위였다. 기존5560/5561 bind는 WinError10013, 대체5680/5681은 실제 bind 가능함을 확인했다. 예약·방화벽·AVD 데이터를 변경하지 않고 같은 MOTOCAST_S23Plus_API34를 emulator-5680으로 실행해 연결했다. 실행기는 유효한 emulator serial 및 정확한 AVD 이름을 함께 검사하며 물리/다른 AVD를 거부한다.
