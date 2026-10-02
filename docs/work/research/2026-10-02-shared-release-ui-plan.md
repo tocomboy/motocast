@@ -26,6 +26,19 @@
 
 ## 현재 증거와 자원
 
+### 2026-10-02 ADB 복구와 native UI 완료
+
+이전 ADB 오류 원인은 Windows의 TCP5533–5632 예약 범위였다. 기존5560/5561 bind는 WinError10013, 대체5680/5681은 실제 bind 가능함을 확인했다. 예약·방화벽·AVD 데이터를 변경하지 않고 같은 MOTOCAST_S23Plus_API34를 emulator-5680으로 실행해 연결했다. 실행기는 유효한 emulator serial 및 정확한 AVD 이름을 함께 검사하며 물리/다른 AVD를 거부한다.
+
+실제 화면에서 가변 Noto Sans KR의 기본 wght100 때문에 본문이 가늘게 표시되는 문제를 발견했다. 기존 Compose와 같은400/700 축을 font-family XML에 명시해 해결했다. Android 후보7e76beb는 공통 source a00f4c5를 그대로 사용한다. Preview APK SHA25664abef0971ce7239999389e51f5d9587cb9970a6999bd41faf7a54d3a61525c6, package dev.motocast.android.preview/version0.1.0-dev/code1이며 Play0.8.1/code9와 구분한다.
+
+- 최종 LOCAL_UI: S23+384×832, 320폭/글자1.3배, 820폭 각각19 PASS, 합계57 PASS / FAIL0 / ERROR0. fixture 기반 홈·로그인 안내·주행·날씨·공유 회귀와 공통 업데이트 진입/뒤로가기/홈 복귀를 포함한다.
+- 실제 내장 공지15개의 최신/오래된 항목 스크롤, Activity recreate, 백그라운드 후 재진입·홈 복귀 PASS. 세 크기의 직접 스크린샷을 읽어 글꼴·줄바꿈·안전 영역·홈 버튼을 확인했다. 주행·공유 fixture 결과는 서버 왕복 또는 실제 GPS 증거가 아니다.
+- 양쪽 debug APK/test APK/단위/lint PASS, 각334단위 PASS. 실제 merged manifest 경계 PASS. CI 규칙230 PASS. 물리 serial 거부 검사 PASS. 로그: Android verification-logs/shared-ui-font-final-build.log, shared-ui-port-ci.log, shared-ui-final-{s23,small,wide}/instrumentation.log 및 각19개 PNG.
+- 종료 전1080×2340/450dpi/font_scale1.0 복원 readback, 동일 AVD identity 확인 후 이번 실행만 emu kill로 종료했다. 새 SDK나 emulator 설치는 필요 없었고 기존 도구를 재사용했다. 실패 로그·수정 전후 화면은 보존한다.
+
+초기 Android UI 차단은 해소했다. 원격 CI와 연결 Preview·공동 릴리스·Play/실기기는 별도 gate이며 전체 공통 UI 이관 완료가 아니다. 검토용 PR에서 고정 head CI를 확인한 뒤 후속 출시 후보를 준비한다. 아래는 초기 구현 시점의 증거와 미실행 상태다.
+
 2026-10-02 공통 ReleaseHistory 구현: 웹 workspace와 Android Expo57.0.26/RN0.86.3가 같은 TypeScript 소스를 소비한다. React 웹19.2.8/앱19.2.3은 플랫폼 renderer 호환 버전이다. App Links·세션·위치·지도·주행은 기존 native 구현이 소유한다. 공개 공지 JSON만 ReactActivity에 전달하며 Activity는 exported=false, 번들은 APK 내부에 포함한다.
 
 Figma wVNriNWb1OlF21DVq8rqlJ / 214:2228을 다시 읽고 카드·버전·날짜·제목·항목 상태를 대응했다. 웹 navigation/scroll은 기존 host, 앱 navigation/safe area/scroll은 native host가 소유한다. 신규 화면 구성은 추가하지 않았다.
