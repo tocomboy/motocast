@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseSelectedPlace, parseTripInput, PlannerInputError } from "./input";
+import { parseSelectedPlace, parseTripInput, parseTripWaypoint, PlannerInputError } from "./input";
 
 const place = {
   kakaoPlaceId: "12345",
@@ -48,6 +48,23 @@ describe("parseSelectedPlace", () => {
 });
 
 describe("parseTripInput", () => {
+  it("preserves thirty ordered meals without changing legacy lunch and dinner", () => {
+    const waypoints = Array.from({ length: 30 }, (_, index) => ({
+      ...stop(`meal-${index}`, index + 1), stopRole: "meal",
+    }));
+    const parsed = parseTripInput({ ...validTrip(), lunch: null, waypoints });
+    expect(parsed.waypoints).toEqual(waypoints);
+    expect(() => parseTripInput({ ...validTrip(), lunch: null, waypoints: [...waypoints, waypoints[0]] }))
+      .toThrow("INVALID_WAYPOINT_COUNT");
+  });
+
+  it.each([{ dwellMinutes: 0 }, { kind: "optional" }, { winding: true }, { stopRole: null }])(
+    "rejects an invalid explicit meal role %#", (overrides) => {
+      expect(() => parseTripWaypoint({ ...stop("meal", 60), stopRole: "meal", ...overrides }))
+        .toThrow("INVALID_WAYPOINT_ROLE");
+    },
+  );
+
   it("normalizes a valid under-24-hour trip", () => {
     const parsed = parseTripInput(validTrip());
     expect(parsed.departureAt).toBe("2026-08-30T22:30:00.000Z");

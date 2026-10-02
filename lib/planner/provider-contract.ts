@@ -82,7 +82,8 @@ function routePoint(value: unknown): RoutePoint {
     !Number.isInteger(raw.dwellMinutes) || Number(raw.dwellMinutes) < 0 || Number(raw.dwellMinutes) > 1440 ||
     typeof raw.selected !== "boolean" ||
     (raw.winding !== undefined && typeof raw.winding !== "boolean") ||
-    (stopRole !== undefined && !["lunch", "dinner", "rest"].includes(String(stopRole))) ||
+    (stopRole !== undefined && !["meal", "lunch", "dinner", "rest"].includes(String(stopRole))) ||
+    (stopRole === "meal" && raw.kind !== "stop") ||
     (stopRole === "lunch" && raw.kind !== "stop") ||
     (stopRole === "dinner" && raw.kind !== "stop") ||
     (stopRole === "rest" && raw.kind !== "optional") ||

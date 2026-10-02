@@ -42,6 +42,32 @@ async function request(waypoints: RoutePointRequest[] = []) {
 }
 
 describe("parseRouteRequest", () => {
+  it("accepts thirty ordered meals with editable dwell and rejects the thirty-first before provider work", async () => {
+    const meals = await Promise.all(Array.from({ length: 31 }, (_, index) => point({
+      id: `meal-${index}`, kakaoPlaceId: "same-restaurant", kind: "stop",
+      dwellMinutes: index + 1, stopRole: "meal",
+    })));
+    const input = { ...await request(), waypoints: meals.slice(0, 30) };
+    const parsed = await parse(input);
+    expect(parsed.waypoints.map(({ id, dwellMinutes, stopRole }) => ({ id, dwellMinutes, stopRole })))
+      .toEqual(input.waypoints.map(({ id, dwellMinutes, stopRole }) => ({ id, dwellMinutes, stopRole })));
+    const provider = vi.fn();
+    await expect(withValidatedRouteRequest({ ...input, waypoints: meals }, secret, provider, fixedNow))
+      .rejects.toThrow("INVALID_WAYPOINTS");
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { dwellMinutes: 0 }, { dwellMinutes: -1 }, { dwellMinutes: 1.5 },
+    { kind: "optional" }, { kind: "pass-through" }, { winding: true },
+  ])("rejects invalid meal semantics before provider work %#", async (overrides) => {
+    const meal = { ...await point({ kind: "stop", dwellMinutes: 60, stopRole: "meal" }), ...overrides };
+    const provider = vi.fn();
+    await expect(withValidatedRouteRequest({ ...await request(), waypoints: [meal] }, secret, provider, fixedNow))
+      .rejects.toThrow("INVALID_WAYPOINTS");
+    expect(provider).not.toHaveBeenCalled();
+  });
+
   it("uses the signed provider name and identity instead of forged display fields", async () => {
     const input = await request();
     input.origin.label = "부산역";

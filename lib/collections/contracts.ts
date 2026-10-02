@@ -8,7 +8,7 @@ export type CollectionPoint = SelectedPlace & {
   dwellMinutes: number;
   selected: boolean;
   winding: boolean;
-  stopRole?: "lunch" | "dinner" | "rest";
+  stopRole?: "meal" | "lunch" | "dinner" | "rest";
 };
 
 export type CollectionCourse = {
@@ -49,14 +49,14 @@ export function parseCollectionPoint(value: unknown): CollectionPoint {
     !["pass-through", "stop", "optional"].includes(String(raw.kind)) ||
     !Number.isInteger(raw.dwellMinutes) || Number(raw.dwellMinutes) < 0 || Number(raw.dwellMinutes) > 1440 ||
     typeof raw.selected !== "boolean" || typeof raw.winding !== "boolean" ||
-    (raw.stopRole !== undefined && !["lunch", "dinner", "rest"].includes(String(raw.stopRole)))
+    (raw.stopRole !== undefined && !["meal", "lunch", "dinner", "rest"].includes(String(raw.stopRole)))
   ) throw new Error("INVALID_COLLECTION_POINT");
   const dwellMinutes = Number(raw.dwellMinutes);
   const semanticPoint = raw.kind === "pass-through"
     ? dwellMinutes === 0 && raw.stopRole === undefined
     : raw.stopRole === "rest"
       ? raw.kind === "optional" && dwellMinutes > 0
-      : (raw.stopRole === "lunch" || raw.stopRole === "dinner")
+      : (raw.stopRole === "meal" || raw.stopRole === "lunch" || raw.stopRole === "dinner")
         ? raw.kind === "stop" && dwellMinutes > 0
         : false;
   if (raw.selected !== true || !semanticPoint || (raw.winding === true && raw.kind !== "pass-through")) {

@@ -190,6 +190,24 @@ test.describe("Galaxy S23+ CSS viewport emulation", () => {
 
     await editor.getByRole("button", { name: "+ 경유지 추가", exact: true }).click();
     const waypointSettings = page.getByRole("dialog", { name: "경유지 설정" });
+    await expect(waypointSettings.getByRole("button", { name: "점심", exact: true })).toHaveCount(0);
+    await expect(waypointSettings.getByRole("button", { name: "저녁", exact: true })).toHaveCount(0);
+    await waypointSettings.getByRole("button", { name: "식사", exact: true }).click();
+    for (const width of [320, 384, 820, 1440]) {
+      await page.setViewportSize({ width, height: 832 });
+      await waypointSettings.getByRole("button", { name: "즐겨찾기에서 선택", exact: true }).click();
+      const savedPicker = page.getByRole("dialog", { name: "경유지 즐겨찾기 선택", exact: true });
+      await expect(savedPicker).toBeVisible();
+      for (const label of ["자주 찾는 곳", "라이딩 스팟", "식당"]) await expect(savedPicker.getByRole("button", { name: label, exact: true })).toBeVisible();
+      expect(await savedPicker.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+      await page.keyboard.press("Escape");
+      await expect(waypointSettings).toBeVisible();
+      await expect(waypointSettings.locator(".dwell-stepper")).toContainText("60분");
+      await expect(waypointSettings.getByRole("button", { name: "즐겨찾기에서 선택", exact: true })).toBeFocused();
+      await expect(editor.locator(".waypoint-card")).toHaveCount(0);
+    }
+    await page.setViewportSize({ width: 384, height: 832 });
+    await waypointSettings.getByRole("button", { name: "통과", exact: true }).click();
     await waypointSettings.getByRole("button", { name: "추가하고 장소 선택", exact: true }).click();
     const waypointPicker = page.locator("dialog.place-picker-dialog[open]");
     await expect(waypointPicker).toBeVisible();

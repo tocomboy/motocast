@@ -547,14 +547,14 @@ describe("KakaoMapCanvas", () => {
     expect(markerCalls.map(([options]) => options.title)).toEqual([
       "출발 · 출발지",
       "복귀 · 복귀지",
-      "점심 · 점심지",
-      "저녁 · 저녁지",
+      "식사 · 점심지",
+      "식사 · 저녁지",
       "휴식 · 휴식지",
       "경유 · 경유지",
     ]);
     const legend = renderer.root.findByProps({ "aria-label": "지도 지점 표시 안내" });
     expect(legend.findAllByType("li").map((item) => item.children.at(-1))).toEqual([
-      "출발", "복귀", "점심", "저녁", "휴식", "경유",
+      "출발", "복귀", "식사", "식사", "휴식", "경유",
     ]);
     await act(async () => renderer.unmount());
   });
@@ -585,10 +585,10 @@ describe("KakaoMapCanvas", () => {
     expect(maps.Marker).toHaveBeenCalledTimes(1);
     expect(maps.MarkerImage).toHaveBeenCalledTimes(1);
     const markerCall = maps.Marker.mock.calls[0] as unknown as [{ title: string }];
-    expect(markerCall[0].title).toBe("점심 · 점심 / 경유 · 점심 · 선택 경로 미통과");
+    expect(markerCall[0].title).toBe("식사 · 점심 / 경유 · 점심 · 선택 경로 미통과");
     const markerImageCall = maps.MarkerImage.mock.calls[0] as unknown as [string];
     const compositeSvg = decodeURIComponent(markerImageCall[0].replace("data:image/svg+xml;charset=UTF-8,", ""));
-    expect(compositeSvg).toContain(">점</text>");
+    expect(compositeSvg).toContain(">식</text>");
     expect(compositeSvg).toContain(">경×</text>");
     expect(maps.extend).toHaveBeenCalledTimes(1);
     await act(async () => renderer.unmount());

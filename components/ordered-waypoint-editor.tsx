@@ -1,8 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { PlaceSearchField, type PlaceFavoritesControls } from "@/components/place-search-field";
+import { SavedPlacesManager } from "@/components/saved-places-manager";
+import type { PlaceSearchResult } from "@/lib/places/search";
 import {
   defaultDwellMinutes,
   moveWaypoint,
@@ -42,9 +44,45 @@ export function OrderedWaypointEditor({
   const [settingRole, setSettingRole] = useState<WaypointRole>("waypoint");
   const [settingDwell, setSettingDwell] = useState(0);
   const [settingError, setSettingError] = useState("");
+  const [choosingSaved, setChoosingSaved] = useState(false);
+  const savedDialogRef = useRef<HTMLDialogElement>(null);
+  const savedEntryRef = useRef<HTMLButtonElement>(null);
+  const addedSavedRef = useRef(false);
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const settingsDialogRef = useRef<HTMLDialogElement>(null);
   const settingsErrorRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    if (choosingSaved) savedDialogRef.current?.showModal();
+  }, [choosingSaved]);
+
+  function openSavedPlaces() {
+    if (!connected || disabled || !favorites) return;
+    addedSavedRef.current = false;
+    settingsDialogRef.current?.close();
+    setChoosingSaved(true);
+  }
+
+  function backFromSavedPlaces() {
+    setChoosingSaved(false);
+    settingsDialogRef.current?.showModal();
+    window.setTimeout(() => savedEntryRef.current?.focus(), 0);
+  }
+
+  function addSavedPlace(place: PlaceSearchResult, role: WaypointRole, dwellMinutes: number): string | null {
+    if (addedSavedRef.current || !connected || disabled || favorites?.status !== "ready") return "장소 목록을 다시 열어 선택해 주세요.";
+    const error = roleAssignmentError(waypoints, role);
+    if (error) return error;
+    if (!Number.isInteger(dwellMinutes) || (role === "waypoint" ? dwellMinutes !== 0 : dwellMinutes < 1 || dwellMinutes > 1440)) return "머무는 시간은 1분 이상 1440분 이하로 정해 주세요.";
+    addedSavedRef.current = true;
+    const id = crypto.randomUUID();
+    onChange([...waypoints, { id, place, role, dwellMinutes }]);
+    onStatus(`${place.name}을(를) 경유지에 추가했습니다. 방문 순서를 확인해 주세요.`);
+    setChoosingSaved(false);
+    setSettingMode(null);
+    focusWaypoint(id, ".waypoint-settings");
+    return null;
+  }
 
   function focusWaypoint(id: string, selector = ".place-picker-trigger", activate = false) {
     window.setTimeout(() => {
@@ -94,7 +132,7 @@ export function OrderedWaypointEditor({
   function openSettings(waypoint: EditableWaypoint) {
     setSettingId(waypoint.id);
     setSettingMode("edit");
-    setSettingRole(waypoint.role);
+    setSettingRole(waypoint.role === "lunch" || waypoint.role === "dinner" ? "meal" : waypoint.role);
     setSettingDwell(waypoint.dwellMinutes);
     setSettingError("");
     settingsDialogRef.current?.showModal();
@@ -186,10 +224,20 @@ export function OrderedWaypointEditor({
           {settingMode === "edit" && settingId ? <div className="waypoint-setting-place"><strong>{waypoints.find((item) => item.id === settingId)?.place?.name ?? "장소 미선택"}</strong><span>{waypoints.find((item) => item.id === settingId)?.place?.roadAddress ?? waypoints.find((item) => item.id === settingId)?.place?.address ?? "장소를 선택해 주세요."}</span><button type="button" onClick={() => { const id = settingId; settingsDialogRef.current?.close(); focusWaypoint(id, ".place-picker-trigger", true); }}>장소 주소 변경</button></div> : null}
           <fieldset><legend>경유 종류</legend><div className="waypoint-role-pills">{waypointRoleOptions.map((option) => <button type="button" key={option.value} aria-pressed={settingRole === option.value} onClick={() => { if (option.value !== settingRole) setSettingDwell(defaultDwellMinutes(option.value)); setSettingRole(option.value); setSettingError(""); }}>{option.value === "waypoint" ? "통과" : option.label}</button>)}</div></fieldset>
           {settingRole !== "waypoint" ? <div className="dwell-stepper"><span>머무는 시간</span><button type="button" aria-label="머무는 시간 10분 줄이기" onClick={() => setSettingDwell((value) => Math.max(1, value - 10))}>−</button><strong>{settingDwell}분</strong><button type="button" aria-label="머무는 시간 10분 늘리기" onClick={() => setSettingDwell((value) => Math.min(1440, value + 10))}>＋</button></div> : null}
+          {settingMode === "add" ? <button ref={savedEntryRef} className="waypoint-saved-entry" type="button" disabled={!connected || disabled || !favorites} onClick={openSavedPlaces}>즐겨찾기에서 선택</button> : null}
           {settingError ? <p ref={settingsErrorRef} className="waypoint-settings-error" role="alert" tabIndex={-1}>{settingError}</p> : null}
           <div className="waypoint-settings-actions">{settingMode === "edit" ? <button className="danger-text" type="button" onClick={() => { if (settingId) removeWaypoint(settingId); settingsDialogRef.current?.close(); }}>경유지 삭제</button> : <button type="button" onClick={() => settingsDialogRef.current?.close()}>취소</button>}<button className="primary-button" type="button" onClick={applySettings}>{settingMode === "add" ? "추가하고 장소 선택" : "설정 적용"}</button></div>
         </div>
       </dialog>
+      {choosingSaved ? <dialog ref={savedDialogRef} className="waypoint-saved-dialog" aria-label="경유지 즐겨찾기 선택" onCancel={(event) => { event.preventDefault(); backFromSavedPlaces(); }}>
+        <SavedPlacesManager
+          onBack={backFromSavedPlaces}
+          onAddWaypoint={addSavedPlace}
+          initialWaypoint={{ role: settingRole, dwellMinutes: settingDwell }}
+          routePoints={[]}
+          disabled={disabled}
+        />
+      </dialog> : null}
     </div>
   );
 }

@@ -46,6 +46,25 @@ async function requestBody(points?: Awaited<ReturnType<typeof requestPoint>>[]) 
 }
 
 describe("parseCollectionSaveRequest", () => {
+  it("round-trips thirty ordered meals at one physical place and preserves edited dwell", async () => {
+    const meals = await Promise.all(Array.from({ length: 31 }, (_, index) => requestPoint({
+      id: `meal-${index}`, kakaoPlaceId: "same-restaurant", kind: "stop",
+      dwellMinutes: index + 1, stopRole: "meal",
+    })));
+    const parsed = await parseCollectionSaveRequest(await requestBody(meals.slice(0, 30)), secret);
+    expect(parsed.points.map(({ id, dwellMinutes, stopRole }) => ({ id, dwellMinutes, stopRole })))
+      .toEqual(meals.slice(0, 30).map(({ id, dwellMinutes, stopRole }) => ({ id, dwellMinutes, stopRole })));
+    await expect(parseCollectionSaveRequest(await requestBody(meals), secret)).rejects.toThrow("INVALID_COLLECTION");
+  });
+
+  it.each([
+    { dwellMinutes: 0 }, { dwellMinutes: -1 }, { dwellMinutes: 1.5 },
+    { kind: "optional" }, { kind: "pass-through" }, { winding: true }, { selected: false },
+  ])("rejects invalid immutable meal semantics %#", async (overrides) => {
+    const meal = await requestPoint({ kind: "stop", dwellMinutes: 60, stopRole: "meal", ...overrides });
+    await expect(parseCollectionSaveRequest(await requestBody([meal]), secret)).rejects.toThrow("INVALID_COLLECTION");
+  });
+
   it("verifies every Kakao place and canonicalizes browser display identity", async () => {
     const result = await parseCollectionSaveRequest(await requestBody(), secret);
     expect(result.title).toBe("북한강");

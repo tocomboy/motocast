@@ -124,3 +124,14 @@ Android 후보는 기존 검사기의 지원 경로인 baseline=null/control HOL
 상태: 로컬 SDK계측 ERROR2, 핀수별/80토글 DOM assertion0·네트워크matrix NOT_RUN. 실제 Preview의 지도표시·20토글 통과를 이 matrix의 성공으로 확대하지 않는다. 재개는 기존식별자·동일fixture·명시적으로 승인된 도메인에서 수행하고 전후 공급자 집계/HTTP바이트를 구분한다. 월간/브라우저SDK 예산은 내부서버 daily reservation으로 강제되지 않는 기존 OPS-007 경계를 유지한다. 따라서 #34규모의 모든 행동별 쿼터/일일예산 충족 및 Issue99완료를 주장하지 않는다.
 
 외부 증거: `C:/Users/User/.codex/verification-logs/issue99-preview-applied.json`, 웹 CI37000598888/37002201009 로그, Android 소유 `docs/artifacts/issue99-connected-20261002-203315`와 `app/build/issue99-pr46-android-job.log`. 로그인 화면의 계정 정보가 담긴 기기 캡처는 외부 게시하지 않는다.
+
+
+## 후속 수정: 식사 통합과 경유지의 즐겨찾기 진입
+
+2026-10-02 사용자 추가 결정: 점심·저녁을 **식사**로 통합하고 별도 개수 제한 없이 전체 경유지30개 한도 적용. 기본60분과 편집 가능을 유지한다. 경유지 추가에서 즐겨찾기3탭을 열어 장소를 선택한다. Figma 기존238:1455/238:1457은 이미 통과·식사·휴식이었고 248:1617에 진입/복귀/확정 계약을 보완했다.
+
+웹 기반8c54b06, branch `review-issue99-meal-favorites-20261002`, 기존 전용 worktree 재사용. Android 기반3ec432e, branch `feat/meal-saved-waypoint-20261002`. 0.10.0은 아직 Production/Play 미출시이므로 같은 후보를 보완하고 Android code11 유지. 새 stopRole=meal reader/validator를 먼저 반영하며 기존 lunch/dinner 원본·불변공유는 수정하지 않는다. 단순 구버전 앱 롤백은 새 meal 코스 reader 미지원 한계가 있어 새 reader를 유지한 writer 중지가 복구 조건이다.
+
+LOCAL_UI 실제컴포넌트+합성계정 검증:320(글자130%)/384/820/1440 각각 추가→식사70분→즐겨찾기→뒤로복귀→식당(비별표 포함)→확인취소→확정 및 같은 장소 식사3회 PASS. unique ID3, dwell70/60/60, RPC/검색/좌표호출0, console오류0. 증거 `C:/Users/User/.codex/verification-logs/issue99-meal-favorites-ui`; 기존 esbuild 재사용,3198포트; 실제 SDK/회원검증과 별개. 초기 fixture import/locator 오류 수정 이력 보존. 최종 전체 검사와 Preview 적용은 진행 중이다.
+
+후속 최종 후보 검증: npm ci/lint/typecheck/build PASS, Vitest90files948PASS, Deno8PASS, Chromium63PASS/연결전용2 expected SKIP. 기존 연결전용E2E도 식사 반복 허용 계약으로 갱신했고 실제 실행은 별도 연결 검증과 구분한다. PostgreSQL owned final 재사용에서 meal55 + optional_meal13 + plan_collection_share125 + live_acl193 =386PASS/FAIL0/SKIP0. 후보에 DDL4함수 확장만 포함하며 데이터변경0, JWT/소유권/RLS/예산/이륜차/24시간 제한을 유지했다. 초기 검증 실패(구지도문자 기대값1, 공지4개제한1, 신규test 위치TS5097)는 계약을 유지한 수정 후 PASS. 메인 변경검수: 현재 범위 BLOCKER/HIGH0, DB와 Edge reader 선반영 후 웹 exactSHA Preview 배포.

@@ -9,7 +9,7 @@ export type CollectionSavePoint = VerifiablePlace & {
   dwellMinutes: number;
   selected: boolean;
   winding: boolean;
-  stopRole?: "lunch" | "dinner" | "rest";
+  stopRole?: "meal" | "lunch" | "dinner" | "rest";
 };
 
 export type CollectionSaveRequest = {
@@ -55,13 +55,13 @@ function parsePoint(value: unknown): CollectionSavePoint {
     !["pass-through", "stop", "optional"].includes(String(point.kind)) ||
     !Number.isInteger(point.dwellMinutes) || Number(point.dwellMinutes) < 0 || Number(point.dwellMinutes) > 1440 ||
     typeof point.selected !== "boolean" || typeof point.winding !== "boolean" ||
-    (point.stopRole !== undefined && !["lunch", "dinner", "rest"].includes(point.stopRole))
+    (point.stopRole !== undefined && !["meal", "lunch", "dinner", "rest"].includes(point.stopRole))
   ) throw new Error("INVALID_COLLECTION");
   const semanticPoint = point.kind === "pass-through"
     ? Number(point.dwellMinutes) === 0 && point.stopRole === undefined
     : point.stopRole === "rest"
       ? point.kind === "optional" && Number(point.dwellMinutes) > 0
-      : (point.stopRole === "lunch" || point.stopRole === "dinner")
+      : (point.stopRole === "meal" || point.stopRole === "lunch" || point.stopRole === "dinner")
         ? point.kind === "stop" && Number(point.dwellMinutes) > 0
         : false;
   if (point.selected !== true || !semanticPoint || (point.winding && !isWindingOnlyWaypoint({

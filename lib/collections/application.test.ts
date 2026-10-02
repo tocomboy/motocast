@@ -34,13 +34,14 @@ describe("prepareCollectionApplication", () => {
   it("preserves the complete mixed-role occurrence order", () => {
     const points = [
       point("lunch", { kind: "stop", dwellMinutes: 60, stopRole: "lunch" }),
+      point("meal", { kind: "stop", dwellMinutes: 93, stopRole: "meal" }),
       point("waypoint", { winding: true }),
       point("rest", { kind: "optional", dwellMinutes: 45, stopRole: "rest" }),
       point("dinner", { kind: "stop", dwellMinutes: 60, stopRole: "dinner" }),
     ];
     const result = prepareCollectionApplication(course(points));
 
-    expect(result.orderedPoints.map((item) => item.id)).toEqual(["lunch", "waypoint", "rest", "dinner"]);
+    expect(result.orderedPoints.map((item) => item.id)).toEqual(["lunch", "meal", "waypoint", "rest", "dinner"]);
     expect(result.orderedPoints).toEqual(points);
     expect(result.orderedPoints).not.toBe(points);
     expect(result.origin.kakaoPlaceId).toBe("origin");

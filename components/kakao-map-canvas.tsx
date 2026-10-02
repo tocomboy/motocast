@@ -3,7 +3,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { bindMapLongPress } from "@/lib/places/map-long-press";
 
-export type MapMarkerRole = "origin" | "destination" | "lunch" | "dinner" | "rest" | "waypoint";
+export type MapMarkerRole = "origin" | "destination" | "meal" | "lunch" | "dinner" | "rest" | "waypoint";
 export type MapPoint = { label: string; latitude: number; longitude: number; role?: MapMarkerRole; nonTraversed?: boolean };
 type PathPoint = { latitude: number; longitude: number };
 export type SavedMapPin = PathPoint & { id: string; label: string; kind: "riding_spot" | "restaurant" };
@@ -12,8 +12,9 @@ const KAKAO_MAP_LOAD_TIMEOUT_MS = 10_000;
 const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; color: string }> = {
   origin: { label: "출발", symbol: "출", color: "#18372b" },
   destination: { label: "복귀", symbol: "복", color: "#3e5873" },
-  lunch: { label: "점심", symbol: "점", color: "#cc5d32" },
-  dinner: { label: "저녁", symbol: "저", color: "#764a78" },
+  meal: { label: "식사", symbol: "식", color: "#cc5d32" },
+  lunch: { label: "식사", symbol: "식", color: "#cc5d32" },
+  dinner: { label: "식사", symbol: "식", color: "#cc5d32" },
   rest: { label: "휴식", symbol: "휴", color: "#277b74" },
   waypoint: { label: "경유", symbol: "경", color: "#5f6d63" },
 };

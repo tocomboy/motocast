@@ -11,7 +11,7 @@ export type RoutePointRequest = VerifiablePlace & {
   dwellMinutes: number;
   selected: boolean;
   winding?: boolean;
-  stopRole?: "lunch" | "dinner" | "rest";
+  stopRole?: "meal" | "lunch" | "dinner" | "rest";
 };
 
 export type RouteRequest = {
@@ -52,7 +52,7 @@ function validPoint(value: unknown): value is RoutePointRequest {
     ["pass-through", "stop", "optional"].includes(String(point.kind)) &&
     typeof point.selected === "boolean" &&
     (point.winding === undefined || typeof point.winding === "boolean") &&
-    (point.stopRole === undefined || ["lunch", "dinner", "rest"].includes(point.stopRole)) &&
+    (point.stopRole === undefined || ["meal", "lunch", "dinner", "rest"].includes(point.stopRole)) &&
     typeof point.dwellMinutes === "number" && Number.isInteger(point.dwellMinutes) &&
     point.dwellMinutes >= 0 && point.dwellMinutes <= 1440 &&
     hasValidWindingSemantics(point as Pick<RoutePointRequest, "kind" | "dwellMinutes" | "winding" | "stopRole">)
@@ -112,10 +112,12 @@ export async function parseRouteRequest(
     (point.kind === "stop" || point.kind === "optional") && point.dwellMinutes <= 0
   ))) throw new Error("INVALID_WAYPOINTS");
   const lunches = selectedWaypoints.filter((point) => point.stopRole === "lunch");
+  const meals = selectedWaypoints.filter((point) => point.stopRole === "meal");
   const dinners = selectedWaypoints.filter((point) => point.stopRole === "dinner");
   const rests = selectedWaypoints.filter((point) => point.stopRole === "rest");
   const mandatoryWaypoints = selectedWaypoints.filter(isMandatoryPassThrough);
   if (
+    meals.some((point) => point.kind !== "stop") ||
     lunches.length > 1 || lunches.some((point) => point.kind !== "stop") ||
     dinners.length > 1 || dinners.some((point) => point.kind !== "stop") ||
     rests.length > 5 || rests.some((point) => point.kind !== "optional") ||

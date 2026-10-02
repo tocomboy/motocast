@@ -383,7 +383,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   }), [departureAt, liveRoute, selected, waypoints]);
   const inputMapPoints = [
     ...(places.origin ? [{ label: places.origin.name, latitude: places.origin.latitude, longitude: places.origin.longitude, role: "origin" as const }] : []),
-    ...waypoints.flatMap((waypoint) => waypoint.place ? [{ label: waypoint.place.name, latitude: waypoint.place.latitude, longitude: waypoint.place.longitude, role: waypoint.role === "lunch" || waypoint.role === "dinner" || waypoint.role === "rest" ? waypoint.role : "waypoint" as const }] : []),
+    ...waypoints.flatMap((waypoint) => waypoint.place ? [{ label: waypoint.place.name, latitude: waypoint.place.latitude, longitude: waypoint.place.longitude, role: waypoint.role === "meal" || waypoint.role === "lunch" || waypoint.role === "dinner" || waypoint.role === "rest" ? waypoint.role : "waypoint" as const }] : []),
     ...(places.destination ? [{ label: places.destination.name, latitude: places.destination.latitude, longitude: places.destination.longitude, role: "destination" as const }] : []),
   ];
   const selectedMapPoints = liveRoute && !liveResultStale ? buildPlannerMapPoints(selected.segments) : connected ? inputMapPoints : demoMapPoints;
@@ -897,6 +897,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
 
             <section className="form-section">
               <OrderedWaypointEditor
+                key={favoriteControls.accountEpoch}
                 connected={connected}
                 disabled={calculating}
                 selectionRevision={placeSelectionRevision}

@@ -54,6 +54,7 @@ type SavedPlacesManagerProps = {
   routePoints: MapPoint[];
   routePath?: { latitude: number; longitude: number }[];
   disabled?: boolean;
+  initialWaypoint?: { role: WaypointRole; dwellMinutes: number };
 };
 
 function SavedPlacesManagerContent({
@@ -62,6 +63,7 @@ function SavedPlacesManagerContent({
   routePoints,
   routePath,
   disabled = false,
+  initialWaypoint,
 }: SavedPlacesManagerProps) {
   const saved = useSavedPlaces();
   const [tab, setTab] = useState<"starred" | SavedPlaceKind>("riding_spot");
@@ -377,9 +379,11 @@ function SavedPlacesManagerContent({
       {adding ? (
         <SavedWaypointForm
           place={adding}
+          initial={initialWaypoint}
           disabled={blocked || disabled}
           onClose={() => setAdding(null)}
           onAdd={(role, dwell) => {
+            if (blocked || disabled || !saved.places.some((p) => p.id === adding.id && p.revision === adding.revision)) return "장소가 변경되었습니다. 목록에서 다시 선택해 주세요.";
             const failure = onAddWaypoint(adding.place, role, dwell);
             if (!failure) {
               setAdding(null);
@@ -581,17 +585,19 @@ function SavedPlaceForm({
 
 function SavedWaypointForm({
   place,
+  initial,
   disabled,
   onClose,
   onAdd,
 }: {
   place: SavedPlace;
+  initial?: { role: WaypointRole; dwellMinutes: number };
   disabled: boolean;
   onClose: () => void;
   onAdd: (role: WaypointRole, dwell: number) => string | null;
 }) {
-  const [role, setRole] = useState<WaypointRole>("waypoint");
-  const [dwell, setDwell] = useState(0);
+  const [role, setRole] = useState<WaypointRole>(initial?.role ?? "waypoint");
+  const [dwell, setDwell] = useState(initial?.dwellMinutes ?? 0);
   const [error, setError] = useState("");
   return (
     <SavedDialog title="경유지 추가 확인" onClose={onClose}>

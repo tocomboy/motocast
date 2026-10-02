@@ -54,7 +54,7 @@ type RouteRequestDiagnosticContext = {
   operation: "directions" | "future_directions";
   fromPointIndex: number;
   toPointIndex: number;
-  destinationRole: "destination" | "waypoint" | "lunch" | "dinner" | "rest";
+  destinationRole: "destination" | "waypoint" | "meal" | "lunch" | "dinner" | "rest";
 };
 
 export class RouteResponseValidationError extends Error {
@@ -80,10 +80,10 @@ export function routeRequestDiagnostic(error: unknown): string {
   const { operation, fromPointIndex, toPointIndex, destinationRole } = error.requestContext;
   if (
     !["directions", "future_directions"].includes(operation) ||
-    !Number.isInteger(fromPointIndex) || fromPointIndex < 0 || fromPointIndex > 28 ||
-    !Number.isInteger(toPointIndex) || toPointIndex <= fromPointIndex || toPointIndex > 29 ||
+    !Number.isInteger(fromPointIndex) || fromPointIndex < 0 || fromPointIndex > 30 ||
+    !Number.isInteger(toPointIndex) || toPointIndex <= fromPointIndex || toPointIndex > 31 ||
     toPointIndex - fromPointIndex > 6 ||
-    !["destination", "waypoint", "lunch", "dinner", "rest"].includes(destinationRole)
+    !["destination", "waypoint", "meal", "lunch", "dinner", "rest"].includes(destinationRole)
   ) return "UNKNOWN";
   const mode = operation === "directions" ? "CURRENT" : "FUTURE";
   return `${mode}_P${fromPointIndex}_P${toPointIndex}_${destinationRole.toUpperCase()}`;
