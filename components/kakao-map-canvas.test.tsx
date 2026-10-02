@@ -230,7 +230,9 @@ it("keeps one SDK map and its camera across fullscreen, return, and viewport res
   expect(closed.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
   await resize();
   const preventDefault = vi.fn();
-  await act(async () => renderer.root.findByType("dialog").props.onCancel({ preventDefault }));
+  const stopPropagation = vi.fn();
+  await act(async () => renderer.root.findByType("dialog").props.onCancel({ preventDefault, stopPropagation }));
+  expect(stopPropagation).toHaveBeenCalledOnce();
   await resize();
   expect(preventDefault).toHaveBeenCalledTimes(1);
   expect(surface.show).toHaveBeenCalledTimes(1);

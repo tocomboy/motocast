@@ -379,7 +379,7 @@ export function KakaoMapCanvas({
         role={fullscreen ? "dialog" : "region"} aria-modal={fullscreen || undefined}
         aria-label={fullscreen ? undefined : "선택한 라이딩 경로 지도"} aria-labelledby={fullscreen ? titleId : undefined}
         onKeyDown={keepFocusInMap}
-        onCancel={(event) => { event.preventDefault(); setFullscreen(false); }}>
+        onCancel={(event) => { event.preventDefault(); event.stopPropagation(); setFullscreen(false); }}>
         <header className="map-fullscreen-header" hidden={!fullscreen}>
           <h2 id={titleId}>경로 지도</h2>
           <button type="button" ref={closeRef} onClick={() => setFullscreen(false)}>닫기</button>
