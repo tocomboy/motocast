@@ -4,6 +4,7 @@ import Link from "next/link";
 import { currentVersion, releaseNotes } from "@/lib/releases";
 
 import styles from "./updates.module.css";
+import { ReleaseHistoryWeb } from "./release-history-web";
 
 export const metadata: Metadata = {
   title: "업데이트 내역 | MOTOCAST",
@@ -26,23 +27,7 @@ export default function UpdatesPage() {
       </header>
 
       <section className={styles.timeline} aria-label="버전별 업데이트">
-        {releaseNotes.map((release) => {
-          const isCurrent = release.version === currentVersion;
-          return (
-            <article className={styles.release} key={release.version}>
-              <div className={styles.meta}>
-                <span className={styles.version}>v{release.version}</span>
-                <time dateTime={release.date}>{release.date}</time>
-                {isCurrent ? <span className={styles.current}>현재 버전</span> : null}
-              </div>
-              <h2>{release.title}</h2>
-              <p className={styles.summary}>{release.summary}</p>
-              <ul>
-                {release.bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}
-              </ul>
-            </article>
-          );
-        })}
+        <ReleaseHistoryWeb releases={releaseNotes} currentVersion={currentVersion} />
       </section>
     </main>
   );
