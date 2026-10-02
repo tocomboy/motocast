@@ -8,6 +8,12 @@ Follow the active Codex home's global `AGENTS.md` and its personal routing sourc
 - Work on `develop`; promote to `main` only through a same-repository `develop -> main` pull request.
 - Never read `CLAUDE.md` or `.claude/` unless the user explicitly requests a Claude configuration audit or migration.
 
+## Agent-owned end-to-end verification
+
+- 직접 실행 가능한 웹·앱 E2E는 에이전트가 실행·실패 진단·수정 후 재검증한다. 테스트 목록만 사용자에게 전달하거나 UI 검사를 일괄 실기기 대기로 남기지 않는다.
+- 웹은 [motocast-web-e2e](.agents/skills/motocast-web-e2e/SKILL.md), Android는 해당 저장소의 `motocast-android-e2e` 스킬을 적용한다. 실제 연결·권한·세션을 먼저 확인하고 사용자에게는 직접 입력·물리 기기가 필요한 최소 단계만 요청한다.
+- 합성 UI, 실제 서비스 연결, Play 게시, 사용자 실기기 결과를 구분한다. 미실행 항목은 구체적인 차단 근거와 재개 방법을 기록한다. 정본은 [E2E 실행 책임](docs/rules/verification-and-review.md#agent-owned-e2e)이다.
+
 ## Design before screen implementation
 
 - 웹·Android의 새 화면·시트·팝업과 기존 화면의 큰 구성 변경은 항상 기존 MOTOCAST Figma에서 필요한 상태를 먼저 디자인하고 렌더 검수한 뒤 구현한다.
