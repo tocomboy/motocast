@@ -64,7 +64,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 
 - Status: `CONFIRMED`
 - Decision: Android의 홈 이동 버튼은 제거하고 화면 상단 뒤로가기와 휴대폰 자체 뒤로가기로 직전 화면에 복귀한다. 팝업에는 닫기 X를 표시한다. 닫기·복귀가 실행 중 저장의 불명확한 결과나 이미 완료한 서버 변경을 되돌린 것처럼 표시해서는 안 된다.
-- Favorites: 웹과 Android의 즐겨찾기 추가·삭제는 홈에서 여는 전용 즐겨찾기 페이지가 소유한다. 장소 검색 화면은 장소와 기존 즐겨찾기를 선택하는 역할만 갖는다. 추가 검색은 즐겨찾기 관리 흐름 안에서 열고 닫으면 관리 화면으로 돌아온다. 기존 계정별 소유권, 최대3개, 중복·동시 변경·불명확 결과 재조회 보호를 유지한다.
+- Favorites: 웹과 Android의 저장 장소 등록·수정·삭제와 별표 관리는 홈에서 여는 전용 즐겨찾기 페이지가 소유한다. 자주 찾는 곳 5개 / 라이딩 스팟 / 식당 세 목록과 시·도 필터, 독립 지도 핀 토글을 제공한다. 계정별 저장 장소 합계는 1,000개다. 장소 검색 화면은 선택만 수행하며, 추가 검색을 닫으면 관리 화면으로 돌아온다. 소유권·중복·동시 변경·불명확 결과 재조회 보호를 유지한다. 상세 계약은 PLAN-004를 따른다.
 - Confirmation: 추가와 삭제 모두 화면 중앙의 작은 팝업에서 대상 장소와 동작을 다시 확인한다. 확인 버튼에서만 한 번 요청하며 취소·X·뒤로가기는 자료를 변경하지 않는다. 처리 중 중복 요청과 결과를 숨기는 닫기를 막는다.
 - Verification: 선택 화면에 추가·삭제가 없음, 전용 페이지 추가·삭제·빈 상태·한도·실패·재진입, 실제 진입 위치로 뒤로가기, 팝업 X 및 시스템 뒤로가기, 작은 화면과 큰 글자를 검증한다.
 - Confirmed: 2026-10-02, 사용자의 홈 버튼 제거·팝업 X·즐겨찾기 관리 분리 요청.
@@ -251,12 +251,12 @@ When sources conflict, record the evidence here, explain user-visible and securi
 #### PLAN-004 — Shared place favorites within each rider account
 
 - Status: `CONFIRMED`
-- Decision: Each rider can keep at most three app-owned favorite places, shared across origin, waypoint and destination selection. “공용” describes those three selection roles, not cross-account access. Registration comes from place search; management supports exact-item deletion and duplicate-safe retries. Slots and serialized owner mutations enforce the maximum under concurrent requests.
-- Rationale: The user requested three common favorites and Kakao Map-like selection while retaining private rider data.
-- User impact: The same favorite list is available on mobile and desktop after login. A full list requires removing an existing place before registering another.
-- Affected: private favorite table, owner-only add/remove RPCs, place picker and management UI. A favorite is a bookmark, not proof that a route is provider-validated; the existing signed-place validation still runs when planning or saving a course.
-- Verification: account isolation, active-member checks, service/direct-DML denial, duplicate/limit/stale-delete behavior, simultaneous additions, and all three place roles.
-- Confirmed: original favorite scope and full Figma-to-app implementation request, 2026-09-17.
+- Decision: Each rider can save up to 1,000 private single places across riding spots and restaurants, with an optional alias and up to five starred places shared across origin, waypoint and destination selection. Star removal retains the saved place. Exact-place deletion removes its star but never rewrites existing courses or immutable shares. Existing three-slot favorites migrate with original place and star intact; legacy clients retain their three-slot compatibility view.
+- Registration: verified search selection and map long-press coordinates are both included. The existing signed coordinate-resolution path must validate the selected point before registration. Preserve the original signed name/address/coordinates; aliases are separate metadata. Derive the 17-province filter from the stored original address once, and expose unrecognized legacy addresses as unknown without repeated provider requests.
+- User impact: three lists (자주 찾는 곳 / 라이딩 스팟 / 식당), province filter and independently toggled spot/restaurant pins. All four layer combinations retain the map and current draft points. Pin selection opens details; explicit waypoint confirmation selects role/dwell and appends before destination with a new occurrence ID. No route/weather calls happen until 경로 다시 계산. Edited inputs invalidate old route/weather/share state and survive recalculation errors.
+- Affected: canonical saved_places table, owner-only revision-checked RPCs, compatibility view, web/Android management and pickers. A bookmark is not proof of a provider-validated route; existing signed-place validation still runs when planning or saving a course.
+- Verification: account isolation, active-member checks, direct-DML denial, limits and simultaneous additions, old-data preservation, stale revisions, uncertain receipt readback without automatic resend, responsive/accessibility dialogs, unchanged saved snapshots, and actual SDK quota measurements separate from network observations.
+- Confirmed: original scope 2026-09-17; superseded limits and integrated saved-place scope in Issue #99, 2026-10-02. User explicitly confirmed total 1,000 and arbitrary-coordinate registration during implementation.
 
 #### UI-001 — Mobile and desktop riding workflow
 

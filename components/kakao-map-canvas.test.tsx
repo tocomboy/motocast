@@ -132,10 +132,43 @@ function installMaps({ throwOnLoad = false, synchronousLoad = false }: { throwOn
     Size,
     Point,
     Polyline,
+    event: { addListener: vi.fn(), removeListener: vi.fn() },
   };
   (window as Window).kakao = { maps: maps as unknown as KakaoMapsNamespace };
-  return { loadCallbacks, MapConstructor, Marker, MarkerImage, Polyline, Point, extend, setBounds, projection, setCenter, setLevel, relayout, mapLayers, activeMarkers, activePolylines };
+  return { loadCallbacks, MapConstructor, Marker, MarkerImage, Polyline, Point, extend, setBounds, projection, setCenter, setLevel, relayout, mapLayers, activeMarkers, activePolylines, event: maps.event };
 }
+
+it("updates 100 saved pins and twenty toggle cycles on one map without moving the camera or removing draft points",async()=>{
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY","fixture-key");stubBrowser();const maps=installMaps();const select=vi.fn();
+  const pins=Array.from({length:100},(_,n)=>({id:String(n),label:`공개 장소 ${n}`,kind:n%2?"restaurant" as const:"riding_spot" as const,latitude:37.5+n/1000,longitude:127.1}));
+  let renderer!:ReactTestRenderer;
+  await act(async()=>{renderer=create(<KakaoMapCanvas points={points} path={actualPath} savedPins={pins} onSelectSavedPin={select} allowEmptyMap/>,rendererOptions);});await flush(maps.loadCallbacks);
+  const bounds=maps.setBounds.mock.calls.length;const routes=maps.Polyline.mock.calls.length;
+  await act(async()=>{maps.event.addListener.mock.calls[0][2]();});expect(select).toHaveBeenCalledWith("0");
+  for(let n=0;n<20;n++)for(const visible of [pins.filter(p=>p.kind==="restaurant"),[],pins.filter(p=>p.kind==="riding_spot"),pins]){
+    await act(async()=>renderer.update(<KakaoMapCanvas points={points} path={actualPath} savedPins={visible} onSelectSavedPin={select} allowEmptyMap/>));
+    expect(maps.activeMarkers.size).toBe(visible.length+2);expect(maps.activePolylines.size).toBe(1);
+  }
+  expect(maps.MapConstructor).toHaveBeenCalledTimes(1);expect(maps.setBounds).toHaveBeenCalledTimes(bounds);expect(maps.Polyline).toHaveBeenCalledTimes(routes);
+  await act(async()=>renderer.unmount());expect(maps.activeMarkers.size).toBe(0);expect(maps.event.removeListener.mock.calls.length).toBe(maps.event.addListener.mock.calls.length);
+});
+
+it("keeps an empty saved-place map available with no route points or pins",async()=>{
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY","fixture-key");stubBrowser();const maps=installMaps();let renderer!:ReactTestRenderer;
+  await act(async()=>{renderer=create(<KakaoMapCanvas points={[]} savedPins={[]} allowEmptyMap/>,rendererOptions);});await flush(maps.loadCallbacks);
+  expect(maps.MapConstructor).toHaveBeenCalledTimes(1);expect(maps.Marker).not.toHaveBeenCalled();expect(maps.setBounds).not.toHaveBeenCalled();await act(async()=>renderer.unmount());
+});
+
+it("hides saved-pin cleanup failures and disables stale click callbacks while still attempting every removal",async()=>{
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY","fixture-key");stubBrowser();const maps=installMaps();const select=vi.fn();
+  const pins=[{id:"1",label:"공개 장소",kind:"riding_spot" as const,latitude:37.5,longitude:127.1}];let r!:ReactTestRenderer;
+  await act(async()=>{r=create(<KakaoMapCanvas points={[]} savedPins={pins} onSelectSavedPin={select} allowEmptyMap/>,rendererOptions);});await flush(maps.loadCallbacks);
+  const click=maps.event.addListener.mock.calls[0][2];const marker=maps.Marker.mock.instances[0] as unknown as {setMap:ReturnType<typeof vi.fn>};
+  maps.event.removeListener.mockImplementationOnce(()=>{throw new Error("SDK cleanup error");});
+  await act(async()=>r.update(<KakaoMapCanvas points={[]} savedPins={[]} onSelectSavedPin={select} allowEmptyMap/>));
+  expect(marker.setMap).toHaveBeenCalledWith(null);expect(mapCanvas(r).props["aria-hidden"]).toBe(true);expect(mapCanvas(r).props.inert).toBe(true);
+  click();expect(select).not.toHaveBeenCalled();await act(async()=>r.unmount());
+});
 
 it("shows the exact temporary selected point and disposes it without a route or edit controls", async () => {
   vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();

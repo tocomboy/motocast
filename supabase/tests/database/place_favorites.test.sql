@@ -38,7 +38,8 @@ do $$ begin perform public.add_place_favorite(pg_temp.favorite('revoked',repeat(
 reset role;
 
 insert into tap_results values
-((select relrowsecurity from pg_class where oid='public.place_favorites'::regclass),'favorites table has RLS enabled'),
+((select relrowsecurity from pg_class where oid='public.saved_places'::regclass),'canonical saved places table has RLS enabled'),
+((select reloptions @> array['security_invoker=true'] from pg_class where oid='public.place_favorites'::regclass),'legacy favorites view preserves caller RLS'),
 (has_table_privilege('authenticated','public.place_favorites','SELECT'),'authenticated may select favorites'),
 (not has_table_privilege('authenticated','public.place_favorites','INSERT,UPDATE,DELETE'),'authenticated direct writes denied'),
 (not has_table_privilege('anon','public.place_favorites','SELECT,INSERT,UPDATE,DELETE'),'anonymous table access denied'),

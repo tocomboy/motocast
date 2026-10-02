@@ -8,8 +8,8 @@ import { KakaoMapHandoff } from "@/components/kakaomap-handoff";
 import { ownerHandoff } from "@/lib/planner/kakaomap-sources";
 import { KakaoMapCanvas, MapMarkerLegend } from "@/components/kakao-map-canvas";
 import { OrderedWaypointEditor } from "@/components/ordered-waypoint-editor";
-import { PlaceFavoritesProvider, usePlaceFavorites } from "@/components/place-favorites-provider";
-import { PlaceFavoritesManager } from "@/components/place-favorites-manager";
+import { SavedPlacesProvider, useSavedPlaces } from "@/components/saved-places-provider";
+import { SavedPlacesManager } from "@/components/saved-places-manager";
 import { MapPointConfirmation, type MapPlacePickerHandle } from "@/components/map-point-confirmation";
 import { RouteFailureDialog } from "@/components/route-failure-dialog";
 import { PlaceSearchField } from "@/components/place-search-field";
@@ -35,7 +35,7 @@ import {
   collectionPointFromEditableWaypoint,
   editableWaypointFromCollectionPoint,
   roleAssignmentError,
-  type EditableWaypoint,
+  type EditableWaypoint, type WaypointRole,
 } from "@/lib/planner/ordered-waypoints";
 import { parseSafeRecommendedRoute, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
 import { readRouteFailureCode, routeFailureNotice, routeFailurePopup, type RouteFailureCode } from "@/lib/planner/route-failure";
@@ -199,11 +199,11 @@ export function buildPlannerDisplayTimeline(input: {
 }
 
 export function PlannerDashboard(props: PlannerDashboardProps) {
-  return <PlaceFavoritesProvider enabled={props.connected}><PlannerDashboardContent {...props} /></PlaceFavoritesProvider>;
+  return <SavedPlacesProvider enabled={props.connected}><PlannerDashboardContent {...props} /></SavedPlacesProvider>;
 }
 
 function PlannerDashboardContent({ connected, initialCourse = null, initialTitle = "공유받은 경로", navigationMode = "browser", onExit }: PlannerDashboardProps) {
-  const favoriteControls = usePlaceFavorites();
+  const favoriteControls = useSavedPlaces();
   const [view, setView] = useState<PlannerView>(initialCourse ? "editor" : connected ? "home" : "summary");
   const [draft, setDraft] = useState(defaultDraft);
   const [places, setPlaces] = useState<PlannerPlaces>({
@@ -386,8 +386,8 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     ...waypoints.flatMap((waypoint) => waypoint.place ? [{ label: waypoint.place.name, latitude: waypoint.place.latitude, longitude: waypoint.place.longitude, role: waypoint.role === "lunch" || waypoint.role === "dinner" || waypoint.role === "rest" ? waypoint.role : "waypoint" as const }] : []),
     ...(places.destination ? [{ label: places.destination.name, latitude: places.destination.latitude, longitude: places.destination.longitude, role: "destination" as const }] : []),
   ];
-  const selectedMapPoints = liveRoute ? buildPlannerMapPoints(selected.segments) : connected ? inputMapPoints : demoMapPoints;
-  const selectedMapPath = liveRoute ? selected.path : connected ? undefined : selected.path;
+  const selectedMapPoints = liveRoute && !liveResultStale ? buildPlannerMapPoints(selected.segments) : connected ? inputMapPoints : demoMapPoints;
+  const selectedMapPath = liveRoute && !liveResultStale ? selected.path : connected ? undefined : selected.path;
 
   const collectionPoints = useMemo<CollectionPoint[]>(() => {
     if (!connected) return [];
@@ -520,6 +520,17 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       return;
     }
     updateWaypoints(waypoints.map((waypoint) => waypoint.id === favoriteTarget ? { ...waypoint, place } : waypoint));
+  }
+
+  function addSavedWaypoint(place: PlaceSearchResult, role: WaypointRole, dwellMinutes: number): string | null {
+    if (!connected || actionGateRef.current.planning || calculating || summarySaveBusy) return "현재 처리가 끝난 뒤 추가해 주세요.";
+    const error = roleAssignmentError(waypoints, role);
+    if (error) return error;
+    if (!Number.isInteger(dwellMinutes) || (role === "waypoint" ? dwellMinutes !== 0 : dwellMinutes < 1 || dwellMinutes > 1440)) return "머무는 시간은 1분 이상 1440분 이하로 정해 주세요.";
+    updateWaypoints([...waypoints, { id: crypto.randomUUID(), role, dwellMinutes, place }]);
+    setNotice("경유지를 추가했어요. 경로 업데이트 필요: 방문 순서와 일정을 확인하고 경로 다시 계산을 눌러 주세요.", "warning");
+    navigate("editor");
+    return null;
   }
 
   const favoriteTargetLabel = favoriteTarget === "origin"
@@ -839,15 +850,15 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       {view === "home" ? (
         <PlannerHome connected={connected} busy={calculating} status={homeStatus} onNewRoute={startNewRoute} onCollections={() => navigate("collections")} onFavorites={() => navigate("favorites")} collections={connected ? <CollectionManager mode="home" currentCourse={currentCourse} onApply={applyCollection} onShare={prepareCollectionShare} disabled={calculating} /> : undefined} />
       ) : view === "favorites" ? (
-        <PlaceFavoritesManager favorites={favoriteControls} onBack={() => navigate("home")} />
+        <SavedPlacesManager onBack={() => navigate("home")} onAddWaypoint={addSavedWaypoint} routePoints={inputMapPoints} routePath={liveResultStale ? undefined : selectedMapPath} disabled={calculating || summarySaveBusy} />
       ) : view === "collections" ? (
         <section className="collections-view" id="collections" aria-labelledby="collections-view-title">
           <div className="view-heading"><button className="collections-back" type="button" onClick={() => navigate("home")} aria-label="홈으로">←</button><div><h1 id="collections-view-title" data-view-title="collections" tabIndex={-1}><span className="desktop-collections-title">저장한 경로 모음</span><span className="mobile-collections-title">저장한 경로</span></h1><p className="collections-desktop-intro">경로를 고르면 새로운 출발 날짜와 시간을 설정해요.</p></div></div>
           <CollectionManager currentCourse={currentCourse} onApply={applyCollection} onShare={prepareCollectionShare} disabled={calculating} />
           <details className="collection-share-management"><summary>공유 링크 관리</summary><ShareManager mode="history" tripId={null} sessionEpoch={shareManagerEpoch} disabled={calculating} /></details>
         </section>
-      ) : connected && view === "summary" && !liveRoute ? (
-        <section className="empty-summary"><h1 data-view-title="summary" tabIndex={-1}>계산된 경로가 없습니다.</h1><p>장소와 새 일정을 선택하고 실제 경로를 계산해 주세요.</p><button className="primary-button" type="button" onClick={() => navigate("editor")}>경로 편집으로</button></section>
+      ) : connected && view === "summary" && (!liveRoute || liveResultStale) ? (
+        <section className="empty-summary"><h1 data-view-title="summary" tabIndex={-1}>{liveResultStale ? "경로 업데이트 필요" : "계산된 경로가 없습니다."}</h1><p>{liveResultStale ? "변경한 장소와 일정은 보존했어요. 경로 편집에서 경로 다시 계산을 눌러 주세요." : "장소와 새 일정을 선택하고 실제 경로를 계산해 주세요."}</p><button className="primary-button" type="button" onClick={() => navigate("editor")}>경로 편집으로</button></section>
       ) : <div className={`workspace ${view === "summary" ? "is-summary-view" : "is-editor-view"}`} id="top">
         {view === "editor" ? <div className="editor-view-heading"><h1 data-view-title="editor" tabIndex={-1}><span className="desktop-editor-title">경로 편집</span><span className="mobile-editor-title">어디로 떠날까요?</span></h1><button className="close-panel" type="button" onClick={() => navigate(liveRoute ? "summary" : "home")} aria-label={liveRoute ? "경로 요약으로" : "홈으로"}>{liveRoute ? "요약" : "홈"}</button></div> : null}
         <aside
@@ -902,18 +913,18 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
             </section>
 
             </fieldset>
-            {connected ? <section className="editor-favorites" aria-label={`공용 즐겨찾기, 적용 위치 ${favoriteTargetLabel}`}>
-              <div className="editor-favorites-heading"><strong>공용 즐겨찾기 {favoriteControls.favorites.length}/3</strong><span>적용 위치: {favoriteTargetLabel}</span></div>
+            {connected ? <section className="editor-favorites" aria-label={`자주 찾는 곳, 적용 위치 ${favoriteTargetLabel}`}>
+              <div className="editor-favorites-heading"><strong>자주 찾는 곳 {favoriteControls.favorites.length}/5</strong><span>적용 위치: {favoriteTargetLabel}</span></div>
               <div className="editor-favorite-slots">
-                {[0, 1, 2].map((index) => {
+                {[0, 1, 2, 3, 4].map((index) => {
                   const favorite = favoriteControls.favorites[index];
-                  return <button key={favorite?.slot ?? `empty-${index}`} type="button" disabled={!favorite || !favoriteTarget || calculating} onClick={() => favorite && applyFavorite(favoriteAsSearchResult(favorite))}>{favorite ? favorite.place.name : "비어 있음"}</button>;
+                  return <button key={favorite?.slot ?? `empty-${index}`} type="button" disabled={!favorite || !favoriteTarget || calculating} onClick={() => favorite && applyFavorite(favoriteAsSearchResult(favorite))}>{favorite ? (favorite.displayName ?? favorite.place.name) : "비어 있음"}</button>;
                 })}
               </div>
               {favoriteControls.status === "error" ? <div className="editor-favorites-error" role="alert"><span>{favoriteControls.message}</span><button type="button" onClick={favoriteControls.retry}>다시 시도</button></div> : <p className="sr-only" role="status">{favoriteControls.message}</p>}
             </section> : null}
             <button className="primary-button calculate" type="submit" disabled={calculating}>
-              {calculating ? "경로와 날씨 확인 중…" : <><span className="desktop-calculate-label">라이딩 날씨 확인</span><span className="mobile-calculate-label">이 경로로 날씨 확인</span></>}
+              {calculating ? "경로와 날씨 확인 중…" : liveResultStale ? "경로 다시 계산" : <><span className="desktop-calculate-label">라이딩 날씨 확인</span><span className="mobile-calculate-label">이 경로로 날씨 확인</span></>}
             </button>
             {connected && view === "editor" ? (
               <div
@@ -930,7 +941,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
           </form>
         </aside>
 
-        {view === "summary" ? <section className="route-stage" aria-label="라이딩 계획 결과">
+        {view === "summary" && !liveResultStale ? <section className="route-stage" aria-label="라이딩 계획 결과">
           <RidingSummaryLayout
             title={<><span className="desktop-summary-title">라이딩 결과</span><span className="mobile-summary-title">라이딩 요약</span></>}
             subtitle={formatSummaryDeparture(displayedDepartureAt)}
@@ -977,7 +988,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
                 </dialog>
               </> : null}
             </>}
-            map={<><h2 className="summary-course-title">{routeTitle}</h2><div className="route-map-meta"><div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>{liveRoute ? <span className="live-data-badge">{liveResultStale ? "이전 실제 경로" : "실제 경로"}</span> : <span className="example-data-badge">예시 데이터</span>}</div><div className="map-area"><KakaoMapCanvas points={selectedMapPoints} path={selectedMapPath} showLegend={false} onSelectCoordinate={connected && !calculating && !summarySaveBusy ? selectMapCoordinate : undefined} /></div></>}
+            map={<><h2 className="summary-course-title">{routeTitle}</h2><div className="route-map-meta"><div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>{liveRoute ? <span className="live-data-badge">{liveResultStale ? "경로 업데이트 필요" : "실제 경로"}</span> : <span className="example-data-badge">예시 데이터</span>}</div><div className="map-area"><KakaoMapCanvas points={selectedMapPoints} path={selectedMapPath} showLegend={false} onSelectCoordinate={connected && !calculating && !summarySaveBusy ? selectMapCoordinate : undefined} /></div></>}
             mapDetails={<div className="route-map-details"><p className="summary-route-order">{[selected.segments[0]?.from.label, ...selected.segments.map((segment) => segment.to.label)].filter(Boolean).join(" → ")}</p><p className="route-safety-copy">이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</p><MapMarkerLegend points={selectedMapPoints} inline /></div>}
             weather={<><div className="forecast-heading"><div><h2>구간별 날씨</h2></div><span className="forecast-issued">{weatherLoading === selected.id ? "기상청 예보 조회 중" : selectedWeatherStatus?.header ?? "날씨 미조회"}</span></div><p className="sr-only" role="status" aria-live="polite">{selectedWeatherAnnouncement}</p><div className="timeline-list">{timeline.segments.map((segment) => { const effectiveDwell = segment.to.selected ? segment.to.dwellMinutes : 0; return <RidingWeatherCard key={segment.id} time={formatRideTime(displayedDepartureAt, segment.arrivalAt)} place={segment.to.label} stopDetail={effectiveDwell ? `${effectiveDwell}분 정차` : "통과"} condition={segment.weather.condition} conditionLabel={weatherIcon(segment.weather.condition)} temperature={`${segment.weather.temperatureC ?? "–"}°`} probability={`${segment.weather.precipitationProbability ?? "–"}%`} statusNote={segment.weather.status === "outside-window" ? weatherModelLabel(segment.weather.status, segment.weather.model) : undefined} />; })}</div><details className="weather-detail"><summary>날씨 상세정보</summary><ul>{timeline.segments.map((segment) => <li key={segment.id}><strong>{segment.to.label}</strong><span>바람 {segment.weather.windSpeedMps ?? "–"}m/s · {weatherModelLabel(segment.weather.status, segment.weather.model)}</span></li>)}</ul></details></>}
             notices={<>{selectedWeatherStatus ? <div className="stale-notice"><span>i</span>{selectedWeatherStatus.notice}</div> : null}<div ref={noticeRef} className={`action-notice ${notice.severity}`} role={notice.severity === "error" ? "alert" : "status"} aria-live={notice.severity === "error" ? "assertive" : "polite"} tabIndex={-1}><span className="notice-symbol" aria-hidden="true">{notice.severity === "error" ? "!" : notice.severity === "warning" ? "△" : "i"}</span><p><strong>{notice.severity === "error" ? "계획을 완료하지 못했습니다" : notice.severity === "warning" ? "확인이 필요합니다" : "진행 상태"}</strong><span>{notice.message}</span></p></div></>}
@@ -988,7 +999,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
             {connected ? <h2 className="editor-map-title">선택한 경로</h2> : null}
             <div className="route-map-meta">
               <div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>
-              {!liveRoute ? <span className="example-data-badge">{connected ? "선택한 장소" : "예시 데이터"}</span> : <span className="live-data-badge">{liveResultStale ? "이전 실제 경로" : "실제 경로"}</span>}
+              {!liveRoute ? <span className="example-data-badge">{connected ? "선택한 장소" : "예시 데이터"}</span> : <span className="live-data-badge">{liveResultStale ? "경로 업데이트 필요" : "실제 경로"}</span>}
             </div>
             <div className="map-area">
               <KakaoMapCanvas points={selectedMapPoints} path={selectedMapPath} showLegend={false} onSelectCoordinate={connected && !calculating && !summarySaveBusy ? selectMapCoordinate : undefined} />
