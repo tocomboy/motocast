@@ -274,6 +274,29 @@
   - `MOTOCAST_S23Plus_API34`(emulator-5680; 5560은 Windows 예약 포트 범위 5533–5632에 걸림)에서 `test-screen-design.py` s23·small·wide PASS.
   - 화면 대조 보완 요청(`task-android-fix1.md`, 작업 `task-musjagqn-8iv05e`): 숫자 글꼴 적용, 공유 화면 머리·구성, 즐겨찾기 삭제 진입 버튼, 주행 옵션 시트 선택 표시·안전 영역, 시트 캡처 안정화, 나머지 화면 정적 대조.
 
+- AND-V2-1 보완 1 인수(2026-10-04, Android 커밋 `4897730`, 브랜치 `review-design-v2-20261003`, push 안 함):
+  - 워커 반영: 숫자 글꼴, 공유 화면 머리·구성, 즐겨찾기 삭제 danger, R10 선택 표시·안전 영역, 시트 캡처 안정화, 나머지 화면 정적 대조.
+  - 메인 수정:
+    - 사용하지 않는 `BoxWithConstraints`로 생긴 lint 오류를 고쳤다.
+    - 경유지 추가·편집 시트의 이중 세로 스크롤로 앱이 강제 종료되던 결함을 고쳤다(`ChoiceSheet` 안쪽 스크롤 제거).
+    - RN 업데이트 화면에 Barlow를 등록했다.
+    - 아이콘 라벨의 공백을 정리했다.
+    - 웹 커밋 `cebcb87`에서 `vendor/shared-ui`를 동기화했다(검사 PASS, 6파일).
+  - 기기 검사 코드 수정(검사 완화나 삭제 없음):
+    - 아이콘만 남은 버튼은 접근성 설명으로 찾는다.
+    - click·clickDescription은 대기 중 찾은 노드를 쓰고, 활성화될 때까지 기다린다.
+    - 시트가 닫히고 정착할 때까지 기다린다.
+    - 사용자 지적에 따라 지도 확인 시트는 주소가 표시된 뒤에만 누른다.
+    - map-gestures의 주소 없음 단계는 경로를 재계산한 뒤 시트를 다시 연다. 이 단계는 원본 762f423에서도 3/3 실패한 기존 검사 결함이었다.
+  - 메인 실행 결과(같은 후보):
+    - `tools/verify.ps1` PASS: 두 flavor 단위 각 381 PASS / 0 FAIL / 0 ERROR / 0 SKIP, lint, APK.
+    - emulator-5680(`MOTOCAST_S23Plus_API34`): `test-screen-design.py` design s23·small(320dp·1.3배)·wide, saved-places-review, meal-saved-waypoint 모두 PASS.
+    - `JourneyDeviceRunner`: map-gestures 2회와 map-fullscreen-layout 1회 PASS. Preview 공개 식별자는 파일을 복사하지 않고 빌드 환경변수로만 전달했다.
+    - 한계: 백그라운드 복귀 단계는 원본에서도 간헐 실패하는 환경 의존 단계다. 실제 로그인·실서버·실기기·Play는 NOT_RUN.
+  - 증거(저장소 밖): `C:/Users/User/Desktop/worktrees/motocast-design-v2-assets/evidence/android/` (f4-*, f8-*, baseline-*, ab-*).
+  - 임시 자원: 비교용 원본 작업 공간 `C:/Users/User/Desktop/worktrees/motocast-android-baseline-762f423`(detached 762f423, node_modules와 build 포함, 2026-10-04 생성)을 만들었다. 지도 검사 원본 대조용이다. 출시 판단이 끝나면 `git worktree remove`로 정리를 검토한다.
+- Figma 댓글 반영 요청(2026-10-04): 댓글을 읽을 경로가 없어 대기 중이다. Figma MCP에는 댓글 기능이 없고, Chrome 확장은 연결되지 않았고, API 토큰도 없다. 사용자에게 연결 방법을 요청했다.
+
 ## 다음 행동
 
 1. 사용자 Figma 검토 의견을 반영한다.
