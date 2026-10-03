@@ -176,8 +176,12 @@ describe("CollectionManager direct course", () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
     const deleteButton = renderer.root.findAllByType("button").find((button) => button.props["aria-label"] === "삭제 실패 코스 삭제");
     expect(deleteButton).toBeDefined();
-    vi.mocked(window.confirm).mockReturnValue(true);
-    await act(async () => deleteButton?.props.onClick());
+    await act(async () => deleteButton?.props.onClick({ currentTarget: { focus: vi.fn() } }));
+    expect(browserMocks.rpc).not.toHaveBeenCalled();
+    const dialog = renderer.root.findByProps({ className: "collection-delete-dialog" });
+    expect(dialog.findByType("p").children.join("")).toBe("삭제 실패 코스 컬렉션과 모든 버전을 삭제할까요? 이 작업은 되돌릴 수 없습니다.");
+    await act(async () => dialog.findByProps({ className: "destructive-button" }).props.onClick());
+    expect(browserMocks.rpc).toHaveBeenCalledExactlyOnceWith("delete_riding_collection", { target_collection_id: "collection-1" });
     const feedback = renderer.root.findByProps({ className: "manager-operation-feedback" });
     expect(feedback.props.role).toBe("alert");
     expect(feedback.children.join("")).toContain("삭제하지 못했습니다");

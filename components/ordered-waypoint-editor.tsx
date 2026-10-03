@@ -1,5 +1,6 @@
 "use client";
 
+import { LineIcon } from "@/components/line-icon";
 import { useEffect, useRef, useState } from "react";
 
 import { PlaceSearchField, type PlaceFavoritesControls } from "@/components/place-search-field";
@@ -184,7 +185,7 @@ export function OrderedWaypointEditor({
               <li className="ordered-waypoint waypoint-card" key={waypoint.id} data-waypoint-id={waypoint.id}>
                 <div className="waypoint-heading">
                   <strong>경유 {index + 1}</strong>
-                  <button className="waypoint-settings" type="button" onClick={() => openSettings(waypoint)} aria-label={`경유 ${index + 1} 설정`}>{waypoint.role === "waypoint" ? "통과" : `${roleLabel} ${waypoint.dwellMinutes}분`}</button>
+                  <span className="waypoint-role-label">{waypoint.role === "waypoint" ? "통과" : `${roleLabel} ${waypoint.dwellMinutes}분`}</span>
                 </div>
                 <PlaceSearchField
                   key={`${waypoint.id}-${selectionRevision}`}
@@ -198,8 +199,9 @@ export function OrderedWaypointEditor({
                   onSelect={(place) => onChange(waypoints.map((item) => item.id === waypoint.id ? { ...item, place } : item))}
                 />
                 <div className="waypoint-actions">
-                  <button className="waypoint-move-up" type="button" disabled={index === 0} onClick={() => reorder(index, -1)} aria-label={`${index + 1}번째 ${roleLabel} 위로 이동`}>↑</button>
-                  <button className="waypoint-move-down" type="button" disabled={index === waypoints.length - 1} onClick={() => reorder(index, 1)} aria-label={`${index + 1}번째 ${roleLabel} 아래로 이동`}>↓</button>
+                  <button className="waypoint-move-up" type="button" disabled={index === 0} onClick={() => reorder(index, -1)} aria-label={`${index + 1}번째 ${roleLabel} 위로 이동`}><LineIcon name="chevron-up" /></button>
+                  <button className="waypoint-move-down" type="button" disabled={index === waypoints.length - 1} onClick={() => reorder(index, 1)} aria-label={`${index + 1}번째 ${roleLabel} 아래로 이동`}><LineIcon name="chevron-down" /></button>
+                  <button className="waypoint-settings" type="button" onClick={() => openSettings(waypoint)} aria-label={`경유 ${index + 1} 설정`}>{waypoint.role === "waypoint" ? "통과" : `${roleLabel} ${waypoint.dwellMinutes}분`}</button>
                 </div>
               </li>
             );
@@ -210,20 +212,21 @@ export function OrderedWaypointEditor({
       <div className="waypoint-add-row">
         <button
           ref={addButtonRef}
+          aria-label="+ 경유지 추가"
           className="text-button"
           type="button"
           disabled={!connected || disabled || waypoints.length >= waypointLimits.total}
           onClick={startAddingWaypoint}
         >
-          + 경유지 추가
+          <LineIcon name="plus" /> 경유지 추가
         </button>
       </div>
       <dialog ref={settingsDialogRef} className="waypoint-settings-dialog" aria-label="경유지 설정">
         <div className="waypoint-settings-shell">
-          <header><h2>{settingMode === "add" ? "경유지 추가" : "경유지 설정"}</h2><button type="button" onClick={() => settingsDialogRef.current?.close()} aria-label="경유지 설정 닫기">×</button></header>
+          <header><h2>{settingMode === "add" ? "경유지 추가" : "경유지 설정"}</h2><button type="button" onClick={() => settingsDialogRef.current?.close()} aria-label="경유지 설정 닫기"><LineIcon name="close" /></button></header>
           {settingMode === "edit" && settingId ? <div className="waypoint-setting-place"><strong>{waypoints.find((item) => item.id === settingId)?.place?.name ?? "장소 미선택"}</strong><span>{waypoints.find((item) => item.id === settingId)?.place?.roadAddress ?? waypoints.find((item) => item.id === settingId)?.place?.address ?? "장소를 선택해 주세요."}</span><button type="button" onClick={() => { const id = settingId; settingsDialogRef.current?.close(); focusWaypoint(id, ".place-picker-trigger", true); }}>장소 주소 변경</button></div> : null}
-          <fieldset><legend>경유 종류</legend><div className="waypoint-role-pills">{waypointRoleOptions.map((option) => <button type="button" key={option.value} aria-pressed={settingRole === option.value} onClick={() => { if (option.value !== settingRole) setSettingDwell(defaultDwellMinutes(option.value)); setSettingRole(option.value); setSettingError(""); }}>{option.value === "waypoint" ? "통과" : option.label}</button>)}</div></fieldset>
-          {settingRole !== "waypoint" ? <div className="dwell-stepper"><span>머무는 시간</span><button type="button" aria-label="머무는 시간 10분 줄이기" onClick={() => setSettingDwell((value) => Math.max(1, value - 10))}>−</button><strong>{settingDwell}분</strong><button type="button" aria-label="머무는 시간 10분 늘리기" onClick={() => setSettingDwell((value) => Math.min(1440, value + 10))}>＋</button></div> : null}
+          <fieldset><legend>경유 종류</legend><div className="waypoint-role-pills">{waypointRoleOptions.map((option) => <button type="button" key={option.value} aria-pressed={settingRole === option.value} onClick={() => { if (option.value !== settingRole) setSettingDwell(defaultDwellMinutes(option.value)); setSettingRole(option.value); setSettingError(""); }}>{settingRole === option.value ? <LineIcon name="check" /> : null}{option.value === "waypoint" ? "통과" : option.label}</button>)}</div></fieldset>
+          {settingRole !== "waypoint" ? <div className="dwell-stepper"><span>머무는 시간</span><button type="button" aria-label="머무는 시간 10분 줄이기" onClick={() => setSettingDwell((value) => Math.max(1, value - 10))}><LineIcon name="minus" /></button><strong>{settingDwell}분</strong><button type="button" aria-label="머무는 시간 10분 늘리기" onClick={() => setSettingDwell((value) => Math.min(1440, value + 10))}><LineIcon name="plus" /></button></div> : null}
           {settingMode === "add" ? <button ref={savedEntryRef} className="waypoint-saved-entry" type="button" disabled={!connected || disabled || !favorites} onClick={openSavedPlaces}>즐겨찾기에서 선택</button> : null}
           {settingError ? <p ref={settingsErrorRef} className="waypoint-settings-error" role="alert" tabIndex={-1}>{settingError}</p> : null}
           <div className="waypoint-settings-actions">{settingMode === "edit" ? <button className="danger-text" type="button" onClick={() => { if (settingId) removeWaypoint(settingId); settingsDialogRef.current?.close(); }}>경유지 삭제</button> : <button type="button" onClick={() => settingsDialogRef.current?.close()}>취소</button>}<button className="primary-button" type="button" onClick={applySettings}>{settingMode === "add" ? "추가하고 장소 선택" : "설정 적용"}</button></div>

@@ -1,5 +1,5 @@
 .page {
-  background: #f4f0e7;
+  background: var(--mc-surface-ground);
   min-height: 100vh;
   padding: 28px clamp(20px, 6vw, 80px) 80px;
 }
@@ -21,7 +21,7 @@
 
 .brand {
   align-items: center;
-  color: #18221d;
+  color: var(--mc-text-primary);
   display: inline-flex;
   font-size: 0.92rem;
   font-weight: 800;
@@ -33,9 +33,9 @@
 
 .brandMark {
   align-items: center;
-  background: #ef6a3a;
+  background: var(--mc-signal-fill);
   border-radius: 50% 50% 50% 12%;
-  color: #fffdf8;
+  color: var(--mc-surface-card);
   display: inline-flex;
   font-size: 0.72rem;
   height: 31px;
@@ -45,7 +45,7 @@
 }
 
 .backLink {
-  color: #405049;
+  color: var(--mc-text-secondary);
   font-size: 0.875rem;
   font-weight: 700;
   line-height: 1.5;
@@ -55,16 +55,16 @@
 }
 
 .backLink:hover {
-  color: #a83d18;
+  color: var(--mc-signal-text);
 }
 
 .header {
-  border-bottom: 1px solid #d9d2c5;
+  border-bottom: 1px solid var(--mc-border-default);
   padding-bottom: clamp(36px, 6vw, 54px);
 }
 
 .header h1 {
-  color: #18221d;
+  color: var(--mc-text-primary);
   font-size: clamp(2.6rem, 8vw, 4.8rem);
   font-weight: 600;
   letter-spacing: -0.055em;
@@ -73,7 +73,7 @@
 }
 
 .header > p:last-child {
-  color: #405049;
+  color: var(--mc-text-secondary);
   font-size: clamp(1rem, 2.2vw, 1.125rem);
   line-height: 1.75;
   margin: 24px 0 0;
@@ -99,3 +99,17 @@
     font-size: 2.55rem;
   }
 }
+.page { padding: 0 0 80px; }
+.navigation { max-width: none; min-height: 72px; padding: 0 max(20px, calc((100% - 1200px) / 2)); margin: 0 0 40px; background: var(--mc-surface-card); border-bottom: 1px solid var(--mc-border-card); }
+.brand { font-family: var(--mc-font-number); font-size: 24px; font-weight: 700; letter-spacing: .08em; }
+.brandMark { display: none; }
+.backLink { color: var(--mc-signal-text); }
+.header, .timeline { max-width: 720px; width: calc(100% - 40px); }
+.header { border: 0; padding: 0; }
+.header h1 { font-size: 40px; line-height: 1.35; font-weight: 900; letter-spacing: -.02em; }
+.header > p:last-child { margin-top: 20px; font-size: 17px; }
+.timeline { padding-top: 28px; }
+@media (max-width: 767px) { .navigation { flex-direction: row; align-items: center; gap: 16px; margin-bottom: 24px; } .header h1 { font-size: 24px; } .header > p:last-child { font-size: 15px; } .backLink { font-size: 13px; } }
+.navigation { flex-wrap: wrap; }
+.brand, .backLink { overflow-wrap: anywhere; min-width: 0; }
+@media (max-width: 360px) { .navigation { gap: 4px 16px; padding-block: 12px; } }

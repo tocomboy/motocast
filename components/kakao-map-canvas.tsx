@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { designTokens } from "@/packages/shared-ui/src/design-tokens";
+import { LineIcon } from "@/components/line-icon";
 import { bindMapLongPress } from "@/lib/places/map-long-press";
 
 export type MapMarkerRole = "origin" | "destination" | "meal" | "lunch" | "dinner" | "rest" | "waypoint";
@@ -10,18 +12,19 @@ export type SavedMapPin = PathPoint & { id: string; label: string; kind: "riding
 type MapDisplayState = "empty" | "loading" | "ready" | "demo" | "error";
 const KAKAO_MAP_LOAD_TIMEOUT_MS = 10_000;
 const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; color: string }> = {
-  origin: { label: "출발", symbol: "출", color: "#18372b" },
-  destination: { label: "복귀", symbol: "복", color: "#3e5873" },
-  meal: { label: "식사", symbol: "식", color: "#cc5d32" },
-  lunch: { label: "식사", symbol: "식", color: "#cc5d32" },
-  dinner: { label: "식사", symbol: "식", color: "#cc5d32" },
-  rest: { label: "휴식", symbol: "휴", color: "#277b74" },
-  waypoint: { label: "경유", symbol: "경", color: "#5f6d63" },
+  origin: { label: "출발", symbol: "출", color: designTokens["text-primary"] },
+  destination: { label: "복귀", symbol: "도", color: designTokens["text-primary"] },
+  meal: { label: "식사", symbol: "식", color: designTokens["text-primary"] },
+  lunch: { label: "식사", symbol: "식", color: designTokens["text-primary"] },
+  dinner: { label: "식사", symbol: "식", color: designTokens["text-primary"] },
+  rest: { label: "휴식", symbol: "휴", color: designTokens["text-primary"] },
+  waypoint: { label: "경유", symbol: "경", color: designTokens["text-primary"] },
 };
 
 function markerImage(maps: KakaoMapsNamespace, points: MapPoint[], selectionPreview = false) {
   if (selectionPreview) {
-    return new maps.MarkerImage("/map-selection-marker.svg", new maps.Size(40, 48), { offset: new maps.Point(20, 46) });
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48" viewBox="0 0 40 48"><path d="M20 2C10.06 2 2 10.06 2 20C2 32 20 46 20 46C20 46 38 32 38 20C38 10.06 29.94 2 20 2Z" fill="${designTokens["signal-fill"]}" stroke="${designTokens["text-primary"]}" stroke-width="2"/><path d="M20 12V28M12 20H28" stroke="${designTokens["text-primary"]}" stroke-width="2" stroke-linecap="round"/></svg>`;
+    return new maps.MarkerImage(`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, new maps.Size(40, 48), { offset: new maps.Point(20, 46) });
   }
   const markerKinds = Array.from(new Map(points.map((point) => {
     const role = point.role ?? "waypoint";
@@ -33,10 +36,9 @@ function markerImage(maps: KakaoMapsNamespace, points: MapPoint[], selectionPrev
     const badges = markerKinds.map(({ role, nonTraversed }, index) => {
       const appearance = markerAppearance[role];
       const cx = 19 + index * 26;
-      const symbol = `${appearance.symbol}${nonTraversed ? "×" : ""}`;
-      return `<circle cx="${cx}" cy="18" r="11" fill="${appearance.color}"/><text x="${cx}" y="21.5" text-anchor="middle" font-family="sans-serif" font-size="${nonTraversed ? 8 : 10}" font-weight="800" fill="#fffdf8">${symbol}</text>`;
+      return `<rect x="${cx - 11}" y="7" width="22" height="22" rx="4" fill="${appearance.color}"/><text x="${cx}" y="21.5" text-anchor="middle" font-family="sans-serif" font-size="11" font-weight="700" fill="${designTokens["surface-card"]}">${appearance.symbol}</text>${nonTraversed ? `<path d="M${cx + 5} 8l6 6m0-6l-6 6" stroke="${designTokens["danger-on"]}" stroke-width="2"/>` : ""}`;
     }).join("");
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="44" viewBox="0 0 ${width} 44"><path d="M${center - 6} 33 L${center} 43 L${center + 6} 33Z" fill="#fffdf8" stroke="#18372b" stroke-width="1.5"/><rect x="1" y="1" width="${width - 2}" height="34" rx="17" fill="#fffdf8" stroke="#18372b" stroke-width="1.5"/>${badges}</svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="44" viewBox="0 0 ${width} 44"><path d="M${center - 6} 33 L${center} 43 L${center + 6} 33Z" fill="${designTokens["text-primary"]}"/><rect x="1" y="1" width="${width - 2}" height="34" rx="5" fill="${designTokens["text-primary"]}"/>${badges}</svg>`;
     return new maps.MarkerImage(
       `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
       new maps.Size(width, 44),
@@ -44,7 +46,7 @@ function markerImage(maps: KakaoMapsNamespace, points: MapPoint[], selectionPrev
     );
   }
   const appearance = markerAppearance[markerKinds[0].role];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44"><path d="M18 1C8.6 1 1 8.6 1 18c0 12.2 17 25 17 25s17-12.8 17-25C35 8.6 27.4 1 18 1Z" fill="${appearance.color}" stroke="#fffdf8" stroke-width="2"/><circle cx="18" cy="18" r="11" fill="#fffdf8"/><text x="18" y="22" text-anchor="middle" font-family="sans-serif" font-size="11" font-weight="800" fill="${appearance.color}">${appearance.symbol}</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44"><rect x="3" y="8" width="30" height="28" rx="5" fill="${appearance.color}"/><path d="M13 35L18 43L23 35" fill="${appearance.color}"/><text x="18" y="27" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="700" fill="${designTokens["surface-card"]}">${appearance.symbol}</text></svg>`;
   return new maps.MarkerImage(
     `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
     new maps.Size(36, 44),
@@ -259,11 +261,15 @@ export function KakaoMapCanvas({
             });
             if (routePath.length) {
               overlays.push(new loadedMaps.Polyline({
+                map, path: routePath, strokeWeight: 9,
+                strokeColor: designTokens["text-primary"], strokeOpacity: 1, strokeStyle: "solid",
+              }));
+              overlays.push(new loadedMaps.Polyline({
                 map,
                 path: routePath,
-                strokeWeight: 5,
-                strokeColor: "#ef6a3a",
-                strokeOpacity: 0.9,
+                strokeWeight: 4.5,
+                strokeColor: designTokens["signal-fill"],
+                strokeOpacity: 1,
                 strokeStyle: "solid",
               }));
             }
@@ -347,8 +353,8 @@ export function KakaoMapCanvas({
         bounds.extend(position);
         const restaurant = pin.kind === "restaurant";
         const symbol = restaurant ? "식" : "S";
-        const color = restaurant ? "#aa3b14" : "#18372b";
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48"><rect x="2" y="2" width="36" height="38" rx="${restaurant ? 8 : 18}" fill="${color}" stroke="white" stroke-width="2"/><path d="M14 39L20 47L26 39" fill="${color}"/><text x="20" y="27" text-anchor="middle" font-family="sans-serif" font-size="14" fill="white">${symbol}</text></svg>`;
+        const color = designTokens["text-primary"];
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48"><rect x="2" y="2" width="36" height="38" rx="${restaurant ? 8 : 18}" fill="${color}" stroke="${designTokens["surface-card"]}" stroke-width="2"/><path d="M14 39L20 47L26 39" fill="${color}"/><text x="20" y="27" text-anchor="middle" font-family="sans-serif" font-size="14" fill="${designTokens["surface-card"]}">${symbol}</text></svg>`;
         const marker = new maps.Marker({ map, position, title: `${restaurant ? "식당" : "라이딩 스팟"} · ${pin.label}`, image: new maps.MarkerImage(`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, new maps.Size(40, 48), { offset: new maps.Point(20, 47) }) });
         const select = () => { if (active && !overlayCleanupFailedRef.current) savedSelectRef.current?.(pin.id); };
         owned.push({ marker, select });
@@ -432,7 +438,7 @@ export function MapOmissionList({ points }: { points: MapPoint[] }) {
           return (
             <li key={`${point.latitude}:${point.longitude}:${role}:${index}`}>
               <span className="map-marker-symbol is-omitted" style={{ backgroundColor: markerAppearance[role].color }} aria-hidden="true">
-                {markerAppearance[role].symbol}×
+                {markerAppearance[role].symbol}<LineIcon name="close" />
               </span>
               <span>{markerAppearance[role].label} · {point.label}</span>
             </li>
@@ -448,16 +454,16 @@ function SchematicRoute({ state, points, actualRoute }: { state: "loading" | "de
     <div className="schematic-map">
       <div className="map-grid" aria-hidden="true" />
       {state === "demo" && !actualRoute ? <svg className="route-sketch" viewBox="0 0 720 430" role="img" aria-label="데모 경로 개요">
+        <path className="map-water" d="M0 292 Q160 224 340 269 T720 248 L720 316 Q530 276 350 335 T0 351Z" />
         <path className="route-shadow" d="M62 332 C148 270 131 170 245 194 S365 90 455 129 S546 305 662 213" />
         <path className="route-line" d="M62 332 C148 270 131 170 245 194 S365 90 455 129 S546 305 662 213" />
         {["62,332", "245,194", "455,129", "662,213"].map((coordinates, index) => {
           const [cx, cy] = coordinates.split(",");
           return (
             <g key={coordinates}>
-              <circle cx={cx} cy={cy} r="12" className={index === 0 ? "route-dot start" : "route-dot"} />
-              <text x={Number(cx) + 17} y={Number(cy) - 14} className="route-label">
-                {points[index]?.label ?? `지점 ${index + 1}`}
-              </text>
+              <title>{points[index]?.label ?? `지점 ${index + 1}`}</title>
+              <rect x={Number(cx) - 14} y={Number(cy) - 14} width="28" height="28" rx="5" className="route-chip" />
+              <text x={cx} y={Number(cy) + 6} className="route-chip-text">{markerAppearance[points[index]?.role ?? "waypoint"].symbol}</text>
             </g>
           );
         })}

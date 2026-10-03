@@ -1,5 +1,6 @@
 "use client";
 
+import { LineIcon } from "@/components/line-icon";
 import { useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { minimumDeparture, suggestedDeparture } from "@/lib/planner/departure";
 
@@ -110,14 +111,14 @@ export function PlannerScheduleDialog({ date, time, minimumDate, minimumTime, di
   const timeValues = panel === "hour" ? Array.from({ length: 24 }, (_, value) => String(value).padStart(2, "0")) : Array.from({ length: 12 }, (_, value) => String(value * 5).padStart(2, "0"));
 
   return <div className="planner-schedule-field">
-    <button ref={actualTriggerRef} className="schedule-trigger" type="button" disabled={disabled} onClick={open} aria-label={`출발 날짜·시간, ${scheduleLabel(date, time)}`}><span>출발 날짜·시간 {date && time ? "변경" : "선택"}</span><strong>{scheduleLabel(date, time)}</strong></button>
+    <button ref={actualTriggerRef} className="schedule-trigger" type="button" disabled={disabled} onClick={open} aria-label={`출발 날짜·시간, ${scheduleLabel(date, time)}`}><span>출발 날짜·시간 {date && time ? "변경" : "선택"}</span><strong>{scheduleLabel(date, time)}</strong><LineIcon name="chevron-right" /></button>
     <dialog ref={dialogRef} className="schedule-dialog" aria-labelledby={titleId} onKeyDown={containFocus} onClose={() => actualTriggerRef.current?.focus()}>
       <div className="schedule-dialog-shell">
-        <header><button type="button" onClick={close} aria-label="일정 선택 닫기"><span className="desktop-schedule-close">×</span><span className="mobile-schedule-close">←</span></button><div><h2 id={titleId}><span className="desktop-schedule-title">언제 출발할까요?</span><span className="mobile-schedule-title">출발 날짜·시간</span></h2></div></header>
+        <header><button type="button" onClick={close} aria-label="일정 선택 닫기"><span className="desktop-schedule-close"><LineIcon name="close" /></span><span className="mobile-schedule-close"><LineIcon name="chevron-left" /></span></button><div><h2 id={titleId}><span className="desktop-schedule-title">언제 출발할까요?</span><span className="mobile-schedule-title">출발 날짜·시간</span></h2></div></header>
         <h3 className="schedule-question">언제 출발할까요?</h3>
         <div className="schedule-picker-layout">
           <section className="calendar-picker" aria-label="라이딩 날짜">
-            <div className="calendar-heading"><button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달">‹</button><strong>{visibleMonth.year}년 {visibleMonth.month + 1}월</strong><button type="button" onClick={() => moveMonth(1)} aria-label="다음 달">›</button></div>
+            <div className="calendar-heading"><button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달"><LineIcon name="chevron-left" /></button><strong>{visibleMonth.year}년 {visibleMonth.month + 1}월</strong><button type="button" onClick={() => moveMonth(1)} aria-label="다음 달"><LineIcon name="chevron-right" /></button></div>
             <div className="calendar-weekdays" aria-hidden="true">{["일", "월", "화", "수", "목", "금", "토"].map((day) => <span key={day}>{day}</span>)}</div>
             <div className="calendar-grid">{calendar.map((day, index) => day === null ? <span key={`blank-${index}`} /> : (() => { const value = dateString(visibleMonth.year, visibleMonth.month, day); return <button key={value} type="button" disabled={value < minimumDate} aria-pressed={draftDate === value} onClick={() => { setDraftDate(value); setError(""); }}>{day}</button>; })())}</div>
             <p className="schedule-selection" role="status">{draftScheduleLabel(draftDate, hour, minute)}</p>

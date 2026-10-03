@@ -37,9 +37,9 @@ for (const viewport of [{ width: 320, height: 800 }, { width: 384, height: 824 }
       expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
     }
     await expect(page.locator(".shared-home-link")).toHaveText("홈으로");
-    await expect(run).toHaveCSS("background-color", "rgb(24, 34, 29)");
-    await expect(page.getByRole("button", { name: "새 일정으로 출발", exact: true })).toHaveCSS("background-color", "rgb(255, 253, 248)");
-    await expect(page.getByRole("button", { name: "내 경로로 저장", exact: true })).toHaveCSS("background-color", "rgb(255, 253, 248)");
+    await expect(run).toHaveCSS("background-color", "rgb(255, 184, 0)");
+    await expect(page.getByRole("button", { name: "새 일정으로 출발", exact: true })).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await expect(page.getByRole("button", { name: "내 경로로 저장", exact: true })).toHaveCSS("background-color", "rgb(255, 255, 255)");
     await expect(page.locator(".shared-handoff-history")).toContainText("현재 주행 기준이 아니에요");
     if (testInfo.project.use.baseURL === "http://127.0.0.1:3100") await page.screenshot({ path: testInfo.outputPath("summary.png"), fullPage: true });
     await run.click();

@@ -1,5 +1,6 @@
 "use client";
 
+import { LineIcon } from "@/components/line-icon";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -180,7 +181,7 @@ export function PublicSharedRide() {
         {state.status === "found" ? <span className="immutable-pill">불변 공유본</span> : null}
       </header>
       {state.status === "found" ? (
-        planningCourse ? <section className="shared-planner-embed" aria-label="공유 경로 새 일정"><button className="shared-back-button" type="button" onClick={() => setPlanningCourse(null)}>← 공유 요약으로</button><PlannerDashboard connected initialCourse={planningCourse} initialTitle={state.snapshot.trip.title} navigationMode="memory" onExit={() => setPlanningCourse(null)} /></section> : <>
+        planningCourse ? <section className="shared-planner-embed" aria-label="공유 경로 새 일정"><button className="shared-back-button" type="button" onClick={() => setPlanningCourse(null)}><LineIcon name="chevron-left" /> 공유 요약으로</button><PlannerDashboard connected initialCourse={planningCourse} initialTitle={state.snapshot.trip.title} navigationMode="memory" onExit={() => setPlanningCourse(null)} /></section> : <>
           <SharedRideSnapshotView snapshot={state.snapshot} referenceTime={state.referenceTime} backAction={<Link className="shared-home-link" href="/" aria-label="홈으로">홈으로</Link>} actions={<>
             <KakaoMapHandoff context="shared" readSource={() => ({ identity: String(resolutionSequenceRef.current), result: sharedHandoff(state.snapshot) })} onPrepare={() => void startNewSchedule()} />
             <div className="shared-summary-secondary"><button className="secondary-button" type="button" disabled={courseState.status === "busy"} onClick={() => void startNewSchedule()}>{courseState.status === "busy" ? "경로 준비 중…" : "새 일정으로 출발"}</button><button className="secondary-button" type="button" onClick={openSaveDialog}>내 경로로 저장</button></div>
@@ -190,7 +191,7 @@ export function PublicSharedRide() {
           <dialog ref={saveDialogRef} className="shared-save-dialog" aria-labelledby="shared-save-dialog-title" onCancel={(event) => { if (saveInFlightRef.current !== null) event.preventDefault(); }}>
             <div className="shared-save-dialog-heading">
               <div><p className="eyebrow">MY RIDING COLLECTIONS</p><h2 id="shared-save-dialog-title">내 경로로 저장</h2></div>
-              <button type="button" aria-label="저장 창 닫기" disabled={saveState.status === "busy"} onClick={() => saveDialogRef.current?.close()}>×</button>
+              <button type="button" aria-label="저장 창 닫기" disabled={saveState.status === "busy"} onClick={() => saveDialogRef.current?.close()}><LineIcon name="close" /></button>
             </div>
             <p>새 컬렉션 이름을 정해 주세요. 날짜와 출발 시각은 저장 후 새로 선택합니다.</p>
             <label><span>컬렉션 이름</span><input autoFocus disabled={saveState.status === "busy"} maxLength={120} value={saveTitle} onChange={(event) => { setSaveTitle(event.target.value); setSaveState({ status: "idle" }); }} /></label>

@@ -86,7 +86,7 @@ it("pin/list selection and confirmation cancellation send no write or waypoint r
     r.root.findByProps({ "aria-label": "내 별명 상세 보기" }).props.onClick(),
   );
   expect(props.onAddWaypoint).not.toHaveBeenCalled();
-  await act(async () => button(r, "★ 별표 해제").props.onClick());
+  await act(async () => r.root.findAllByProps({ "aria-label": "★ 별표 해제" })[0].props.onClick());
   expect(mocks.controls.star).not.toHaveBeenCalled();
   await act(async () => button(r, "취소").props.onClick());
   expect(mocks.controls.star).not.toHaveBeenCalled();
@@ -126,7 +126,7 @@ it("opens the saved place detail only after a confirmed save and fresh list", as
   mocks.controls.favorites = [];
   mocks.controls.save = vi.fn(async () => { mocks.controls.places = [saved]; return true; });
   const r = await mount();
-  await act(async () => button(r, "＋ 장소 등록").props.onClick());
+  await act(async () => r.root.findByProps({ "aria-label": "＋ 장소 등록" }).props.onClick());
   await act(async () => button(r, "시험 장소 선택").props.onClick());
   await act(async () => button(r, "저장 내용 확인").props.onClick());
   expect(mocks.controls.save).not.toHaveBeenCalled();

@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/noto-sans-kr";
+import "@fontsource/barlow-semi-condensed/600.css";
+import "@fontsource/barlow-semi-condensed/700.css";
+import { designTokens } from "@/packages/shared-ui/src/design-tokens";
 
 import { ReleaseFooter } from "@/components/release-footer";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
@@ -14,7 +17,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#18221d",
+  themeColor: designTokens["surface-ground"],
   colorScheme: "light",
   width: "device-width",
   initialScale: 1,

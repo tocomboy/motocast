@@ -7,7 +7,7 @@ import styles from "./release-footer.module.css";
 export function ReleaseFooter() {
   return (
     <footer className={styles.footer}>
-      <Link href="/updates">업데이트 내역 · v{currentVersion}</Link>
+      <Link href="/updates">업데이트 내역 · <span className="mc-number">v{currentVersion}</span></Link>
     </footer>
   );
 }

@@ -68,6 +68,7 @@ export function KakaoOidcCallback() {
     <main className="admin-page">
       <section className="admin-card">
         <p className="eyebrow">MOTOCAST</p>
+        {status === "pending" ? <div className="mc-progress" aria-hidden="true"><span /></div> : null}
         <div aria-live="polite" aria-busy={status === "pending"}>
           <h1>{error ? "로그인을 완료하지 못했습니다" : delayed ? "로그인 처리가 지연되고 있습니다" : "카카오 로그인을 확인하고 있습니다"}</h1>
           <p className="admin-intro">{error ? "처리 중 문제가 생겼습니다. 처음부터 다시 시도해 주세요." : delayed ? "서버에서 이미 시작된 처리는 완료될 수 있습니다. 조금 더 기다리거나 로그인 화면으로 이동해 주세요." : "잠시만 기다려 주세요."}</p>

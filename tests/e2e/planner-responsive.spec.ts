@@ -79,15 +79,12 @@ async function expectMapInformationOutsideMap(page: import("@playwright/test").P
     detailsHaveNoInternalOverflow: true,
     summaryInsideStage: true,
   });
-  if ((page.viewportSize()?.width ?? 1440) <= 1023) {
-    expect(layout.mapBeforeMetrics).toBe(true);
-  } else {
-    expect(layout.metricsBeforeMap).toBe(true);
-  }
+  // v2 places the arrival strip before the map at every width.
+  expect(layout.metricsBeforeMap).toBe(true);
   expect(layout.mapHeight).toBeGreaterThanOrEqual(360);
-  expect(layout.summaryLabelFontSize).toBeGreaterThanOrEqual(14);
+  expect(layout.summaryLabelFontSize).toBe(13);
   expect(layout.summaryValueFontSize).toBeGreaterThanOrEqual(16);
-  expect(layout.mapCopyFontSizes.every((fontSize) => fontSize >= 14)).toBe(true);
+  expect(layout.mapCopyFontSizes.every((fontSize) => fontSize >= 13)).toBe(true);
   await expect(summary.getByRole("heading", { name: "라이딩 결과" })).toHaveCount(1);
   await expect(summary.getByText("추천 경로", { exact: true })).toHaveCount(0);
   await expect(page.locator(".candidate-card, .candidate-strip, .candidate-tab")).toHaveCount(0);
@@ -111,7 +108,7 @@ async function expectReadableWeatherTimeline(page: import("@playwright/test").Pa
   }));
   expect(layout.every((item) => item.rowHasNoOverflow && item.valuesHasNoOverflow && item.valuesInsideRow)).toBe(true);
   expect(layout.every((item) => item.placeFontSize >= 14)).toBe(true);
-  expect(layout.every((item) => item.copyFontSizes.every((fontSize) => fontSize >= 14))).toBe(true);
+  expect(layout.every((item) => item.copyFontSizes.every((fontSize) => fontSize >= 13))).toBe(true);
 }
 
 test.describe("planner responsive shell", () => {
@@ -159,6 +156,7 @@ test.describe("planner responsive shell", () => {
           titleLineCount: new Set(titleTextRects.map((line) => Math.round(line.top))).size,
           titleOverlapsMotorcycle: titleLines.some((line) => overlaps(line, motorcycleBox)),
           motorcycleRightGap: window.innerWidth - motorcycleBox.right,
+          motorcycleDisplay: getComputedStyle(motorcycle).display,
           primaryHeight: primaryBox.height,
           primaryInsideViewport: primaryBox.left >= 0 && primaryBox.right <= window.innerWidth,
           brandMarkCount: header.querySelectorAll(".brand-mark").length,
@@ -179,7 +177,8 @@ test.describe("planner responsive shell", () => {
       if (viewport.width <= 767) {
         expect(layout.titleFontSize).toBe(28);
         expect(layout.titleLineCount).toBe(2);
-        expect(layout.motorcycleRightGap).toBeGreaterThanOrEqual(39);
+        if (viewport.width < 360) expect(layout.motorcycleDisplay).toBe("none");
+        else expect(layout.motorcycleRightGap).toBe(20);
         expect(layout.navigationDisplay).toBe("none");
       } else {
         expect(layout.navigationDisplay).not.toBe("none");
@@ -187,7 +186,7 @@ test.describe("planner responsive shell", () => {
       if (viewport.width === 1440) {
         expect(layout.titleFontSize).toBe(40);
         expect(layout.titleLineCount).toBe(1);
-        expect(layout.motorcycleRightGap).toBeGreaterThanOrEqual(191);
+        expect(layout.motorcycleRightGap).toBeGreaterThanOrEqual(160);
       }
     }
   });
@@ -322,11 +321,29 @@ test.describe("planner responsive shell", () => {
     const editorView = page.locator(".workspace.is-editor-view");
     const editor = editorView.locator(".planner-panel");
     await expect(editor).toBeVisible();
+    const stops = await editor.locator(".planner-fields").evaluate((element) => {
+      const origin = element.querySelector(".is-origin")!;
+      const add = element.querySelector(".waypoint-add-row")!;
+      const destination = element.querySelector(".is-destination")!;
+      return {
+        originBeforeAdd: origin.getBoundingClientRect().bottom <= add.getBoundingClientRect().top,
+        addBeforeDestination: add.getBoundingClientRect().bottom <= destination.getBoundingClientRect().top,
+        originMarker: getComputedStyle(origin, "::before").borderRadius,
+        destinationMarker: getComputedStyle(destination, "::before").borderRadius,
+      };
+    });
+    expect(stops).toEqual({ originBeforeAdd: true, addBeforeDestination: true, originMarker: "50%", destinationMarker: "4px" });
+    if (viewport.width <= 767) {
+      const action = await editor.locator(".primary-button.calculate").boundingBox();
+      expect(action!.x).toBe(20);
+      expect(action!.width).toBe(viewport.width - 40);
+      await expect(editor.locator(".editor-action-bar")).toHaveCSS("position", "fixed");
+    }
     await expect(editorView.getByRole("heading", { name: viewport.width <= 767 ? "어디로 떠날까요?" : "경로 편집" })).toBeVisible();
     const plannerCopyFontSizes = await editor.locator(
       ".section-label, .planner-form label > span, .time-estimate-note strong, .time-estimate-note small, .ordered-waypoint strong, .ordered-waypoint small",
     ).evaluateAll((elements) => elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)));
-    expect(plannerCopyFontSizes.every((fontSize) => fontSize >= 14)).toBe(true);
+    expect(plannerCopyFontSizes.every((fontSize) => fontSize >= 13)).toBe(true);
     await editor.locator(".schedule-trigger").click();
     const dialog = page.getByRole("dialog", {
       name: viewport.width <= 767 ? "출발 날짜·시간" : "언제 출발할까요?",
@@ -465,7 +482,7 @@ test.describe("planner responsive shell", () => {
     await page.goto("/login");
     const footnote = page.locator(".login-footnote");
     await expect(footnote).toBeVisible();
-    expect(await footnote.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(14);
+    expect(await footnote.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBe(13);
 
     await page.goto(`/invite#${"a".repeat(43)}`);
     await expect(page).toHaveURL(/\/login\?error=membership_required$/);

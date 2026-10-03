@@ -12,6 +12,18 @@ export const currentVersion = packageMetadata.version;
 
 export const releaseNotes = [
   {
+    version: "0.11.0",
+    date: "2026-10-04",
+    title: "새 디자인으로 더 또렷하게",
+    summary: "웹과 앱 화면을 한눈에 읽기 쉬운 새 디자인으로 바꿨어요.",
+    bullets: [
+      "도착 시각과 구간별 날씨를 더 크고 또렷하게 보여줘요.",
+      "경로 편집에서 출발·경유지·도착을 한 줄로 이어 보여줘요.",
+      "삭제처럼 되돌릴 수 없는 확인은 빨간 버튼으로 구분해요.",
+      "Android 앱의 주행 화면에서 라이트·다크 색상을 고를 수 있어요.",
+    ],
+  },
+  {
     version: "0.10.0",
     date: "2026-10-02",
     title: "나만의 라이딩 장소를 모아 보세요",

@@ -130,7 +130,7 @@ it("selects repeated saved meals only on confirmation and preserves add settings
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(<Harness />, { createNodeMock: () => ({ showModal: vi.fn(), close: vi.fn(), focus: vi.fn() }) }); });
   const click = async (label: string) => act(async () => renderer.root.findAllByType("button").find(b => b.children.includes(label))!.props.onClick());
-  await click("+ 경유지 추가");
+  await act(async () => renderer.root.findByProps({ "aria-label": "+ 경유지 추가" }).props.onClick());
   await click("식사");
   await act(async () => renderer.root.findByProps({ "aria-label": "머무는 시간 10분 늘리기" }).props.onClick());
   await click("즐겨찾기에서 선택");
@@ -138,7 +138,7 @@ it("selects repeated saved meals only on confirmation and preserves add settings
   await click("뒤로");
   expect(renderer.root.findByProps({ className: "dwell-stepper" }).findByType("strong").children).toEqual(["70", "분"]);
   for (let i = 0; i < 3; i++) {
-    if (i) { await click("+ 경유지 추가"); await click("식사"); }
+    if (i) { await act(async () => renderer.root.findByProps({ "aria-label": "+ 경유지 추가" }).props.onClick()); await click("식사"); }
     await click("즐겨찾기에서 선택");
     await click("식당");
     await act(async () => renderer.root.findByProps({ "aria-label": "내 별명 상세 보기" }).props.onClick());

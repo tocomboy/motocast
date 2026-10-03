@@ -1,7 +1,7 @@
 "use client";
 
+import { LineIcon } from "@/components/line-icon";
 import { useEffect, useId, useRef, useState } from "react";
-import Image from "next/image";
 
 import type { PlaceFavoritesControls } from "@/components/place-search-field";
 import type { PlaceFavorite } from "@/lib/places/favorites";
@@ -17,7 +17,7 @@ type PendingFavoriteChange = {
 } & ({ action: "add"; place: PlaceSearchResult } | { action: "remove"; favorite: PlaceFavorite });
 
 export function PlaceFavoritesHomeEntry({ onOpen }: { onOpen: () => void }) {
-  return <button className={styles.homeEntry} type="button" onClick={onOpen} aria-label="즐겨찾기"><span><strong>즐겨찾기</strong><small>내 장소 1,000개 · 자주 찾는 곳 5개</small></span><span aria-hidden="true">→</span></button>;
+  return <button className={styles.homeEntry} type="button" onClick={onOpen} aria-label="즐겨찾기"><span><strong>즐겨찾기</strong><small>내 장소 1,000개 · 자주 찾는 곳 5개</small></span><LineIcon name="chevron-right" /></button>;
 }
 
 export function PlaceFavoritesManager({ favorites, onBack }: { favorites: PlaceFavoritesControls; onBack: () => void }) {
@@ -60,7 +60,7 @@ export function PlaceFavoritesManager({ favorites, onBack }: { favorites: PlaceF
         ) : favorites.favorites.length ? (
           <ul className={styles.list}>{favorites.favorites.map((favorite) => <li key={favorite.slot}><strong>{favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span><button type="button" disabled={favorites.busy} aria-label={`${favorite.place.name} 즐겨찾기 삭제`} onClick={(event) => requestRemove(favorite, event?.currentTarget)}>삭제</button></li>)}</ul>
         ) : <div className={styles.notice}><strong>저장한 즐겨찾기가 없어요.</strong><p>자주 가는 장소를 추가해 보세요.</p></div>}
-        <button ref={addButtonRef} className={`primary-button ${styles.add}`} type="button" disabled={favorites.status !== "ready" || favorites.busy || favorites.favorites.length >= 3} onClick={() => setRegistrationOpen(true)}>+ 즐겨찾기 추가</button>
+        <button ref={addButtonRef} aria-label="+ 즐겨찾기 추가" className={`primary-button ${styles.add}`} type="button" disabled={favorites.status !== "ready" || favorites.busy || favorites.favorites.length >= 3} onClick={() => setRegistrationOpen(true)}><LineIcon name="plus" /> 즐겨찾기 추가</button>
         <p className={styles.helper}>내 장소 1,000개 · 자주 찾는 곳 5개<br />출발·경유·도착에서 함께 사용할 수 있어요.</p>
         {favorites.status === "ready" ? <p className={styles.message} role="status" aria-live="polite">{favorites.message}{favorites.favorites.length >= 3 ? " 새 장소를 추가하려면 기존 장소를 삭제해 주세요." : ""}</p> : null}
       </div>
@@ -145,11 +145,11 @@ function FavoriteRegistrationDialog({ favorites, onRequestAdd, onClose }: { favo
   return (
     <dialog ref={dialogRef} className={`place-picker-dialog ${styles.registration}`} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); event.stopPropagation(); close(); }} onKeyDown={(event) => event.stopPropagation()}>
       <div className="place-picker-shell mode-register">
-        <header className="place-picker-header"><div><h2 id={titleId}>즐겨찾기 추가</h2></div><button className="place-picker-close" type="button" onClick={close} aria-label="즐겨찾기 추가 닫기">×</button></header>
+        <header className="place-picker-header"><div><h2 id={titleId}>즐겨찾기 추가</h2></div><button className="place-picker-close" type="button" onClick={close} aria-label="즐겨찾기 추가 닫기"><LineIcon name="close" /></button></header>
         <div className="place-picker-search" role="search">
           <label className="sr-only" htmlFor={`${titleId}-query`}>즐겨찾기 검색어</label>
           <input ref={inputRef} id={`${titleId}-query`} value={query} maxLength={100} placeholder="장소명 또는 주소 검색" onChange={(event) => { sequenceRef.current += 1; setQuery(event.target.value); setResults([]); setSearching(false); setSettled(false); setStatus("검색 버튼을 눌러 장소를 확인하세요."); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.stopPropagation(); void search(); } }} />
-          {query && (searching || settled) ? <button className="place-query-clear" type="button" onClick={clear} aria-label="검색어 지우기">×</button> : <button className="place-search-button" type="button" disabled={searching} onClick={() => void search()} aria-label={searching ? "장소 검색 중" : "장소 검색"}><Image src="/figma/search.svg" alt="" width={20} height={20} /></button>}
+          {query && (searching || settled) ? <button className="place-query-clear" type="button" onClick={clear} aria-label="검색어 지우기"><LineIcon name="close" /></button> : <button className="place-search-button" type="button" disabled={searching} onClick={() => void search()} aria-label={searching ? "장소 검색 중" : "장소 검색"}><LineIcon name="search" /></button>}
         </div>
         <div className="place-picker-content"><section className={`place-picker-results ${styles.registrationResults}`} aria-labelledby={`${titleId}-results`}>
           <h3 id={`${titleId}-results`}>검색 결과</h3>
@@ -210,12 +210,12 @@ function FavoriteMutationConfirmation({ change, valid, busy, canConfirm, onConfi
   }
 
   return <dialog ref={dialogRef} className={styles.confirmation} aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={(event) => { event.preventDefault(); event.stopPropagation(); cancel(); }} onKeyDown={(event) => event.stopPropagation()}>
-    <header><h2 id={titleId}>{title}</h2><button type="button" disabled={locked} onClick={cancel} aria-label={`즐겨찾기 ${adding ? "추가" : "삭제"} 확인 닫기`}>×</button></header>
+    <header><h2 id={titleId}>{title}</h2><button type="button" disabled={locked} onClick={cancel} aria-label={`즐겨찾기 ${adding ? "추가" : "삭제"} 확인 닫기`}><LineIcon name="close" /></button></header>
     <strong>{valid || locked ? placeName : "선택한 장소를 다시 확인해 주세요."}</strong>
     <p id={descriptionId}>{adding ? "자주 가는 장소로 저장합니다." : "즐겨찾기 목록에서만 삭제합니다."}</p>
     {!valid && !locked ? <p role="alert">목록이나 계정이 바뀌었어요. 팝업을 닫고 최신 목록에서 다시 선택해 주세요.</p> : null}
     {error ? <p role="alert">{error}</p> : null}
     {locked ? <p role="status">변경 결과를 확인하고 있습니다.</p> : null}
-    <div className={styles.confirmationActions}><button type="button" disabled={locked} onClick={cancel}>취소</button><button className="primary-button" type="button" disabled={!valid || processing || !!error} onClick={() => void confirm()}>{adding ? "추가" : "삭제"}</button></div>
+    <div className={styles.confirmationActions}><button type="button" disabled={locked} onClick={cancel}>취소</button><button className={adding ? "primary-button" : "destructive-button"} type="button" disabled={!valid || processing || !!error} onClick={() => void confirm()}>{adding ? "추가" : "삭제"}</button></div>
   </dialog>;
 }

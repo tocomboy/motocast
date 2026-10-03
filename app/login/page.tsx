@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MotorcycleIllustration } from "@/components/motorcycle-illustration";
 
 import { KakaoLoginButton } from "@/components/kakao-login-button";
 
@@ -18,14 +19,17 @@ export default async function LoginPage({
 
   return (
     <main className="login-page">
+      <aside className="login-landscape" aria-label="라이딩 경로 장식">
+        <h1>길 위의 날씨를<br />출발 전에 읽습니다.</h1>
+        <div className="login-weather-notes"><span className="weather-note note-one">07:40 · 맑음 · 18°</span><span className="weather-note note-two">12:10 · 소나기 60%</span></div>
+        <MotorcycleIllustration className="login-motorcycle" />
+      </aside>
       <section className="login-card">
         <Link className="brand brand-dark" href="/" aria-label="MOTOCAST 홈">
-          <span className="brand-mark">M</span>
           <span>MOTOCAST</span>
         </Link>
         <div className="login-copy">
           <p className="eyebrow">MOTOCAST</p>
-          <h1>길 위의 날씨를<br />출발 전에 읽습니다.</h1>
           <div className="login-membership-notice">
             <strong>앱에서 먼저 가입해 주세요</strong>
             <p>Google Play의 MOTOCAST 앱에서 카카오 로그인으로 가입한 뒤, 같은 계정으로 웹을 이용할 수 있어요.</p>
@@ -35,15 +39,7 @@ export default async function LoginPage({
         <KakaoLoginButton />
         <p className="login-footnote">카카오 이메일은 수집하지 않습니다.</p>
       </section>
-      <aside className="login-landscape" aria-label="라이딩 경로 장식">
-        <div className="contour contour-one" />
-        <div className="contour contour-two" />
-        <span className="weather-note note-one">07:40 · 맑음 · 18°</span>
-        <span className="weather-note note-two">12:10 · 소나기 60%</span>
-        <svg viewBox="0 0 700 900" aria-hidden="true">
-          <path d="M-20 760 C180 680 106 470 305 490 S410 221 720 164" />
-        </svg>
-      </aside>
+
     </main>
   );
 }

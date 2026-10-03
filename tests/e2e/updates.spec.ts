@@ -31,7 +31,7 @@ test.describe("public update notes", () => {
     const dialog = page.getByRole("dialog", { name: "새로운 소식을 확인해 보세요" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`현재 v${currentVersion}`)).toBeVisible();
-    await expect(dialog.getByText("장소를 최대 1,000개 저장하고, 자주 찾는 곳 5개에 별표를 지정해요.")).toBeVisible();
+    await expect(dialog.getByText("도착 시각과 구간별 날씨를 더 크고 또렷하게 보여줘요.")).toBeVisible();
     const layout = await dialog.evaluate((element) => ({
       dialogHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
       documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
@@ -214,7 +214,7 @@ test.describe("public update notes", () => {
         borderRadius: getComputedStyle(element).borderRadius,
         background: getComputedStyle(element).backgroundColor,
         headingFontSize: getComputedStyle(element.querySelector("h2")!).fontSize,
-      }))).toEqual({ padding: "16px", borderRadius: "12px", background: "rgb(244, 240, 231)", headingFontSize: "20px" });
+      }))).toEqual({ padding: "24px", borderRadius: "20px", background: "rgb(255, 255, 255)", headingFontSize: "20px" });
       await expect(first.locator("time")).toHaveAttribute("datetime", (await first.locator("time").innerText()).trim());
       await page.getByRole("link", { name: "플래너로 돌아가기" }).click();
       await expect(page).toHaveURL("/");
