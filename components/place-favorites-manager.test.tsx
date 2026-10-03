@@ -21,7 +21,7 @@ async function render(favorites: PlaceFavoritesControls) {
   await act(async () => { renderer = create(<PlaceFavoritesManager favorites={favorites} onBack={vi.fn()} />, { createNodeMock: () => ({ focus: mocks.focus, showModal: mocks.showModal, close: vi.fn(), open: false }) }); });
   return renderer;
 }
-async function open(renderer: ReactTestRenderer) { await act(async () => renderer.root.findAllByType("button").find((button) => textOf(button) === "+ 즐겨찾기 추가")!.props.onClick()); }
+async function open(renderer: ReactTestRenderer) { await act(async () => renderer.root.findAllByType("button").find((button) => button.props["aria-label"] === "+ 즐겨찾기 추가")!.props.onClick()); }
 async function search(renderer: ReactTestRenderer) {
   await act(async () => renderer.root.findByType("input").props.onChange({ target: { value: "공개 장소" } }));
   await act(async () => renderer.root.findByProps({ "aria-label": "장소 검색" }).props.onClick());
@@ -37,7 +37,7 @@ describe("PlaceFavoritesManager", () => {
     expect(favorites.remove).not.toHaveBeenCalled();
     await act(async () => renderer.root.findAllByType("dialog")[0].findAllByType("button").find((button) => textOf(button) === "삭제")!.props.onClick());
     expect(favorites.remove).toHaveBeenCalledWith(favorites.favorites[1]);
-    const addButton = () => renderer.root.findAllByType("button").find((button) => textOf(button) === "+ 즐겨찾기 추가")!;
+    const addButton = () => renderer.root.findAllByType("button").find((button) => button.props["aria-label"] === "+ 즐겨찾기 추가")!;
     expect(addButton().props.disabled).toBe(true);
     await act(async () => renderer.update(<PlaceFavoritesManager favorites={{ ...favorites, favorites: [], status: "error", message: "삭제 결과와 최신 목록을 확인할 수 없습니다." }} onBack={vi.fn()} />));
     expect(addButton().props.disabled).toBe(true);

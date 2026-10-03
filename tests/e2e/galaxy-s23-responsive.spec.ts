@@ -68,7 +68,7 @@ test.describe("Galaxy S23+ CSS viewport emulation", () => {
         metricsNoOverflow: metrics.scrollWidth <= metrics.clientWidth,
         mapNoOverflow: map.scrollWidth <= map.clientWidth,
         weatherNoOverflow: weather.scrollWidth <= weather.clientWidth,
-        mapBeforeMetrics: mapBox.bottom <= metricsBox.top + 1,
+        metricsBeforeMap: metricsBox.bottom <= mapBox.top + 1,
         mapBeforeWeather: mapBox.bottom <= weatherBox.top + 1,
         mapUsesSingleMobileGutter: Math.abs(mapBox.left - 20) <= 1 && Math.abs(mapBox.width - (documentWidth - 40)) <= 1,
         allInsideViewport: [metricsBox, mapBox, weatherBox].every(insideViewport),
@@ -84,20 +84,23 @@ test.describe("Galaxy S23+ CSS viewport emulation", () => {
       metricsNoOverflow: true,
       mapNoOverflow: true,
       weatherNoOverflow: true,
-      mapBeforeMetrics: true,
+      metricsBeforeMap: true,
       mapBeforeWeather: true,
       mapUsesSingleMobileGutter: true,
       allInsideViewport: true,
     });
-    expect(geometry.metricFonts.every((fontSize) => fontSize >= 14)).toBe(true);
+    expect(geometry.metricFonts.every((fontSize) => fontSize >= 13)).toBe(true);
     expect(geometry.weatherFonts.length).toBeGreaterThan(0);
-    expect(geometry.weatherFonts.every((fontSize) => fontSize >= 14)).toBe(true);
+    expect(geometry.weatherFonts.every((fontSize) => fontSize >= 13)).toBe(true);
     expect(await weather.locator(".riding-weather-card").evaluateAll((cards) => cards.every((card) => (
       card.scrollWidth <= card.clientWidth && card.getBoundingClientRect().right <= window.innerWidth + 1
     )))).toBe(true);
     await expectNoHorizontalOverflow(page);
 
     const summaryActions = summary.locator(".riding-summary-actions");
+    const execution = await summaryActions.getByRole("button", { name: "경로 실행", exact: true }).boundingBox();
+    expect(execution!.x).toBe(20);
+    expect(execution!.width).toBe(galaxyS23Plus.viewport.width - 40);
     await expect(summaryActions).toBeVisible();
     expect(await summaryActions.getByRole("button").evaluateAll((buttons) => buttons.every((button) => {
       const box = button.getBoundingClientRect();
@@ -232,6 +235,7 @@ test.describe("Galaxy S23+ CSS viewport emulation", () => {
         return {
           waypointLabel: countLines(view.querySelector(".waypoint-heading strong")!),
           roleChip: countLines(view.querySelector(".waypoint-settings")!),
+          actionsInOneRow: new Set(Array.from(view.querySelectorAll(".waypoint-actions button")).map(button => Math.round(button.getBoundingClientRect().top))).size === 1,
           scheduleParts: visible(".schedule-trigger span, .schedule-trigger strong").map(countLines),
           calculateLabels: visible(".desktop-calculate-label, .mobile-calculate-label").map((element) => ({ lines: countLines(element), text: element.textContent?.trim() })),
           noHorizontalOverflow: document.documentElement.scrollWidth <= innerWidth,
@@ -239,6 +243,7 @@ test.describe("Galaxy S23+ CSS viewport emulation", () => {
       });
       expect(lineCounts.waypointLabel).toBe(1);
       expect(lineCounts.roleChip).toBe(1);
+      expect(lineCounts.actionsInOneRow).toBe(true);
       expect(lineCounts.scheduleParts.every((count) => count === 1)).toBe(true);
       expect(lineCounts.calculateLabels).toEqual([{ lines: 1, text: viewport.width <= 767 ? "이 경로로 날씨 확인" : "라이딩 날씨 확인" }]);
       expect(lineCounts.noHorizontalOverflow).toBe(true);

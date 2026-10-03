@@ -1,7 +1,7 @@
 "use client";
 
+import { LineIcon } from "@/components/line-icon";
 import { useEffect, useId, useRef, useState } from "react";
-import Image from "next/image";
 
 import { favoriteAsSearchResult, type PlaceFavorite } from "@/lib/places/favorites";
 import { parsePlaceSearchResponse, type PlaceSearchResult } from "@/lib/places/search";
@@ -156,26 +156,26 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
       <dialog ref={dialogRef} className="place-picker-dialog" aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); event.stopPropagation(); back(); }} onClose={() => triggerRef.current?.focus()} onKeyDown={(event) => event.stopPropagation()}>
         <div className={`place-picker-shell mode-search selection-only ${showResults ? "show-results" : "show-favorites"}`}>
           <header className="place-picker-header">
-            <button type="button" className="place-picker-back" onClick={back} aria-label={showResults ? `${roleLabel} 선택으로 돌아가기` : `${roleLabel} 선택에서 뒤로`}>←</button>
+            <button type="button" className="place-picker-back" onClick={back} aria-label={showResults ? `${roleLabel} 선택으로 돌아가기` : `${roleLabel} 선택에서 뒤로`}><LineIcon name="chevron-left" /></button>
             <div><h2 id={titleId}>{roleLabel} 선택</h2></div>
-            <button type="button" className="place-picker-close" onClick={closePicker} aria-label={`${roleLabel} 검색 닫기`}>×</button>
+            <button type="button" className="place-picker-close" onClick={closePicker} aria-label={`${roleLabel} 검색 닫기`}><LineIcon name="close" /></button>
           </header>
           <div className="place-picker-search" role="search">
             <label htmlFor={`${titleId}-query`} className="sr-only">{roleLabel} 검색어</label>
             <input ref={searchInputRef} id={`${titleId}-query`} value={query} placeholder="장소명 또는 주소 검색" maxLength={100} onChange={(event) => { searchSequenceRef.current += 1; setSearching(false); setSearchSettled(false); setShowResults(true); setQuery(event.target.value); setResults([]); setStatus("검색 버튼을 눌러 장소를 확인하세요."); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.stopPropagation(); void search(); } }} />
-            {query && (searching || searchSettled) ? <button className="place-query-clear" type="button" onClick={() => { invalidateSearch(); setQuery(""); setResults([]); setShowResults(false); setSearchSettled(false); setStatus("검색어를 입력해 주세요."); searchInputRef.current?.focus(); }} aria-label="검색어 지우기">×</button> : <button className="place-search-button" type="button" disabled={searching} onClick={() => void search()} aria-label={searching ? "장소 검색 중" : "장소 검색"}><Image src="/figma/search.svg" alt="" width={20} height={20} /></button>}
+            {query && (searching || searchSettled) ? <button className="place-query-clear" type="button" onClick={() => { invalidateSearch(); setQuery(""); setResults([]); setShowResults(false); setSearchSettled(false); setStatus("검색어를 입력해 주세요."); searchInputRef.current?.focus(); }} aria-label="검색어 지우기"><LineIcon name="close" /></button> : <button className="place-search-button" type="button" disabled={searching} onClick={() => void search()} aria-label={searching ? "장소 검색 중" : "장소 검색"}><LineIcon name="search" /></button>}
           </div>
           <div className="place-picker-content">
             <aside className="place-favorites" aria-labelledby={`${titleId}-favorites`}>
               <div className="place-favorites-heading"><h3 id={`${titleId}-favorites`}>자주 찾는 곳</h3><span>{favorites?.favorites.length ?? 0}/5</span></div>
               {!favorites ? <p>즐겨찾기 연결 전입니다.</p> : favorites.status === "loading" ? <p role="status">즐겨찾기를 불러오는 중입니다.</p> : favorites.status === "error" ? <div className="place-favorites-error"><p role="alert">{favorites.message}</p><button type="button" onClick={favorites.retry}>다시 시도</button></div> : favorites.favorites.length ? (
-                <ul>{favorites.favorites.map((favorite) => <li key={favorite.slot}><button type="button" onClick={() => choose(favoriteAsSearchResult(favorite))}><strong>★ {favorite.displayName ?? favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span></button></li>)}</ul>
+                <ul>{favorites.favorites.map((favorite) => <li key={favorite.slot}><button type="button" onClick={() => choose(favoriteAsSearchResult(favorite))}><strong><LineIcon name="star" /> {favorite.displayName ?? favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span></button></li>)}</ul>
               ) : <p>저장한 즐겨찾기가 없습니다. 홈의 즐겨찾기에서 장소를 추가할 수 있어요.</p>}
               {favorites && favorites.status !== "loading" && favorites.status !== "error" ? <p className="place-favorite-status" role="status">{favorites.message}</p> : null}
             </aside>
             <section className="place-picker-results" aria-labelledby={`${titleId}-results`}>
               <div><h3 id={`${titleId}-results`}>검색 결과</h3><span>{results.length ? `${results.length}개` : ""}</span></div>
-              {results.length ? <ul>{results.map((place) => <li key={place.kakaoPlaceId}><div><strong>{place.name}</strong><span>{place.roadAddress ?? place.address}</span>{place.category ? <small>{place.category}</small> : null}</div><div><button type="button" className="primary-button place-result-select" onClick={() => choose(place)}>{choiceLabel}</button></div></li>)}</ul> : <div className="place-picker-empty"><span aria-hidden="true">⌕</span><p>{status}</p>{status.includes("못했습니다") || status.includes("확인할 수 없습니다") ? <button type="button" onClick={() => void search()}>다시 검색</button> : null}</div>}
+              {results.length ? <ul>{results.map((place) => <li key={place.kakaoPlaceId}><div><strong>{place.name}</strong><span>{place.roadAddress ?? place.address}</span>{place.category ? <small>{place.category}</small> : null}</div><div><button type="button" className="primary-button place-result-select" onClick={() => choose(place)}>{choiceLabel}</button></div></li>)}</ul> : <div className="place-picker-empty"><span aria-hidden="true"><LineIcon name="search" /></span><p>{status}</p>{status.includes("못했습니다") || status.includes("확인할 수 없습니다") ? <button type="button" onClick={() => void search()}>다시 검색</button> : null}</div>}
               {results.length ? <p id={statusId} className="place-status" role="status" aria-live="polite">{status}</p> : null}
             </section>
           </div>

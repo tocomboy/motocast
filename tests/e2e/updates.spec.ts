@@ -214,7 +214,7 @@ test.describe("public update notes", () => {
         borderRadius: getComputedStyle(element).borderRadius,
         background: getComputedStyle(element).backgroundColor,
         headingFontSize: getComputedStyle(element.querySelector("h2")!).fontSize,
-      }))).toEqual({ padding: "16px", borderRadius: "12px", background: "rgb(244, 240, 231)", headingFontSize: "20px" });
+      }))).toEqual({ padding: "24px", borderRadius: "20px", background: "rgb(255, 255, 255)", headingFontSize: "20px" });
       await expect(first.locator("time")).toHaveAttribute("datetime", (await first.locator("time").innerText()).trim());
       await page.getByRole("link", { name: "플래너로 돌아가기" }).click();
       await expect(page).toHaveURL("/");

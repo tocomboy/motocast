@@ -1,5 +1,6 @@
 "use client";
 
+import { LineIcon } from "@/components/line-icon";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
@@ -853,7 +854,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
         <SavedPlacesManager onBack={() => navigate("home")} onAddWaypoint={addSavedWaypoint} routePoints={inputMapPoints} routePath={liveResultStale ? undefined : selectedMapPath} disabled={calculating || summarySaveBusy} />
       ) : view === "collections" ? (
         <section className="collections-view" id="collections" aria-labelledby="collections-view-title">
-          <div className="view-heading"><button className="collections-back" type="button" onClick={() => navigate("home")} aria-label="홈으로">←</button><div><h1 id="collections-view-title" data-view-title="collections" tabIndex={-1}><span className="desktop-collections-title">저장한 경로 모음</span><span className="mobile-collections-title">저장한 경로</span></h1><p className="collections-desktop-intro">경로를 고르면 새로운 출발 날짜와 시간을 설정해요.</p></div></div>
+          <div className="view-heading"><button className="collections-back" type="button" onClick={() => navigate("home")} aria-label="홈으로"><LineIcon name="chevron-left" /></button><div><h1 id="collections-view-title" data-view-title="collections" tabIndex={-1}><span className="desktop-collections-title">저장한 경로 모음</span><span className="mobile-collections-title">저장한 경로</span></h1><p className="collections-desktop-intro">경로를 고르면 새로운 출발 날짜와 시간을 설정해요.</p></div></div>
           <CollectionManager currentCourse={currentCourse} onApply={applyCollection} onShare={prepareCollectionShare} disabled={calculating} />
           <details className="collection-share-management"><summary>공유 링크 관리</summary><ShareManager mode="history" tripId={null} sessionEpoch={shareManagerEpoch} disabled={calculating} /></details>
         </section>
@@ -882,20 +883,10 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
               />
             </section>
             <fieldset className="planner-fields" disabled={calculating} aria-busy={calculating}>
-            <section className="form-section">
-              {connected ? (
-                <>
-                  <PlaceSearchField key={`origin-${placeSelectionRevision}`} label="출발" accessibleLabel="출발지" placeholder="예: 팔당역" required selected={places.origin} favorites={favoriteControls} onActivate={() => setFavoriteTarget("origin")} onSelect={(place) => selectEndpoint("origin", place)} />
-                </>
-              ) : (
-                <>
-                  <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>
-                  <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>
-                </>
-              )}
+            <section className="planner-stop is-origin">
+              {connected ? <PlaceSearchField key={`origin-${placeSelectionRevision}`} label="출발" accessibleLabel="출발지" placeholder="예: 팔당역" required selected={places.origin} favorites={favoriteControls} onActivate={() => setFavoriteTarget("origin")} onSelect={(place) => selectEndpoint("origin", place)} /> : <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>}
             </section>
-
-            <section className="form-section">
+            <section className="planner-waypoint-stops">
               <OrderedWaypointEditor
                 key={favoriteControls.accountEpoch}
                 connected={connected}
@@ -909,24 +900,25 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
                 onError={(message) => setNotice(message, "error", "waypoint")}
               />
               <p className="sr-only" role="status" aria-live="polite">{waypointStatus}</p>
-              {connected ? <PlaceSearchField key={`destination-${placeSelectionRevision}`} label="도착" accessibleLabel="도착지" placeholder="예: 양평역" required selected={places.destination} favorites={favoriteControls} onActivate={() => setFavoriteTarget("destination")} onSelect={(place) => selectEndpoint("destination", place)} /> : null}
-              <button className="route-reset-button" type="button" disabled={calculating} onClick={startNewRoute}>경로 초기화</button>
             </section>
-
+            <section className="planner-stop is-destination">
+              {connected ? <PlaceSearchField key={`destination-${placeSelectionRevision}`} label="도착" accessibleLabel="도착지" placeholder="예: 양평역" required selected={places.destination} favorites={favoriteControls} onActivate={() => setFavoriteTarget("destination")} onSelect={(place) => selectEndpoint("destination", place)} /> : <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>}
+            </section>
+            <button className="route-reset-button" type="button" disabled={calculating} onClick={startNewRoute}>경로 초기화</button>
             </fieldset>
             {connected ? <section className="editor-favorites" aria-label={`자주 찾는 곳, 적용 위치 ${favoriteTargetLabel}`}>
               <div className="editor-favorites-heading"><strong>자주 찾는 곳 {favoriteControls.favorites.length}/5</strong><span>적용 위치: {favoriteTargetLabel}</span></div>
               <div className="editor-favorite-slots">
                 {[0, 1, 2, 3, 4].map((index) => {
                   const favorite = favoriteControls.favorites[index];
-                  return <button key={favorite?.slot ?? `empty-${index}`} type="button" disabled={!favorite || !favoriteTarget || calculating} onClick={() => favorite && applyFavorite(favoriteAsSearchResult(favorite))}>{favorite ? (favorite.displayName ?? favorite.place.name) : "비어 있음"}</button>;
+                  return <button key={favorite?.slot ?? `empty-${index}`} type="button" disabled={!favorite || !favoriteTarget || calculating} onClick={() => favorite && applyFavorite(favoriteAsSearchResult(favorite))}>{favorite ? <><LineIcon name="star" />{favorite.displayName ?? favorite.place.name}</> : "비어 있음"}</button>;
                 })}
               </div>
               {favoriteControls.status === "error" ? <div className="editor-favorites-error" role="alert"><span>{favoriteControls.message}</span><button type="button" onClick={favoriteControls.retry}>다시 시도</button></div> : <p className="sr-only" role="status">{favoriteControls.message}</p>}
             </section> : null}
-            <button className="primary-button calculate" type="submit" disabled={calculating}>
+            <div className="editor-action-bar"><button className="primary-button calculate" type="submit" disabled={calculating}>
               {calculating ? "경로와 날씨 확인 중…" : liveResultStale ? "경로 다시 계산" : <><span className="desktop-calculate-label">라이딩 날씨 확인</span><span className="mobile-calculate-label">이 경로로 날씨 확인</span></>}
-            </button>
+            </button></div>
             {connected && view === "editor" ? (
               <div
                 ref={noticeRef}
@@ -935,7 +927,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
                 aria-live={notice.severity === "error" ? "assertive" : "polite"}
                 tabIndex={-1}
               >
-                <span className="notice-symbol" aria-hidden="true">{notice.severity === "error" ? "!" : notice.severity === "warning" ? "△" : "i"}</span>
+                <LineIcon className="notice-symbol" name="info" />
                 <p><strong>{notice.severity === "error" ? "계획을 완료하지 못했습니다" : notice.severity === "warning" ? "확인이 필요합니다" : "진행 상태"}</strong><span>{notice.message}</span></p>
               </div>
             ) : null}
@@ -946,7 +938,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
           <RidingSummaryLayout
             title={<><span className="desktop-summary-title">라이딩 결과</span><span className="mobile-summary-title">라이딩 요약</span></>}
             subtitle={formatSummaryDeparture(displayedDepartureAt)}
-            backAction={<button type="button" onClick={() => navigate("editor")} aria-label="경로 편집으로">←</button>}
+            backAction={<button type="button" onClick={() => navigate("editor")} aria-label="경로 편집으로"><LineIcon name="chevron-left" /></button>}
             metrics={[
               { label: "총 소요", value: `총 ${minutesLabel(timeline.rideMinutes + timeline.stopMinutes)}` },
               { label: "주행", value: minutesLabel(timeline.rideMinutes) },
@@ -970,7 +962,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
                 >
                   <header>
                     <div><h2>{summaryActionMode === "choice" ? <><span className="desktop-choice-title">이 경로를 어떻게 남길까요?</span><span className="mobile-choice-title">이 경로, 함께 달릴까요?</span></> : summaryActionMode === "share" ? "링크로 공유" : "내 경로에 저장"}</h2></div>
-                    <button type="button" disabled={summarySaveBusy} onClick={() => summaryActionsDialogRef.current?.close()} aria-label="공유 저장 창 닫기">×</button>
+                    <button type="button" disabled={summarySaveBusy} onClick={() => summaryActionsDialogRef.current?.close()} aria-label="공유 저장 창 닫기"><LineIcon name="close" /></button>
                   </header>
                   {summaryActionMode === "choice" ? <div className="summary-action-choice">
                     <p className="summary-action-course"><strong>{routeTitle}</strong><span>{[selected.segments[0]?.from.label, ...selected.segments.map((segment) => segment.to.label)].filter(Boolean).join(" → ")}</span></p>
@@ -980,7 +972,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
                     <p className="summary-action-scope">출발 날짜·시간과 날씨는 저장 경로에 포함되지 않습니다.</p>
                   </div> : null}
                   <div className="summary-action-panel" hidden={summaryActionMode !== "share"}>
-                    <button className="text-button" type="button" onClick={() => setSummaryActionMode("choice")}>← 선택으로 돌아가기</button>
+                    <button className="text-button" type="button" onClick={() => setSummaryActionMode("choice")}><LineIcon name="chevron-left" /> 선택으로 돌아가기</button>
                     <ShareManager tripId={shareTripId} sessionEpoch={shareManagerEpoch} previewRequest={sharePreviewRequest?.tripId === shareTripId ? sharePreviewRequest.serial : 0} disabled={calculating} />
                   </div>
                   <div className="summary-action-panel" hidden={summaryActionMode !== "save"}>
@@ -990,21 +982,21 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
               </> : null}
             </>}
             map={<><h2 className="summary-course-title">{routeTitle}</h2><div className="route-map-meta"><div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>{liveRoute ? <span className="live-data-badge">{liveResultStale ? "경로 업데이트 필요" : "실제 경로"}</span> : <span className="example-data-badge">예시 데이터</span>}</div><div className="map-area"><KakaoMapCanvas points={selectedMapPoints} path={selectedMapPath} showLegend={false} onSelectCoordinate={connected && !calculating && !summarySaveBusy ? selectMapCoordinate : undefined} /></div></>}
-            mapDetails={<div className="route-map-details"><p className="summary-route-order">{[selected.segments[0]?.from.label, ...selected.segments.map((segment) => segment.to.label)].filter(Boolean).join(" → ")}</p><p className="route-safety-copy">이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</p><MapMarkerLegend points={selectedMapPoints} inline /></div>}
-            weather={<><div className="forecast-heading"><div><h2>구간별 날씨</h2></div><span className="forecast-issued">{weatherLoading === selected.id ? "기상청 예보 조회 중" : selectedWeatherStatus?.header ?? "날씨 미조회"}</span></div><p className="sr-only" role="status" aria-live="polite">{selectedWeatherAnnouncement}</p><div className="timeline-list">{timeline.segments.map((segment) => { const effectiveDwell = segment.to.selected ? segment.to.dwellMinutes : 0; return <RidingWeatherCard key={segment.id} time={formatRideTime(displayedDepartureAt, segment.arrivalAt)} place={segment.to.label} stopDetail={effectiveDwell ? `${effectiveDwell}분 정차` : "통과"} condition={segment.weather.condition} conditionLabel={weatherIcon(segment.weather.condition)} temperature={`${segment.weather.temperatureC ?? "–"}°`} probability={`${segment.weather.precipitationProbability ?? "–"}%`} statusNote={segment.weather.status === "outside-window" ? weatherModelLabel(segment.weather.status, segment.weather.model) : undefined} />; })}</div><details className="weather-detail"><summary>날씨 상세정보</summary><ul>{timeline.segments.map((segment) => <li key={segment.id}><strong>{segment.to.label}</strong><span>바람 {segment.weather.windSpeedMps ?? "–"}m/s · {weatherModelLabel(segment.weather.status, segment.weather.model)}</span></li>)}</ul></details></>}
-            notices={<>{selectedWeatherStatus ? <div className="stale-notice"><span>i</span>{selectedWeatherStatus.notice}</div> : null}<div ref={noticeRef} className={`action-notice ${notice.severity}`} role={notice.severity === "error" ? "alert" : "status"} aria-live={notice.severity === "error" ? "assertive" : "polite"} tabIndex={-1}><span className="notice-symbol" aria-hidden="true">{notice.severity === "error" ? "!" : notice.severity === "warning" ? "△" : "i"}</span><p><strong>{notice.severity === "error" ? "계획을 완료하지 못했습니다" : notice.severity === "warning" ? "확인이 필요합니다" : "진행 상태"}</strong><span>{notice.message}</span></p></div></>}
+            mapDetails={<div className="route-map-details"><p className="summary-route-order">{[selected.segments[0]?.from.label, ...selected.segments.map((segment) => segment.to.label)].filter(Boolean).join(" → ")}</p><p className="route-safety-copy">이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</p><MapMarkerLegend points={selectedMapPoints} inline /><section className="summary-visits"><h3>구간별 도착 시간</h3><ol><li><span className="visit-symbol" aria-hidden="true">출</span><strong>{selected.segments[0]?.from.label}</strong><span>{formatRideTime(displayedDepartureAt, displayedDepartureAt)} 출발</span></li>{timeline.segments.map((segment, index) => <li key={segment.id}><span className="visit-symbol" aria-hidden="true">{index === timeline.segments.length - 1 ? "도" : index + 1}</span><strong>{segment.to.label}</strong><span>{formatRideTime(displayedDepartureAt, segment.arrivalAt)} 도착{segment.to.selected && segment.to.dwellMinutes ? ` · ${segment.to.dwellMinutes}분 정차` : " · 통과"}</span></li>)}</ol></section></div>}
+            weather={<><div className="forecast-heading"><div><h2>구간별 날씨</h2></div><span className="forecast-issued">{weatherLoading === selected.id ? "기상청 예보 조회 중" : selectedWeatherStatus?.header ?? "날씨 미조회"}</span></div><p className="sr-only" role="status" aria-live="polite">{selectedWeatherAnnouncement}</p><div className="timeline-list">{timeline.segments.map((segment) => { const effectiveDwell = segment.to.selected ? segment.to.dwellMinutes : 0; return <RidingWeatherCard key={segment.id} time={formatRideTime(displayedDepartureAt, segment.arrivalAt)} place={segment.to.label} stopDetail={effectiveDwell ? `${effectiveDwell}분 정차` : "통과"} condition={segment.weather.condition} conditionLabel={weatherIcon(segment.weather.condition)} wind={`바람 ${segment.weather.windSpeedMps ?? "–"}m/s`} temperature={`${segment.weather.temperatureC ?? "–"}°`} probability={`${segment.weather.precipitationProbability ?? "–"}%`} statusNote={segment.weather.status === "outside-window" ? weatherModelLabel(segment.weather.status, segment.weather.model) : undefined} />; })}</div><details className="weather-detail"><summary>날씨 상세정보</summary><ul>{timeline.segments.map((segment) => <li key={segment.id}><strong>{segment.to.label}</strong><span>바람 {segment.weather.windSpeedMps ?? "–"}m/s · {weatherModelLabel(segment.weather.status, segment.weather.model)}</span></li>)}</ul></details></>}
+            notices={<>{selectedWeatherStatus ? <div className="stale-notice"><LineIcon name="info" />{selectedWeatherStatus.notice}</div> : null}<div ref={noticeRef} className={`action-notice ${notice.severity}`} role={notice.severity === "error" ? "alert" : "status"} aria-live={notice.severity === "error" ? "assertive" : "polite"} tabIndex={-1}><LineIcon className="notice-symbol" name="info" /><p><strong>{notice.severity === "error" ? "계획을 완료하지 못했습니다" : notice.severity === "warning" ? "확인이 필요합니다" : "진행 상태"}</strong><span>{notice.message}</span></p></div></>}
           />
         </section> : <section className="route-stage" aria-label="라이딩 계획 결과">
           <h1 className="sr-only" hidden={!isCompact}>라이딩 계획 결과</h1>
           <div className="route-map-frame">
-            {connected ? <h2 className="editor-map-title">선택한 경로</h2> : null}
+            <h2 className="editor-map-title">{connected ? "선택한 경로" : "경로 요약"}</h2>
             <div className="route-map-meta">
-              <div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>
               {!liveRoute ? <span className="example-data-badge">{connected ? "선택한 장소" : "예시 데이터"}</span> : <span className="live-data-badge">{liveResultStale ? "경로 업데이트 필요" : "실제 경로"}</span>}
             </div>
             <div className="map-area">
               <KakaoMapCanvas points={selectedMapPoints} path={selectedMapPath} showLegend={false} onSelectCoordinate={connected && !calculating && !summarySaveBusy ? selectMapCoordinate : undefined} />
             </div>
+            {!connected ? <p className="editor-route-order">{[selected.segments[0]?.from.label, ...selected.segments.map((segment) => segment.to.label)].filter(Boolean).join(" → ")}</p> : null}
             {!connected ? <div className="route-map-details">
               <MapMarkerLegend points={selectedMapPoints} inline />
               <section className="ride-summary" aria-labelledby="route-summary-heading">
@@ -1027,6 +1019,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
                 places.destination?.name,
               ].filter(Boolean).join(" → ") || "출발지와 도착지를 선택해 주세요."}</p>
             </div>}
+            <div className="condition-banner editor-map-safety"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>
           </div>
 
           {!connected ? <div className="forecast-panel">
@@ -1051,7 +1044,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
                     <div className="timeline-rail"><i className={`risk-dot ${risk.level}`} />{index < timeline.segments.length - 1 ? <span /> : null}</div>
                     <div className="segment-copy"><strong>{segment.from.label} → {segment.to.label}</strong><span>{segment.distanceKm} km · 약 {Math.ceil(segment.rideMinutes)}분</span></div>
                     <div className={`weather-chip ${risk.level}`} data-condition={segment.weather.condition} aria-label={`${formatRideTime(displayedDepartureAt, segment.arrivalAt)} ${segment.to.label} 도착, 날씨 ${weatherIcon(segment.weather.condition)}, 기온 ${segment.weather.temperatureC ?? "확인 불가"}도, 강수 확률 ${segment.weather.precipitationProbability ?? "확인 불가"}퍼센트, 바람 ${segment.weather.windSpeedMps ?? "확인 불가"}미터 매초, ${weatherModelLabel(segment.weather.status, segment.weather.model)}`}>
-                      <span className="weather-word">{weatherIcon(segment.weather.condition)}</span>
+                      <span className="weather-word"><LineIcon name={segment.weather.condition === "clear" ? "sun" : segment.weather.condition === "rain" || segment.weather.condition === "snow" ? "cloud-rain" : "cloud"} />{weatherIcon(segment.weather.condition)}</span>
                       <strong>{segment.weather.temperatureC ?? "–"}°</strong>
                       <small>강수 {segment.weather.precipitationProbability ?? "–"}% · 바람 {segment.weather.windSpeedMps ?? "–"}m/s</small>
                       <small>{weatherModelLabel(segment.weather.status, segment.weather.model)}</small>
@@ -1062,7 +1055,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
               })}
             </div>
             {selectedWeatherStatus ? (
-              <div className="stale-notice"><span>i</span>{selectedWeatherStatus.notice}</div>
+              <div className="stale-notice"><LineIcon name="info" />{selectedWeatherStatus.notice}</div>
             ) : null}
             <p className="sr-only" role="status" aria-live="polite">{selectedWeatherAnnouncement}</p>
             <div
@@ -1072,7 +1065,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
                 aria-live={notice.severity === "error" ? "assertive" : "polite"}
                 tabIndex={-1}
               >
-                <span className="notice-symbol" aria-hidden="true">{notice.severity === "error" ? "!" : notice.severity === "warning" ? "△" : "i"}</span>
+                <LineIcon className="notice-symbol" name="info" />
                 <p><strong>{notice.severity === "error" ? "계획을 완료하지 못했습니다" : notice.severity === "warning" ? "확인이 필요합니다" : "진행 상태"}</strong><span>{notice.message}</span></p>
             </div>
           </div> : null}

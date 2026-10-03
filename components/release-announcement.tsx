@@ -1,5 +1,6 @@
 "use client";
 
+import { LineIcon } from "@/components/line-icon";
 import Link from "next/link";
 import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 
@@ -113,7 +114,7 @@ export function ReleaseAnnouncement() {
         ref={dialogRef}
       >
         <div className={styles.dialogBody}>
-          <button className={styles.close} type="button" aria-label="업데이트 내역 닫기" onClick={close}>×</button>
+          <button className={styles.close} type="button" aria-label="업데이트 내역 닫기" onClick={close}><LineIcon name="close" /></button>
           <p className={styles.version}>현재 v{currentVersion}</p>
           <h2 id="release-announcement-title">새로운 소식을 확인해 보세요</h2>
           <p className={styles.summary}>{currentRelease.summary}</p>

@@ -147,7 +147,7 @@ it("updates 100 saved pins and twenty toggle cycles on one map without moving th
   await act(async()=>{maps.event.addListener.mock.calls[0][2]();});expect(select).toHaveBeenCalledWith("0");
   for(let n=0;n<20;n++)for(const visible of [pins.filter(p=>p.kind==="restaurant"),[],pins.filter(p=>p.kind==="riding_spot"),pins]){
     await act(async()=>renderer.update(<KakaoMapCanvas points={points} path={actualPath} savedPins={visible} onSelectSavedPin={select} allowEmptyMap/>));
-    expect(maps.activeMarkers.size).toBe(visible.length+2);expect(maps.activePolylines.size).toBe(1);
+    expect(maps.activeMarkers.size).toBe(visible.length+2);expect(maps.activePolylines.size).toBe(2);
   }
   expect(maps.MapConstructor).toHaveBeenCalledTimes(1);expect(maps.setBounds).toHaveBeenCalledTimes(bounds);expect(maps.Polyline).toHaveBeenCalledTimes(routes);
   await act(async()=>renderer.unmount());expect(maps.activeMarkers.size).toBe(0);expect(maps.event.removeListener.mock.calls.length).toBe(maps.event.addListener.mock.calls.length);
@@ -239,7 +239,7 @@ it("keeps one SDK map and its camera across fullscreen, return, and viewport res
   expect(renderer.root.findByType("dialog").props.role).toBe("region");
   expect(expanded.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
   expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
-  expect(maps.Polyline).toHaveBeenCalledTimes(1);
+  expect(maps.Polyline).toHaveBeenCalledTimes(2);
   expect(maps.setBounds).toHaveBeenCalledTimes(1);
   const map = maps.MapConstructor.mock.instances[0] as unknown as InstanceType<KakaoMapsNamespace["Map"]>;
   expect(map.getCenter()).toBe(camera); expect(map.getLevel()).toBe(4);
@@ -360,7 +360,7 @@ describe("KakaoMapCanvas", () => {
       expect(maps.activeMarkers.size).toBe(0); expect(maps.activePolylines.size).toBe(0);
       expect(mapCanvas(renderer).props.inert).toBe(true);
       await flush(maps.loadCallbacks);
-      expect(maps.activeMarkers.size).toBe(changedPoints.length); expect(maps.activePolylines.size).toBe(1);
+      expect(maps.activeMarkers.size).toBe(changedPoints.length); expect(maps.activePolylines.size).toBe(2);
       expect(maps.mapLayers.size).toBe(1); expect([...maps.mapLayers.values()][0]).toHaveLength(1);
     }
     firstMarkers.forEach(marker => expect(marker.setMap).toHaveBeenCalledExactlyOnceWith(null));
@@ -393,7 +393,7 @@ describe("KakaoMapCanvas", () => {
     expect(maps.Marker).toHaveBeenCalledTimes(points.length * 2);
     expect(maps.setBounds).toHaveBeenCalledTimes(2);
     expect([...maps.mapLayers.values()][0]).toHaveLength(1);
-    expect(maps.activeMarkers.size).toBe(2); expect(maps.activePolylines.size).toBe(1);
+    expect(maps.activeMarkers.size).toBe(2); expect(maps.activePolylines.size).toBe(2);
     expect(statusText(renderer)).toContain("실제 경로 지도 준비 완료");
     await act(async () => renderer.unmount());
     expect(maps.activeMarkers.size).toBe(0); expect(maps.activePolylines.size).toBe(0);
@@ -499,10 +499,15 @@ describe("KakaoMapCanvas", () => {
     const markerCalls = maps.Marker.mock.calls as unknown as Array<[{ title: string; image: unknown }]>;
     expect(markerCalls.map(([options]) => options.title)).toEqual(["출발 · 출발", "복귀 · 복귀"]);
     expect(markerCalls[0][0].image).not.toBe(markerCalls[1][0].image);
-    expect(maps.Polyline).toHaveBeenCalledTimes(1);
+    expect(maps.Polyline).toHaveBeenCalledTimes(2);
     const polylineCalls = maps.Polyline.mock.calls as unknown as Array<[
       { path: Array<{ getLat: () => number; getLng: () => number }> },
     ]>;
+    expect(polylineCalls.map(([options]) => options)).toEqual([
+      expect.objectContaining({ strokeWeight: 9, strokeColor: "#20252A" }),
+      expect.objectContaining({ strokeWeight: 4.5, strokeColor: "#FFB800" }),
+    ]);
+    expect(polylineCalls[1][0].path).toEqual(polylineCalls[0][0].path);
     const renderedPath = polylineCalls[0][0].path;
     expect(renderedPath.map((point) => ({ latitude: point.getLat(), longitude: point.getLng() }))).toEqual(actualPath);
     expect(maps.extend).toHaveBeenCalledTimes(actualPath.length + points.length);
@@ -571,7 +576,7 @@ describe("KakaoMapCanvas", () => {
 
     expect(renderer.root.findAllByProps({ "aria-label": "지도 지점 표시 안내" })).toHaveLength(0);
     expect(maps.Marker).toHaveBeenCalledTimes(points.length);
-    expect(maps.Polyline).toHaveBeenCalledTimes(1);
+    expect(maps.Polyline).toHaveBeenCalledTimes(2);
     await act(async () => renderer.unmount());
   });
 
@@ -592,7 +597,8 @@ describe("KakaoMapCanvas", () => {
     const markerImageCall = maps.MarkerImage.mock.calls[0] as unknown as [string];
     const compositeSvg = decodeURIComponent(markerImageCall[0].replace("data:image/svg+xml;charset=UTF-8,", ""));
     expect(compositeSvg).toContain(">식</text>");
-    expect(compositeSvg).toContain(">경×</text>");
+    expect(compositeSvg).toContain(">경</text>");
+    expect(compositeSvg).toContain('d="M50 8l6 6m0-6l-6 6"');
     expect(maps.extend).toHaveBeenCalledTimes(1);
     await act(async () => renderer.unmount());
   });

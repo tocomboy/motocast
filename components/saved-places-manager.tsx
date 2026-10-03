@@ -1,5 +1,6 @@
 "use client";
 
+import { LineIcon } from "@/components/line-icon";
 import {
   useEffect,
   useId,
@@ -255,7 +256,7 @@ function SavedPlacesManagerContent({
             <h2>{savedPlaceName(selected)}</h2>
             <p>{selected.place.name} · {selected.province ?? "지역 미확인"} · {selected.place.roadAddress ?? selected.place.address}</p>
             <div className={styles.desktopActions}>
-              <button type="button" disabled={blocked || (selected.starSlot === null && saved.favorites.length >= 5)} onClick={() => confirm(selected, "star")}>{selected.starSlot !== null ? "★ 별표 해제" : "☆ 자주 찾는 곳에 추가"}</button>
+              <button type="button" disabled={blocked || (selected.starSlot === null && saved.favorites.length >= 5)} aria-label={selected.starSlot === null ? "☆ 자주 찾는 곳에 추가" : "★ 별표 해제"} onClick={() => confirm(selected, "star")}><LineIcon name="star" />{selected.starSlot !== null ? "별표 해제" : "자주 찾는 곳에 추가"}</button>
               <button type="button" disabled={blocked} onClick={() => setForm({place:selected.place, existing:selected})}>별명·분류 수정</button>
               <button type="button" disabled={blocked} onClick={() => confirm(selected, "delete")}>장소 삭제</button>
               <button type="button" className="primary-button" disabled={blocked || disabled} onClick={() => setAdding(selected)}>경유지에 추가</button>
@@ -292,7 +293,7 @@ function SavedPlacesManagerContent({
                     onClick={() => selectPlace(p.id)}
                     aria-label={`${savedPlaceName(p)} 상세 보기`}
                   >
-                    <span className={styles.placeKind}>{p.kind === "restaurant" ? "식당" : "라이딩 스팟"}<span aria-label={p.starSlot !== null ? "자주 찾는 곳" : "별표 없음"}>{p.starSlot !== null ? "★" : "☆"}</span></span>
+                    <span className={styles.placeKind}>{p.kind === "restaurant" ? "식당" : "라이딩 스팟"}<span aria-label={p.starSlot !== null ? "자주 찾는 곳" : "별표 없음"}><LineIcon name="star" /></span></span>
                     <strong>{savedPlaceName(p)}</strong>
                     <span>원래 장소명 · {p.place.name}</span>
                     <span>
@@ -312,7 +313,7 @@ function SavedPlacesManagerContent({
         </section>
       </div>
       <footer className={styles.registerFooter}>
-        <button ref={addButton} className="primary-button" type="button" disabled={blocked || saved.places.length >= 1000} onClick={() => setForm({ place: null })}>＋ 장소 등록</button>
+        <button ref={addButton} aria-label="＋ 장소 등록" className="primary-button" type="button" disabled={blocked || saved.places.length >= 1000} onClick={() => setForm({ place: null })}><LineIcon name="plus" /> 장소 등록</button>
       </footer>
       {saved.message && saved.status === "ready" ? (
         <p role="status" aria-live="polite">
@@ -324,7 +325,7 @@ function SavedPlacesManagerContent({
           <div className={styles.waypointBody}>
           <div className={styles.detailMap}><KakaoMapCanvas points={[]} allowEmptyMap savedPins={[{ id: selected.id, label: savedPlaceName(selected), kind: selected.kind, latitude: selected.place.latitude, longitude: selected.place.longitude }]} showLegend={false} /></div>
           <div className={styles.placeSummary}>
-            <span className={styles.placeKind}>{selected.kind === "restaurant" ? "식당" : "라이딩 스팟"}<span>{selected.starSlot !== null ? "★" : "☆"}</span></span>
+            <span className={styles.placeKind}>{selected.kind === "restaurant" ? "식당" : "라이딩 스팟"}<span><LineIcon name="star" /></span></span>
             <strong>{savedPlaceName(selected)}</strong>
             <span>원래 장소명 · {selected.place.name}</span>
             <span>{selected.province ?? "지역 미확인"} · {selected.place.roadAddress ?? selected.place.address}</span>
@@ -335,11 +336,9 @@ function SavedPlacesManagerContent({
               blocked ||
               (selected.starSlot === null && saved.favorites.length >= 5)
             }
-            onClick={() => confirm(selected, "star")}
+            aria-label={selected.starSlot === null ? "☆ 자주 찾는 곳에 추가" : "★ 별표 해제"} onClick={() => confirm(selected, "star")}
           >
-            {selected.starSlot === null
-              ? "☆ 자주 찾는 곳에 추가"
-              : "★ 별표 해제"}
+            <LineIcon name="star" />{selected.starSlot === null ? "자주 찾는 곳에 추가" : "별표 해제"}
           </button>
           {selected.starSlot === null && saved.favorites.length >= 5 ? (
             <div className={styles.stateCard}><p>
@@ -482,7 +481,7 @@ function SavedDialog({
           disabled={locked}
           onClick={onClose}
         >
-          ×
+          <LineIcon name="close" />
         </button>
       </header>
       {children}
@@ -609,7 +608,7 @@ function SavedWaypointForm({
       <div className={styles.waypointBody}>
       <h3>어떻게 들를까요?</h3>
       <div className={styles.placeSummary}>
-        <span className={styles.placeKind}>{place.kind === "restaurant" ? "식당" : "라이딩 스팟"}{place.starSlot !== null ? <span aria-label="자주 찾는 곳">★</span> : null}</span>
+        <span className={styles.placeKind}>{place.kind === "restaurant" ? "식당" : "라이딩 스팟"}{place.starSlot !== null ? <span aria-label="자주 찾는 곳"><LineIcon name="star" /></span> : null}</span>
         <strong>{savedPlaceName(place)}</strong>
         <span>{place.place.name} · {place.province ?? "지역 미확인"}</span>
       </div>
@@ -622,7 +621,7 @@ function SavedWaypointForm({
       {role !== "waypoint" ? (
         <div className={styles.dwellControl}>
           <label htmlFor="saved-waypoint-dwell">머무는 시간</label>
-          <button type="button" aria-label="머무는 시간 10분 줄이기" disabled={dwell <= 1} onClick={() => setDwell(value => Math.max(1, value - 10))}>−</button>
+          <button type="button" aria-label="머무는 시간 10분 줄이기" disabled={dwell <= 1} onClick={() => setDwell(value => Math.max(1, value - 10))}><LineIcon name="minus" /></button>
           <span><input
             id="saved-waypoint-dwell"
             aria-label="정차 시간 (분)"
@@ -632,7 +631,7 @@ function SavedWaypointForm({
             value={dwell}
             onChange={(e) => setDwell(Number(e.target.value))}
           />분</span>
-          <button type="button" aria-label="머무는 시간 10분 늘리기" disabled={dwell >= 1440} onClick={() => setDwell(value => Math.min(1440, value + 10))}>＋</button>
+          <button type="button" aria-label="머무는 시간 10분 늘리기" disabled={dwell >= 1440} onClick={() => setDwell(value => Math.min(1440, value + 10))}><LineIcon name="plus" /></button>
         </div>
       ) : (
         <p>정차 없이 통과해요.</p>
@@ -705,7 +704,7 @@ function SavedConfirmation({
       <div className={pending.fullScreen ? styles.waypointBody : undefined}>
       {pending.fullScreen ? <h3>{pending.title}</h3> : null}
       <div className={styles.placeSummary}>
-        {pending.placeSummary ? <span className={styles.placeKind}>{pending.placeSummary.kind}<span aria-label={pending.placeSummary.starred ? "별표 있음" : "별표 없음"}>{pending.placeSummary.starred ? "★" : "☆"}</span></span> : null}
+        {pending.placeSummary ? <span className={styles.placeKind}>{pending.placeSummary.kind}<span aria-label={pending.placeSummary.starred ? "별표 있음" : "별표 없음"}><LineIcon name="star" /></span></span> : null}
         <strong>{pending.name}</strong>
         {pending.placeSummary ? <span>원래 장소명 {pending.placeSummary.originalName} · {pending.placeSummary.address}</span> : <p>{pending.description}</p>}
       </div>

@@ -1,13 +1,13 @@
 .footer {
-  background: #f4f0e7;
-  border-top: 1px solid #d9d2c5;
+  background: var(--mc-surface-ground);
+  border-top: 1px solid var(--mc-border-default);
   display: flex;
   justify-content: center;
   padding: 18px clamp(20px, 5vw, 72px) 22px;
 }
 
 .footer a {
-  color: #405049;
+  color: var(--mc-text-secondary);
   font-size: 0.8125rem;
   font-weight: 700;
   line-height: 1.5;
@@ -17,7 +17,7 @@
 }
 
 .footer a:hover {
-  color: #a83d18;
+  color: var(--mc-signal-text);
 }
 
 :global(body:has(.app-shell[data-view="editor"], .app-shell[data-view="summary"], .app-shell[data-view="collections"])) .footer {

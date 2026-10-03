@@ -1,5 +1,6 @@
 "use client";
 
+import { LineIcon } from "@/components/line-icon";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { parseCollectionRows, type CollectionCourse, type RidingCollection } from "@/lib/collections/contracts";
@@ -33,6 +34,13 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
   const saveDialogRef = useRef<HTMLDialogElement>(null);
   const saveTriggerRef = useRef<HTMLButtonElement>(null);
   const saveTitleId = useId();
+  const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<RidingCollection | null>(null);
+
+  useEffect(() => {
+    if (deleteTarget) deleteDialogRef.current?.showModal();
+  }, [deleteTarget]);
 
   const loadCollections = useCallback(async (preserveStatus = false) => {
     const supabase = getBrowserSupabase();
@@ -130,8 +138,7 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
   }
 
   async function deleteCollection(collection: RidingCollection) {
-    if (disabled) return;
-    if (!window.confirm(`${collection.title} 컬렉션과 모든 버전을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+    if (disabled || busyId !== null) return;
     const supabase = getBrowserSupabase();
     if (!supabase) return;
     setBusyId(collection.id);
@@ -156,8 +163,8 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
         {collection.description ? <small>{collection.description}</small> : null}
       </div>
       <div className="collection-actions">
-        <button className="primary-button" type="button" aria-label={`${collection.title} 계획에 적용`} disabled={disabled} onClick={() => onApply(collection.latestVersion.course, collection.title)}>이 경로로 출발하기</button>
-        {mode === "manage" ? <details className="collection-card-management"><summary aria-label={`${collection.title} 경로명 관리`}>⋯</summary><div><button type="button" aria-label={`${collection.title} 공유 준비`} disabled={disabled} onClick={() => onShare(collection.latestVersion.course, collection.title)}>공유 준비</button><button type="button" aria-label={`${collection.title} 새 버전 저장`} disabled={disabled || busyId !== null || !currentCourse} onClick={() => void saveVersion(collection)}>현재 경로로 새 버전 저장</button><button className="danger-text" type="button" aria-label={`${collection.title} 삭제`} disabled={disabled || busyId !== null} onClick={() => void deleteCollection(collection)}>삭제</button></div></details> : null}
+        <button className="secondary-button" type="button" aria-label={`${collection.title} 계획에 적용`} disabled={disabled} onClick={() => onApply(collection.latestVersion.course, collection.title)}>이 경로로 출발하기</button>
+        {mode === "manage" ? <details className="collection-card-management"><summary aria-label={`${collection.title} 경로명 관리`}><LineIcon name="more" /></summary><div><button type="button" aria-label={`${collection.title} 공유 준비`} disabled={disabled} onClick={() => onShare(collection.latestVersion.course, collection.title)}>공유 준비</button><button type="button" aria-label={`${collection.title} 새 버전 저장`} disabled={disabled || busyId !== null || !currentCourse} onClick={() => void saveVersion(collection)}>현재 경로로 새 버전 저장</button><button className="danger-text" type="button" aria-label={`${collection.title} 삭제`} disabled={disabled || busyId !== null} onClick={(event) => { deleteTriggerRef.current = event.currentTarget; setDeleteTarget(collection); }}>삭제</button></div></details> : null}
       </div>
     </li>
   ));
@@ -178,12 +185,20 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
   if (mode === "save") return <section className="collection-manager collection-manager-save" aria-label="경로 저장">
     <button ref={saveTriggerRef} className="secondary-button" type="button" disabled={disabled || !currentCourse} onClick={() => saveDialogRef.current?.showModal()}>{triggerLabel}</button>
     <dialog ref={saveDialogRef} className="collection-save-dialog" aria-labelledby={saveTitleId} onClose={() => saveTriggerRef.current?.focus()} onCancel={(event) => { if (busyId !== null) event.preventDefault(); }}>
-      <div className="collection-save-shell"><header><h2 id={saveTitleId}>내 경로에 저장</h2><button type="button" disabled={busyId !== null} onClick={() => saveDialogRef.current?.close()} aria-label="경로 저장 창 닫기">×</button></header>{savedTitle ? <div className="collection-save-success" role="status"><strong>{savedTitle}</strong><span>내 경로에 저장했습니다. 새 일정을 정해 다시 사용할 수 있어요.</span></div> : saveFields}<div className="collection-save-actions">{savedTitle && onShowCollections ? <button type="button" onClick={() => { saveDialogRef.current?.close(); onShowCollections(); }}>저장한 경로 보기</button> : null}<button type="button" disabled={busyId !== null} onClick={() => saveDialogRef.current?.close()}>{savedTitle ? "닫기" : "취소"}</button>{!savedTitle ? <button className="primary-button" type="button" disabled={disabled || busyId !== null || !currentCourse || !title.trim()} onClick={() => void saveVersion(null)}>{busyId === "new" ? "저장 중…" : "저장"}</button> : null}</div></div>
+      <div className="collection-save-shell"><header><h2 id={saveTitleId}>내 경로에 저장</h2><button type="button" disabled={busyId !== null} onClick={() => saveDialogRef.current?.close()} aria-label="경로 저장 창 닫기"><LineIcon name="close" /></button></header>{savedTitle ? <div className="collection-save-success" role="status"><strong>{savedTitle}</strong><span>내 경로에 저장했습니다. 새 일정을 정해 다시 사용할 수 있어요.</span></div> : saveFields}<div className="collection-save-actions">{savedTitle && onShowCollections ? <button type="button" onClick={() => { saveDialogRef.current?.close(); onShowCollections(); }}>저장한 경로 보기</button> : null}<button type="button" disabled={busyId !== null} onClick={() => saveDialogRef.current?.close()}>{savedTitle ? "닫기" : "취소"}</button>{!savedTitle ? <button className="primary-button" type="button" disabled={disabled || busyId !== null || !currentCourse || !title.trim()} onClick={() => void saveVersion(null)}>{busyId === "new" ? "저장 중…" : "저장"}</button> : null}</div></div>
     </dialog>
   </section>;
 
   return (
     <section className="collection-manager" aria-labelledby="collection-heading">
+      <dialog ref={deleteDialogRef} className="collection-delete-dialog" aria-label="삭제" onClose={() => { setDeleteTarget(null); deleteTriggerRef.current?.focus(); }}>
+        <h2>삭제</h2>
+        <p>{deleteTarget ? `${deleteTarget.title} 컬렉션과 모든 버전을 삭제할까요? 이 작업은 되돌릴 수 없습니다.` : null}</p>
+        <div className="collection-delete-actions">
+          <button className="destructive-button" type="button" disabled={disabled || busyId !== null || !deleteTarget} onClick={() => { if (deleteTarget) { void deleteCollection(deleteTarget); deleteDialogRef.current?.close(); } }}>삭제</button>
+          <button className="secondary-button" type="button" onClick={() => deleteDialogRef.current?.close()}>취소</button>
+        </div>
+      </dialog>
       <div className="collection-heading-row">
         <div>
           <h2 id="collection-heading">내가 저장한 경로 {collections.length}</h2>

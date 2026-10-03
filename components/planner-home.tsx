@@ -1,7 +1,8 @@
 "use client";
 
+import { LineIcon } from "@/components/line-icon";
 import type { ReactNode } from "react";
-import Image from "next/image";
+import { MotorcycleIllustration } from "@/components/motorcycle-illustration";
 import { PlaceFavoritesHomeEntry } from "@/components/place-favorites-manager";
 
 export function PlannerHome({ connected, busy, status, onNewRoute, onCollections, onFavorites, collections }: { connected: boolean; busy: boolean; status?: string; onNewRoute: () => void; onCollections: () => void; onFavorites: () => void; collections?: ReactNode }) {
@@ -13,11 +14,11 @@ export function PlannerHome({ connected, busy, status, onNewRoute, onCollections
           <h1 id="planner-home-title" data-view-title="home" tabIndex={-1}><span>오늘은 어디로</span> <span>달려볼까요?</span></h1>
           <p className="planner-home-description"><span>갈 곳을 정하면 달리는 시간에 맞춰</span><span>지도와 구간별 날씨를 함께 확인할 수 있어요.</span></p>
         </div>
-        <Image className="planner-home-motorcycle" src="/figma/motorcycle.svg" alt="" width={224} height={210} priority />
+        <MotorcycleIllustration className="planner-home-motorcycle" />
       </div>
       <p className="planner-home-mobile-description"><span>갈 곳을 정하면, 달리는 시간에 맞춰</span><span>경로와 날씨를 함께 확인할 수 있어요.</span></p>
       <div className="planner-home-entry-grid">
-        <article><p>01&nbsp;&nbsp;새로운 라이딩</p><h2>새 경로 만들기</h2><p>출발지와 도착지, 중간에 들를 곳을 정하세요.</p><button className="primary-button" type="button" disabled={busy} onClick={onNewRoute}>+&nbsp;&nbsp;새 경로 만들기</button></article>
+        <article><p>01&nbsp;&nbsp;새로운 라이딩</p><h2>새 경로 만들기</h2><p>출발지와 도착지, 중간에 들를 곳을 정하세요.</p><button className="primary-button" aria-label="+ 새 경로 만들기" type="button" disabled={busy} onClick={onNewRoute}><LineIcon name="plus" />새 경로 만들기</button></article>
         {connected ? <article><p>02&nbsp;&nbsp;다시 달리고 싶은 길</p><h2>저장한 경로 모음</h2><p>저장한 경로를 비교하고 새 출발 일정을 정하세요.</p><button type="button" onClick={onCollections}>저장한 경로 보기</button></article> : <article><p>02&nbsp;&nbsp;예시로 둘러보기</p><h2>예시 경로 편집</h2><p>데모 경로로 장소와 일정을 바꿔 볼 수 있어요.</p><button type="button" onClick={onNewRoute}>예시 경로 보기</button></article>}
       </div>
       <PlaceFavoritesHomeEntry onOpen={onFavorites} />

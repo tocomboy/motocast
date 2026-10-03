@@ -19,7 +19,7 @@ const webRegistry = AppRegistry as typeof AppRegistry & {
 export function ReleaseHistoryWeb(props: Omit<ReleaseHistoryProps, "fontFamily">) {
   const inserted = useRef(false);
   const application = webRegistry.getApplication(appKey, {
-    initialProps: { ...props, fontFamily: '"Noto Sans KR Variable", sans-serif' },
+    initialProps: { ...props, numberFontFamily: '"Barlow Semi Condensed", sans-serif', fontFamily: '"Noto Sans KR Variable", sans-serif' },
   });
 
   useServerInsertedHTML(() => {
