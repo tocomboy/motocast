@@ -258,7 +258,7 @@ function SavedPlacesManagerContent({
             <div className={styles.desktopActions}>
               <button type="button" disabled={blocked || (selected.starSlot === null && saved.favorites.length >= 5)} aria-label={selected.starSlot === null ? "☆ 자주 찾는 곳에 추가" : "★ 별표 해제"} onClick={() => confirm(selected, "star")}><LineIcon name="star" />{selected.starSlot !== null ? "별표 해제" : "자주 찾는 곳에 추가"}</button>
               <button type="button" disabled={blocked} onClick={() => setForm({place:selected.place, existing:selected})}>별명·분류 수정</button>
-              <button type="button" disabled={blocked} onClick={() => confirm(selected, "delete")}>장소 삭제</button>
+              <button type="button" className="danger-text" disabled={blocked} onClick={() => confirm(selected, "delete")}>장소 삭제</button>
               <button type="button" className="primary-button" disabled={blocked || disabled} onClick={() => setAdding(selected)}>경유지에 추가</button>
             </div>
             {selected.starSlot === null && saved.favorites.length >= 5 ? <p>자주 찾는 곳 5개가 모두 찼어요. <button type="button" onClick={() => { selectPlace(null); setTab("starred"); setProvince(""); setQuery(""); }}>자주 찾는 곳 관리</button></p> : null}
@@ -356,6 +356,7 @@ function SavedPlacesManagerContent({
           </button>
           <button
             type="button"
+            className="danger-text"
             disabled={blocked}
             onClick={() => confirm(selected, "delete")}
           >

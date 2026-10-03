@@ -4642,7 +4642,6 @@ body:has(dialog:modal) {
   padding-inline: 16px;
 }
 .waypoint-settings-actions .primary-button { background: var(--mc-signal-fill); color: var(--mc-signal-on); }
-.waypoint-settings-actions .danger-text { color: var(--mc-signal-text); }
 .waypoint-saved-entry { width: calc(100% - 48px); margin-top: 16px; }
 .waypoint-saved-dialog { width: min(1100px, 100vw); height: 100dvh; max-width: 100vw; max-height: 100dvh; padding: 0; border: 0; background: var(--mc-surface-card); color: var(--mc-text-primary); }
 .waypoint-saved-dialog::backdrop { background: var(--mc-scrim); }
@@ -5004,11 +5003,13 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 input:not([type=checkbox]), textarea, select { min-height: 56px; border: 1px solid var(--mc-border-default); border-radius: 14px; background: var(--mc-surface-card); color: var(--mc-text-primary); font: inherit; font-size: 17px; padding: 12px 16px; }
 input[aria-invalid=true], textarea[aria-invalid=true] { border: 2px solid var(--mc-danger-text); }
 label > span, legend { color: var(--mc-text-secondary); font-size: 13px; font-weight: 700; }
-button:not(.text-button, .danger-text), .secondary-button, .primary-button { border-radius: 14px; }
+button:not(.text-button), .secondary-button, .primary-button { border-radius: 14px; }
 .secondary-button, .ghost-button, .collection-actions > .secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; padding: 12px 24px; border: 1.5px solid var(--mc-border-strong); background: var(--mc-surface-card); color: var(--mc-text-primary); font: inherit; font-size: 16px; font-weight: 700; }
 body .primary-button, body .primary-button:hover:not(:disabled), body .primary-button:focus-visible:not(:disabled), body .riding-summary-actions > .kakaomap-trigger, .planner-home-entry-grid > article > .primary-button { background: var(--mc-signal-fill); border: 1.5px solid var(--mc-signal-fill); color: var(--mc-signal-on); min-height: 56px; border-radius: 14px; font-size: 16px; font-weight: 700; }
 body .destructive-button { background: var(--mc-danger-fill); color: var(--mc-danger-on); border: 1.5px solid var(--mc-danger-fill); min-height: 48px; padding: 12px 24px; font: inherit; font-weight: 700; border-radius: 14px; }
-body .danger-text, .route-reset-button, .current-place-clear { background: transparent; color: var(--mc-danger-text); min-height: 48px; }
+/* danger: entry to an irreversible action — card box with danger outline (Figma Button style=danger). */
+body .danger-text, body .route-reset-button, body .current-place-clear { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; padding: 12px 24px; border: 1.5px solid var(--mc-danger-text); border-radius: 14px; background: var(--mc-surface-card); color: var(--mc-danger-text); font: inherit; font-size: 16px; font-weight: 700; text-decoration: none; }
+body .danger-text:disabled, body .route-reset-button:disabled, body .current-place-clear:disabled { opacity: .45; }
 .text-button { color: var(--mc-signal-text); }
 .app-header { min-height: 72px; padding: 0 max(20px, calc((100% - 1200px) / 2)); border-bottom: 1px solid var(--mc-border-card); background: var(--mc-surface-card); color: var(--mc-text-primary); }
 .app-header .brand, .brand, .brand-dark { font-family: var(--mc-font-number); font-weight: 700; font-size: 24px; letter-spacing: .08em; color: var(--mc-text-primary); }
