@@ -268,6 +268,7 @@ When sources conflict, record the evidence here, explain user-visible and securi
 - Affected: `recommend-restaurants` Edge Function, web and Android riding summary, recommendation sheet/dialog, waypoint insertion, contracts, tests.
 - Verification: 1/2 meals, combined added-driving limit, inclusive arrival tolerance, first-meal dwell shift, partial result, no result, no saved restaurants, calculation failure, stale route basis and stale client result blocking, explicit insertion order and occurrence IDs, budget-before-call and call caps, motorcycle parameters on every call. Design and evidence: [restaurant recommendation record](../work/research/2026-10-05-restaurant-recommendation.md).
 - Confirmed: user request, 2026-10-05.
+- Amendment, 2026-10-05 (user decision, supersedes the user-editable limit and tolerance above): the rider no longer enters an added-driving limit. Each candidate shows its added driving (`{n}분 더 달려요`; two restaurants show the combined total) and results stay sorted by it. The server applies a fixed internal cap of 60 minutes (combined for two restaurants), which also sets the 30 km straight-line prefilter radius; call caps are unchanged. The arrival tolerance becomes the `원하는 식사 시간` window: default ±30 minutes, selectable in 30-minute steps among ±30/±60/±90. Nothing is widened automatically. Request contract 2.0.0 removes `detourLimitMinutes`.
 
 #### UI-001 — Mobile and desktop riding workflow
 
