@@ -1,0 +1,199 @@
+# 저장 식당 기반 음식점 추천 — 설계·구현·검증 기록
+
+- 작업 브랜치: `review-restaurant-recommend-20261005` (기반 `origin/develop` `70d3bf3`, 0.11.0)
+- 작업 공간: `C:/Users/User/Desktop/worktrees/motocast-restaurant-recommend-20261005`
+- Android: `tocomboy/motocast-android` 별도 작업 브랜치(아래 진행 상태에 기록)
+- 관련: [#33](https://github.com/tocomboy/motocast/issues/33) 음식점 추천, [#34](https://github.com/tocomboy/motocast/issues/34) 성능·무료 예산, [#99](https://github.com/tocomboy/motocast/issues/99) 저장 장소
+- 제품 정본: `PLAN-005`(신규), `PLAN-002/003/004`, `ROUTE-001/004/006/007`, `COST-001/002`, `OPS-001`, `SCOPE-002/003`
+
+## 1. 사용자 확정 요구사항 (2026-10-05)
+
+1. 현재 입력에 맞는 경로 계산이 끝난 뒤에만 `음식점 추천 받기`를 쓸 수 있다.
+2. 방문할 식당 수 1곳/2곳을 고른다. 추천 후보 개수가 아니라 실제 방문할 식당 수다.
+3. 식사마다 희망 시각을 정하고 추천을 요청한다.
+4. 후보를 보고 사용자가 고른 식당만 확정해 일정에 추가한다. 추천만으로 경유지를 추가하지 않는다.
+5. 추천 대상은 사용자가 저장한 장소 중 `식당`(`saved_places.kind = 'restaurant'`)뿐이다. 외부 검색으로 새 음식점을 추가하지 않는다.
+6. 추가 주행 시간 = 식당을 포함한 경로의 주행 시간 − 기존 경로의 주행 시간. 식사 체류는 제외한다. 기본 한도 30분, 사용자가 변경할 수 있다.
+7. 2곳이면 두 곳을 모두 포함한 추가 주행 합계가 한도 이내여야 한다. 식당별로 한도를 따로 적용하지 않는다.
+8. 희망 시각 도착 허용 범위는 기본 ±30분, 사용자가 변경할 수 있다.
+9. 두 번째 식당 도착 예정 시각에는 첫 번째 식당 방문에 따른 추가 주행과 식사 체류를 반영한다.
+10. 기존 방문 순서와 이륜차 경로 제약을 유지한다.
+11. 조건을 만족하는 후보를 추가 주행 시간이 짧은 순으로 추천한다.
+12. 후보가 없으면 `조건에 맞는 음식점이 없습니다`라고 안내한다. 시간 범위나 한도를 자동으로 넓히지 않는다.
+13. 2곳 요청에서 한 식사에만 후보가 있으면 그 식사는 추천하고 나머지는 없다고 안내한다. 사용자는 가능한 1곳만 추가할 수 있다.
+14. 조회·계산 실패와 정상 조회 결과 후보 없음을 구분한다.
+15. 경로를 수정해 결과가 오래되면 이전 결과로 추천하거나 선택을 적용하지 않는다.
+16. 실제 경로 계산 근거를 사용하고 추가 API 사용량과 기존 예산 제한을 지킨다.
+
+## 2. 유지하는 기존 규칙과 해석
+
+| 기존 규칙 | 이번 기능에서의 적용 |
+| --- | --- |
+| 식사 기본 체류 60분, 수정 가능, 별도 개수 제한 없음, 전체 경유지 30개(`PLAN-003`) | 추천 입력의 식사 시간 기본 60분(1–1440). 추가 결과는 `meal` 역할·입력한 체류 시간의 새 occurrence. 현재 경유지 + 추가 수가 30을 넘으면 요청 전에 막는다. |
+| 경유지 추가는 자동 재계산하지 않고 `경로 업데이트 필요`를 표시(`PLAN-004`) | 확정 추가 후 경로·날씨·공유 상태를 무효화하고 편집 화면에서 `경로 다시 계산`을 요구한다. 추천 화면은 경로를 저장·재계산하지 않는다. |
+| 영업정보: 카카오 공개 장소 검색은 영업시간·브레이크·라스트오더를 제공하지 않으며(#33 데이터원 미확정), 확보하지 않은 정보는 `정보 없음`으로 표시하고 경고가 없다는 이유로 영업 가능하다고 단정하지 않는다. 브레이크 타임은 표시만 하고 경로를 거부·수정하지 않는다(`PLAN-002`). | 추천 후보마다 `영업정보 없음 · 방문 전 확인`을 표시한다. 영업시간으로 후보를 거르거나 경고를 만들지 않는다. 영업정보 데이터원·경고는 #33 후속 범위로 남는다. |
+| 출발 후 24시간 미만 복귀(`SCOPE-001`, `PLAN-002`) | 식당 추가 후 예상 복귀가 24시간 이상이면 그 후보/조합을 제외한다. |
+| 이륜차 조건 `car_type=7`, `avoid=motorway`, 대체 경로 없음(`ROUTE-001/006`) | 모든 추천 계산 호출은 기존 `requestKakaoRoute`·`applyMotorcycleRoutePolicy`를 그대로 사용한다. |
+| 호출 직전 원자적 예산 차감, 실패 호출도 차감, 소진 시 중단(`COST-001/002`) | 추천 호출도 기존 `directions`/`future_directions` 예산을 같은 방식으로 차감한다. 별도 예산·환급 없음. 치명적 실패 후 새 호출을 시작하지 않는다. |
+| 오류 응답에 좌표·이름·공급자 메시지·키를 남기지 않음(`OPS-001`) | 로그는 고정 코드와 개수만 남긴다. |
+
+#33의 점심 11–15시·저녁 17–20시 초기값은 이번 확정 요구(희망 시각 ± 허용 범위)로 대체한다. 화면 기본 희망 시각은 식사 1 `12:00`, 식사 2 `18:00`이며 사용자가 바꾼다.
+
+## 3. 서버 계약 — Edge Function `recommend-restaurants`
+
+새 DB 테이블·마이그레이션은 없다. 소유자 RLS로 이미 읽을 수 있는 `trips`, `route_cache`(profile `recommended`), `saved_places`만 사용자 JWT 클라이언트로 읽는다. 예산 차감만 기존 `consume_daily_api_budget_internal`(service role)을 사용한다. JWT 검증 함수(`verify_jwt` 기본값 유지).
+
+### 3.1 요청
+
+```json
+{
+  "tripId": "uuid",
+  "basis": { "departureAt": "ISO-8601", "returnAt": "ISO-8601", "pointIds": ["origin-id", "occurrence-id", "destination-id"] },
+  "mealCount": 1,
+  "meals": [{ "desiredTime": "12:00", "dwellMinutes": 60 }],
+  "toleranceMinutes": 30,
+  "detourLimitMinutes": 30
+}
+```
+
+- 정확히 위 키만 허용한다(추가 키, 경로 정책 키는 거부).
+- `tripId` UUID. `basis.pointIds`는 화면에 표시한 경로의 `[legs[0].from.id, ...legs.map(to.id)]`, 2–32개, 각 1–100자.
+- `mealCount ∈ {1,2}`이고 `meals.length === mealCount`. `desiredTime`은 `HH:MM`(00–23, 00–59). `dwellMinutes` 정수 1–1440.
+- `toleranceMinutes` 정수 5–180, `detourLimitMinutes` 정수 5–180.
+- 식사 목표 시각: 서울 시각 `HH:MM`이 `departureAt − toleranceMinutes` 이후 처음 나오는 순간. 식사 2 목표는 식사 1 목표보다 늦어야 한다.
+
+### 3.2 처리
+
+1. 회원 확인(`requireMember`). 입력 검증 실패는 공급자·예산 작업 전에 거부한다.
+2. 소유자 RLS로 `trips`(id)와 `route_cache.summary`(profile `recommended`)를 읽는다. 없거나 형식이 잘못되면 `RECOMMENDATION_ROUTE_STALE`.
+3. 저장 경로와 `basis`를 대조한다: 첫 구간 출발 시각, `returnAt`, 순서 있는 지점 ID가 정확히 같아야 한다. 다르면 `RECOMMENDATION_ROUTE_STALE`(다른 기기 재계산, 화면의 오래된 결과 포함).
+4. 현재 중간 지점 수 + `mealCount`가 30을 넘으면 `RECOMMENDATION_WAYPOINT_LIMIT`.
+5. 소유자의 `kind='restaurant'` 저장 장소를 읽는다(최대 1,000). 좌표·이름이 유효하지 않은 행은 제외하고 개수를 `coverage.invalidSaved`와 로그에 남긴다. 0개면 공급자 호출 없이 `status: "NO_SAVED_RESTAURANTS"`.
+6. 경로 지점과 같은 좌표(±0.000001°)의 식당은 이미 일정에 있으므로 제외한다.
+7. **사전 선별(공급자 호출 없음)**
+   - 구간 i(지점 Pᵢ→Pᵢ₊₁, 출발 depᵢ, 도착 arrᵢ)에 식당 R을 넣으면 도착 시각 ETA ∈ [depᵢ, arrᵢ + 한도]이므로 이 범위가 허용 창과 겹치는 구간만 본다(정확한 경계).
+   - 저장된 도로 꼭짓점의 시각을 도로별 소요 시간으로 보간하고, R에서 가장 가까운 꼭짓점의 거리 d와 통과 시각 t를 구한다.
+   - 왕복 우회를 60km/h로 가정해도 한도를 넘는 식당(`d > 한도(분)/2 km`)은 제외한다. 추정 도착 `t + d/40km/h`가 허용 창 ±15분 밖이면 제외한다. 식사 2는 식사 1을 함께 넣는 경우의 지연(`식사 1 체류 + 0…한도`)도 허용한다.
+   - 식당마다 추정 추가 주행(`2d / 40km/h`)이 가장 작은 구간 하나를 고르고, 추정값 오름차순(동률은 목표 시각과의 차이)으로 정렬한다.
+8. **실제 경로 계산(상한 고정)**: 1곳 요청은 상위 6곳, 2곳 요청은 식사별 상위 5곳(같은 식당·구간은 1회만)을 계산한다. 같은 구간에 두 식당이 들어가는 조합은 추가로 최대 4회 계산한다. 요청당 최대 6회 / 14회. 동시 실행 4개.
+   - 단일 후보: `Pᵢ → R → Pᵢ₊₁`(R은 경유지) 1회, 출발 시각 depᵢ. 5분 넘게 미래면 `future/directions`, 아니면 `directions`(기존 orchestrator와 같은 기준). 구간 응답 두 개로 `ETA = depᵢ + s₁`, `추가 = s₁ + s₂ − durationᵢ`.
+   - 같은 구간 조합: `Pᵢ → R₁ → R₂ → Pᵢ₊₁` 1회. `ETA₁ = depᵢ + s₁`, `ETA₂ = ETA₁ + 체류₁ + s₂`, `추가 = s₁ + s₂ + s₃ − durationᵢ`.
+   - 다른 구간 조합(구간₁ < 구간₂)은 단일 결과로 계산한다: `ETA₂ = ETA₂(단독) + 추가₁ + 체류₁`, `추가 = 추가₁ + 추가₂`. 구간₁ > 구간₂ 조합과 같은 식당 두 번은 만들지 않는다(방문 순서 유지).
+   - 복귀 = 기존 복귀 + Σ(추가 + 체류). 출발 후 24시간 이상이면 제외.
+   - 판정은 초 단위, 경계 포함: `|ETA − 목표| ≤ 허용 범위`, `추가 ≤ 한도`.
+9. **실패 분류**: 후보 계산이 `SAFE_ROUTE_NOT_FOUND` 또는 지점 도로 오류(공급자 결과 코드 101–107)이면 그 후보만 `coverage.unreachable`로 제외한다. 예산 소진·미설정, 공급자 인증·일시 오류, 응답 검증 실패는 요청 전체 실패이며 새 호출을 시작하지 않는다. 부분 결과를 `후보 없음`으로 바꾸지 않는다.
+
+### 3.3 정상 응답 200
+
+```json
+{
+  "status": "OK",
+  "basis": { "tripId": "…", "departureAt": "…", "returnAt": "…", "pointIds": ["…"] },
+  "settings": { "mealCount": 2, "toleranceMinutes": 30, "detourLimitMinutes": 30 },
+  "meals": [
+    {
+      "index": 1, "targetAt": "…", "windowStartAt": "…", "windowEndAt": "…", "dwellMinutes": 60,
+      "candidates": [
+        {
+          "savedPlaceId": "uuid", "savedPlaceRevision": 3, "displayName": "별명 또는 원래 이름",
+          "placeName": "원래 장소명", "address": "주소", "longitude": 127.1, "latitude": 37.5,
+          "insertion": { "legIndex": 1, "afterPointId": "…", "beforePointId": "…" },
+          "single": { "feasible": true, "arrivalAt": "…", "extraDriveSeconds": 540, "returnAt": "…", "reason": null }
+        }
+      ]
+    }
+  ],
+  "pairs": [
+    { "firstSavedPlaceId": "…", "secondSavedPlaceId": "…", "firstArrivalAt": "…", "secondArrivalAt": "…", "extraDriveSeconds": 1320, "returnAt": "…" }
+  ],
+  "coverage": { "savedRestaurants": 12, "invalidSaved": 0, "alreadyInRoute": 1, "nearRoute": 5, "evaluated": 5, "unreachable": 0, "notEvaluated": 0, "providerRequests": 5 }
+}
+```
+
+- `meals[m].candidates`: 실제 계산한 도달 가능 후보 중 단독으로 조건을 만족하거나(`single.feasible`) 만족하는 조합에 그 식사로 포함된 후보만. 정렬은 `single.extraDriveSeconds`, 목표와의 차이, 이름, ID 순.
+- `single.reason`: 단독 불가 이유 `WINDOW` | `DETOUR` | `RETURN_24H` | `null`.
+- `pairs`: 2곳 요청에서 조건을 모두 만족하는 조합만, 합계 추가 주행 오름차순. 1곳 요청은 `[]`.
+- `status: "NO_SAVED_RESTAURANTS"`이면 `meals[].candidates`는 비어 있고 `providerRequests = 0`.
+- 결과 없음은 오류가 아니다: 정상 200과 빈 `candidates`.
+
+### 3.4 오류 응답
+
+`{ "error": "안전한 한국어 안내", "code": "…" }`, 좌표·이름·공급자 메시지 없음.
+
+| code | HTTP | 의미 |
+| --- | --- | --- |
+| `RECOMMENDATION_INPUT_INVALID` | 400 | 입력 형식·범위·식사 순서 |
+| `AUTH_REQUIRED` 계열 | 401/403 | 기존 회원 경계 |
+| `RECOMMENDATION_ROUTE_STALE` | 409 | 저장 경로 없음·형식 오류·화면 기준과 다름 → 경로 다시 계산 |
+| `RECOMMENDATION_WAYPOINT_LIMIT` | 422 | 경유지 30개 초과 |
+| `RECOMMENDATION_BUDGET_OR_CONFIG` | 429/503 | 일일 한도 소진·미설정·공급자 인증 설정 |
+| `RECOMMENDATION_PROVIDER_TEMPORARY` | 503 | 공급자 일시 오류·시간 초과 |
+| `RECOMMENDATION_RESPONSE_INVALID` | 502 | 공급자 응답 검증 실패 |
+| `RECOMMENDATION_FAILED` | 500/502 | 그 밖의 실패 |
+
+## 4. 화면 계약 (웹·Android 공통)
+
+### 4.1 진입과 상태
+
+- 진입: 라이딩 요약(웹 `summary`, Android `SUMMARY`)의 `음식점 추천 받기`. 실제 계산·저장된 최신 경로(웹: `liveRoute && !liveResultStale && calculatedGeneration === routeGeneration && liveTripId`, Android: `RideController.currentCourse() != null`)이고 계산·저장 중이 아닐 때만 활성화.
+- 상태: 입력 → 계산 중 → 결과(전체/일부) · 결과 없음 · 저장 식당 없음 · 오류(재시도) · 경로 변경됨(재계산 안내).
+- 입력: 방문할 식당 수(1곳/2곳, 기본 1곳, "추천 후보 수가 아니라 실제로 들를 식당 수"), 식사별 희망 시각(5분 단위)·식사 시간(기본 60분), 도착 허용 범위(기본 ±30분), 추가 주행 한도(기본 30분, "두 곳 합계, 식사 시간 제외"), 경로 출발·예상 도착 안내, "저장한 식당만 추천" 안내.
+- 후보 행: 이름(별명 우선)·주소, `12:10 도착 · 추가 주행 +12분`, `영업정보 없음 · 방문 전 확인`, 선택 표시. 정렬은 추가 주행 오름차순.
+- 2곳: 식사별 목록에서 각각 하나를 고른다(선택 해제 가능). 다른 식사가 선택되면 이 목록은 조합 기준 도착·합계 추가 주행으로 다시 표시하고, 조합이 안 되는 행은 `식사 1과 함께 가면 조건을 벗어나요` 같은 이유와 함께 선택할 수 없다. 다른 식사가 선택되지 않았을 때 단독으로 불가한 행은 `식사 1 식당을 함께 골라야 가능해요`로 선택할 수 없다.
+- 일부 결과: 후보 없는 식사 칸에 `식사 2 시간에는 조건에 맞는 음식점이 없습니다.` 두 목록이 모두 있지만 가능한 조합이 없으면 `두 곳을 함께 가는 조합은 조건을 벗어나요. 한 곳만 선택해 추가할 수 있어요.`
+- 결과 없음: `조건에 맞는 음식점이 없습니다` + `시간 범위나 추가 주행 한도를 자동으로 넓히지 않아요.` + `조건 바꾸기`. 확인 범위 `저장한 식당 12곳 중 경로 근처 5곳을 실제 도로 경로로 확인했어요.`
+- 저장 식당 없음: `저장한 식당이 없습니다` + 즐겨찾기 식당 등록 진입.
+- 오류: `추천을 계산하지 못했습니다` + 원인 + `다시 시도`. 결과 없음과 다른 제목·아이콘·역할(`alert`)을 사용한다.
+- 확정: `선택한 식당 일정에 추가`(선택 수 표시). 성공하면 편집 화면으로 이동해 `식당 n곳을 식사로 추가했어요. 경로 업데이트 필요: 경로 다시 계산을 눌러 주세요.`
+
+### 4.2 오래된 결과 차단
+
+- 요청 시점의 경로 세대(웹 `routeGenerationRef`, Android draft identity + ride generation)와 tripId를 결과에 묶는다. 경로 입력·일정 변경, 새 계산, 계정 변경, 화면 이탈 후 늦게 도착한 응답은 버린다. 입력 변경 시 열린 결과는 즉시 폐기하고 `경로가 바뀌어 이전 추천을 사용할 수 없습니다`를 표시한다.
+- 확정 직전 다시 확인: 같은 세대·최신 경로, `[출발지 ID, …경유지 ID, 도착지 ID][legIndex] === afterPointId`이고 `[legIndex+1] === beforePointId`, 저장 장소가 아직 있고 ID·revision·좌표가 같음, 역할·전체 30개 한도. 하나라도 다르면 아무것도 추가하지 않는다.
+- 삽입: 구간 i 뒤(경유지 배열 index i). 같은 구간 2곳은 식사 1, 식사 2 순으로 연속 삽입. 새 occurrence ID, 역할 `meal`, 입력한 식사 시간.
+
+## 5. API 사용량
+
+| 행동 | 길찾기 호출 |
+| --- | --- |
+| 추천 화면 열기·조건 입력·후보 선택·확정 추가 | 0 |
+| 저장 식당 0곳, 경로 근처 후보 0곳, 입력/경로 기준 오류 | 0 |
+| 1곳 추천 | 실제 계산 후보 수(최대 6) |
+| 2곳 추천 | 식사별 후보(최대 5+5, 중복 제외) + 같은 구간 조합(최대 4) ≤ 14 |
+| 추가 후 `경로 다시 계산` | 기존 경로 계산과 동일(분할 수) |
+
+미래 출발이면 `future_directions`, 5분 이내면 `directions` 예산을 쓴다. 실측 쿼터 차감·응답 시간(#34의 3초 목표)은 연결 환경에서 별도로 측정한다.
+
+## 6. 근사와 한계 (사용자 고지 대상)
+
+- 식당 이후 구간의 주행 시간은 기존 계산값을 사용한다. 출발 시각이 바뀌어 생기는 교통 예측 차이와 식사 체류 뒤 출발의 교통 예측은 `경로 다시 계산` 때 반영된다. 추천 결과의 도착·추가 주행은 추정값이다.
+- 사전 선별은 직선거리 추정이다. 경로에서 먼 식당과 상한 밖 후보는 실제 계산하지 않으며 `coverage`로 개수를 공개한다.
+- 영업정보 데이터원은 없다.
+
+### 3.5 구현 세부 판단 (`00e3aaf`)
+
+- 같은 구간 조합 후보 선택: 두 단독 결과가 모두 도달 가능하고, 식사 1 단독 도착 ≤ 식사 2 단독 도착, max(단독 추가) ≤ 한도, 식사 1 도착이 창 ±15분, 식사 2 단독 도착 + 체류₁ ≤ 창₂ 끝 + 15분, 최소 복귀 < 24시간인 조합을 단독 추가 합계 순으로 최대 4개.
+- `coverage.savedRestaurants`는 유효한 식당 수, `unreachable`은 계산한 단독 결과가 모두 도달 불가였던 식당 수, `notEvaluated = nearRoute − evaluated`. 같은 구간 조합의 도달 불가는 그 조합만 제외.
+- `address`는 도로명 주소가 있으면 도로명, 없으면 지번. 서버는 기본값을 채우지 않으며 허용 범위·한도도 필수(화면이 기본 30/30을 보냄).
+- `KAKAO_REST_API_KEY`는 첫 공급자 호출 직전에 확인하므로 저장 식당 없음·근처 후보 없음 요청은 키 없이도 200이다.
+- `basis` 시각은 순간으로 비교하고 응답은 UTC로 정규화. 저장 경로 형식(구간 연결, 도착 = 출발 + 소요, 다음 출발 = 도착 + 체류, 복귀, 꼭짓점 범위)이 어긋나면 STALE.
+- 오류: `PROVIDER_REQUEST_REJECTED`는 `RECOMMENDATION_PROVIDER_TEMPORARY`(503), 공급자 인증·설정·예산 회계 실패는 `RECOMMENDATION_BUDGET_OR_CONFIG`(503), 저장 데이터 조회 실패는 `RECOMMENDATION_FAILED`(500).
+
+## 7. 디자인
+
+Figma 파일 `wVNriNWb1OlF21DVq8rqlJ`, v2 디자인 체계 페이지 `284:2253`. 화면/상태와 노드 대응은 디자인 완료 후 아래 표에 기록한다.
+
+| 화면/상태 | Android 384 | 웹 1440 | 웹 390 |
+| --- | --- | --- | --- |
+| (디자인 후 기록) | | | |
+
+## 8. 진행 상태와 검증 기록
+
+| 단위 | 상태 | 근거 |
+| --- | --- | --- |
+| 설계·계약 | 작성 | 이 문서 |
+| Figma 디자인 | 진행 예정 | |
+| 서버 `recommend-restaurants` | 구현·인수 (`00e3aaf`) | 작성자 검사: 대상 3개 파일 113 PASS, `supabase/functions` 38 파일 677 PASS / FAIL 0 / SKIP 0, deno check 9개 함수 PASS, lint·typecheck·diff-check PASS. 메인 재실행: `supabase/functions` 677 PASS. 메인 검수 LOW 1: 식당 좌표가 도로 스냅 허용(0.005°) 밖이면 후보 제외가 아니라 요청 전체 `RECOMMENDATION_RESPONSE_INVALID`(기존 경로 계산과 같은 보수적 실패, 미수정). 실제 RLS·예산 RPC·Kakao 호출·응답 시간은 NOT_RUN. |
+| 웹 화면 | 디자인 후 | |
+| Android 화면 | 디자인 후 | |
+| 연결 Preview·실기기 | NOT_RUN | 배포 승인 범위 확인 필요 |

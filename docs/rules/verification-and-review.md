@@ -58,7 +58,7 @@ After each logical implementation unit:
 npm ci
 npm run lint
 npm run typecheck
-npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts supabase/functions/save-collection/index.ts supabase/functions/kakao-oidc/index.ts supabase/functions/play-admission/index.ts supabase/functions/journey-route/index.ts supabase/functions/journey-weather/index.ts
+npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts supabase/functions/save-collection/index.ts supabase/functions/kakao-oidc/index.ts supabase/functions/play-admission/index.ts supabase/functions/journey-route/index.ts supabase/functions/journey-weather/index.ts supabase/functions/recommend-restaurants/index.ts
 npm test
 npx playwright install chromium
 npm run test:e2e

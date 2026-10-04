@@ -18,6 +18,7 @@
 - `경유지`는 Kakao가 자동으로 찾는 와인딩 속성이 아니라 사용자가 정한 필수 통과점입니다. Kakao 대안 경로를 탐색하지 않으며 안전 추천 경로를 만들 수 없으면 명시적으로 실패합니다.
 - 출발지와 복귀지 사이에는 하나의 방문 순서 목록을 사용합니다. 항목을 추가할 때 일반 경유지·식사·휴식을 선택하고, 종류를 바꾸거나 모든 종류를 서로 가로질러 위아래로 이동할 수 있습니다. 식사는 전체 경유지 30개 안에서 개수 제한 없이 선택하며 기본 60분, 휴식은 0~5개이고 기본 30분입니다. 식사와 휴식의 정차 시간은 각각 조정할 수 있고 같은 장소를 여러 번 넣어도 서로 다른 방문으로 유지합니다.
 - 날씨는 경로 순위를 바꾸지 않고 구간별 참고 정보로 표시합니다.
+- 경로를 계산한 뒤 `음식점 추천 받기`로 실제 방문할 식당 1곳 또는 2곳을 추천받을 수 있습니다. 내가 저장한 `식당`만 대상이며, 식사별 희망 시각 ±허용 범위(기본 30분)와 추가 주행 한도(기본 30분, 두 곳 합계·식사 시간 제외) 안의 후보를 추가 주행이 짧은 순으로 보여 줍니다. 조건을 자동으로 넓히지 않고, 사용자가 고른 식당만 식사로 추가한 뒤 경로를 다시 계산합니다. 영업정보는 제공하지 않으며 [추천 설계·검증 기록](docs/work/research/2026-10-05-restaurant-recommendation.md)을 따릅니다.
 - 컬렉션은 출발지·도착지와 순서가 있는 모든 정차를 포함한 완전한 코스를 불변 버전으로 저장합니다. 응답을 잃은 동일 저장 요청은 같은 결과를 돌려주며 중복 버전을 만들지 않습니다. 경유지만 저장한 기존 Preview 컬렉션은 완전한 코스로 표시하지 않습니다.
 - 공유는 사용자가 명시적으로 만든 불변 스냅샷만 허용하며, 기본값은 비공개입니다. 컬렉션의 `공유 준비`는 완전한 코스를 적용한 뒤 새 안전 경로와 아직 유효한 최신 날씨가 저장되어야 간결한 여행 루트·날씨 미리보기를 한 번 열며 자동 게시하지 않습니다.
 - 유료 API 사용은 켜지 않습니다. 내부 일일 한도를 소진하면 새 외부 계산을 거부하고 저장된 계획만 읽습니다.
@@ -83,7 +84,7 @@ npm run dev
 ```bash
 npm run lint
 npm run typecheck
-npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts supabase/functions/save-collection/index.ts supabase/functions/kakao-oidc/index.ts
+npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts supabase/functions/save-collection/index.ts supabase/functions/kakao-oidc/index.ts supabase/functions/recommend-restaurants/index.ts
 npm test
 npx playwright install chromium
 npm run test:e2e
@@ -110,7 +111,7 @@ PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U supabase_admin -d postgres -v 
 
 1. Production과 Preview에 서로 다른 Supabase Free 프로젝트를 사용하고 CLI로 `supabase/migrations/`의 migration을 순서대로 적용합니다.
 2. Kakao를 Auth provider로 설정하되 `Allow users without an email`을 켭니다. Kakao 앱에는 이메일을 등록하지 않고 OpenID Connect, 선택 동의 닉네임·프로필 사진, 프로젝트별 `kakao-oidc/callback` URI만 등록합니다.
-3. `search-places`, `plan-route`, `weather-timeline`, `save-collection`, `kakao-oidc` Edge Function을 배포하고 서버 전용 비밀값을 Supabase Dashboard secret store에 등록합니다. `kakao-oidc`만 로그인 시작 전 공개 진입점이므로 `verify_jwt=false`이며 나머지 네 함수는 JWT 검증을 유지합니다.
+3. `search-places`, `plan-route`, `weather-timeline`, `save-collection`, `recommend-restaurants`, `kakao-oidc` Edge Function을 배포하고 서버 전용 비밀값을 Supabase Dashboard secret store에 등록합니다. `kakao-oidc`만 로그인 시작 전 공개 진입점이므로 `verify_jwt=false`이며 나머지 함수는 JWT 검증을 유지합니다.
 4. 최초 관리자 등록과 거부된 OAuth 사용자 정리는 [Supabase Auth 운영 절차](docs/operations/supabase-auth.md)를 따릅니다.
 
 AUTH-007의 `play-admission`은 Google Play 설치 증명을 검증한 신규 Kakao 사용자만 일반 회원으로 등록합니다. 웹과 개발 앱은 기존 활성 회원만 로그인할 수 있으며, 미가입자에게 앱에서 먼저 가입하도록 안내합니다. 초대 가입·관리 화면과 클라이언트는 폐기하고 과거 초대 기록·회원 역할·회수 상태는 보존합니다. 프로젝트별 정확한 환경 flag·인증서·versionCode·검증 계정 및 JWT 검증을 유지합니다. 실제 배포와 Play 가입·기기 검증은 [공동 출시 기록](docs/work/research/2026-10-02-shared-ui-parity.md)에서 구분하며, [Play 가입 운영 절차](docs/operations/supabase-auth.md#play-설치-검증-가입-auth-007)를 따릅니다.
@@ -126,6 +127,7 @@ supabase functions deploy search-places
 supabase functions deploy plan-route
 supabase functions deploy weather-timeline
 supabase functions deploy save-collection
+supabase functions deploy recommend-restaurants
 supabase functions deploy kakao-oidc --no-verify-jwt
 ```
 
