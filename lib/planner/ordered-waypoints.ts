@@ -30,10 +30,32 @@ export function waypointRoleLabel(role: WaypointRole) {
   return waypointRoleOptions.find((option) => option.value === role)?.label ?? "경유지";
 }
 
+// PLAN-003 amendment (2026-10-05): every meal stop takes a fixed 45 minutes
+// on every screen; rest stays editable (default 30) and pass-through is 0.
+export const MEAL_DWELL_MINUTES = 45;
+export const MEAL_DWELL_NOTE = "식사는 45분으로 계산해요.";
+export const REST_DWELL_ERROR = "휴식 시간은 1~1440분 사이의 정수로 입력해 주세요.";
+
+export function isMealRole(role: WaypointRole | CollectionPoint["stopRole"]) {
+  return role === "meal" || role === "lunch" || role === "dinner";
+}
+
 export function defaultDwellMinutes(role: WaypointRole) {
   if (role === "rest") return 30;
-  if (role === "meal" || role === "lunch" || role === "dinner") return 60;
+  if (isMealRole(role)) return MEAL_DWELL_MINUTES;
   return 0;
+}
+
+// The dwell actually stored for a role: pass-through 0, meals fixed, rest as entered.
+export function dwellForRole(role: WaypointRole, entered: number) {
+  if (role === "waypoint") return 0;
+  return isMealRole(role) ? MEAL_DWELL_MINUTES : entered;
+}
+
+export function dwellError(role: WaypointRole, dwellMinutes: number): string | null {
+  if (role === "waypoint") return dwellMinutes === 0 ? null : "통과 지점은 머무는 시간이 없어요.";
+  if (isMealRole(role)) return dwellMinutes === MEAL_DWELL_MINUTES ? null : MEAL_DWELL_NOTE;
+  return Number.isInteger(dwellMinutes) && dwellMinutes >= 1 && dwellMinutes <= 1440 ? null : REST_DWELL_ERROR;
 }
 
 export function roleAssignmentError(
@@ -52,6 +74,9 @@ export function roleAssignmentError(
   return null;
 }
 
+// Applying a saved or received course normalizes the draft only: legacy
+// lunch/dinner become meal and every meal takes the fixed 45 minutes. The
+// stored collection and immutable shares are not rewritten.
 export function editableWaypointFromCollectionPoint(point: CollectionPoint): EditableWaypoint {
   const role: WaypointRole = point.stopRole === "lunch" || point.stopRole === "dinner" ? "meal" : point.stopRole ?? "waypoint";
   return {
@@ -69,8 +94,13 @@ export function editableWaypointFromCollectionPoint(point: CollectionPoint): Edi
       phone: null,
       placeUrl: null,
     },
-    dwellMinutes: role === "waypoint" ? 0 : point.dwellMinutes,
+    dwellMinutes: dwellForRole(role, point.dwellMinutes),
   };
+}
+
+// True when applying these points changes at least one meal's dwell to 45.
+export function mealDwellNormalized(points: CollectionPoint[]) {
+  return points.some((point) => isMealRole(point.stopRole) && point.dwellMinutes !== MEAL_DWELL_MINUTES);
 }
 
 export function collectionPointFromEditableWaypoint(waypoint: EditableWaypoint): CollectionPoint | null {

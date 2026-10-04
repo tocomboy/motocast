@@ -75,12 +75,9 @@
 .stepperValue > small { color: var(--mc-text-secondary); font-size: 13px; }
 
 .toleranceCard { padding: 16px; border: 1px solid var(--mc-border-card); border-radius: 16px; container-type: inline-size; }
-.toleranceOptions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.toleranceOptions > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 48px; padding: 0 8px; border: 1px solid var(--mc-border-default); border-radius: 14px; background: var(--mc-surface-card); color: var(--mc-text-primary); font: inherit; font-size: 15px; white-space: nowrap; }
-.toleranceOptions > button[aria-pressed="true"] { border: 2px solid var(--mc-border-strong); background: var(--mc-signal-tint); font-weight: 700; }
-.toleranceOptions svg { width: 18px; height: 18px; flex: none; }
-/* Narrow cards or large text: one option per row (Figma 356:10309). */
-@container (max-width: 18em) { .toleranceOptions { grid-template-columns: minmax(0, 1fr); } }
+.toleranceRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.toleranceScale { color: var(--mc-text-secondary); font-size: 13px; }
+.mealNote { margin: 4px 0 0; color: var(--mc-text-secondary); font-size: 13px; line-height: 1.5; }
 .inputError { margin: 0; padding: 12px 16px; border: 1.5px solid var(--mc-danger-text); border-radius: 14px; color: var(--mc-danger-text); font-size: 15px; }
 
 .stateCard { display: grid; justify-items: start; gap: 8px; padding: 20px; border: 1px solid var(--mc-border-card); border-radius: 20px; }

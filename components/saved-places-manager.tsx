@@ -25,6 +25,10 @@ import {
 import type { PlaceSearchResult } from "@/lib/places/search";
 import {
   defaultDwellMinutes,
+  dwellError,
+  dwellForRole,
+  isMealRole,
+  MEAL_DWELL_NOTE,
   waypointRoleOptions,
   type WaypointRole,
 } from "@/lib/planner/ordered-waypoints";
@@ -602,7 +606,7 @@ function SavedWaypointForm({
   onAdd: (role: WaypointRole, dwell: number) => string | null;
 }) {
   const [role, setRole] = useState<WaypointRole>(initial?.role ?? "waypoint");
-  const [dwell, setDwell] = useState(initial?.dwellMinutes ?? 0);
+  const [dwell, setDwell] = useState(initial ? dwellForRole(initial.role, initial.dwellMinutes) : 0);
   const [error, setError] = useState("");
   return (
     <SavedDialog title="즐겨찾기" accessibleTitle="경유지 추가 확인" onClose={onClose} fullScreen>
@@ -619,7 +623,9 @@ function SavedWaypointForm({
           {waypointRoleOptions.map((option) => <button type="button" key={option.value} aria-pressed={role === option.value} onClick={() => { if (role !== option.value) setDwell(defaultDwellMinutes(option.value)); setRole(option.value); setError(""); }}>{option.value === "waypoint" ? "통과" : option.label}</button>)}
         </div>
       </fieldset>
-      {role !== "waypoint" ? (
+      {isMealRole(role) ? (
+        <p className={styles.helper}>{MEAL_DWELL_NOTE}</p>
+      ) : role === "rest" ? (
         <div className={styles.dwellControl}>
           <label htmlFor="saved-waypoint-dwell">머무는 시간</label>
           <button type="button" aria-label="머무는 시간 10분 줄이기" disabled={dwell <= 1} onClick={() => setDwell(value => Math.max(1, value - 10))}><LineIcon name="minus" /></button>
@@ -647,14 +653,13 @@ function SavedWaypointForm({
           type="button"
           disabled={disabled}
           onClick={() => {
-            if (
-              role !== "waypoint" &&
-              (!Number.isInteger(dwell) || dwell < 1 || dwell > 1440)
-            ) {
-              setError("정차 시간은 1~1440분으로 입력해 주세요.");
+            const value = dwellForRole(role, dwell);
+            const invalid = dwellError(role, value);
+            if (invalid) {
+              setError(invalid);
               return;
             }
-            setError(onAdd(role, role === "waypoint" ? 0 : dwell) ?? "");
+            setError(onAdd(role, value) ?? "");
           }}
         >
           경유지 추가하기

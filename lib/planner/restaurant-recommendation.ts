@@ -1,7 +1,7 @@
 import type { PlaceSearchResult } from "../places/search";
 import type { SavedPlace } from "../places/saved";
 import { isKoreanCoordinate } from "./input";
-import { roleAssignmentError, waypointLimits, type EditableWaypoint } from "./ordered-waypoints";
+import { MEAL_DWELL_MINUTES, roleAssignmentError, waypointLimits, type EditableWaypoint } from "./ordered-waypoints";
 import { parseStrictRfc3339 } from "../../supabase/functions/_shared/strict-time";
 
 // Response contract: docs/work/research/2026-10-05-restaurant-recommendation.md §3.3
@@ -76,23 +76,25 @@ export type RecommendationRequest = {
 
 export type RecommendationInput = {
   mealCount: 1 | 2;
-  meals: [{ desiredTime: string; dwellMinutes: number }, { desiredTime: string; dwellMinutes: number }];
+  // Meal dwell is not an input: every meal takes MEAL_DWELL_MINUTES (contract 3.0.0).
+  meals: [{ desiredTime: string }, { desiredTime: string }];
   toleranceMinutes: ToleranceMinutes;
 };
 
 export const defaultRecommendationInput: RecommendationInput = {
   mealCount: 1,
-  meals: [{ desiredTime: "12:00", dwellMinutes: 60 }, { desiredTime: "18:00", dwellMinutes: 60 }],
+  meals: [{ desiredTime: "12:00" }, { desiredTime: "18:00" }],
   toleranceMinutes: 30,
 };
 
-export const recommendationLimits = {
-  dwell: { min: 1, max: 1440 },
-} as const;
-
-// `원하는 식사 시간` 앞뒤 허용 범위 (§1.1 2차 변경).
+// `원하는 식사 시간` 앞뒤 허용 범위: ±30~±90, −/+ in 30-minute steps (§1.2).
 export const toleranceOptions = [30, 60, 90] as const;
 export type ToleranceMinutes = (typeof toleranceOptions)[number];
+
+export function stepTolerance(current: ToleranceMinutes, direction: -1 | 1): ToleranceMinutes {
+  const index = toleranceOptions.indexOf(current) + direction;
+  return toleranceOptions[Math.min(toleranceOptions.length - 1, Math.max(0, index))];
+}
 
 // The server's fixed extra-drive cap (§1.1). Results use the value the
 // response echoes in `settings.detourLimitMinutes`; this constant only
@@ -199,7 +201,8 @@ function parseMeal(value: unknown, position: number, toleranceMinutes: number, p
     targetAt,
     windowStartAt,
     windowEndAt,
-    dwellMinutes: integer(raw.dwellMinutes, 1, 1440),
+    // Contract 3.0.0: every meal takes the fixed dwell.
+    dwellMinutes: integer(raw.dwellMinutes, MEAL_DWELL_MINUTES, MEAL_DWELL_MINUTES),
     candidates,
   };
 }
@@ -380,7 +383,7 @@ export function buildRecommendationRequest(tripId: string, route: RouteBasisSour
     tripId,
     basis,
     mealCount: input.mealCount,
-    meals: input.meals.slice(0, input.mealCount).map((meal) => ({ ...meal })),
+    meals: input.meals.slice(0, input.mealCount).map((meal) => ({ desiredTime: meal.desiredTime, dwellMinutes: MEAL_DWELL_MINUTES })),
     toleranceMinutes: input.toleranceMinutes,
   };
 }
@@ -400,9 +403,6 @@ export function mealTargetAt(departureAt: string, toleranceMinutes: number, desi
 export function recommendationInputError(input: RecommendationInput, departureAt: string, waypointCount: number): string | null {
   const meals = input.meals.slice(0, input.mealCount);
   if (meals.some((meal) => !DESIRED_TIME.test(meal.desiredTime))) return "원하는 식사 시간을 선택해 주세요.";
-  if (meals.some((meal) => !Number.isInteger(meal.dwellMinutes) || meal.dwellMinutes < 1 || meal.dwellMinutes > 1440)) {
-    return "식사 시간은 1분 이상 1440분 이하로 정해 주세요.";
-  }
   if (!toleranceOptions.includes(input.toleranceMinutes)) return "원하는 식사 시간 허용 범위를 골라 주세요.";
   if (input.mealCount === 2) {
     const first = mealTargetAt(departureAt, input.toleranceMinutes, meals[0].desiredTime);

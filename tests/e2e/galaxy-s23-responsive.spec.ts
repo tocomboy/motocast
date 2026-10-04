@@ -205,7 +205,10 @@ test.describe("Galaxy S23+ CSS viewport emulation", () => {
       expect(await savedPicker.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
       await page.keyboard.press("Escape");
       await expect(waypointSettings).toBeVisible();
-      await expect(waypointSettings.locator(".dwell-stepper")).toContainText("60분");
+      // Meals keep the fixed 45-minute note (no dwell input) after returning.
+      await expect(waypointSettings.getByRole("button", { name: "식사", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(waypointSettings.locator(".meal-dwell-note")).toHaveText("식사는 45분으로 계산해요.");
+      await expect(waypointSettings.locator(".dwell-stepper")).toHaveCount(0);
       await expect(waypointSettings.getByRole("button", { name: "즐겨찾기에서 선택", exact: true })).toBeFocused();
       await expect(editor.locator(".waypoint-card")).toHaveCount(0);
     }

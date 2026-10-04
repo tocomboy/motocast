@@ -5364,3 +5364,6 @@ dialog header > button { border: 1.5px solid var(--mc-border-strong); border-rad
 .planner-waypoint-stops .waypoint-card .waypoint-actions { flex-direction: row; flex-wrap: wrap; align-items: center; }
 .planner-waypoint-stops .waypoint-card .waypoint-actions button { width: 48px; min-height: 48px; border-radius: 14px; padding: 8px; }
 .planner-waypoint-stops .waypoint-card .waypoint-actions .waypoint-settings { width: auto; min-width: 64px; padding-inline: 12px; }
+
+/* PLAN-003 amendment: meals show a fixed-duration note instead of a dwell input. */
+.waypoint-settings-dialog .meal-dwell-note { margin-top: 12px; margin-bottom: 0; color: var(--mc-text-secondary); font-size: 13px; line-height: 1.5; }

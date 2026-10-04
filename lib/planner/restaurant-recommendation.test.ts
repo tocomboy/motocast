@@ -45,7 +45,7 @@ type Spec = { key: string; leg: number; feasible: boolean; extra: number; arriva
 // departing 00:00Z and returning 10:00Z. Return times follow the server rule:
 // base return + extra drive + dwell(s).
 const BASE_RETURN_MS = Date.parse("2030-01-01T10:00:00.000Z");
-const DWELL = [60, 45];
+const DWELL = [45, 45];
 const returnAfter = (extraSeconds: number, dwellMinutes: number) => new Date(BASE_RETURN_MS + (extraSeconds + dwellMinutes * 60) * 1000).toISOString();
 
 function synthetic({ meals, pairs, waypointCount = 2, revision = 2 }: {
@@ -150,13 +150,21 @@ describe("recommendation response parser", () => {
     expect(parseRecommendationResponse(structuredClone(body))).toEqual(body);
   });
 
-  it("targets contract 2.0.0: the server echoes its fixed 60-minute cap and a 30/60/90 window", () => {
-    expect(fixtures.contractVersion).toBe("2.0.0");
+  it("targets contract 3.x: fixed 60-minute cap, 30/60/90 window and 45-minute meals", () => {
+    // Major 3 is the fixed 45-minute meal contract; patch releases keep the wire format.
+    expect(fixtures.contractVersion).toMatch(/^3\.\d+\.\d+$/);
     for (const { body } of fixtures.responses) {
       const parsed = parseRecommendationResponse(structuredClone(body));
       expect(parsed.settings.detourLimitMinutes).toBe(60);
       expect([30, 60, 90]).toContain(parsed.settings.toleranceMinutes);
+      expect(parsed.meals.every((meal) => meal.dwellMinutes === 45)).toBe(true);
     }
+  });
+
+  it("rejects a meal dwell other than the fixed 45 minutes", () => {
+    const body = fixtureBody("ok-no-result");
+    set(body, "meals.0.dwellMinutes", 60);
+    expect(() => parseRecommendationResponse(body)).toThrow();
   });
 
   it("normalizes offset timestamps to UTC instants", () => {
@@ -222,19 +230,19 @@ describe("recommendation response parser", () => {
   });
 
   it("judges single verdicts with inclusive window/limit bounds and a strict 24-hour return", () => {
-    const one = (arrival: string, extra: number, dwell = 60) => {
+    const one = (arrival: string, extra: number, baseReturn = "2030-01-01T10:00:00.000Z") => {
       const body = synthetic({ meals: [[{ key: "a", leg: 0, feasible: true, extra, arrival }]], pairs: [] });
-      set(body, "meals.0.dwellMinutes", dwell);
-      set(body, "meals.0.candidates.0.single.returnAt", returnAfter(extra, dwell));
+      set(body, "basis.returnAt", baseReturn);
+      set(body, "meals.0.candidates.0.single.returnAt", new Date(Date.parse(baseReturn) + (extra + 45 * 60) * 1000).toISOString());
       return body;
     };
     expect(() => parseRecommendationResponse(one("2030-01-01T03:30:00.000Z", 1800))).not.toThrow();
     expect(() => parseRecommendationResponse(one("2030-01-01T02:30:00.000Z", 1800))).not.toThrow();
     expect(() => parseRecommendationResponse(one("2030-01-01T03:30:01.000Z", 1800))).toThrow();
     expect(() => parseRecommendationResponse(one("2030-01-01T03:30:00.000Z", 1801))).toThrow();
-    // Departure 00:00Z, base return 10:00Z: 839 min dwell returns at 23:59, 840 at exactly 24h.
-    expect(() => parseRecommendationResponse(one("2030-01-01T03:00:00.000Z", 0, 839))).not.toThrow();
-    expect(() => parseRecommendationResponse(one("2030-01-01T03:00:00.000Z", 0, 840))).toThrow();
+    // Departure 00:00Z with a 45-minute meal: base return 23:14 returns at 23:59, 23:15 at exactly 24h.
+    expect(() => parseRecommendationResponse(one("2030-01-01T03:00:00.000Z", 0, "2030-01-01T23:14:00.000Z"))).not.toThrow();
+    expect(() => parseRecommendationResponse(one("2030-01-01T03:00:00.000Z", 0, "2030-01-01T23:15:00.000Z"))).toThrow();
     // Listed infeasible candidates (pair members) must carry the first violated rule.
     const response = parseRecommendationResponse(rich());
     expect(response.meals[0].candidates.find((item) => item.savedPlaceId === id("c"))?.single.reason).toBe("DETOUR");
@@ -247,8 +255,8 @@ describe("recommendation response parser", () => {
   it.each([
     ["first arrival outside meal 1's window", (pair: Json) => { pair.firstArrivalAt = "2030-01-01T03:31:00.000Z"; }],
     ["second arrival outside meal 2's window", (pair: Json) => { pair.secondArrivalAt = "2030-01-01T08:29:00.000Z"; }],
-    ["combined extra drive over the limit", (pair: Json) => { pair.extraDriveSeconds = 1801; pair.returnAt = returnAfter(1801, 105); }],
-    ["return not base + extra + both dwells", (pair: Json) => { pair.returnAt = returnAfter(700, 60); }],
+    ["combined extra drive over the limit", (pair: Json) => { pair.extraDriveSeconds = 1801; pair.returnAt = returnAfter(1801, 90); }],
+    ["return not base + extra + both dwells", (pair: Json) => { pair.returnAt = returnAfter(700, 45); }],
     ["same restaurant twice", (pair: Json) => { pair.secondSavedPlaceId = pair.firstSavedPlaceId; }],
   ])("rejects a pair with %s", (_name, mutate) => {
     expect(() => parseRecommendationResponse(rich())).not.toThrow();
@@ -263,10 +271,18 @@ describe("recommendation response parser", () => {
       pairs: [["a", "d", 0]],
     });
     expect(() => parseRecommendationResponse(body)).not.toThrow();
-    set(body, "meals.1.dwellMinutes", 780);
-    set(body, "meals.1.candidates.0.single.returnAt", returnAfter(0, 780));
-    set(body, "pairs.0.returnAt", returnAfter(0, 840));
-    expect(() => parseRecommendationResponse(body)).toThrow();
+    // Base return 22:30: each meal alone returns 23:15, both together exactly 24h.
+    const at = (base: string) => {
+      const next = structuredClone(body);
+      const plus = (minutes: number) => new Date(Date.parse(base) + minutes * 60_000).toISOString();
+      set(next, "basis.returnAt", base);
+      set(next, "meals.0.candidates.0.single.returnAt", plus(45));
+      set(next, "meals.1.candidates.0.single.returnAt", plus(45));
+      set(next, "pairs.0.returnAt", plus(90));
+      return next;
+    };
+    expect(() => parseRecommendationResponse(at("2030-01-01T22:29:00.000Z"))).not.toThrow();
+    expect(() => parseRecommendationResponse(at("2030-01-01T22:30:00.000Z"))).toThrow();
   });
 
   it("rejects pairs that are unknown, reversed or duplicated", () => {
@@ -301,13 +317,13 @@ describe("recommendation response parser", () => {
         arrivalAts: ["2030-01-01T11:00:00+09:00", "2030-01-01T04:00:00.000Z"],
       },
       mealCount: 1 as const,
-      meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
+      meals: [{ desiredTime: "12:00", dwellMinutes: 45 }],
       toleranceMinutes: 30 as const,
     };
     expect(responseMatchesRequest(response, request)).toBe(true);
     expect(responseMatchesRequest(response, { ...request, basis: { ...request.basis, pointIds: ["origin", "destination"] } })).toBe(false);
     expect(responseMatchesRequest(response, { ...request, tripId: "22222222-2222-4222-8222-222222222222" })).toBe(false);
-    expect(responseMatchesRequest(response, { ...request, meals: [{ desiredTime: "12:00", dwellMinutes: 90 }] })).toBe(false);
+    expect(responseMatchesRequest(response, { ...request, meals: [{ desiredTime: "12:00", dwellMinutes: 60 }] })).toBe(false);
     expect(responseMatchesRequest(response, { ...request, toleranceMinutes: 60 })).toBe(false);
     // Same IDs but a recalculated route whose middle arrival changed.
     expect(responseMatchesRequest(response, { ...request, basis: { ...request.basis, arrivalAts: ["2030-01-01T02:10:00.000Z", "2030-01-01T04:00:00.000Z"] } })).toBe(false);
@@ -318,13 +334,13 @@ describe("recommendation response parser", () => {
       tripId,
       basis: { departureAt: "2030-01-01T00:00:00.000Z", returnAt: "2030-01-01T04:00:00.000Z", pointIds: ["origin", "occ-w", "destination"], arrivalAts: ["2030-01-01T02:00:00.000Z", "2030-01-01T04:00:00.000Z"] },
       mealCount: 1 as const,
-      meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
+      meals: [{ desiredTime: "12:00", dwellMinutes: 45 }],
       toleranceMinutes: 30 as const,
     };
     const empty = fixtureBody("ok-no-result");
     expect(responseMatchesRequest(parseRecommendationResponse(empty), request)).toBe(true);
     // Another time of day.
-    expect(responseMatchesRequest(parseRecommendationResponse(empty), { ...request, meals: [{ desiredTime: "12:30", dwellMinutes: 60 }] })).toBe(false);
+    expect(responseMatchesRequest(parseRecommendationResponse(empty), { ...request, meals: [{ desiredTime: "12:30", dwellMinutes: 45 }] })).toBe(false);
     // Same wall-clock time on the next day (window shifted consistently).
     const nextDay = fixtureBody("ok-no-result");
     for (const key of ["targetAt", "windowStartAt", "windowEndAt"]) {
@@ -355,12 +371,12 @@ describe("request building and pre-request checks", () => {
         arrivalAts: ["2030-01-01T01:30:00.000Z", "2030-01-01T04:00:00.000Z"],
       },
       mealCount: 1,
-      meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
+      meals: [{ desiredTime: "12:00", dwellMinutes: 45 }],
       toleranceMinutes: 30,
     });
     expect(buildRecommendationRequest(tripId, route, defaultRecommendationInput)).not.toHaveProperty("detourLimitMinutes");
     expect(buildRecommendationRequest(tripId, route, { ...defaultRecommendationInput, mealCount: 2 })?.meals).toEqual([
-      { desiredTime: "12:00", dwellMinutes: 60 }, { desiredTime: "18:00", dwellMinutes: 60 },
+      { desiredTime: "12:00", dwellMinutes: 45 }, { desiredTime: "18:00", dwellMinutes: 45 },
     ]);
     expect(buildRecommendationRequest(tripId, { ...route, segments: [{ ...route.segments[0], departureAt: undefined }] }, defaultRecommendationInput)).toBeNull();
     expect(buildRecommendationRequest(tripId, { ...route, segments: [route.segments[0], { ...route.segments[1], arrivalAt: undefined }] }, defaultRecommendationInput)).toBeNull();
@@ -381,7 +397,7 @@ describe("request building and pre-request checks", () => {
 
   it("blocks a second meal that is not later than the first, and the 30-waypoint limit", () => {
     const departure = "2030-01-01T00:00:00.000Z"; // 09:00 KST
-    const two = (first: string, second: string) => ({ ...defaultRecommendationInput, mealCount: 2 as const, meals: [{ desiredTime: first, dwellMinutes: 60 }, { desiredTime: second, dwellMinutes: 60 }] as typeof defaultRecommendationInput.meals });
+    const two = (first: string, second: string) => ({ ...defaultRecommendationInput, mealCount: 2 as const, meals: [{ desiredTime: first }, { desiredTime: second }] as typeof defaultRecommendationInput.meals });
     expect(recommendationInputError(two("12:00", "18:00"), departure, 0)).toBeNull();
     expect(recommendationInputError(two("12:00", "12:00"), departure, 0)).toBe("식사 2의 원하는 식사 시간은 식사 1보다 늦어야 해요.");
     expect(recommendationInputError(two("12:00", "08:45"), departure, 0)).toBe("식사 2의 원하는 식사 시간은 식사 1보다 늦어야 해요.");
@@ -390,7 +406,6 @@ describe("request building and pre-request checks", () => {
     expect(recommendationInputError(two("12:00", "08:00"), departure, 0)).toBeNull();
     expect(recommendationInputError(defaultRecommendationInput, departure, 29)).toBeNull();
     expect(recommendationInputError(two("12:00", "18:00"), departure, 29)).toBe("경유지가 30개를 넘어 식당을 추가할 수 없어요.");
-    expect(recommendationInputError({ ...defaultRecommendationInput, meals: [{ desiredTime: "12:00", dwellMinutes: 0 }, defaultRecommendationInput.meals[1]] }, departure, 0)).toContain("1440");
     expect(recommendationInputError({ ...defaultRecommendationInput, toleranceMinutes: 45 as unknown as 30 }, departure, 0)).toBe("원하는 식사 시간 허용 범위를 골라 주세요.");
     expect(recommendationInputError({ ...defaultRecommendationInput, toleranceMinutes: 90 }, departure, 0)).toBeNull();
   });
@@ -419,7 +434,7 @@ describe("candidate selection", () => {
     const rows = candidateRows(response, {}, 1);
     expect(rows.map((row) => [row.candidate.displayName, row.selectable, row.reason])).toEqual([["단골 국밥", true, null], ["공개 시험 분식", true, null]]);
     const chosen = toggleSelection(response, {}, 1, rows[1].candidate.savedPlaceId);
-    expect(resolveSelection(response, chosen)).toMatchObject({ extraDriveSeconds: 600, returnAt: "2030-01-01T05:10:00.000Z" });
+    expect(resolveSelection(response, chosen)).toMatchObject({ extraDriveSeconds: 600, returnAt: "2030-01-01T04:55:00.000Z" });
     expect(toggleSelection(response, chosen, 1, rows[1].candidate.savedPlaceId)).toEqual({});
     expect(resolveSelection(response, {})).toBeNull();
   });
@@ -431,10 +446,10 @@ describe("candidate selection", () => {
     expect(toggleSelection(response, {}, 2, evening.candidate.savedPlaceId)).toEqual({});
     const lunch = toggleSelection(response, {}, 1, id("a0003"));
     const [paired] = candidateRows(response, lunch, 2);
-    expect(paired).toMatchObject({ selectable: true, combined: true, arrivalAt: "2030-01-01T04:10:00.000Z", extraDriveSeconds: 1200 });
+    expect(paired).toMatchObject({ selectable: true, combined: true, arrivalAt: "2030-01-01T03:55:00.000Z", extraDriveSeconds: 1200 });
     const both = toggleSelection(response, lunch, 2, paired.candidate.savedPlaceId);
-    expect(resolveSelection(response, both)).toMatchObject({ extraDriveSeconds: 1200, returnAt: "2030-01-01T06:20:00.000Z" });
-    expect(resolveSelection(response, both)?.items.map((item) => [item.mealIndex, item.dwellMinutes])).toEqual([[1, 60], [2, 60]]);
+    expect(resolveSelection(response, both)).toMatchObject({ extraDriveSeconds: 1200, returnAt: "2030-01-01T05:50:00.000Z" });
+    expect(resolveSelection(response, both)?.items.map((item) => [item.mealIndex, item.dwellMinutes])).toEqual([[1, 45], [2, 45]]);
     // Clearing meal 1 leaves a meal-2 choice that is not valid alone.
     const orphan = toggleSelection(response, both, 1, id("a0003"));
     expect(orphan).toEqual({ 2: paired.candidate.savedPlaceId });
@@ -522,7 +537,7 @@ describe("confirming recommended meals", () => {
     if (!result.ok) throw new Error("expected success");
     expect(result.added).toBe(2);
     const [, first, second] = result.waypoints;
-    expect(first).toMatchObject({ role: "meal", dwellMinutes: 60, place: savedPlace(response, "b").place });
+    expect(first).toMatchObject({ role: "meal", dwellMinutes: 45, place: savedPlace(response, "b").place });
     expect(second).toMatchObject({ role: "meal", dwellMinutes: 45 });
     expect(new Set(result.waypoints.map((item) => item.id)).size).toBe(4);
     expect(first.id).toMatch(/^new-/);

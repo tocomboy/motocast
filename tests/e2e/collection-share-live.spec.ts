@@ -353,7 +353,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     let settingsDialog = page.getByRole("dialog", { name: "경유지 설정" });
     await settingsDialog.getByRole("button", { name: "식사", exact: true }).click();
     await settingsDialog.getByRole("button", { name: "설정 적용" }).click();
-    await expect(page.locator(".ordered-waypoint").nth(2)).toContainText("식사 60분");
+    await expect(page.locator(".ordered-waypoint").nth(2)).toContainText("식사 45분");
     await page.getByRole("button", { name: "경유 3 설정" }).click();
     settingsDialog = page.getByRole("dialog", { name: "경유지 설정" });
     await settingsDialog.getByRole("button", { name: "휴식", exact: true }).click();
@@ -401,6 +401,8 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
       dwellMinutes: point.dwellMinutes,
     }));
     expect(expectedWaypointSequence?.map((point) => point.role)).toEqual(["meal", "waypoint", "rest"]);
+    // PLAN-003 amendment: meals are sent with the fixed 45 minutes.
+    expect(expectedWaypointSequence?.[0].dwellMinutes).toBe(45);
     await finalizationStarted;
     cleanup.tripMutationStarted = true;
     const finalizedResponse = await finalizedTrip;
@@ -499,7 +501,7 @@ test("calculates, stores, publishes, revokes, and cleans up test-owned resources
     await expect(orderedItems.nth(0)).toContainText(lunchName);
     await expect(orderedItems.nth(1)).toContainText(waypointName);
     await expect(orderedItems.nth(2)).toContainText(restName);
-    await expect(orderedItems.nth(0)).toContainText("식사 60분");
+    await expect(orderedItems.nth(0)).toContainText("식사 45분");
     await expect(orderedItems.nth(1)).toContainText("통과");
     await expect(orderedItems.nth(2)).toContainText("휴식 30분");
     expect(planRouteRequestCount).toBe(routeCountBeforePreparation);

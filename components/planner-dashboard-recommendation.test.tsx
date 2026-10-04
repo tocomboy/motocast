@@ -224,7 +224,7 @@ describe("PlannerDashboard restaurant recommendation", () => {
         arrivalAts: [new Date(new Date(planned.departureAt).getTime() + 30 * 60_000).toISOString()],
       },
       mealCount: 1,
-      meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
+      meals: [{ desiredTime: "12:00", dwellMinutes: 45 }],
       toleranceMinutes: 30,
     });
     const row = dialog(renderer).find((node) => node.type === "button" && node.props["aria-pressed"] === false);
@@ -245,7 +245,7 @@ describe("PlannerDashboard restaurant recommendation", () => {
     expect(renderer.root.findByType("main").props["data-view"]).toBe("editor");
     const waypoints = renderer.root.findByType(OrderedWaypointEditor).props.waypoints;
     expect(waypoints).toHaveLength(1);
-    expect(waypoints[0]).toMatchObject({ role: "meal", dwellMinutes: 60, place: { kakaoPlaceId: "kakao-restaurant", name: "공개 시험 국밥" } });
+    expect(waypoints[0]).toMatchObject({ role: "meal", dwellMinutes: 45, place: { kakaoPlaceId: "kakao-restaurant", name: "공개 시험 국밥" } });
     expect(waypoints[0].id).toMatch(/^[0-9a-f-]{36}$/);
     expect(text(renderer.root.findByProps({ className: "action-notice warning" }))).toContain("식당 1곳을 식사로 추가했어요. 경로 업데이트 필요: 경로 다시 계산을 눌러 주세요.");
     expect(text(renderer.root.findByProps({ className: "primary-button calculate" }))).toBe("경로 다시 계산");
@@ -355,7 +355,7 @@ describe("PlannerDashboard restaurant recommendation", () => {
     expect(mocks.focused.at(-1)).toBe("h3:조건에 맞는 음식점이 없습니다");
     expect(text(dialog(renderer))).toContain("저장한 식당 1곳 중 경로 근처 1곳을 실제 도로 경로로 확인했어요.");
     expect(text(dialog(renderer))).toContain("원하는 식사 시간 앞뒤 30분 안에 도착하고 주행이 1시간 이내로 늘어나는 식당이 없어요.");
-    expect(text(dialog(renderer))).toContain("식사 1 12:00 · 앞뒤 30분 · 60분");
+    expect(text(dialog(renderer))).toContain("식사 1 12:00 · 앞뒤 30분 · 45분");
     expect(dialog(renderer).findAll((node) => typeof node.type === "string" && node.props.role === "alert")).toHaveLength(0);
     await act(async () => buttons(dialog(renderer), "조건 바꾸기")[0].props.onClick());
     expect(buttons(dialog(renderer), "추천 받기")).toHaveLength(1);
@@ -426,14 +426,24 @@ describe("PlannerDashboard restaurant recommendation", () => {
     expect(mocks.focused.at(-1)).toBe("h2:음식점 추천");
 
     // Result → Esc → input with the kept values (still open).
-    await act(async () => buttons(dialog(renderer), "±60분")[0].props.onClick());
+    const less = () => dialog(renderer).findByProps({ "aria-label": "허용 범위 30분 줄이기" });
+    const more = () => dialog(renderer).findByProps({ "aria-label": "허용 범위 30분 늘리기" });
+    // ±30 is the lower end: "−" is disabled until the range grows.
+    expect(less().props.disabled).toBe(true);
+    expect(text(dialog(renderer))).toContain("식사는 45분으로 계산해요.");
+    expect(dialog(renderer).findAllByProps({ type: "number" })).toHaveLength(0);
+    await act(async () => more().props.onClick());
+    expect(less().props.disabled).toBe(false);
     await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
     expect(text(dialog(renderer))).toContain("추천 조건");
     expect(calls("recommend-restaurants")[0][1].body.toleranceMinutes).toBe(60);
     await esc();
     expect(buttons(dialog(renderer), "추천 받기")).toHaveLength(1);
-    expect(buttons(dialog(renderer), "±60분")[0].props["aria-pressed"]).toBe(true);
-    expect(buttons(dialog(renderer), "±30분")[0].props["aria-pressed"]).toBe(false);
+    expect(text(dialog(renderer))).toContain("±60분");
+    // ±90 is the upper end: "+" is disabled there.
+    await act(async () => more().props.onClick());
+    expect(more().props.disabled).toBe(true);
+    expect(text(dialog(renderer))).toContain("±90분");
     expect(mocks.focused.at(-1)).toBe("h2:음식점 추천");
 
     // Error → its state title takes focus; Esc → input.

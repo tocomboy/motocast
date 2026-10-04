@@ -315,6 +315,31 @@ describe("PlannerDashboard collection share intent", () => {
     expect(mocks.invoke.mock.calls.filter(([name]) => name === "weather-timeline")).toHaveLength(0);
   });
 
+  it.each([
+    ["a legacy 60-minute lunch", { stopRole: "lunch" as const, dwellMinutes: 60 }, true],
+    ["a meal already at 45 minutes", { stopRole: "meal" as const, dwellMinutes: 45 }, false],
+  ])("applying a course with %s normalizes the draft and mentions it only when it changed", async (_name, meal, changed) => {
+    const mealPoint = { ...place("meal-place", 127.1), id: "occ-meal", label: "식사 장소", kind: "stop" as const, selected: true, winding: false, ...meal };
+    const restPoint = { ...place("rest-place", 127.15), id: "occ-rest", label: "휴식 장소", kind: "optional" as const, selected: true, winding: false, stopRole: "rest" as const, dwellMinutes: 50 };
+    const mealCourse: CollectionCourse = { ...course, points: [mealPoint, restPoint] };
+    const snapshot = structuredClone(mealCourse);
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={mealCourse} navigationMode="memory" />, { createNodeMock }); });
+    const waypoints = renderer.root.findByType(OrderedWaypointEditor).props.waypoints;
+    expect(waypoints.map((point: { id: string; role: string; dwellMinutes: number }) => [point.id, point.role, point.dwellMinutes])).toEqual([
+      ["occ-meal", "meal", 45],
+      ["occ-rest", "rest", 50],
+    ]);
+    const notice = renderedText(renderer.root.findByProps({ className: "action-notice warning" }));
+    expect(notice).toContain("컬렉션 전체 코스를 적용했습니다.");
+    if (changed) expect(notice).toContain("식사 시간은 45분으로 맞췄어요.");
+    else expect(notice).not.toContain("식사 시간은 45분으로 맞췄어요.");
+    // The course object handed in (stored collection / received share) is not rewritten.
+    expect(mealCourse).toEqual(snapshot);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    await act(async () => renderer.unmount());
+  });
+
   it("keeps a connected input error visible and focused inside the editor form", async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => {

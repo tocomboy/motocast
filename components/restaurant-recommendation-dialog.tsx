@@ -12,11 +12,11 @@ import {
   isDailyBudgetFailure,
   recommendationFailureMessage,
   recommendationInputError,
-  recommendationLimits,
   resolveSelection,
   SERVER_DETOUR_CAP_MINUTES,
   seoulClock,
   seoulDateTime,
+  stepTolerance,
   toggleSelection,
   toleranceOptions,
   andParticle,
@@ -27,6 +27,7 @@ import {
   type RecommendationResponse,
   type RecommendationSelection,
 } from "@/lib/planner/restaurant-recommendation";
+import { MEAL_DWELL_MINUTES, MEAL_DWELL_NOTE } from "@/lib/planner/ordered-waypoints";
 import styles from "./restaurant-recommendation-dialog.module.css";
 
 export type RecommendationOutcome =
@@ -66,10 +67,7 @@ function excludedNotice(detourLimitMinutes: number) {
 function conditionLines(input: Pick<RecommendationInput, "mealCount" | "meals" | "toleranceMinutes">, detourLimitMinutes: number) {
   const meals = input.meals.slice(0, input.mealCount);
   const times = meals.map((meal, index) => `식사 ${index + 1} ${meal.desiredTime}`).join(" · ");
-  const sameDwell = meals.every((meal) => meal.dwellMinutes === meals[0].dwellMinutes);
-  const dwell = meals.length === 1
-    ? `${meals[0].dwellMinutes}분`
-    : sameDwell ? `각 ${meals[0].dwellMinutes}분` : meals.map((meal) => `${meal.dwellMinutes}분`).join("·");
+  const dwell = meals.length === 1 ? `${MEAL_DWELL_MINUTES}분` : `각 ${MEAL_DWELL_MINUTES}분`;
   return [`${times} · 앞뒤 ${input.toleranceMinutes}분 · ${dwell}`, excludedNotice(detourLimitMinutes)] as const;
 }
 
@@ -253,21 +251,19 @@ function InputView(viewProps: {
                 <select aria-label={`${label} 원하는 식사 시간 분`} value={minute} onChange={(event) => viewProps.updateMeal(index as 0 | 1, { desiredTime: `${hour}:${event.target.value}` })}>{(minutes.includes(minute) ? minutes : [...minutes, minute].sort()).map((value) => <option key={value} value={value}>{value}</option>)}</select>
               </span>
             </div>
-            <div className={styles.fieldRow}>
-              <label htmlFor={`${viewProps.idPrefix}-dwell-${index}`}>식사 시간 길이</label>
-              <span className={styles.stepper}>
-                <button type="button" aria-label={`${label} 식사 시간 길이 10분 줄이기`} disabled={meal.dwellMinutes <= recommendationLimits.dwell.min} onClick={() => viewProps.updateMeal(index as 0 | 1, { dwellMinutes: Math.max(recommendationLimits.dwell.min, meal.dwellMinutes - 10) })}><LineIcon name="minus" /></button>
-                <span className={styles.stepperValue}><input id={`${viewProps.idPrefix}-dwell-${index}`} type="number" inputMode="numeric" min={recommendationLimits.dwell.min} max={recommendationLimits.dwell.max} value={Number.isFinite(meal.dwellMinutes) ? meal.dwellMinutes : ""} onChange={(event) => viewProps.updateMeal(index as 0 | 1, { dwellMinutes: Number(event.target.value) })} /><small>분</small></span>
-                <button type="button" aria-label={`${label} 식사 시간 길이 10분 늘리기`} disabled={meal.dwellMinutes >= recommendationLimits.dwell.max} onClick={() => viewProps.updateMeal(index as 0 | 1, { dwellMinutes: Math.min(recommendationLimits.dwell.max, meal.dwellMinutes + 10) })}><LineIcon name="plus" /></button>
-              </span>
-            </div>
+            <p className={styles.mealNote}>{MEAL_DWELL_NOTE}</p>
           </fieldset>;
         })}
       </div>
       <fieldset className={styles.toleranceCard}>
         <legend>원하는 식사 시간 허용 범위</legend>
-        <div className={styles.toleranceOptions}>
-          {toleranceOptions.map((minutes) => <button key={minutes} type="button" aria-pressed={values.toleranceMinutes === minutes} onClick={() => viewProps.setInput((current) => ({ ...current, toleranceMinutes: minutes }))}>{values.toleranceMinutes === minutes ? <LineIcon name="check" /> : null}±{minutes}분</button>)}
+        <div className={styles.toleranceRow}>
+          <span className={styles.stepper}>
+            <button type="button" aria-label="허용 범위 30분 줄이기" disabled={values.toleranceMinutes === toleranceOptions[0]} onClick={() => viewProps.setInput((current) => ({ ...current, toleranceMinutes: stepTolerance(current.toleranceMinutes, -1) }))}><LineIcon name="minus" /></button>
+            <span className={styles.stepperValue} aria-live="polite"><strong>±{values.toleranceMinutes}</strong><small>분</small></span>
+            <button type="button" aria-label="허용 범위 30분 늘리기" disabled={values.toleranceMinutes === toleranceOptions.at(-1)} onClick={() => viewProps.setInput((current) => ({ ...current, toleranceMinutes: stepTolerance(current.toleranceMinutes, 1) }))}><LineIcon name="plus" /></button>
+          </span>
+          <small className={styles.toleranceScale}>30분 단위 · 최대 ±{toleranceOptions.at(-1)}분</small>
         </div>
         <p className={styles.hint}>{excludedNotice(SERVER_DETOUR_CAP_MINUTES)}</p>
       </fieldset>

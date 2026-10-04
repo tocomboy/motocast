@@ -36,7 +36,9 @@ import { formatRideDuration, formatSummaryDeparture } from "@/lib/planner/displa
 import { buildPlannerMapPoints } from "@/lib/planner/map-points";
 import {
   collectionPointFromEditableWaypoint,
+  dwellError,
   editableWaypointFromCollectionPoint,
+  mealDwellNormalized,
   roleAssignmentError,
   type EditableWaypoint, type WaypointRole,
 } from "@/lib/planner/ordered-waypoints";
@@ -559,7 +561,8 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     if (!connected || actionGateRef.current.planning || calculating || summarySaveBusy) return "현재 처리가 끝난 뒤 추가해 주세요.";
     const error = roleAssignmentError(waypoints, role);
     if (error) return error;
-    if (!Number.isInteger(dwellMinutes) || (role === "waypoint" ? dwellMinutes !== 0 : dwellMinutes < 1 || dwellMinutes > 1440)) return "머무는 시간은 1분 이상 1440분 이하로 정해 주세요.";
+    const invalidDwell = dwellError(role, dwellMinutes);
+    if (invalidDwell) return invalidDwell;
     updateWaypoints([...waypoints, { id: crypto.randomUUID(), role, dwellMinutes, place }]);
     setNotice("경유지를 추가했어요. 경로 업데이트 필요: 방문 순서와 일정을 확인하고 경로 다시 계산을 눌러 주세요.", "warning");
     navigate("editor");
@@ -580,6 +583,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       return;
     }
     const application = prepareCollectionApplication(course);
+    const mealNote = mealDwellNormalized(application.orderedPoints) ? " 식사 시간은 45분으로 맞췄어요." : "";
     const collectionGeneration = ++routeGenerationRef.current;
     discardRecommendation();
     weatherRequestRef.current += 1;
@@ -597,9 +601,9 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     setShareIntentGeneration(sharing ? collectionGeneration : null);
     if (liveRoute) setLiveResultStale(true);
     setWaypointStatus(`${title} 컬렉션의 최신 불변 버전을 계획에 적용했습니다.`);
-    setNotice(sharing
+    setNotice(`${sharing
       ? "컬렉션 전체 코스를 적용했습니다. 새 날짜와 출발 시각을 선택해 계산하면 공유 요약 미리보기가 열립니다."
-      : "컬렉션 전체 코스를 적용했습니다. 새 날짜와 출발 시각을 선택한 뒤 안전 경로를 계산해 주세요.", "warning");
+      : "컬렉션 전체 코스를 적용했습니다. 새 날짜와 출발 시각을 선택한 뒤 안전 경로를 계산해 주세요."}${mealNote}`, "warning");
     navigate("editor");
     window.setTimeout(() => rideDateRef.current?.click(), 0);
   }
