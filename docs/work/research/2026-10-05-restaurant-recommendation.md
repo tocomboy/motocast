@@ -67,14 +67,14 @@
   "tripId": "uuid",
   "basis": { "departureAt": "ISO-8601", "returnAt": "ISO-8601", "pointIds": ["origin-id", "occurrence-id", "destination-id"], "arrivalAts": ["ISO-8601", "ISO-8601"] },
   "mealCount": 1,
-  "meals": [{ "desiredTime": "12:00", "dwellMinutes": 60 }],
+  "meals": [{ "desiredTime": "12:00", "dwellMinutes": 45 }],
   "toleranceMinutes": 30
 }
 ```
 
 - 정확히 위 키만 허용한다(추가 키, 경로 정책 키는 거부).
 - `tripId` UUID. `basis.pointIds`는 화면에 표시한 경로의 `[legs[0].from.id, ...legs.map(to.id)]`, 2–32개, 각 1–100자. `basis.arrivalAts`는 같은 경로의 구간별 `arrivalAt`(구간 수 = `pointIds.length − 1`). 중간 체류만 바뀐 재계산도 기준 불일치로 잡기 위해 포함한다(Codex V2 지적 1, 2026-10-05).
-- `mealCount ∈ {1,2}`이고 `meals.length === mealCount`. `desiredTime`은 `HH:MM`(00–23, 00–59). `dwellMinutes` 정수 1–1440.
+- `mealCount ∈ {1,2}`이고 `meals.length === mealCount`. `desiredTime`은 `HH:MM`(00–23, 00–59). `dwellMinutes`는 45만 허용한다(계약 3.0.0, 3차 변경). 형식·범위(정수 1–1440)와 다른 모든 필드의 구조 검증을 먼저 끝낸 뒤 45가 아니면 `MEAL_DWELL_FIXED`(400)로 거부한다. 이전 계약(1.x·2.0.0)의 1–1440 수정 가능 규칙은 이력이다.
 - `toleranceMinutes ∈ {30, 60, 90}`(2차 변경). `detourLimitMinutes`는 요청 키가 아니며 보내면 거부한다. 서버 상수 60분을 쓴다.
 - 식사 목표 시각: 서울 시각 `HH:MM`이 `departureAt − toleranceMinutes` 이후 처음 나오는 순간. 식사 2 목표는 식사 1 목표보다 늦어야 한다.
 
@@ -108,7 +108,7 @@
   "settings": { "mealCount": 2, "toleranceMinutes": 30, "detourLimitMinutes": 60 },
   "meals": [
     {
-      "index": 1, "targetAt": "…", "windowStartAt": "…", "windowEndAt": "…", "dwellMinutes": 60,
+      "index": 1, "targetAt": "…", "windowStartAt": "…", "windowEndAt": "…", "dwellMinutes": 45,
       "candidates": [
         {
           "savedPlaceId": "uuid", "savedPlaceRevision": 3, "displayName": "별명 또는 원래 이름",
@@ -138,7 +138,8 @@
 
 | code | HTTP | 의미 |
 | --- | --- | --- |
-| `RECOMMENDATION_INPUT_INVALID` | 400 | 입력 형식·범위·식사 순서 |
+| `RECOMMENDATION_INPUT_INVALID` | 400 | 입력 형식·범위·식사 순서(구조 오류가 45분 정책보다 우선) |
+| `MEAL_DWELL_FIXED` | 400 | 형식은 맞지만 식사 체류가 45가 아님. `error`는 업데이트 안내 문구 |
 | `AUTH_REQUIRED` 계열 | 401/403 | 기존 회원 경계 |
 | `RECOMMENDATION_ROUTE_STALE` | 409 | 저장 경로 없음·형식 오류·화면 기준과 다름 → 경로 다시 계산 |
 | `RECOMMENDATION_WAYPOINT_LIMIT` | 422 | 경유지 30개 초과 |
