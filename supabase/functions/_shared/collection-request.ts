@@ -109,11 +109,13 @@ export async function parseCollectionSaveRequest(value: unknown, verificationSec
     rests.length > 5 || rests.some((point) => point.kind !== "optional") ||
     selected.filter(isMandatoryPassThrough).length > 20
   ) throw new Error("INVALID_COLLECTION");
-  assertFixedMealDwell(points);
   const verified = await Promise.all([origin, destination, ...points].map((point) => (
     verifyPlace(point, point.verificationToken, verificationSecret)
   )));
   if (verified.some((result) => !result)) throw new Error("UNVERIFIED_PLACE");
+  // Policy after every format and integrity check: only an otherwise valid request
+  // from an outdated client is told to update.
+  assertFixedMealDwell(points);
   return {
     saveOperationId: raw.saveOperationId,
     collectionId: typeof raw.collectionId === "string" ? raw.collectionId : null,

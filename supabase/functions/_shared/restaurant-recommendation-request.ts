@@ -81,13 +81,10 @@ export function parseRecommendationRequest(value: unknown): RecommendationReques
   const meals = body.meals.map((value) => {
     const meal = exactRecord(value, MEAL_KEYS);
     if (typeof meal.desiredTime !== "string" || !DESIRED_TIME.test(meal.desiredTime)) invalid();
-    // Contract 3.0.0: any other well-formed meal dwell comes from an outdated client.
-    const dwellMinutes = integerIn(meal.dwellMinutes, 1, 1440);
-    if (dwellMinutes !== MEAL_DWELL_MINUTES) throw new Error(MEAL_DWELL_FIXED);
-    return { desiredTime: meal.desiredTime, dwellMinutes };
+    return { desiredTime: meal.desiredTime, dwellMinutes: integerIn(meal.dwellMinutes, 1, 1440) };
   });
 
-  return {
+  const request: RecommendationRequest = {
     tripId: body.tripId,
     basis: {
       departureAt: departure.toISOString(),
@@ -99,6 +96,11 @@ export function parseRecommendationRequest(value: unknown): RecommendationReques
     meals,
     toleranceMinutes: toleranceChoice(body.toleranceMinutes),
   };
+  // Every format, range and meal-order error wins over the dwell policy, so only an
+  // otherwise valid request from an outdated client gets the update guidance.
+  mealTargets(request);
+  if (meals.some((meal) => meal.dwellMinutes !== MEAL_DWELL_MINUTES)) throw new Error(MEAL_DWELL_FIXED);
+  return request;
 }
 
 // Each target is the first Seoul wall-clock occurrence of the desired time at

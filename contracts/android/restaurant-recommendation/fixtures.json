@@ -1,5 +1,5 @@
 {
-  "contractVersion": "3.0.0",
+  "contractVersion": "3.0.1",
   "sourceCommit": "70d3bf3507976ac8dda47982a060f5cba2cbdfdc",
   "endpoint": "POST /functions/v1/recommend-restaurants",
   "requests": [
@@ -2234,6 +2234,154 @@
         "toleranceMinutes": 30
       },
       "error": "MEAL_DWELL_FIXED"
+    },
+    {
+      "id": "format-error-wins-over-dwell-string-tolerance",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": "30"
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "format-error-wins-over-dwell-second-meal-0",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 2,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          },
+          {
+            "desiredTime": "18:00",
+            "dwellMinutes": 0
+          }
+        ],
+        "toleranceMinutes": 30
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "order-error-wins-over-dwell",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 2,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          },
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "extra-key-wins-over-dwell",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30,
+        "detourLimitMinutes": 60
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "basis-error-wins-over-dwell",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
     }
   ],
   "responses": [

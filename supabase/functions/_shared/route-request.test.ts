@@ -249,15 +249,31 @@ describe("fixed 45-minute meal dwell at the plan-route write boundary", () => {
   });
 
   it.each([["meal", 44], ["meal", 46], ["meal", 60], ["lunch", 60], ["dinner", 60]] as const)(
-    "refuses a %s dwell of %i minutes before verification and provider work", async (stopRole, dwellMinutes) => {
+    "refuses a %s dwell of %i minutes from an otherwise valid outdated client before provider work", async (stopRole, dwellMinutes) => {
       const provider = vi.fn();
-      // A forged token proves the dwell check precedes place verification.
-      const forged = { ...await stop(stopRole, dwellMinutes), verificationToken: "b".repeat(43) };
-      await expect(withValidatedRouteRequest({ ...await request(), waypoints: [forged] }, secret, provider, fixedNow))
+      await expect(withValidatedRouteRequest({ ...await request(), waypoints: [await stop(stopRole, dwellMinutes)] }, secret, provider, fixedNow))
         .rejects.toThrow("MEAL_DWELL_FIXED");
       expect(provider).not.toHaveBeenCalled();
     },
   );
+
+  it("reports format, policy-key, time and integrity errors before the meal dwell policy", async () => {
+    const provider = vi.fn();
+    const meal = await stop("meal", 60);
+    const badRest = await point({ id: "rest-occurrence", kakaoPlaceId: "rest", kind: "optional", dwellMinutes: 0, stopRole: "rest" });
+    const base = { ...await request(), waypoints: [meal] };
+    const cases: Array<[unknown, string]> = [
+      [{ ...base, waypoints: [meal, badRest] }, "INVALID_WAYPOINTS"],
+      [{ ...base, car_type: 7 }, "CLIENT_ROUTE_POLICY_FORBIDDEN"],
+      [{ ...base, serviceDate: "2026-08-29", departureAt: "2026-08-29T07:30:00+09:00" }, "PAST_DEPARTURE"],
+      [{ ...base, planningId: "not-a-uuid" }, "INVALID_PLANNING_ID"],
+      [{ ...base, waypoints: [{ ...meal, verificationToken: "b".repeat(43) }] }, "UNVERIFIED_PLACE"],
+    ];
+    for (const [input, code] of cases) {
+      await expect(withValidatedRouteRequest(input, secret, provider, fixedNow)).rejects.toThrow(code);
+    }
+    expect(provider).not.toHaveBeenCalled();
+  });
 
   it.each([30, 60])("keeps rest dwell editable (%i minutes)", async (dwellMinutes) => {
     const provider = vi.fn(async () => "planned");

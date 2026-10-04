@@ -128,13 +128,15 @@ export async function parseRouteRequest(
     mandatoryWaypoints.length > 20 ||
     selectedWaypoints.some((point) => point.kind !== "pass-through" && point.stopRole === undefined)
   ) throw new Error("INVALID_WAYPOINTS");
-  if (options.fixedMealDwell) assertFixedMealDwell(selectedWaypoints);
 
   const points = [body.origin, ...selectedWaypoints, body.destination];
   const verified = await Promise.all(points.map((point) => (
     verifyPlace(point, point.verificationToken, verificationSecret)
   )));
   if (verified.some((result) => !result)) throw new Error("UNVERIFIED_PLACE");
+  // Policy after every format and integrity check: only an otherwise valid request
+  // from an outdated client is told to update.
+  if (options.fixedMealDwell) assertFixedMealDwell(selectedWaypoints);
 
   return {
     planningId: body.planningId,

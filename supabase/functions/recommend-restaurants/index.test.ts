@@ -266,6 +266,17 @@ describe("recommend-restaurants handler", () => {
     expect(errorLog).toHaveBeenCalledExactlyOnceWith("recommend-restaurants failed", "MEAL_DWELL_FIXED", "UNKNOWN");
   });
 
+  it.each([
+    ["a string tolerance", { meals: [{ desiredTime: "12:00", dwellMinutes: 60 }], toleranceMinutes: "30" }],
+    ["a malformed second meal", { mealCount: 2, meals: [{ desiredTime: "12:00", dwellMinutes: 60 }, { desiredTime: "18:00", dwellMinutes: 0 }] }],
+  ])("reports %s as invalid input even when a meal dwell is outdated", async (_name, overrides) => {
+    const response = await call(body(overrides));
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe("RECOMMENDATION_INPUT_INVALID");
+    expect(queries).toEqual([]);
+    expectNoProviderWork();
+  });
+
   it("rejects a malformed JSON body as invalid input", async () => {
     const response = await call(null, { raw: "{not json" });
     expect(response.status).toBe(400);

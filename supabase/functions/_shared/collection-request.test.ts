@@ -161,11 +161,22 @@ describe("parseCollectionSaveRequest", () => {
 
   it.each([
     ["meal", 44], ["meal", 46], ["meal", 60], ["lunch", 60], ["dinner", 60], ["dinner", 1],
-  ] as const)("rejects a %s dwell of %i minutes as an outdated client before place verification", async (stopRole, dwellMinutes) => {
+  ] as const)("rejects a %s dwell of %i minutes from an otherwise valid outdated client", async (stopRole, dwellMinutes) => {
     const point = await requestPoint({ id: `${stopRole}-occurrence`, kakaoPlaceId: stopRole, kind: "stop", dwellMinutes, stopRole });
-    // A forged token proves the dwell check runs before verification and any storage work.
-    const forged = { ...point, verificationToken: "b".repeat(43) };
-    await expect(parseCollectionSaveRequest(await requestBody([forged]), secret)).rejects.toThrow("MEAL_DWELL_FIXED");
+    await expect(parseCollectionSaveRequest(await requestBody([point]), secret)).rejects.toThrow("MEAL_DWELL_FIXED");
+  });
+
+  it("reports format and integrity errors before the meal dwell policy", async () => {
+    const meal = await requestPoint({ id: "meal-occurrence", kakaoPlaceId: "meal", kind: "stop", dwellMinutes: 60, stopRole: "meal" });
+    const badRest = await requestPoint({ id: "rest-occurrence", kakaoPlaceId: "rest", kind: "optional", dwellMinutes: 0, stopRole: "rest" });
+    const rests = await Promise.all(Array.from({ length: 6 }, (_, index) => requestPoint({
+      id: `rest-${index}`, kakaoPlaceId: "rest", kind: "optional", dwellMinutes: 30, stopRole: "rest",
+    })));
+    await expect(parseCollectionSaveRequest(await requestBody([meal, badRest]), secret)).rejects.toThrow("INVALID_COLLECTION");
+    await expect(parseCollectionSaveRequest(await requestBody([meal, ...rests]), secret)).rejects.toThrow("INVALID_COLLECTION");
+    await expect(parseCollectionSaveRequest({ ...await requestBody([meal]), title: " " }, secret)).rejects.toThrow("INVALID_COLLECTION");
+    const forged = { ...meal, verificationToken: "b".repeat(43) };
+    await expect(parseCollectionSaveRequest(await requestBody([forged]), secret)).rejects.toThrow("UNVERIFIED_PLACE");
   });
 
   it.each([30, 60, 5])("keeps rest dwell editable (%i minutes)", async (dwellMinutes) => {
