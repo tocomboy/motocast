@@ -3,7 +3,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from "rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CollectionCourse } from "@/lib/collections/contracts";
-import type { RecommendationRequest } from "@/lib/planner/restaurant-recommendation";
+import { mealTargetAt, type RecommendationRequest } from "@/lib/planner/restaurant-recommendation";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -58,8 +58,11 @@ const savedRow = (revision = 2) => ({
   updated_at: "2026-09-01T00:00:00.000Z",
 });
 
+// Echoes the request like the server: target = first Seoul desired time at or
+// after departure − tolerance; return = base return + extra drive + dwell.
 function recommendationBody(request: RecommendationRequest, candidateRevision = 2) {
-  const target = new Date(new Date(request.basis.departureAt).getTime() + 60 * 60_000);
+  const target = mealTargetAt(request.basis.departureAt, request.toleranceMinutes, request.meals[0].desiredTime)!;
+  const dwell = request.meals[0].dwellMinutes;
   return {
     status: "OK",
     basis: { tripId: request.tripId, ...request.basis },
@@ -79,7 +82,7 @@ function recommendationBody(request: RecommendationRequest, candidateRevision = 
         longitude: 127.1,
         latitude: 37.5,
         insertion: { legIndex: 0, afterPointId: request.basis.pointIds[0], beforePointId: request.basis.pointIds[1] },
-        single: { feasible: true, arrivalAt: target.toISOString(), extraDriveSeconds: 540, returnAt: new Date(new Date(request.basis.returnAt).getTime() + 69 * 60_000).toISOString(), reason: null },
+        single: { feasible: true, arrivalAt: target.toISOString(), extraDriveSeconds: 540, returnAt: new Date(new Date(request.basis.returnAt).getTime() + (540 + dwell * 60) * 1000).toISOString(), reason: null },
       }],
     }],
     pairs: [],
@@ -213,7 +216,12 @@ describe("PlannerDashboard restaurant recommendation", () => {
     const planned = calls("plan-route")[0][1].body;
     expect(body).toEqual({
       tripId,
-      basis: { departureAt: new Date(planned.departureAt).toISOString(), returnAt: new Date(new Date(planned.departureAt).getTime() + 30 * 60_000).toISOString(), pointIds: ["origin", "destination"] },
+      basis: {
+        departureAt: new Date(planned.departureAt).toISOString(),
+        returnAt: new Date(new Date(planned.departureAt).getTime() + 30 * 60_000).toISOString(),
+        pointIds: ["origin", "destination"],
+        arrivalAts: [new Date(new Date(planned.departureAt).getTime() + 30 * 60_000).toISOString()],
+      },
       mealCount: 1,
       meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
       toleranceMinutes: 30,
@@ -338,6 +346,7 @@ describe("PlannerDashboard restaurant recommendation", () => {
     });
     await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
     expect(text(dialog(renderer))).toContain("조건에 맞는 음식점이 없습니다");
+    expect(mocks.focused.at(-1)).toBe("h3:조건에 맞는 음식점이 없습니다");
     expect(text(dialog(renderer))).toContain("저장한 식당 1곳 중 경로 근처 1곳을 실제 도로 경로로 확인했어요.");
     expect(dialog(renderer).findAll((node) => typeof node.type === "string" && node.props.role === "alert")).toHaveLength(0);
     await act(async () => buttons(dialog(renderer), "조건 바꾸기")[0].props.onClick());
@@ -348,6 +357,7 @@ describe("PlannerDashboard restaurant recommendation", () => {
     });
     await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
     expect(text(dialog(renderer))).toContain("저장한 식당이 없습니다");
+    expect(mocks.focused.at(-1)).toBe("h3:저장한 식당이 없습니다");
     await act(async () => buttons(dialog(renderer), "즐겨찾기에서 식당 등록")[0].props.onClick());
     expect(renderer.root.findByType("main").props["data-view"]).toBe("favorites");
     await act(async () => renderer.unmount());
@@ -364,6 +374,29 @@ describe("PlannerDashboard restaurant recommendation", () => {
     await flush();
     expect(text(dialog(renderer))).toContain("추천을 계산하지 못했습니다");
     expect(text(dialog(renderer))).not.toContain("단골 국밥");
+    await act(async () => renderer.unmount());
+  });
+
+  it("shows an error, not results, when the success response answers another meal time or route", async () => {
+    const renderer = await openRecommendation();
+    mocks.invoke.mockImplementationOnce(async (_name: string, options: { body: RecommendationRequest }) => ({
+      error: null,
+      data: recommendationBody({ ...options.body, meals: [{ ...options.body.meals[0], desiredTime: "13:00" }] }),
+    }));
+    await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
+    await flush();
+    expect(text(dialog(renderer))).toContain("추천을 계산하지 못했습니다");
+    expect(text(dialog(renderer))).not.toContain("단골 국밥");
+    await act(async () => buttons(dialog(renderer), "닫기")[0].props.onClick());
+    await act(async () => buttons(renderer.root, "음식점 추천 받기")[0].props.onClick());
+    mocks.invoke.mockImplementationOnce(async (_name: string, options: { body: RecommendationRequest }) => ({
+      error: null,
+      data: recommendationBody({ ...options.body, basis: { ...options.body.basis, arrivalAts: [new Date(Date.parse(options.body.basis.arrivalAts[0]) - 60_000).toISOString()] } }),
+    }));
+    await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
+    await flush();
+    expect(text(dialog(renderer))).toContain("추천을 계산하지 못했습니다");
+    expect(calls("recommend-restaurants")[1][1].body.basis.arrivalAts).toHaveLength(1);
     await act(async () => renderer.unmount());
   });
 

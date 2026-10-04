@@ -59,7 +59,7 @@ export type RecommendationCoverage = {
 
 export type RecommendationResponse = {
   status: "OK" | "NO_SAVED_RESTAURANTS";
-  basis: { tripId: string; departureAt: string; returnAt: string; pointIds: string[] };
+  basis: { tripId: string; departureAt: string; returnAt: string; pointIds: string[]; arrivalAts: string[] };
   settings: { mealCount: 1 | 2; toleranceMinutes: number; detourLimitMinutes: number };
   meals: RecommendationMeal[];
   pairs: RecommendationPair[];
@@ -68,7 +68,7 @@ export type RecommendationResponse = {
 
 export type RecommendationRequest = {
   tripId: string;
-  basis: { departureAt: string; returnAt: string; pointIds: string[] };
+  basis: { departureAt: string; returnAt: string; pointIds: string[]; arrivalAts: string[] };
   mealCount: 1 | 2;
   meals: Array<{ desiredTime: string; dwellMinutes: number }>;
   toleranceMinutes: number;
@@ -107,6 +107,10 @@ const DESIRED_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const REJECT_REASONS: ReadonlyArray<SingleRejectReason> = ["WINDOW", "DETOUR", "RETURN_24H"];
 const SEOUL_OFFSET_MS = 9 * 60 * 60_000;
 const DAY_MS = 24 * 60 * 60_000;
+
+// The server's judgement rules (§3.2 step 8, contracts README): seconds,
+// inclusive bounds, return strictly within 24 hours of departure.
+type Judge = { departureMs: number; baseReturnMs: number; limitSeconds: number };
 
 function fail(code = "INVALID_RECOMMENDATION_RESPONSE"): never {
   throw new RecommendationContractError(code);
@@ -195,6 +199,43 @@ function parseMeal(value: unknown, position: number, toleranceMinutes: number, p
   };
 }
 
+function withinWindow(arrivalAt: string, meal: RecommendationMeal) {
+  const arrival = ms(arrivalAt);
+  return arrival >= ms(meal.windowStartAt) && arrival <= ms(meal.windowEndAt);
+}
+
+function within24Hours(returnAt: string, judge: Judge) {
+  return ms(returnAt) - judge.departureMs < DAY_MS;
+}
+
+// A candidate must state the server's own verdict: return = base return +
+// extra drive + dwell, and `reason` names the first violated rule
+// (WINDOW, DETOUR, RETURN_24H) or is null when none is violated.
+function checkCandidate(candidate: RecommendationCandidate, meal: RecommendationMeal, judge: Judge) {
+  const { single } = candidate;
+  if (ms(single.returnAt) !== judge.baseReturnMs + (single.extraDriveSeconds + meal.dwellMinutes * 60) * 1000) {
+    fail("INVALID_RECOMMENDATION_CANDIDATE");
+  }
+  const reason: SingleRejectReason | null = !withinWindow(single.arrivalAt, meal)
+    ? "WINDOW"
+    : single.extraDriveSeconds > judge.limitSeconds
+      ? "DETOUR"
+      : !within24Hours(single.returnAt, judge) ? "RETURN_24H" : null;
+  if (reason !== single.reason || single.feasible !== (reason === null)) fail("INVALID_RECOMMENDATION_CANDIDATE");
+}
+
+// A pair is listed only when both arrivals fit their windows, the combined
+// extra drive fits the limit and the return (base + extra + both dwells) is
+// within 24 hours.
+function checkPair(pair: RecommendationPair, meals: RecommendationMeal[], judge: Judge) {
+  const expectedReturn = judge.baseReturnMs + (pair.extraDriveSeconds + (meals[0].dwellMinutes + meals[1].dwellMinutes) * 60) * 1000;
+  if (
+    !withinWindow(pair.firstArrivalAt, meals[0]) || !withinWindow(pair.secondArrivalAt, meals[1]) ||
+    pair.extraDriveSeconds > judge.limitSeconds ||
+    ms(pair.returnAt) !== expectedReturn || !within24Hours(pair.returnAt, judge)
+  ) fail("INVALID_RECOMMENDATION_PAIR");
+}
+
 function parsePair(value: unknown, meals: RecommendationMeal[]): RecommendationPair {
   const raw = record(value);
   const first = meals[0].candidates.find((candidate) => candidate.savedPlaceId === raw.firstSavedPlaceId);
@@ -227,6 +268,12 @@ export function parseRecommendationResponse(value: unknown): RecommendationRespo
   const departureAt = instant(basis.departureAt);
   const returnAt = instant(basis.returnAt);
   if (ms(returnAt) <= ms(departureAt)) fail();
+  // Leg arrivals of the displayed route: one per leg, increasing, within the trip.
+  if (!Array.isArray(basis.arrivalAts) || basis.arrivalAts.length !== pointIds.length - 1) fail();
+  const arrivalAts = basis.arrivalAts.map(instant);
+  if (arrivalAts.some((arrival, index) => (
+    ms(arrival) <= (index === 0 ? ms(departureAt) : ms(arrivalAts[index - 1])) || ms(arrival) > ms(returnAt)
+  ))) fail("INVALID_RECOMMENDATION_TIME");
   const mealCount = integer(settings.mealCount, 1, 2) as 1 | 2;
   const toleranceMinutes = integer(settings.toleranceMinutes, 5, 180);
   const detourLimitMinutes = integer(settings.detourLimitMinutes, 5, 180);
@@ -235,6 +282,9 @@ export function parseRecommendationResponse(value: unknown): RecommendationRespo
   if (meals.length === 2 && ms(meals[1].targetAt) <= ms(meals[0].targetAt)) fail("INVALID_RECOMMENDATION_WINDOW");
   if (mealCount === 1 && raw.pairs.length > 0) fail("INVALID_RECOMMENDATION_PAIR");
   const pairs = raw.pairs.map((pair) => parsePair(pair, meals));
+  const judge: Judge = { departureMs: ms(departureAt), baseReturnMs: ms(returnAt), limitSeconds: detourLimitMinutes * 60 };
+  meals.forEach((meal) => meal.candidates.forEach((candidate) => checkCandidate(candidate, meal, judge)));
+  pairs.forEach((pair) => checkPair(pair, meals, judge));
   if (new Set(pairs.map((pair) => `${pair.firstSavedPlaceId}|${pair.secondSavedPlaceId}`)).size !== pairs.length) {
     fail("INVALID_RECOMMENDATION_PAIR");
   }
@@ -259,7 +309,7 @@ export function parseRecommendationResponse(value: unknown): RecommendationRespo
   )) fail();
   return {
     status: raw.status,
-    basis: { tripId: basis.tripId, departureAt, returnAt, pointIds },
+    basis: { tripId: basis.tripId, departureAt, returnAt, pointIds, arrivalAts },
     settings: { mealCount, toleranceMinutes, detourLimitMinutes },
     meals,
     pairs,
@@ -267,17 +317,36 @@ export function parseRecommendationResponse(value: unknown): RecommendationRespo
   };
 }
 
-// The response must answer exactly the request that was sent.
+type BasisLike = { departureAt: string; returnAt: string; pointIds: string[]; arrivalAts: string[] };
+
+// Same displayed route: instants compared, IDs and leg arrivals in order.
+export function sameBasis(left: BasisLike, right: BasisLike) {
+  return ms(left.departureAt) === ms(right.departureAt) &&
+    ms(left.returnAt) === ms(right.returnAt) &&
+    left.pointIds.length === right.pointIds.length &&
+    left.pointIds.every((id, index) => id === right.pointIds[index]) &&
+    left.arrivalAts.length === right.arrivalAts.length &&
+    left.arrivalAts.every((arrival, index) => ms(arrival) === ms(right.arrivalAts[index]));
+}
+
+// The response must answer exactly the request that was sent, including each
+// meal's target (same rule as the server) and its ± tolerance window.
 export function responseMatchesRequest(response: RecommendationResponse, request: RecommendationRequest) {
+  const toleranceMs = request.toleranceMinutes * 60_000;
   return response.basis.tripId === request.tripId &&
-    ms(response.basis.departureAt) === ms(request.basis.departureAt) &&
-    ms(response.basis.returnAt) === ms(request.basis.returnAt) &&
-    response.basis.pointIds.length === request.basis.pointIds.length &&
-    response.basis.pointIds.every((id, index) => id === request.basis.pointIds[index]) &&
+    sameBasis(response.basis, request.basis) &&
     response.settings.mealCount === request.mealCount &&
     response.settings.toleranceMinutes === request.toleranceMinutes &&
     response.settings.detourLimitMinutes === request.detourLimitMinutes &&
-    response.meals.every((meal, index) => meal.dwellMinutes === request.meals[index]?.dwellMinutes);
+    response.meals.length === request.meals.length &&
+    response.meals.every((meal, index) => {
+      const asked = request.meals[index];
+      const target = mealTargetAt(request.basis.departureAt, request.toleranceMinutes, asked.desiredTime)?.getTime();
+      return target !== undefined && meal.dwellMinutes === asked.dwellMinutes &&
+        ms(meal.targetAt) === target &&
+        ms(meal.windowStartAt) === target - toleranceMs &&
+        ms(meal.windowEndAt) === target + toleranceMs;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -285,16 +354,17 @@ export function responseMatchesRequest(response: RecommendationResponse, request
 
 type RouteBasisSource = {
   returnAt: string;
-  segments: Array<{ from: { id: string }; to: { id: string }; departureAt?: string }>;
+  segments: Array<{ from: { id: string }; to: { id: string }; departureAt?: string; arrivalAt?: string }>;
 };
 
 export function recommendationBasis(route: RouteBasisSource) {
   const first = route.segments[0];
-  if (!first?.departureAt) return null;
+  if (!first?.departureAt || route.segments.some((segment) => !segment.arrivalAt)) return null;
   return {
     departureAt: first.departureAt,
     returnAt: route.returnAt,
     pointIds: [first.from.id, ...route.segments.map((segment) => segment.to.id)],
+    arrivalAts: route.segments.map((segment) => segment.arrivalAt!),
   };
 }
 

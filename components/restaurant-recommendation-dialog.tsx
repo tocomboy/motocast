@@ -113,10 +113,17 @@ export function RestaurantRecommendationDialog(props: Props) {
     };
   }, []);
 
+  // Lists and the input focus the dialog title; every status (including an
+  // empty result or no saved restaurants) focuses its own state title.
+  const focusTarget = view.name !== "result"
+    ? view.name
+    : view.response.status === "NO_SAVED_RESTAURANTS"
+      ? "no-saved"
+      : view.response.meals.every((meal) => meal.candidates.length === 0) ? "none" : "result";
   useEffect(() => {
-    const target = view.name === "input" || view.name === "result" ? titleRef.current : stateTitleRef.current;
+    const target = focusTarget === "input" || focusTarget === "result" ? titleRef.current : stateTitleRef.current;
     target?.focus({ preventScroll: true });
-  }, [view.name]);
+  }, [focusTarget]);
 
   const inputError = recommendationInputError(input, props.departureAt, props.waypointCount);
 

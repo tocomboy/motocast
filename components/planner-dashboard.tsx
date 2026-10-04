@@ -49,6 +49,7 @@ import {
   readRecommendationFailure,
   recommendationBasis,
   responseMatchesRequest,
+  sameBasis,
   type RecommendationInput,
   type RecommendationResponse,
   type RecommendationSelection,
@@ -927,9 +928,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       !bound || bound.response !== response || bound.generation !== generation ||
       calculatedGenerationRef.current !== generation || liveTripIdRef.current !== bound.tripId ||
       !recommendationAvailable || actionGateRef.current.planning || !basis || !places.origin || !places.destination ||
-      new Date(basis.departureAt).getTime() !== new Date(response.basis.departureAt).getTime() ||
-      new Date(basis.returnAt).getTime() !== new Date(response.basis.returnAt).getTime() ||
-      basis.pointIds.join("\n") !== response.basis.pointIds.join("\n")
+      !sameBasis(basis, response.basis)
     ) return false;
     const result = applyRecommendedMeals({
       originId: places.origin.kakaoPlaceId,
