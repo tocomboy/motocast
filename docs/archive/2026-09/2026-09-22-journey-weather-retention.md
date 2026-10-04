@@ -78,7 +78,7 @@
 5. `supabase/tests/database/journey_weather_cache.py` — 고정 날짜 대신 DB의 현재 서울 날짜.
 6. `supabase/functions/_tests/weather-cache.integration.ts` — 동일한 시험 날짜 보완.
 7. 이 설계·검증·공개안 문서.
-8. `docs/work/research/2026-09-22-journey-weather-retention-artifacts.json` — 후보/로그 해시와 실행 식별자.
+8. `docs/archive/2026-09/2026-09-22-journey-weather-retention-artifacts.json` — 후보/로그 해시와 실행 식별자.
 
 중단·복구는 정확한 job의 `active=false`로 한다. 이미 비운 공개 예보는 다음 정상 조회로 다시 얻으며 과거 상세 시도는 복구하지 않는 폐기 가능한 기록이다. 일별 원장과 보호 함수·새 상태 제약은 유지한다. 정리 후 claim의 오래된 발표 제한을 되돌리거나 원장을 삭제해 예산을 복원하지 않는다.
 
