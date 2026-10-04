@@ -11,7 +11,8 @@ export function mealDwellFixedMessage(body: unknown): string | null {
   const { code, error } = body as { code?: unknown; error?: unknown };
   if (code !== MEAL_DWELL_FIXED || typeof error !== "string") return null;
   const message = error.trim();
-  return message && message.length <= MAX_MESSAGE_LENGTH && !/[\u0000-\u001f\u007f]/.test(message) ? message : null;
+  // C0, DEL and C1 control characters (U+0080–U+009F, e.g. NEL U+0085) are rejected.
+  return message && message.length <= MAX_MESSAGE_LENGTH && !/[\u0000-\u001f\u007f-\u009f]/.test(message) ? message : null;
 }
 
 export async function readMealDwellFixedMessage(error: unknown): Promise<string | null> {

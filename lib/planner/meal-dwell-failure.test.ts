@@ -17,6 +17,11 @@ describe("fixed meal dwell refusal", () => {
     expect(mealDwellFixedMessage({ error: "   ", code: "MEAL_DWELL_FIXED" })).toBeNull();
     expect(mealDwellFixedMessage({ error: "a".repeat(201), code: "MEAL_DWELL_FIXED" })).toBeNull();
     expect(mealDwellFixedMessage({ error: "줄\n바꿈", code: "MEAL_DWELL_FIXED" })).toBeNull();
+    // C1 controls, including NEL (U+0085) and both range ends, are rejected; the next code point is not a control.
+    for (const control of ["\u007f", "\u0080", "\u0085", "\u009f"]) {
+      expect(mealDwellFixedMessage({ error: `안내${control}문구`, code: "MEAL_DWELL_FIXED" })).toBeNull();
+    }
+    expect(mealDwellFixedMessage({ error: "안내\u00a0문구", code: "MEAL_DWELL_FIXED" })).toBe("안내\u00a0문구");
     await expect(readMealDwellFixedMessage(httpError("not json"))).resolves.toBeNull();
     await expect(readMealDwellFixedMessage(new Error("CLIENT_REQUEST_TIMEOUT"))).resolves.toBeNull();
     await expect(readMealDwellFixedMessage(true)).resolves.toBeNull();

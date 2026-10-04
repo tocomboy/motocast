@@ -119,6 +119,31 @@ describe("CollectionManager direct course", () => {
       expect(rendered).not.toContain(serverText);
       expect(rendered).toContain("컬렉션을 저장하지 못했습니다.");
     }
+    // Every save failure is an alert, whatever its wording.
+    const statusLine = renderer.root.findByProps({ className: "manager-status" });
+    expect(statusLine.props.role).toBe("alert");
+    await act(async () => renderer.unmount());
+  });
+
+  it("announces a MEAL_DWELL_FIXED refusal for a new version of a saved collection as an alert", async () => {
+    browserMocks.invoke.mockResolvedValueOnce({ data: null, error: { context: new Response(JSON.stringify({ error: "식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.", code: "MEAL_DWELL_FIXED" }), { status: 400 }) } });
+    browserMocks.rows = [{
+      id: "collection-1",
+      title: "옛 코스",
+      description: "",
+      updated_at: "2026-09-17T00:00:00.000Z",
+      collection_versions: [{ id: "version-1", version_number: 1, created_at: "2026-09-17T00:00:00.000Z", origin: directCourse.origin, destination: directCourse.destination, points: [] }],
+    }];
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<CollectionManager currentCourse={directCourse} onApply={vi.fn()} onShare={vi.fn()} />);
+    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    await act(async () => renderer.root.findByProps({ "aria-label": "옛 코스 새 버전 저장" }).props.onClick());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const feedback = renderer.root.findByProps({ className: "manager-operation-feedback" });
+    expect(feedback.props.role).toBe("alert");
+    expect(feedback.children).toEqual(["식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요."]);
     await act(async () => renderer.unmount());
   });
 
