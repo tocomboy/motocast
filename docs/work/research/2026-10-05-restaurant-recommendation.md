@@ -46,7 +46,7 @@
 
 | 기존 규칙 | 이번 기능에서의 적용 |
 | --- | --- |
-| 식사 기본 체류 60분, 수정 가능, 별도 개수 제한 없음, 전체 경유지 30개(`PLAN-003`) | 추천 입력의 식사 시간 기본 60분(1–1440). 추가 결과는 `meal` 역할·입력한 체류 시간의 새 occurrence. 현재 경유지 + 추가 수가 30을 넘으면 요청 전에 막는다. |
+| 식사 체류 45분 고정(`PLAN-003` 2026-10-05 amendment, 이전 '기본 60분·수정 가능'은 이력), 별도 개수 제한 없음, 전체 경유지 30개 | 추천의 식사 체류는 45분 고정이며 입력이 없다(§1.2). 추가 결과는 `meal` 역할·45분의 새 occurrence. 현재 경유지 + 추가 수가 30을 넘으면 요청 전에 막는다. |
 | 경유지 추가는 자동 재계산하지 않고 `경로 업데이트 필요`를 표시(`PLAN-004`) | 확정 추가 후 경로·날씨·공유 상태를 무효화하고 편집 화면에서 `경로 다시 계산`을 요구한다. 추천 화면은 경로를 저장·재계산하지 않는다. |
 | 영업정보: 카카오 공개 장소 검색은 영업시간·브레이크·라스트오더를 제공하지 않으며(#33 데이터원 미확정), 확보하지 않은 정보는 `정보 없음`으로 표시하고 경고가 없다는 이유로 영업 가능하다고 단정하지 않는다. 브레이크 타임은 표시만 하고 경로를 거부·수정하지 않는다(`PLAN-002`). | 추천 후보마다 `영업정보 없음 · 방문 전 확인`을 표시한다. 영업시간으로 후보를 거르거나 경고를 만들지 않는다. 영업정보 데이터원·경고는 #33 후속 범위로 남는다. |
 | 출발 후 24시간 미만 복귀(`SCOPE-001`, `PLAN-002`) | 식당 추가 후 예상 복귀가 24시간 이상이면 그 후보/조합을 제외한다. |
@@ -246,7 +246,7 @@ Figma 파일 `wVNriNWb1OlF21DVq8rqlJ`, v2 디자인 체계 페이지 `284:2253`.
 2. 추가 문구 채택: 진입 카드 설명, 계산 중 안내, 오류의 `음식점이 없다는 뜻이 아닙니다.`, 경로 변경됨의 `선택한 식당은 일정에 추가하지 않았어요.`, `선택 불가 ·`, `추천 조건` 요약, 추정값 고지.
 3. 오류 주 버튼: `API_DAILY_BUDGET_EXHAUSTED`(HTTP 429)만 주 `닫기`·보조 `다시 시도`. 설정·일시·응답 오류는 주 `다시 시도`.
 4. 요청 전 입력 오류 문구 채택: `식사 2 희망 시각은 식사 1보다 늦어야 해요.`, `경유지가 30개를 넘어 식당을 추가할 수 없어요.` 이때 `추천 받기` 비활성.
-5. 식사 시간은 기존 체류 입력 규칙(1–1440, 직접 입력)과 같게 구현.
+5. ~~식사 시간은 기존 체류 입력 규칙(1–1440, 직접 입력)과 같게 구현.~~ 3차 변경(§1.2)으로 대체: 식사 시간은 45분 고정, 입력 없음.
 6. PC 시안 1440×1024 유지(최대 높이 규칙으로 900에서도 맞음).
 7. 배경 맥락 프레임의 v2 S01/W05/W02/E01 복제 사용 허용(새 시트·행·상태는 v2 부품으로 새로 구성).
 8. 추천으로 추가된 경유지의 별도 표시는 하지 않음.
@@ -257,7 +257,7 @@ Figma 파일 `wVNriNWb1OlF21DVq8rqlJ`, v2 디자인 체계 페이지 `284:2253`.
 | --- | --- | --- |
 | 설계·계약 | 작성 | 이 문서 |
 | Figma 디자인 | 완료(디자인만, 앱 적용 전) | 섹션 `345:6663`, §7 |
-| 서버 `recommend-restaurants` | 인수 (`634b0ec` 계약 2.0.0, Codex V2 PASS — LOW 1 문서 잔존 표기 수정) — 이전 `849fbae` V2 PASS, 최초 `00e3aaf` V2 FAIL 후 수정 | 작성자 검사: 대상 3개 파일 113 PASS, `supabase/functions` 38 파일 677 PASS / FAIL 0 / SKIP 0, deno check 9개 함수 PASS, lint·typecheck·diff-check PASS. 메인 재실행: `supabase/functions` 677 PASS. 메인 검수 LOW 1: 식당 좌표가 도로 스냅 허용(0.005°) 밖이면 후보 제외가 아니라 요청 전체 `RECOMMENDATION_RESPONSE_INVALID`(기존 경로 계산과 같은 보수적 실패, 미수정). 실제 RLS·예산 RPC·Kakao 호출·응답 시간은 NOT_RUN. |
+| 서버 `recommend-restaurants` | 인수 (`e1e6c24` 계약 3.0.1·식사 45분 강제, Codex V2 PASS: `68134b9` FAIL M1/L1 → `e1e6c24`·`0af544c` RESOLVED, `5772210` journey 호환 테스트 포함). 이전: (`634b0ec` 계약 2.0.0, Codex V2 PASS — LOW 1 문서 잔존 표기 수정) — 이전 `849fbae` V2 PASS, 최초 `00e3aaf` V2 FAIL 후 수정 | 작성자 검사: 대상 3개 파일 113 PASS, `supabase/functions` 38 파일 677 PASS / FAIL 0 / SKIP 0, deno check 9개 함수 PASS, lint·typecheck·diff-check PASS. 메인 재실행: `supabase/functions` 677 PASS. 메인 검수 LOW 1: 식당 좌표가 도로 스냅 허용(0.005°) 밖이면 후보 제외가 아니라 요청 전체 `RECOMMENDATION_RESPONSE_INVALID`(기존 경로 계산과 같은 보수적 실패, 미수정). 실제 RLS·예산 RPC·Kakao 호출·응답 시간은 NOT_RUN. |
 | 웹 화면 | 인수 (`921c9a0`, Codex V2 PASS) — 최초 `5aef2e7` V2 FAIL 후 `dd1185b`·`921c9a0` 수정. 수정 후 작성자: lint·typecheck PASS, `npm test` 95 파일 1158 PASS, build PASS, e2e 63 PASS / 2 SKIP. | 작성자: lint·typecheck PASS, `npm test` 95 파일 1125 PASS, build PASS, e2e 63 PASS / 2 SKIP(기존 Preview 전용), LOCAL_UI 임시 하네스 4폭×16상태 64장 클리핑 0(합성 응답). 로컬 Playwright는 데모 모드라 추천 흐름 spec 없음(메인 결정 B, 연결 흐름은 Preview에서 검증). 큰 글자는 CSS zoom 근사만. |
 | Android 화면 | 디자인 후 | |
 | Codex 검증(V2/V3) | 진행 중 | 누락 정정: 서버 `00e3aaf`를 메인 검수만으로 인수했다(사용자 지적 2026-10-05). 원인과 재발 방지는 MOTOCAST `bbce8f6`(검증 규칙 §5의 대체된 lead 단독 검수 문구 정리, 인수 gate)와 dev-environment `8175a7c`(전역 인수 단계 V2 연결, 역할 변경 시 프로젝트 문서 대조) — [점검 기록](https://github.com/tocomboy/dev-environment/blob/main/docs/reviews/2026-10-05-verifier-acceptance-gate.md). V2 결과: 서버 `00e3aaf` FAIL(MEDIUM 3: basis가 중간 도착 변경을 못 잡음→`arrivalAts` 추가, 저장 구간 좌표 연결 미검사, 치명 오류 직후 새 호출 경합), 웹 `5aef2e7` FAIL(MEDIUM 2: 응답 목표 시각 미대조, 조건 위반 후보·조합 수용; LOW 1: 결과 없음 상태 포커스). 재검증(HEAD `586c4bd`, 서버 = `849fbae`, 웹 = `921c9a0`): **PASS**, 6건 모두 RESOLVED, 새 지적 LOW 1(§3.3 응답 예시 `arrivalAts` 누락 → 문서 수정). Codex 실행: vitest 40 파일 773 PASS(`--pool threads --configLoader native --no-cache`), typecheck(`--incremental false`)·lint·deno check 2 PASS. Android V2와 병합 전 V3는 남음. 그 전까지 Preview·출시 보류. |
