@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   rpc: vi.fn(),
   savedRows: [] as unknown[],
+  focused: [] as string[],
   authListeners: [] as Array<(event: string, session: { user: { id: string } } | null) => void>,
 }));
 
@@ -95,9 +96,12 @@ function buttons(root: ReactTestInstance, label: string) {
   return root.findAll((node) => node.type === "button" && text(node) === label);
 }
 
+// Records which heading received focus (react-test-renderer returns a new
+// mock object from `.instance`, so calls are tracked here instead).
 function createNodeMock(element: ReactElement<unknown>) {
+  const props = element.props as { children?: unknown };
   return {
-    focus: vi.fn(),
+    focus: vi.fn(() => { if (element.type === "h2" || element.type === "h3") mocks.focused.push(`${element.type}:${String(props.children)}`); }),
     click: vi.fn(),
     querySelector: vi.fn(),
     querySelectorAll: vi.fn(() => []),
@@ -123,6 +127,11 @@ async function chooseSchedule(renderer: ReactTestRenderer) {
 
 // Calculates and saves a live route, then opens the recommendation dialog from the summary.
 async function openRecommendation() {
+  return openRecommendationFrom(null);
+}
+
+// `opener` stands in for the focused entry button that the dialog restores focus to.
+async function openRecommendationFrom(opener: object | null) {
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={course} navigationMode="memory" />, { createNodeMock }); });
   await flush();
@@ -132,6 +141,7 @@ async function openRecommendation() {
   const entries = buttons(renderer.root, "음식점 추천 받기");
   expect(entries).toHaveLength(2);
   expect(entries.every((entry) => entry.props.disabled === false)).toBe(true);
+  (document as unknown as { activeElement: object | null }).activeElement = opener;
   await act(async () => entries[0].props.onClick());
   return renderer;
 }
@@ -146,6 +156,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-09-30T08:57:00.000Z"));
   mocks.authListeners.length = 0;
   mocks.savedRows = [savedRow()];
+  mocks.focused.length = 0;
   mocks.invoke.mockReset();
   mocks.rpc.mockReset().mockResolvedValue({ data: tripId, error: null });
   mocks.invoke.mockImplementation(async (name: string, options: { body: Record<string, unknown> }) => {
@@ -365,6 +376,53 @@ describe("PlannerDashboard restaurant recommendation", () => {
     resolve();
     await flush();
     expect(calls("recommend-restaurants")).toHaveLength(1);
+  });
+
+  it("Esc goes back from results and errors, closes from input and loading, and moves focus to each new title", async () => {
+    const opener = Object.assign(new (globalThis.HTMLElement as unknown as { new(): object })(), { focus: vi.fn() });
+    const renderer = await openRecommendationFrom(opener);
+    const esc = async () => act(async () => dialog(renderer).findByType("dialog").props.onCancel({ preventDefault: vi.fn() }));
+    expect(mocks.focused.at(-1)).toBe("h2:음식점 추천");
+
+    // Result → Esc → input with the kept values (still open).
+    await act(async () => dialog(renderer).findByProps({ "aria-label": "도착 허용 범위 5분 늘리기" }).props.onClick());
+    await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
+    expect(text(dialog(renderer))).toContain("추천 조건");
+    expect(calls("recommend-restaurants")[0][1].body.toleranceMinutes).toBe(35);
+    await esc();
+    expect(buttons(dialog(renderer), "추천 받기")).toHaveLength(1);
+    expect(text(dialog(renderer))).toContain("±35");
+    expect(mocks.focused.at(-1)).toBe("h2:음식점 추천");
+
+    // Error → its state title takes focus; Esc → input.
+    mocks.invoke.mockImplementationOnce(async () => ({ data: null, error: { context: new Response(JSON.stringify({ code: "RECOMMENDATION_PROVIDER_TEMPORARY" }), { status: 503 }) } }));
+    await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
+    await flush();
+    expect(text(dialog(renderer))).toContain("추천을 계산하지 못했습니다");
+    expect(mocks.focused.at(-1)).toBe("h3:추천을 계산하지 못했습니다");
+    await esc();
+    expect(buttons(dialog(renderer), "추천 받기")).toHaveLength(1);
+
+    // Loading → Esc → closed; the late reply is dropped and focus returns to the entry.
+    let resolve!: () => void;
+    mocks.invoke.mockImplementationOnce((_name: string, options: { body: RecommendationRequest }) => new Promise((done) => { resolve = () => done({ error: null, data: recommendationBody(options.body) }); }));
+    await act(async () => { buttons(dialog(renderer), "추천 받기")[0].props.onClick(); await Promise.resolve(); });
+    expect(text(dialog(renderer))).toContain("추천을 계산하고 있어요");
+    await esc();
+    expect(renderer.root.findAllByType(RestaurantRecommendationDialog)).toHaveLength(0);
+    expect(opener.focus).toHaveBeenCalledTimes(1);
+    await act(async () => { resolve(); await Promise.resolve(); });
+    await flush();
+    expect(renderer.root.findAllByType(RestaurantRecommendationDialog)).toHaveLength(0);
+    expect(renderer.root.findByType("main").props["data-view"]).toBe("summary");
+
+    // Input → Esc → closed.
+    await act(async () => buttons(renderer.root, "음식점 추천 받기")[0].props.onClick());
+    await esc();
+    expect(renderer.root.findAllByType(RestaurantRecommendationDialog)).toHaveLength(0);
+    expect(calls("plan-route")).toHaveLength(1);
+    expect(calls("weather-timeline")).toHaveLength(1);
+    await act(async () => renderer.unmount());
   });
 
   it("blocks the request before sending when meal 2 is not later than meal 1", async () => {
