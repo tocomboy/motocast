@@ -14,7 +14,7 @@ const points: Point[] = [
 const DEPARTURE_MS = Date.parse("2030-01-01T00:00:00.000Z"); // 09:00 Seoul
 const LEG_SECONDS = 7200;
 
-function storedSummary(legPoints: Point[] = points) {
+function storedSummary(legPoints: Point[] = points, dwells: number[] = []) {
   let cursor = DEPARTURE_MS;
   const stored = (point: Point) => ({
     id: point.id, label: `label-${point.id}`, longitude: point.longitude, latitude: point.latitude,
@@ -22,17 +22,18 @@ function storedSummary(legPoints: Point[] = points) {
   });
   const legs = legPoints.slice(1).map((to, index) => {
     const from = legPoints[index];
+    const dwell = dwells[index + 1] ?? 0;
     const leg = {
-      from: stored(from), to: stored(to), via: [],
+      from: { ...stored(from), dwellMinutes: dwells[index] ?? 0 }, to: { ...stored(to), dwellMinutes: dwell }, via: [],
       departureAt: new Date(cursor).toISOString(), arrivalAt: new Date(cursor + LEG_SECONDS * 1000).toISOString(),
-      dwellMinutes: 0, distanceMeters: 1000, durationSeconds: LEG_SECONDS,
+      dwellMinutes: dwell, distanceMeters: 1000, durationSeconds: LEG_SECONDS,
       sections: [{ distance: 1000, duration: LEG_SECONDS, roads: [{
         name: "fixture", distance: 1000, duration: LEG_SECONDS,
         vertexes: [from.longitude, from.latitude, (from.longitude + to.longitude) / 2, (from.latitude + to.latitude) / 2, to.longitude, to.latitude],
       }] }],
       providerRequestNumber: 1, forecastTraffic: true,
     };
-    cursor += LEG_SECONDS * 1000;
+    cursor += LEG_SECONDS * 1000 + dwell * 60_000;
     return leg;
   });
   return {
@@ -59,11 +60,34 @@ function savedRow(id: string, longitude = SECRET_LONGITUDE, latitude = SECRET_LA
 }
 const ROW_ID = "22222222-2222-4222-8222-222222222222";
 
+function basisOf(summary: ReturnType<typeof storedSummary>) {
+  return {
+    departureAt: summary.legs[0].departureAt,
+    returnAt: summary.returnAt,
+    pointIds: [summary.legs[0].from.id, ...summary.legs.map((leg) => leg.to.id)],
+    arrivalAts: summary.legs.map((leg) => leg.arrivalAt),
+  };
+}
+
+// Recomputed elsewhere: W gained a 10-minute dwell and leg 0 became 10 minutes faster,
+// so departure, return and point IDs are identical but the leg-0 arrival differs.
+function recomputedWithDwell() {
+  const recomputed = storedSummary(points, [0, 10, 0]);
+  const shortened = LEG_SECONDS - 600;
+  recomputed.legs[0].arrivalAt = new Date(DEPARTURE_MS + shortened * 1000).toISOString();
+  recomputed.legs[0].durationSeconds = shortened;
+  recomputed.legs[0].sections[0].duration = shortened;
+  recomputed.legs[0].sections[0].roads[0].duration = shortened;
+  recomputed.legs[1].departureAt = new Date(DEPARTURE_MS + LEG_SECONDS * 1000).toISOString();
+  recomputed.legs[1].arrivalAt = new Date(DEPARTURE_MS + 2 * LEG_SECONDS * 1000).toISOString();
+  recomputed.returnAt = recomputed.legs[1].arrivalAt;
+  return recomputed;
+}
+
 function body(overrides: Record<string, unknown> = {}) {
-  const summary = storedSummary();
   return {
     tripId: TRIP_ID,
-    basis: { departureAt: summary.legs[0].departureAt, returnAt: summary.returnAt, pointIds: points.map((point) => point.id) },
+    basis: basisOf(storedSummary()),
     mealCount: 1,
     meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
     toleranceMinutes: 30,
@@ -240,15 +264,35 @@ describe("recommend-restaurants handler", () => {
   });
 
   it.each([
-    ["changed basis", () => body({ basis: { ...body().basis, pointIds: ["origin-kakao", "destination-kakao"] } })],
+    ["changed basis", () => body({ basis: { ...body().basis, pointIds: ["origin-kakao", "destination-kakao", "occurrence-w"] } })],
     ["no stored route", () => { store.cache = null; return body(); }],
     ["no owned trip", () => { store.trip = null; return body(); }],
     ["malformed stored route", () => { store.cache = { summary: { candidate: { id: "recommended" }, legs: "x" } }; return body(); }],
+    ["intermediate arrival changed with the same departure, return and IDs", () => {
+      const recomputed = recomputedWithDwell();
+      expect(basisOf(recomputed)).toMatchObject({ departureAt: body().basis.departureAt, returnAt: body().basis.returnAt, pointIds: body().basis.pointIds });
+      store.cache = { summary: recomputed };
+      return body();
+    }],
+    ["shared point coordinates moved", () => {
+      const moved = storedSummary();
+      moved.legs[1].from.longitude = 127.5001;
+      store.cache = { summary: moved };
+      return body();
+    }],
   ])("returns 409 stale for %s with zero provider calls", async (_name, prepare) => {
     const response = await call(prepare());
     expect(response.status).toBe(409);
     expect((await response.json()).code).toBe("RECOMMENDATION_ROUTE_STALE");
     expectNoProviderWork();
+  });
+
+  it("accepts the recomputed route once the screen sends its new arrivals, echoing them in UTC", async () => {
+    const recomputed = recomputedWithDwell();
+    store.cache = { summary: recomputed };
+    const response = await call(body({ basis: basisOf(recomputed) }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).basis.arrivalAts).toEqual(["2030-01-01T01:50:00.000Z", "2030-01-01T04:00:00.000Z"]);
   });
 
   it("rejects more than 30 waypoints with zero provider calls", async () => {
@@ -258,7 +302,7 @@ describe("recommend-restaurants handler", () => {
     const summary = storedSummary(many);
     store.cache = { summary };
     const response = await call(body({
-      basis: { departureAt: summary.legs[0].departureAt, returnAt: summary.returnAt, pointIds: many.map((p) => p.id) },
+      basis: basisOf(summary),
       mealCount: 2, meals: [{ desiredTime: "10:00", dwellMinutes: 60 }, { desiredTime: "18:00", dwellMinutes: 60 }],
     }));
     expect(response.status).toBe(422);

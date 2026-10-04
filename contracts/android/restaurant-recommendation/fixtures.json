@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.0.0",
+  "contractVersion": "1.1.0",
   "sourceCommit": "70d3bf3507976ac8dda47982a060f5cba2cbdfdc",
   "endpoint": "POST /functions/v1/recommend-restaurants",
   "requests": [
@@ -14,6 +14,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -36,6 +40,10 @@
               "origin-kakao-id",
               "occurrence-1",
               "destination-kakao-id"
+            ],
+            "arrivalAts": [
+              "2030-01-01T02:00:00.000Z",
+              "2030-01-01T04:00:00.000Z"
             ]
           },
           "mealCount": 1,
@@ -68,6 +76,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 2,
@@ -94,6 +106,10 @@
               "origin-kakao-id",
               "occurrence-1",
               "destination-kakao-id"
+            ],
+            "arrivalAts": [
+              "2030-01-01T02:00:00.000Z",
+              "2030-01-01T04:00:00.000Z"
             ]
           },
           "mealCount": 2,
@@ -135,6 +151,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T11:00:00+09:00",
+            "2030-01-01T13:00:00+09:00"
           ]
         },
         "mealCount": 1,
@@ -157,6 +177,10 @@
               "origin-kakao-id",
               "occurrence-1",
               "destination-kakao-id"
+            ],
+            "arrivalAts": [
+              "2030-01-01T02:00:00.000Z",
+              "2030-01-01T04:00:00.000Z"
             ]
           },
           "mealCount": 1,
@@ -188,6 +212,9 @@
           "pointIds": [
             "point-0",
             "point-1"
+          ],
+          "arrivalAts": [
+            "2030-01-01T00:01:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -209,6 +236,9 @@
             "pointIds": [
               "point-0",
               "point-1"
+            ],
+            "arrivalAts": [
+              "2030-01-01T00:01:00.000Z"
             ]
           },
           "mealCount": 1,
@@ -270,6 +300,39 @@
             "point-29",
             "point-30",
             "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          ],
+          "arrivalAts": [
+            "2030-01-01T00:01:00.000Z",
+            "2030-01-01T00:02:00.000Z",
+            "2030-01-01T00:03:00.000Z",
+            "2030-01-01T00:04:00.000Z",
+            "2030-01-01T00:05:00.000Z",
+            "2030-01-01T00:06:00.000Z",
+            "2030-01-01T00:07:00.000Z",
+            "2030-01-01T00:08:00.000Z",
+            "2030-01-01T00:09:00.000Z",
+            "2030-01-01T00:10:00.000Z",
+            "2030-01-01T00:11:00.000Z",
+            "2030-01-01T00:12:00.000Z",
+            "2030-01-01T00:13:00.000Z",
+            "2030-01-01T00:14:00.000Z",
+            "2030-01-01T00:15:00.000Z",
+            "2030-01-01T00:16:00.000Z",
+            "2030-01-01T00:17:00.000Z",
+            "2030-01-01T00:18:00.000Z",
+            "2030-01-01T00:19:00.000Z",
+            "2030-01-01T00:20:00.000Z",
+            "2030-01-01T00:21:00.000Z",
+            "2030-01-01T00:22:00.000Z",
+            "2030-01-01T00:23:00.000Z",
+            "2030-01-01T00:24:00.000Z",
+            "2030-01-01T00:25:00.000Z",
+            "2030-01-01T00:26:00.000Z",
+            "2030-01-01T00:27:00.000Z",
+            "2030-01-01T00:28:00.000Z",
+            "2030-01-01T00:29:00.000Z",
+            "2030-01-01T00:30:00.000Z",
+            "2030-01-01T00:31:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -321,6 +384,39 @@
               "point-29",
               "point-30",
               "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            ],
+            "arrivalAts": [
+              "2030-01-01T00:01:00.000Z",
+              "2030-01-01T00:02:00.000Z",
+              "2030-01-01T00:03:00.000Z",
+              "2030-01-01T00:04:00.000Z",
+              "2030-01-01T00:05:00.000Z",
+              "2030-01-01T00:06:00.000Z",
+              "2030-01-01T00:07:00.000Z",
+              "2030-01-01T00:08:00.000Z",
+              "2030-01-01T00:09:00.000Z",
+              "2030-01-01T00:10:00.000Z",
+              "2030-01-01T00:11:00.000Z",
+              "2030-01-01T00:12:00.000Z",
+              "2030-01-01T00:13:00.000Z",
+              "2030-01-01T00:14:00.000Z",
+              "2030-01-01T00:15:00.000Z",
+              "2030-01-01T00:16:00.000Z",
+              "2030-01-01T00:17:00.000Z",
+              "2030-01-01T00:18:00.000Z",
+              "2030-01-01T00:19:00.000Z",
+              "2030-01-01T00:20:00.000Z",
+              "2030-01-01T00:21:00.000Z",
+              "2030-01-01T00:22:00.000Z",
+              "2030-01-01T00:23:00.000Z",
+              "2030-01-01T00:24:00.000Z",
+              "2030-01-01T00:25:00.000Z",
+              "2030-01-01T00:26:00.000Z",
+              "2030-01-01T00:27:00.000Z",
+              "2030-01-01T00:28:00.000Z",
+              "2030-01-01T00:29:00.000Z",
+              "2030-01-01T00:30:00.000Z",
+              "2030-01-01T00:31:00.000Z"
             ]
           },
           "mealCount": 1,
@@ -353,6 +449,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-02T01:00:00+09:00",
+            "2030-01-02T03:00:00+09:00"
           ]
         },
         "mealCount": 1,
@@ -375,6 +475,10 @@
               "origin-kakao-id",
               "occurrence-1",
               "destination-kakao-id"
+            ],
+            "arrivalAts": [
+              "2030-01-01T16:00:00.000Z",
+              "2030-01-01T18:00:00.000Z"
             ]
           },
           "mealCount": 1,
@@ -407,6 +511,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -429,6 +537,10 @@
               "origin-kakao-id",
               "occurrence-1",
               "destination-kakao-id"
+            ],
+            "arrivalAts": [
+              "2030-01-01T02:00:00.000Z",
+              "2030-01-01T04:00:00.000Z"
             ]
           },
           "mealCount": 1,
@@ -461,6 +573,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -483,6 +599,10 @@
               "origin-kakao-id",
               "occurrence-1",
               "destination-kakao-id"
+            ],
+            "arrivalAts": [
+              "2030-01-01T02:00:00.000Z",
+              "2030-01-01T04:00:00.000Z"
             ]
           },
           "mealCount": 1,
@@ -515,6 +635,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 2,
@@ -541,6 +665,10 @@
               "origin-kakao-id",
               "occurrence-1",
               "destination-kakao-id"
+            ],
+            "arrivalAts": [
+              "2030-01-01T02:00:00.000Z",
+              "2030-01-01T04:00:00.000Z"
             ]
           },
           "mealCount": 2,
@@ -592,6 +720,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -618,6 +750,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -644,6 +780,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -669,7 +809,11 @@
             "occurrence-1",
             "destination-kakao-id"
           ],
-          "tripId": "11111111-1111-4111-8111-111111111111"
+          "tripId": "11111111-1111-4111-8111-111111111111",
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
         },
         "mealCount": 1,
         "meals": [
@@ -694,6 +838,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -720,6 +868,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -745,6 +897,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 3,
@@ -778,6 +934,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": "1",
@@ -803,6 +963,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 2,
@@ -828,6 +992,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -857,6 +1025,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -882,6 +1054,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -907,6 +1083,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -932,6 +1112,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -957,6 +1141,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -982,6 +1170,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -1007,6 +1199,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -1032,6 +1228,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -1057,6 +1257,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -1082,6 +1286,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -1107,6 +1315,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -1130,7 +1342,8 @@
           "returnAt": "2030-01-01T04:00:00.000Z",
           "pointIds": [
             "point-0"
-          ]
+          ],
+          "arrivalAts": []
         },
         "mealCount": 1,
         "meals": [
@@ -1185,6 +1398,40 @@
             "point-30",
             "point-31",
             "point-32"
+          ],
+          "arrivalAts": [
+            "2030-01-01T00:01:00.000Z",
+            "2030-01-01T00:02:00.000Z",
+            "2030-01-01T00:03:00.000Z",
+            "2030-01-01T00:04:00.000Z",
+            "2030-01-01T00:05:00.000Z",
+            "2030-01-01T00:06:00.000Z",
+            "2030-01-01T00:07:00.000Z",
+            "2030-01-01T00:08:00.000Z",
+            "2030-01-01T00:09:00.000Z",
+            "2030-01-01T00:10:00.000Z",
+            "2030-01-01T00:11:00.000Z",
+            "2030-01-01T00:12:00.000Z",
+            "2030-01-01T00:13:00.000Z",
+            "2030-01-01T00:14:00.000Z",
+            "2030-01-01T00:15:00.000Z",
+            "2030-01-01T00:16:00.000Z",
+            "2030-01-01T00:17:00.000Z",
+            "2030-01-01T00:18:00.000Z",
+            "2030-01-01T00:19:00.000Z",
+            "2030-01-01T00:20:00.000Z",
+            "2030-01-01T00:21:00.000Z",
+            "2030-01-01T00:22:00.000Z",
+            "2030-01-01T00:23:00.000Z",
+            "2030-01-01T00:24:00.000Z",
+            "2030-01-01T00:25:00.000Z",
+            "2030-01-01T00:26:00.000Z",
+            "2030-01-01T00:27:00.000Z",
+            "2030-01-01T00:28:00.000Z",
+            "2030-01-01T00:29:00.000Z",
+            "2030-01-01T00:30:00.000Z",
+            "2030-01-01T00:31:00.000Z",
+            "2030-01-01T00:32:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -1210,6 +1457,10 @@
             "origin-kakao-id",
             "",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -1235,6 +1486,10 @@
             "origin-kakao-id",
             "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -1260,6 +1515,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T00:01:00.000Z",
+            "2030-01-01T00:02:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -1285,6 +1544,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-03-02T00:01:00.000Z",
+            "2030-03-02T00:02:00.000Z"
           ]
         },
         "mealCount": 1,
@@ -1310,6 +1573,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 2,
@@ -1339,6 +1606,10 @@
             "origin-kakao-id",
             "occurrence-1",
             "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "mealCount": 2,
@@ -1349,6 +1620,202 @@
           },
           {
             "desiredTime": "11:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30,
+        "detourLimitMinutes": 30
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "arrival-ats-missing",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30,
+        "detourLimitMinutes": 30
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "arrival-ats-too-short",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30,
+        "detourLimitMinutes": 30
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "arrival-ats-too-long",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z",
+            "2030-01-01T05:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30,
+        "detourLimitMinutes": 30
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "arrival-ats-not-array",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": "2030-01-01T02:00:00.000Z"
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30,
+        "detourLimitMinutes": 30
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "arrival-at-not-rfc3339",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01 02:00:00",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30,
+        "detourLimitMinutes": 30
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "arrival-at-impossible-date",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-02-30T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30,
+        "detourLimitMinutes": 30
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "arrival-at-number",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            1893463200000,
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
             "dwellMinutes": 60
           }
         ],
@@ -1373,6 +1840,10 @@
             "origin",
             "occ-w",
             "destination"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "settings": {
@@ -1460,6 +1931,10 @@
             "origin",
             "occ-w",
             "destination"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "settings": {
@@ -1565,6 +2040,10 @@
             "origin",
             "occ-w",
             "destination"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "settings": {
@@ -1639,6 +2118,10 @@
             "origin",
             "occ-w",
             "destination"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "settings": {
@@ -1683,6 +2166,10 @@
             "origin",
             "occ-w",
             "destination"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
           ]
         },
         "settings": {

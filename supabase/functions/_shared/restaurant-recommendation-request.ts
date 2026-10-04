@@ -4,7 +4,7 @@ export type RecommendationMealRequest = { desiredTime: string; dwellMinutes: num
 
 export type RecommendationRequest = {
   tripId: string;
-  basis: { departureAt: string; returnAt: string; pointIds: string[] };
+  basis: { departureAt: string; returnAt: string; pointIds: string[]; arrivalAts: string[] };
   mealCount: 1 | 2;
   meals: RecommendationMealRequest[];
   toleranceMinutes: number;
@@ -20,7 +20,7 @@ export type MealTarget = {
 };
 
 const REQUEST_KEYS = ["basis", "detourLimitMinutes", "mealCount", "meals", "toleranceMinutes", "tripId"];
-const BASIS_KEYS = ["departureAt", "pointIds", "returnAt"];
+const BASIS_KEYS = ["arrivalAts", "departureAt", "pointIds", "returnAt"];
 const MEAL_KEYS = ["desiredTime", "dwellMinutes"];
 const TRIP_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DESIRED_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -65,6 +65,9 @@ export function parseRecommendationRequest(value: unknown): RecommendationReques
     !Array.isArray(basis.pointIds) || basis.pointIds.length < 2 || basis.pointIds.length > 32 ||
     !basis.pointIds.every((id) => typeof id === "string" && id.length >= 1 && id.length <= 100)
   ) invalid();
+  // One stored arrival per leg binds intermediate dwell changes to the basis too.
+  if (!Array.isArray(basis.arrivalAts) || basis.arrivalAts.length !== basis.pointIds.length - 1) invalid();
+  const arrivals = basis.arrivalAts.map((value) => parseStrictRfc3339(value) ?? invalid());
 
   const mealCount = integerIn(body.mealCount, 1, 2) as 1 | 2;
   if (!Array.isArray(body.meals) || body.meals.length !== mealCount) invalid();
@@ -80,6 +83,7 @@ export function parseRecommendationRequest(value: unknown): RecommendationReques
       departureAt: departure.toISOString(),
       returnAt: returned.toISOString(),
       pointIds: [...basis.pointIds as string[]],
+      arrivalAts: arrivals.map((arrival) => arrival.toISOString()),
     },
     mealCount,
     meals,

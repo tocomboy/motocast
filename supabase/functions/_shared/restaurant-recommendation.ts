@@ -58,7 +58,7 @@ export type RecommendationCoverage = {
 
 export type RecommendationResponse = {
   status: "OK" | "NO_SAVED_RESTAURANTS";
-  basis: { tripId: string; departureAt: string; returnAt: string; pointIds: string[] };
+  basis: { tripId: string; departureAt: string; returnAt: string; pointIds: string[]; arrivalAts: string[] };
   settings: { mealCount: 1 | 2; toleranceMinutes: number; detourLimitMinutes: number };
   meals: RecommendationMeal[];
   pairs: RecommendationPair[];
@@ -234,7 +234,13 @@ export function parseStoredRoute(summary: unknown): StoredRoute {
     if (!Number.isSafeInteger(leg.durationSeconds) || Number(leg.durationSeconds) <= 0) stale();
     const durationSeconds = leg.durationSeconds as number;
     if (arrivalMs !== departureMs + durationSeconds * 1000) stale();
-    if (previousTo && (previousTo.id !== from.id || departureMs !== expectedDepartureMs)) stale();
+    // Adjacent legs must share the same point: ID, coordinates and timing.
+    if (previousTo && (
+      previousTo.id !== from.id ||
+      previousTo.longitude !== from.longitude ||
+      previousTo.latitude !== from.latitude ||
+      departureMs !== expectedDepartureMs
+    )) stale();
     legs.push({
       from: { id: from.id, label: from.label, longitude: from.longitude, latitude: from.latitude },
       to: { id: to.id, label: to.label, longitude: to.longitude, latitude: to.latitude },
@@ -257,14 +263,16 @@ export function parseStoredRoute(summary: unknown): StoredRoute {
 }
 
 // The screen's basis must name exactly the stored route: first departure,
-// return and ordered occurrence IDs. Anything else is a stale screen result.
+// return, ordered occurrence IDs and every leg arrival. Anything else is a stale screen result.
 export function prepareStoredRoute(request: RecommendationRequest, summary: unknown): StoredRoute {
   const route = parseStoredRoute(summary);
   if (
     route.departureMs !== Date.parse(request.basis.departureAt) ||
     route.returnMs !== Date.parse(request.basis.returnAt) ||
     route.pointIds.length !== request.basis.pointIds.length ||
-    route.pointIds.some((id, index) => id !== request.basis.pointIds[index])
+    route.pointIds.some((id, index) => id !== request.basis.pointIds[index]) ||
+    request.basis.arrivalAts.length !== route.legs.length ||
+    route.legs.some((leg, index) => leg.arrivalMs !== Date.parse(request.basis.arrivalAts[index]))
   ) stale();
   if (route.legs.length - 1 + request.mealCount > MAX_ROUTE_WAYPOINTS) {
     throw new Error("RECOMMENDATION_WAYPOINT_LIMIT");
@@ -528,34 +536,47 @@ class ProviderRunner {
 
   constructor(private readonly maxCalls: number, private readonly dependencies: RecommendationDependencies) {}
 
+  // The shared stop flag is set at the exact point a fatal error is first observed
+  // (budget, configuration, provider or response check), before it propagates, so a
+  // concurrent lane whose budget receipt completes afterwards never calls the provider.
+  private fail(error: unknown): never {
+    this.aborted = true;
+    throw error;
+  }
+
   async route(points: RoutablePoint[], departureMs: number): Promise<NormalizedKakaoRoute | null> {
     if (this.aborted) throw new AbortedCall();
-    if (this.calls >= this.maxCalls) throw new Error("RECOMMENDATION_CALL_CAP_EXCEEDED");
-    const departureAt = new Date(departureMs);
-    const isFuture = isFutureDeparture(departureAt, this.dependencies.now());
-    const operation: RouteOperation = isFuture ? "future_directions" : "directions";
-    const hardLimit = this.dependencies.limitFor(operation);
-    this.calls += 1;
-    const { result } = await executeBudgetedProviderCall(
-      () => this.dependencies.consumeBudget(operation, hardLimit),
-      async () => {
-        if (this.aborted) throw new AbortedCall();
-        try {
-          return await this.dependencies.requestProvider({
-            origin: points[0],
-            destination: points.at(-1)!,
-            waypoints: points.slice(1, -1),
-            departureAt,
-            isFuture,
-          });
-        } catch (error) {
-          if (isCandidateUnreachable(error)) return null;
-          throw error;
-        }
-      },
-    );
-    if (result && result.sections.length !== points.length - 1) throw new Error("INVALID_ROUTE_PROVIDER_RESPONSE");
-    return result;
+    try {
+      if (this.calls >= this.maxCalls) throw new Error("RECOMMENDATION_CALL_CAP_EXCEEDED");
+      const departureAt = new Date(departureMs);
+      const isFuture = isFutureDeparture(departureAt, this.dependencies.now());
+      const operation: RouteOperation = isFuture ? "future_directions" : "directions";
+      const hardLimit = this.dependencies.limitFor(operation);
+      this.calls += 1;
+      const { result } = await executeBudgetedProviderCall(
+        () => this.dependencies.consumeBudget(operation, hardLimit).catch((error: unknown) => this.fail(error)),
+        async () => {
+          if (this.aborted) throw new AbortedCall();
+          try {
+            return await this.dependencies.requestProvider({
+              origin: points[0],
+              destination: points.at(-1)!,
+              waypoints: points.slice(1, -1),
+              departureAt,
+              isFuture,
+            });
+          } catch (error) {
+            if (isCandidateUnreachable(error)) return null;
+            return this.fail(error);
+          }
+        },
+      );
+      if (result && result.sections.length !== points.length - 1) this.fail(new Error("INVALID_ROUTE_PROVIDER_RESPONSE"));
+      return result;
+    } catch (error) {
+      if (!(error instanceof AbortedCall)) this.aborted = true;
+      throw error;
+    }
   }
 }
 
@@ -734,6 +755,7 @@ export async function recommendRestaurants(
       departureAt: iso(route.departureMs),
       returnAt: iso(route.returnMs),
       pointIds: route.pointIds,
+      arrivalAts: route.legs.map((leg) => iso(leg.arrivalMs)),
     },
     settings: {
       mealCount: request.mealCount,

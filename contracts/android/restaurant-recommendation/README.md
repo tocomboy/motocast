@@ -1,11 +1,11 @@
-# 저장 식당 기반 음식점 추천 계약 1.0.0
+# 저장 식당 기반 음식점 추천 계약 1.1.0
 
 웹/서버 정본은 이 디렉터리의 `fixtures.json`이며 Android는 검증한 동일 바이트를 보존한다. 설계 정본은 `docs/work/research/2026-10-05-restaurant-recommendation.md` §3(요청·처리·응답·오류)·§5·§6이다. `sourceCommit`은 변경 전 기반이며, 실제 구현 후보는 이 파일을 포함하는 Git commit과 배포 기록으로 고정한다. 함수 배포 여부는 이 계약으로 증명되지 않는다.
 
 ## 요청 — `POST /functions/v1/recommend-restaurants` (JWT 필요)
 
-- 정확히 `tripId`, `basis{departureAt, returnAt, pointIds}`, `mealCount`, `meals[{desiredTime, dwellMinutes}]`, `toleranceMinutes`, `detourLimitMinutes`만 허용한다. 키 추가·누락, 경로 정책 키(`car_type` 등)는 거부한다. 서버는 기본값을 채우지 않으므로 화면 기본값(식사 1 `12:00`, 식사 2 `18:00`, 체류 60, 허용 ±30, 한도 30)은 클라이언트가 보낸다.
-- `tripId` UUID. `basis`는 화면에 표시한 계산 결과 그대로: 첫 구간 출발, 예상 복귀, `[legs[0].from.id, ...legs.map(to.id)]`(2–32개, 각 1–100자). 시각은 RFC 3339이며 서버는 순간(instant)으로 비교하고 응답에는 UTC `Z` 표기로 돌려준다. 복귀는 출발보다 늦어야 한다.
+- 정확히 `tripId`, `basis{departureAt, returnAt, pointIds, arrivalAts}`, `mealCount`, `meals[{desiredTime, dwellMinutes}]`, `toleranceMinutes`, `detourLimitMinutes`만 허용한다. 키 추가·누락, 경로 정책 키(`car_type` 등)는 거부한다. 서버는 기본값을 채우지 않으므로 화면 기본값(식사 1 `12:00`, 식사 2 `18:00`, 체류 60, 허용 ±30, 한도 30)은 클라이언트가 보낸다.
+- `tripId` UUID. `basis`는 화면에 표시한 계산 결과 그대로: 첫 구간 출발, 예상 복귀, `[legs[0].from.id, ...legs.map(to.id)]`(2–32개, 각 1–100자), 구간별 `legs[i].arrivalAt`(`arrivalAts`, 길이 = `pointIds.length − 1`, 필수). 서버는 저장 경로와 출발·복귀·ID 순서·모든 구간 도착이 같아야 받아들이므로 출발·복귀·ID가 같고 중간 체류만 바뀐 재계산도 409로 거부한다. 저장 경로의 인접 구간이 공유 지점의 ID·좌표·시각으로 이어지지 않아도 409다. 시각은 RFC 3339이며 서버는 순간(instant)으로 비교하고 응답 `basis`(`arrivalAts` 포함)에는 저장값을 UTC `Z` 표기로 돌려준다. 복귀는 출발보다 늦어야 한다.
 - `mealCount` 1|2, `meals.length === mealCount`. `desiredTime` `HH:MM`(00–23:00–59, 두 자리). `dwellMinutes` 정수 1–1440. `toleranceMinutes`·`detourLimitMinutes` 정수 5–180.
 - 식사 목표 시각: 서울 시각 `HH:MM`이 `departureAt − toleranceMinutes` **이후(같은 순간 포함)** 처음 나오는 순간. 허용 창은 목표 ± 허용 범위(경계 포함). 식사 2 목표는 식사 1 목표보다 엄격히 늦어야 한다.
 
@@ -30,3 +30,7 @@
 ## 호출량
 
 입력·기준 오류, 경유지 한도, 저장 식당 0곳, 경로 근처 후보 0곳은 길찾기 0회다. 1곳 요청은 최대 6회, 2곳 요청은 식사별 상위 5곳(같은 식당·구간은 1회) + 같은 구간 조합 최대 4회로 최대 14회, 동시 4개다. 구간 출발이 현재+5분을 넘으면 `future_directions`, 아니면 `directions` 예산을 쓴다.
+
+## 변경 이력
+
+- 1.1.0 (2026-10-05): 요청·응답 `basis.arrivalAts` 필수 추가, 저장 경로 인접 구간 좌표 연결 검사(Codex V2 지적 반영). 1.0.0 요청은 400으로 거부된다.

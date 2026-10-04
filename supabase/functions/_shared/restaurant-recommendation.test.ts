@@ -68,6 +68,7 @@ function requestFor(summary: Summary, overrides: Record<string, unknown> = {}) {
       departureAt: summary.legs[0].departureAt,
       returnAt: summary.returnAt,
       pointIds: [summary.legs[0].from.id, ...summary.legs.map((leg) => leg.to.id)],
+      arrivalAts: summary.legs.map((leg) => leg.arrivalAt),
     },
     mealCount: 1,
     meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
@@ -164,6 +165,8 @@ describe("stored route basis", () => {
       { returnAt: "2030-01-01T04:00:01.000Z" },
       { pointIds: ["origin", "destination", "occ-w"] },
       { pointIds: ["origin", "destination"] },
+      { arrivalAts: ["2030-01-01T02:00:00.000Z", "2030-01-01T04:00:01.000Z"] },
+      { arrivalAts: ["2030-01-01T01:59:59.000Z", "2030-01-01T04:00:00.000Z"] },
     ];
     for (const variant of variants) {
       const request = requestFor(summary);
@@ -172,10 +175,23 @@ describe("stored route basis", () => {
     }
   });
 
+  it("rejects a recomputation that changed only an intermediate arrival (dwell) as stale", () => {
+    // Same departure, return and point IDs; W now has a 10-minute dwell and leg 0 is 10 minutes faster.
+    const before = storedSummary();
+    const after = storedSummary([O, { ...W, dwell: 10 }, D], [6600, 7200]);
+    expect(after.legs[0].departureAt).toBe(before.legs[0].departureAt);
+    expect(after.returnAt).toBe(before.returnAt);
+    expect(() => prepareStoredRoute(requestFor(before), after)).toThrow("RECOMMENDATION_ROUTE_STALE");
+    expect(() => prepareStoredRoute(requestFor(after), after)).not.toThrow();
+  });
+
   it("compares instants, so an equivalent offset spelling is the same basis", () => {
     const summary = storedSummary();
     const request = requestFor(summary, {
-      basis: { departureAt: "2030-01-01T09:00:00+09:00", returnAt: "2030-01-01T13:00:00+09:00", pointIds: ["origin", "occ-w", "destination"] },
+      basis: {
+        departureAt: "2030-01-01T09:00:00+09:00", returnAt: "2030-01-01T13:00:00+09:00",
+        pointIds: ["origin", "occ-w", "destination"], arrivalAts: ["2030-01-01T11:00:00+09:00", "2030-01-01T13:00:00+09:00"],
+      },
     });
     expect(() => prepareStoredRoute(request, summary)).not.toThrow();
   });
@@ -184,6 +200,8 @@ describe("stored route basis", () => {
     ["missing", null],
     ["other profile", { ...storedSummary(), candidate: { id: "balanced" } }],
     ["broken chain", (() => { const s = storedSummary(); s.legs[1].from.id = "other"; return s; })()],
+    ["shared point longitude moved", (() => { const s = storedSummary(); s.legs[1].from.longitude = 127.5001; return s; })()],
+    ["shared point latitude moved", (() => { const s = storedSummary(); s.legs[0].to.latitude = 37.0001; return s; })()],
     ["arrival mismatch", (() => { const s = storedSummary(); s.legs[0].arrivalAt = "2030-01-01T02:00:01.000Z"; return s; })()],
     ["return mismatch", (() => { const s = storedSummary(); s.returnAt = "2030-01-01T05:00:00.000Z"; return s; })()],
     ["bad vertex", (() => { const s = storedSummary(); s.legs[0].sections[0].roads[0].vertexes[0] = 200; return s; })()],
@@ -557,6 +575,50 @@ describe("provider execution", () => {
     expect(recommendationFailure(error)).toMatchObject({ status: 503, code: "RECOMMENDATION_BUDGET_OR_CONFIG" });
     expect(h.consumeBudget).not.toHaveBeenCalled();
     expect(h.requestProvider).not.toHaveBeenCalled();
+  });
+
+  it("stops a lane whose budget receipt completes right after another lane's fatal provider error is caught", async () => {
+    const summary = storedSummary();
+    const rows = [restaurant(127.75, 37.001), restaurant(127.76, 37.002)];
+    const request = requestFor(summary);
+    let releaseSecondReceipt!: (receipt: number) => void;
+    let rejectFirstProvider!: (error: Error) => void;
+    let firstProviderStarted!: () => void;
+    let secondReceiptRequested!: () => void;
+    const providerStarted = new Promise<void>((resolve) => { firstProviderStarted = resolve; });
+    const receiptRequested = new Promise<void>((resolve) => { secondReceiptRequested = resolve; });
+    const consumeBudget = vi.fn((_operation: RouteOperation, _limit: number) => {
+      if (consumeBudget.mock.calls.length === 1) return Promise.resolve(1);
+      secondReceiptRequested();
+      return new Promise<number>((resolve) => { releaseSecondReceipt = resolve; });
+    });
+    const requestProvider = vi.fn((_input: RouteChunkRequest) => new Promise<NormalizedKakaoRoute>((_resolve, reject) => {
+      rejectFirstProvider = reject;
+      firstProviderStarted();
+    }));
+    const outcome = recommendRestaurants(
+      { request, targets: mealTargets(request), route: prepareStoredRoute(request, summary), savedRows: rows },
+      { now: () => FAR_PAST_NOW, limitFor: () => 200, consumeBudget, requestProvider },
+    ).catch((error: Error) => error);
+    await Promise.all([providerStarted, receiptRequested]);
+    // The second receipt is released synchronously at the moment the runner first
+    // inspects the fatal error, i.e. inside the catch that observes it.
+    const fatal = new Error("PROVIDER_UNAVAILABLE");
+    let inspected = false;
+    Object.defineProperty(fatal, "message", {
+      get() {
+        if (!inspected) {
+          inspected = true;
+          releaseSecondReceipt(2);
+        }
+        return "PROVIDER_UNAVAILABLE";
+      },
+    });
+    rejectFirstProvider(fatal);
+    expect(await outcome).toBe(fatal);
+    expect(inspected).toBe(true);
+    expect(consumeBudget).toHaveBeenCalledTimes(2);
+    expect(requestProvider).toHaveBeenCalledTimes(1);
   });
 
   it("runPool never starts a new item after the first failure", async () => {
