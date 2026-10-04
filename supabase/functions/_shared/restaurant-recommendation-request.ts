@@ -7,8 +7,7 @@ export type RecommendationRequest = {
   basis: { departureAt: string; returnAt: string; pointIds: string[]; arrivalAts: string[] };
   mealCount: 1 | 2;
   meals: RecommendationMealRequest[];
-  toleranceMinutes: number;
-  detourLimitMinutes: number;
+  toleranceMinutes: 30 | 60 | 90;
 };
 
 export type MealTarget = {
@@ -19,7 +18,9 @@ export type MealTarget = {
   dwellMinutes: number;
 };
 
-const REQUEST_KEYS = ["basis", "detourLimitMinutes", "mealCount", "meals", "toleranceMinutes", "tripId"];
+const REQUEST_KEYS = ["basis", "mealCount", "meals", "toleranceMinutes", "tripId"];
+// Meal-time window choices (minutes before/after the desired time), PLAN-005 amendment.
+export const TOLERANCE_CHOICES = [30, 60, 90] as const;
 const BASIS_KEYS = ["arrivalAts", "departureAt", "pointIds", "returnAt"];
 const MEAL_KEYS = ["desiredTime", "dwellMinutes"];
 const TRIP_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,6 +42,11 @@ function exactRecord(value: unknown, keys: string[]): Record<string, unknown> {
 function integerIn(value: unknown, min: number, max: number): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) invalid();
   return value;
+}
+
+function toleranceChoice(value: unknown): RecommendationRequest["toleranceMinutes"] {
+  if (!TOLERANCE_CHOICES.some((choice) => choice === value)) invalid();
+  return value as RecommendationRequest["toleranceMinutes"];
 }
 
 // Seoul has no daylight saving time, so a fixed +09:00 offset is exact.
@@ -87,8 +93,7 @@ export function parseRecommendationRequest(value: unknown): RecommendationReques
     },
     mealCount,
     meals,
-    toleranceMinutes: integerIn(body.toleranceMinutes, 5, 180),
-    detourLimitMinutes: integerIn(body.detourLimitMinutes, 5, 180),
+    toleranceMinutes: toleranceChoice(body.toleranceMinutes),
   };
 }
 

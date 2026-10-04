@@ -91,7 +91,6 @@ function body(overrides: Record<string, unknown> = {}) {
     mealCount: 1,
     meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
     toleranceMinutes: 30,
-    detourLimitMinutes: 30,
     ...overrides,
   };
 }
@@ -205,6 +204,7 @@ describe("recommend-restaurants handler", () => {
     expect(response.status).toBe(200);
     const result = await response.json();
     expect(result.status).toBe("OK");
+    expect(result.settings).toEqual({ mealCount: 1, toleranceMinutes: 30, detourLimitMinutes: 60 });
     expect(result.meals[0].candidates).toHaveLength(1);
     expect(result.meals[0].candidates[0]).toMatchObject({
       savedPlaceId: ROW_ID, savedPlaceRevision: 4, displayName: SECRET_ALIAS, placeName: SECRET_NAME,
@@ -247,7 +247,8 @@ describe("recommend-restaurants handler", () => {
   it.each([
     ["extra key", body({ limit: 6 })],
     ["meal mismatch", body({ mealCount: 2 })],
-    ["out-of-range tolerance", body({ toleranceMinutes: 181 })],
+    ["unsupported tolerance", body({ toleranceMinutes: 45 })],
+    ["a client detour limit (removed in contract 2.0.0)", body({ detourLimitMinutes: 60 })],
   ])("rejects %s before any storage, budget or provider work", async (_name, payload) => {
     const response = await call(payload);
     expect(response.status).toBe(400);

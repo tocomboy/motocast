@@ -46,7 +46,6 @@ describe("meal target time", () => {
     mealCount: desiredTimes.length,
     meals: desiredTimes.map((desiredTime) => ({ desiredTime, dwellMinutes: 60 })),
     toleranceMinutes,
-    detourLimitMinutes: 30,
   });
 
   it("uses the first Seoul occurrence at or after departure minus tolerance, to the second", () => {
@@ -54,8 +53,9 @@ describe("meal target time", () => {
     const departure = "2030-01-01T00:00:30.000Z";
     expect(mealTargets(request(departure, ["08:30"]))[0].targetAt.toISOString()).toBe("2030-01-01T23:30:00.000Z");
     expect(mealTargets(request(departure, ["08:31"]))[0].targetAt.toISOString()).toBe("2029-12-31T23:31:00.000Z");
-    expect(mealTargets(request("2030-01-01T00:00:00.000Z", ["06:00"], 180))[0].targetAt.toISOString())
-      .toBe("2029-12-31T21:00:00.000Z");
+    // ±90: reference is 07:30 Seoul, so 07:30 is the same day.
+    expect(mealTargets(request("2030-01-01T00:00:00.000Z", ["07:30"], 90))[0].targetAt.toISOString())
+      .toBe("2029-12-31T22:30:00.000Z");
   });
 
   it("requires the second meal target to be strictly later than the first", () => {

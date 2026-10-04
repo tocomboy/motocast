@@ -1,12 +1,13 @@
-# 저장 식당 기반 음식점 추천 계약 1.1.0
+# 저장 식당 기반 음식점 추천 계약 2.0.0
 
 웹/서버 정본은 이 디렉터리의 `fixtures.json`이며 Android는 검증한 동일 바이트를 보존한다. 설계 정본은 `docs/work/research/2026-10-05-restaurant-recommendation.md` §3(요청·처리·응답·오류)·§5·§6이다. `sourceCommit`은 변경 전 기반이며, 실제 구현 후보는 이 파일을 포함하는 Git commit과 배포 기록으로 고정한다. 함수 배포 여부는 이 계약으로 증명되지 않는다.
 
 ## 요청 — `POST /functions/v1/recommend-restaurants` (JWT 필요)
 
-- 정확히 `tripId`, `basis{departureAt, returnAt, pointIds, arrivalAts}`, `mealCount`, `meals[{desiredTime, dwellMinutes}]`, `toleranceMinutes`, `detourLimitMinutes`만 허용한다. 키 추가·누락, 경로 정책 키(`car_type` 등)는 거부한다. 서버는 기본값을 채우지 않으므로 화면 기본값(식사 1 `12:00`, 식사 2 `18:00`, 체류 60, 허용 ±30, 한도 30)은 클라이언트가 보낸다.
+- 정확히 `tripId`, `basis{departureAt, returnAt, pointIds, arrivalAts}`, `mealCount`, `meals[{desiredTime, dwellMinutes}]`, `toleranceMinutes`만 허용한다. 키 추가·누락, 경로 정책 키(`car_type` 등), 2.0.0에서 삭제된 `detourLimitMinutes`는 거부한다. 서버는 기본값을 채우지 않으므로 화면 기본값(식사 1 `12:00`, 식사 2 `18:00`, 체류 60, 원하는 식사 시간 ±30)은 클라이언트가 보낸다.
 - `tripId` UUID. `basis`는 화면에 표시한 계산 결과 그대로: 첫 구간 출발, 예상 복귀, `[legs[0].from.id, ...legs.map(to.id)]`(2–32개, 각 1–100자), 구간별 `legs[i].arrivalAt`(`arrivalAts`, 길이 = `pointIds.length − 1`, 필수). 서버는 저장 경로와 출발·복귀·ID 순서·모든 구간 도착이 같아야 받아들이므로 출발·복귀·ID가 같고 중간 체류만 바뀐 재계산도 409로 거부한다. 저장 경로의 인접 구간이 공유 지점의 ID·좌표·시각으로 이어지지 않아도 409다. 시각은 RFC 3339이며 서버는 순간(instant)으로 비교하고 응답 `basis`(`arrivalAts` 포함)에는 저장값을 UTC `Z` 표기로 돌려준다. 복귀는 출발보다 늦어야 한다.
-- `mealCount` 1|2, `meals.length === mealCount`. `desiredTime` `HH:MM`(00–23:00–59, 두 자리). `dwellMinutes` 정수 1–1440. `toleranceMinutes`·`detourLimitMinutes` 정수 5–180.
+- `mealCount` 1|2, `meals.length === mealCount`. `desiredTime` `HH:MM`(00–23:00–59, 두 자리). `dwellMinutes` 정수 1–1440. `toleranceMinutes`는 원하는 식사 시간 앞뒤 허용 범위로 `30`·`60`·`90` 중 하나(그 밖의 정수·소수·문자열 거부).
+- 추가 주행 상한은 요청 값이 아니라 서버 고정값 60분이다(2곳은 두 곳 합계 60분). 사전 선별 반경은 상한 ÷ 2 = 30km(60km/h 왕복 가정)다.
 - 식사 목표 시각: 서울 시각 `HH:MM`이 `departureAt − toleranceMinutes` **이후(같은 순간 포함)** 처음 나오는 순간. 허용 창은 목표 ± 허용 범위(경계 포함). 식사 2 목표는 식사 1 목표보다 엄격히 늦어야 한다.
 
 `requests[]`는 정상(`expected.request` 정규화 결과, `expected.targets` 목표·창)과 거부(`error`) 사례다. `supabase/functions/_shared/restaurant-recommendation-request.test.ts`가 모든 사례를 실제 파서에 실행한다.
@@ -20,7 +21,8 @@
 - `insertion.legIndex` i는 `basis.pointIds[i] → [i+1]` 구간이며 확정 시 경유지 배열 index i에 삽입한다. 같은 구간 2곳 조합은 식사 1, 식사 2 순으로 연속 삽입한다.
 - `single.reason`: `WINDOW` | `DETOUR` | `RETURN_24H` | `null`(우선순위도 이 순서). `single.returnAt` = 기존 복귀 + 추가 주행 + 그 식사 체류.
 - `pairs`: 2곳 요청에서 조건을 모두 만족하는 조합만, `extraDriveSeconds` 오름차순(동률: 목표와의 차이 합, 식사 1 ID, 식사 2 ID). 구간₁ < 구간₂는 `secondArrivalAt = 식사 2 단독 도착 + 식사 1 추가 주행 + 식사 1 체류`, 같은 구간은 `A → R₁ → R₂ → B` 1회 실제 계산값. 역순 구간·같은 식당 조합은 만들지 않는다. 1곳 요청은 `[]`.
-- 추가 주행은 음수일 수 있다(공급자 교통 예측 차이). 판정은 초 단위·경계 포함: `|도착 − 목표| ≤ 허용`, `추가 ≤ 한도`, 출발 후 24시간 **미만** 복귀.
+- 추가 주행은 음수일 수 있다(공급자 교통 예측 차이). 판정은 초 단위·경계 포함: `|도착 − 목표| ≤ 허용`, `추가 ≤ 3600초`(2곳은 합계), 출발 후 24시간 **미만** 복귀.
+- `settings`는 `mealCount`, 요청한 `toleranceMinutes`, 서버 고정 `detourLimitMinutes: 60`을 돌려준다. 클라이언트는 이 값으로 표시·재판정하고 직접 바꾸지 않는다.
 - `coverage`(모두 식당 수, 마지막만 호출 수): `savedRestaurants` 좌표·이름이 유효한 저장 식당, `invalidSaved` 형식 오류로 제외한 행, `alreadyInRoute` 경로 지점과 같은 좌표(±0.000001°), `nearRoute` 사전 선별 통과, `evaluated` 실제 계산한 식당, `unreachable` 계산했지만 모든 계산이 도달 불가(안전 경로 없음·공급자 결과 코드 101–107)였던 식당, `notEvaluated` = `nearRoute − evaluated`(호출 상한 밖), `providerRequests` 예산을 차감한 길찾기 호출 수. 같은 구간 조합 호출의 도달 불가는 해당 조합만 제외하고 식당 수에는 넣지 않는다.
 
 ## 오류
@@ -33,4 +35,5 @@
 
 ## 변경 이력
 
+- 2.0.0 (2026-10-05, 호환되지 않음, PLAN-005 2차 변경): 요청 `detourLimitMinutes` 삭제(보내면 400), `toleranceMinutes ∈ {30, 60, 90}`, 서버 고정 상한 60분·선별 반경 30km, 응답 `settings.detourLimitMinutes`는 60. 요청 사례: 허용 범위 5/180 경계와 한도 4/181 사례를 30/60/90 허용, 0·29·45·120·180·소수·문자열·`detourLimitMinutes` 포함 거부로 바꿨다. 응답 예시 변경과 이유: 모든 예시의 `settings.detourLimitMinutes` 30 → 60. 식사 1 예시 식당 경도 127.25 → 127.1(반경이 30km로 넓어져 127.25가 구간 1 식사 2 후보로도 잡혀 호출이 1회 늘어나는 것을 피하고 같은 의미 유지). `ok-partial`은 두 식당 추가 주행을 1000+900초에서 2000+1700초로 바꿔 각각은 60분 이하지만 합계 3700초가 60분을 넘는 같은 의미를 유지했다(식사 1 후보 `extraDriveSeconds` 2000, `returnAt` 05:33:20Z).
 - 1.1.0 (2026-10-05): 요청·응답 `basis.arrivalAts` 필수 추가, 저장 경로 인접 구간 좌표 연결 검사(Codex V2 지적 반영). 1.0.0 요청은 400으로 거부된다.

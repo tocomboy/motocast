@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.1.0",
+  "contractVersion": "2.0.0",
   "sourceCommit": "70d3bf3507976ac8dda47982a060f5cba2cbdfdc",
   "endpoint": "POST /functions/v1/recommend-restaurants",
   "requests": [
@@ -27,8 +27,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "expected": {
         "request": {
@@ -53,8 +52,7 @@
               "dwellMinutes": 60
             }
           ],
-          "toleranceMinutes": 30,
-          "detourLimitMinutes": 30
+          "toleranceMinutes": 30
         },
         "targets": [
           {
@@ -93,8 +91,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "expected": {
         "request": {
@@ -123,8 +120,7 @@
               "dwellMinutes": 60
             }
           ],
-          "toleranceMinutes": 30,
-          "detourLimitMinutes": 30
+          "toleranceMinutes": 30
         },
         "targets": [
           {
@@ -164,8 +160,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "expected": {
         "request": {
@@ -190,8 +185,7 @@
               "dwellMinutes": 60
             }
           ],
-          "toleranceMinutes": 30,
-          "detourLimitMinutes": 30
+          "toleranceMinutes": 30
         },
         "targets": [
           {
@@ -224,8 +218,7 @@
             "dwellMinutes": 1
           }
         ],
-        "toleranceMinutes": 5,
-        "detourLimitMinutes": 5
+        "toleranceMinutes": 30
       },
       "expected": {
         "request": {
@@ -248,14 +241,13 @@
               "dwellMinutes": 1
             }
           ],
-          "toleranceMinutes": 5,
-          "detourLimitMinutes": 5
+          "toleranceMinutes": 30
         },
         "targets": [
           {
             "targetAt": "2030-01-01T03:00:00.000Z",
-            "windowStartAt": "2030-01-01T02:55:00.000Z",
-            "windowEndAt": "2030-01-01T03:05:00.000Z"
+            "windowStartAt": "2030-01-01T02:30:00.000Z",
+            "windowEndAt": "2030-01-01T03:30:00.000Z"
           }
         ]
       }
@@ -342,8 +334,7 @@
             "dwellMinutes": 1440
           }
         ],
-        "toleranceMinutes": 180,
-        "detourLimitMinutes": 180
+        "toleranceMinutes": 90
       },
       "expected": {
         "request": {
@@ -426,14 +417,13 @@
               "dwellMinutes": 1440
             }
           ],
-          "toleranceMinutes": 180,
-          "detourLimitMinutes": 180
+          "toleranceMinutes": 90
         },
         "targets": [
           {
             "targetAt": "2030-01-01T03:00:00.000Z",
-            "windowStartAt": "2030-01-01T00:00:00.000Z",
-            "windowEndAt": "2030-01-01T06:00:00.000Z"
+            "windowStartAt": "2030-01-01T01:30:00.000Z",
+            "windowEndAt": "2030-01-01T04:30:00.000Z"
           }
         ]
       }
@@ -462,8 +452,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "expected": {
         "request": {
@@ -488,8 +477,7 @@
               "dwellMinutes": 60
             }
           ],
-          "toleranceMinutes": 30,
-          "detourLimitMinutes": 30
+          "toleranceMinutes": 30
         },
         "targets": [
           {
@@ -524,8 +512,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "expected": {
         "request": {
@@ -550,8 +537,7 @@
               "dwellMinutes": 60
             }
           ],
-          "toleranceMinutes": 30,
-          "detourLimitMinutes": 30
+          "toleranceMinutes": 30
         },
         "targets": [
           {
@@ -586,8 +572,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "expected": {
         "request": {
@@ -612,8 +597,7 @@
               "dwellMinutes": 60
             }
           ],
-          "toleranceMinutes": 30,
-          "detourLimitMinutes": 30
+          "toleranceMinutes": 30
         },
         "targets": [
           {
@@ -652,8 +636,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "expected": {
         "request": {
@@ -682,8 +665,7 @@
               "dwellMinutes": 60
             }
           ],
-          "toleranceMinutes": 30,
-          "detourLimitMinutes": 30
+          "toleranceMinutes": 30
         },
         "targets": [
           {
@@ -734,7 +716,6 @@
           }
         ],
         "toleranceMinutes": 30,
-        "detourLimitMinutes": 30,
         "limit": 6
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
@@ -764,7 +745,6 @@
           }
         ],
         "toleranceMinutes": 30,
-        "detourLimitMinutes": 30,
         "car_type": 7
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
@@ -792,8 +772,7 @@
             "desiredTime": "12:00",
             "dwellMinutes": 60
           }
-        ],
-        "detourLimitMinutes": 30
+        ]
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -822,8 +801,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -852,8 +830,7 @@
             "role": "lunch"
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -881,8 +858,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -918,8 +894,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -947,8 +922,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -976,8 +950,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1009,8 +982,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1038,8 +1010,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1067,8 +1038,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1096,8 +1066,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1125,8 +1094,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1154,8 +1122,7 @@
             "dwellMinutes": 0
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1183,8 +1150,7 @@
             "dwellMinutes": 1441
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1212,124 +1178,7 @@
             "dwellMinutes": 60.5
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
-      },
-      "error": "INVALID_RECOMMENDATION_REQUEST"
-    },
-    {
-      "id": "tolerance-4",
-      "input": {
-        "tripId": "11111111-1111-4111-8111-111111111111",
-        "basis": {
-          "departureAt": "2030-01-01T00:00:00.000Z",
-          "returnAt": "2030-01-01T04:00:00.000Z",
-          "pointIds": [
-            "origin-kakao-id",
-            "occurrence-1",
-            "destination-kakao-id"
-          ],
-          "arrivalAts": [
-            "2030-01-01T02:00:00.000Z",
-            "2030-01-01T04:00:00.000Z"
-          ]
-        },
-        "mealCount": 1,
-        "meals": [
-          {
-            "desiredTime": "12:00",
-            "dwellMinutes": 60
-          }
-        ],
-        "toleranceMinutes": 4,
-        "detourLimitMinutes": 30
-      },
-      "error": "INVALID_RECOMMENDATION_REQUEST"
-    },
-    {
-      "id": "tolerance-181",
-      "input": {
-        "tripId": "11111111-1111-4111-8111-111111111111",
-        "basis": {
-          "departureAt": "2030-01-01T00:00:00.000Z",
-          "returnAt": "2030-01-01T04:00:00.000Z",
-          "pointIds": [
-            "origin-kakao-id",
-            "occurrence-1",
-            "destination-kakao-id"
-          ],
-          "arrivalAts": [
-            "2030-01-01T02:00:00.000Z",
-            "2030-01-01T04:00:00.000Z"
-          ]
-        },
-        "mealCount": 1,
-        "meals": [
-          {
-            "desiredTime": "12:00",
-            "dwellMinutes": 60
-          }
-        ],
-        "toleranceMinutes": 181,
-        "detourLimitMinutes": 30
-      },
-      "error": "INVALID_RECOMMENDATION_REQUEST"
-    },
-    {
-      "id": "detour-4",
-      "input": {
-        "tripId": "11111111-1111-4111-8111-111111111111",
-        "basis": {
-          "departureAt": "2030-01-01T00:00:00.000Z",
-          "returnAt": "2030-01-01T04:00:00.000Z",
-          "pointIds": [
-            "origin-kakao-id",
-            "occurrence-1",
-            "destination-kakao-id"
-          ],
-          "arrivalAts": [
-            "2030-01-01T02:00:00.000Z",
-            "2030-01-01T04:00:00.000Z"
-          ]
-        },
-        "mealCount": 1,
-        "meals": [
-          {
-            "desiredTime": "12:00",
-            "dwellMinutes": 60
-          }
-        ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 4
-      },
-      "error": "INVALID_RECOMMENDATION_REQUEST"
-    },
-    {
-      "id": "detour-181",
-      "input": {
-        "tripId": "11111111-1111-4111-8111-111111111111",
-        "basis": {
-          "departureAt": "2030-01-01T00:00:00.000Z",
-          "returnAt": "2030-01-01T04:00:00.000Z",
-          "pointIds": [
-            "origin-kakao-id",
-            "occurrence-1",
-            "destination-kakao-id"
-          ],
-          "arrivalAts": [
-            "2030-01-01T02:00:00.000Z",
-            "2030-01-01T04:00:00.000Z"
-          ]
-        },
-        "mealCount": 1,
-        "meals": [
-          {
-            "desiredTime": "12:00",
-            "dwellMinutes": 60
-          }
-        ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 181
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1352,8 +1201,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1441,8 +1289,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1470,8 +1317,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1499,8 +1345,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1528,8 +1373,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1557,8 +1401,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1590,8 +1433,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1623,8 +1465,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1648,8 +1489,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1676,8 +1516,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1706,8 +1545,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1732,8 +1570,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1761,8 +1598,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1790,8 +1626,7 @@
             "dwellMinutes": 60
           }
         ],
-        "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "toleranceMinutes": 30
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     },
@@ -1819,8 +1654,412 @@
             "dwellMinutes": 60
           }
         ],
+        "toleranceMinutes": 30
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "tolerance-60",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 60
+      },
+      "expected": {
+        "request": {
+          "tripId": "11111111-1111-4111-8111-111111111111",
+          "basis": {
+            "departureAt": "2030-01-01T00:00:00.000Z",
+            "returnAt": "2030-01-01T04:00:00.000Z",
+            "pointIds": [
+              "origin-kakao-id",
+              "occurrence-1",
+              "destination-kakao-id"
+            ],
+            "arrivalAts": [
+              "2030-01-01T02:00:00.000Z",
+              "2030-01-01T04:00:00.000Z"
+            ]
+          },
+          "mealCount": 1,
+          "meals": [
+            {
+              "desiredTime": "12:00",
+              "dwellMinutes": 60
+            }
+          ],
+          "toleranceMinutes": 60
+        },
+        "targets": [
+          {
+            "targetAt": "2030-01-01T03:00:00.000Z",
+            "windowStartAt": "2030-01-01T02:00:00.000Z",
+            "windowEndAt": "2030-01-01T04:00:00.000Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "tolerance-90",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 90
+      },
+      "expected": {
+        "request": {
+          "tripId": "11111111-1111-4111-8111-111111111111",
+          "basis": {
+            "departureAt": "2030-01-01T00:00:00.000Z",
+            "returnAt": "2030-01-01T04:00:00.000Z",
+            "pointIds": [
+              "origin-kakao-id",
+              "occurrence-1",
+              "destination-kakao-id"
+            ],
+            "arrivalAts": [
+              "2030-01-01T02:00:00.000Z",
+              "2030-01-01T04:00:00.000Z"
+            ]
+          },
+          "mealCount": 1,
+          "meals": [
+            {
+              "desiredTime": "12:00",
+              "dwellMinutes": 60
+            }
+          ],
+          "toleranceMinutes": 90
+        },
+        "targets": [
+          {
+            "targetAt": "2030-01-01T03:00:00.000Z",
+            "windowStartAt": "2030-01-01T01:30:00.000Z",
+            "windowEndAt": "2030-01-01T04:30:00.000Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "tolerance-90-target-at-reference",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "07:30",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 90
+      },
+      "expected": {
+        "request": {
+          "tripId": "11111111-1111-4111-8111-111111111111",
+          "basis": {
+            "departureAt": "2030-01-01T00:00:00.000Z",
+            "returnAt": "2030-01-01T04:00:00.000Z",
+            "pointIds": [
+              "origin-kakao-id",
+              "occurrence-1",
+              "destination-kakao-id"
+            ],
+            "arrivalAts": [
+              "2030-01-01T02:00:00.000Z",
+              "2030-01-01T04:00:00.000Z"
+            ]
+          },
+          "mealCount": 1,
+          "meals": [
+            {
+              "desiredTime": "07:30",
+              "dwellMinutes": 60
+            }
+          ],
+          "toleranceMinutes": 90
+        },
+        "targets": [
+          {
+            "targetAt": "2029-12-31T22:30:00.000Z",
+            "windowStartAt": "2029-12-31T21:00:00.000Z",
+            "windowEndAt": "2030-01-01T00:00:00.000Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "tolerance-0",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 0
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "tolerance-29",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 29
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "tolerance-45",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 45
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "tolerance-120",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 120
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "tolerance-180",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 180
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "tolerance-fraction",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30.5
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "tolerance-string",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": "30"
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "detour-limit-key-present",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
         "toleranceMinutes": 30,
-        "detourLimitMinutes": 30
+        "detourLimitMinutes": 60
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
     }
@@ -1849,7 +2088,7 @@
         "settings": {
           "mealCount": 1,
           "toleranceMinutes": 30,
-          "detourLimitMinutes": 30
+          "detourLimitMinutes": 60
         },
         "meals": [
           {
@@ -1940,7 +2179,7 @@
         "settings": {
           "mealCount": 2,
           "toleranceMinutes": 30,
-          "detourLimitMinutes": 30
+          "detourLimitMinutes": 60
         },
         "meals": [
           {
@@ -1956,7 +2195,7 @@
                 "displayName": "공개 시험 칼국수",
                 "placeName": "공개 시험 칼국수",
                 "address": "공개 시험 주소",
-                "longitude": 127.25,
+                "longitude": 127.1,
                 "latitude": 37.001,
                 "insertion": {
                   "legIndex": 0,
@@ -2049,7 +2288,7 @@
         "settings": {
           "mealCount": 2,
           "toleranceMinutes": 30,
-          "detourLimitMinutes": 30
+          "detourLimitMinutes": 60
         },
         "meals": [
           {
@@ -2065,7 +2304,7 @@
                 "displayName": "공개 시험 칼국수",
                 "placeName": "공개 시험 칼국수",
                 "address": "공개 시험 주소",
-                "longitude": 127.25,
+                "longitude": 127.1,
                 "latitude": 37.001,
                 "insertion": {
                   "legIndex": 0,
@@ -2075,8 +2314,8 @@
                 "single": {
                   "feasible": true,
                   "arrivalAt": "2030-01-01T01:00:00.000Z",
-                  "extraDriveSeconds": 1000,
-                  "returnAt": "2030-01-01T05:16:40.000Z",
+                  "extraDriveSeconds": 2000,
+                  "returnAt": "2030-01-01T05:33:20.000Z",
                   "reason": null
                 }
               }
@@ -2127,7 +2366,7 @@
         "settings": {
           "mealCount": 1,
           "toleranceMinutes": 30,
-          "detourLimitMinutes": 30
+          "detourLimitMinutes": 60
         },
         "meals": [
           {
@@ -2175,7 +2414,7 @@
         "settings": {
           "mealCount": 1,
           "toleranceMinutes": 30,
-          "detourLimitMinutes": 30
+          "detourLimitMinutes": 60
         },
         "meals": [
           {

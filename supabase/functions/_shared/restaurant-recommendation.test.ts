@@ -73,7 +73,6 @@ function requestFor(summary: Summary, overrides: Record<string, unknown> = {}) {
     mealCount: 1,
     meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
     toleranceMinutes: 30,
-    detourLimitMinutes: 30,
     ...overrides,
   });
 }
@@ -254,8 +253,8 @@ describe("saved restaurants and pre-screening", () => {
     const rows = [
       restaurant(127.5 + 0.000001, 37 - 0.000001), // same as waypoint W
       restaurant(127.0, 37.0), // same as origin
-      restaurant(127.75, 37.2), // ~22 km off the road > 30/2 km
-      restaurant(127.75, 37.13), // ~14.5 km: within 15 km, estimated round trip too long is still allowed to compute
+      restaurant(127.75, 37.3), // ~33 km off the road > 60/2 km
+      restaurant(127.75, 37.13), // ~14.5 km: within 30 km, so it is computed even though its detour fails
     ];
     const { result, requestProvider } = await run(summary, {}, rows);
     expect(result.coverage).toMatchObject({ savedRestaurants: 4, alreadyInRoute: 2, nearRoute: 1, evaluated: 1, providerRequests: 1 });
@@ -263,10 +262,21 @@ describe("saved restaurants and pre-screening", () => {
     expect(requestProvider.mock.calls[0][0].waypoints[0].id).toBe(rows[3].id);
   });
 
+  it("pre-screens with the fixed 30 km radius (half of the 60-minute cap at 60 km/h)", async () => {
+    const summary = storedSummary();
+    const kmPerDegreeLatitude = 6371.0088 * Math.PI / 180;
+    const inside = restaurant(127.625, 37 + 29.99 / kmPerDegreeLatitude);
+    const outside = restaurant(127.65, 37 + 30.01 / kmPerDegreeLatitude);
+    const { result, requestProvider } = await run(summary, {}, [inside, outside]);
+    expect(result.coverage).toMatchObject({ nearRoute: 1, evaluated: 1, providerRequests: 1 });
+    expect(requestProvider.mock.calls.map(([input]) => input.waypoints[0].id)).toEqual([inside.id]);
+  });
+
   it("skips restaurants whose estimated arrival misses the window and legs that cannot reach it", async () => {
     const summary = storedSummary();
-    // Target 12:00 Seoul (03:00Z) sits on leg 1; a restaurant passed at 10:00 Seoul is out of range.
-    const early = restaurant(127.25, 37.001);
+    // Target 12:00 Seoul (03:00Z) sits on leg 1; a restaurant passed at 09:24 Seoul is out of range
+    // and more than 30 km from leg 1.
+    const early = restaurant(127.1, 37.001);
     const onTime = restaurant(127.75, 37.001);
     const { result, requestProvider } = await run(summary, {}, [early, onTime]);
     expect(result.coverage).toMatchObject({ nearRoute: 1, evaluated: 1 });
@@ -305,10 +315,37 @@ describe("single meal judgement", () => {
     const summary = storedSummary();
     const atLimit = restaurant(127.75, 37.002);
     const overLimit = restaurant(127.751, 37.002);
-    const overrides = { [atLimit.id]: [3600, 5400], [overLimit.id]: [3600, 5401] };
+    // Fixed 60-minute cap: 3600 s is allowed, 3601 s is a DETOUR.
+    const overrides = { [atLimit.id]: [3600, 7200], [overLimit.id]: [3600, 7201] };
     const { result } = await run(summary, {}, [atLimit, overLimit], { overrides });
     expect(ids(result.meals[0].candidates)).toEqual([atLimit.id]);
-    expect(result.meals[0].candidates[0].single.extraDriveSeconds).toBe(1800);
+    expect(result.meals[0].candidates[0].single.extraDriveSeconds).toBe(3600);
+    expect(result.settings).toEqual({ mealCount: 1, toleranceMinutes: 30, detourLimitMinutes: 60 });
+  });
+
+  it("judges ±60 and ±90 minute meal windows inclusively", async () => {
+    const summary = storedSummary();
+    const at60 = restaurant(127.99, 37.001);
+    const past60 = restaurant(127.991, 37.001);
+    const sixty = await run(summary, { toleranceMinutes: 60 }, [at60, past60], {
+      overrides: { [at60.id]: [7200, 100], [past60.id]: [7201, 100] }, // ETA 04:00:00 / 04:00:01
+    });
+    expect(sixty.result.meals[0]).toMatchObject({ windowStartAt: "2030-01-01T02:00:00.000Z", windowEndAt: "2030-01-01T04:00:00.000Z" });
+    expect(ids(sixty.result.meals[0].candidates)).toEqual([at60.id]);
+    expect(sixty.result.settings.toleranceMinutes).toBe(60);
+
+    const startEdge = restaurant(127.375, 37.001); // leg 0, 01:30Z
+    const beforeStart = restaurant(127.376, 37.001);
+    const endEdge = restaurant(127.95, 37.001); // leg 1
+    const afterEnd = restaurant(127.951, 37.001);
+    const ninety = await run(summary, { toleranceMinutes: 90 }, [startEdge, beforeStart, endEdge, afterEnd], {
+      overrides: {
+        [startEdge.id]: [5400, 1800], [beforeStart.id]: [5399, 1801], // ETA 01:30:00 / 01:29:59
+        [endEdge.id]: [9000, 1800], [afterEnd.id]: [9001, 1799], // ETA 04:30:00 / 04:30:01, extra 3600
+      },
+    });
+    expect(ninety.result.meals[0]).toMatchObject({ windowStartAt: "2030-01-01T01:30:00.000Z", windowEndAt: "2030-01-01T04:30:00.000Z" });
+    expect(ids(ninety.result.meals[0].candidates).sort()).toEqual([startEdge.id, endEdge.id].sort());
   });
 
   it("sorts by extra drive, then distance from the target, display name and ID; alias is the display name", async () => {
@@ -379,7 +416,7 @@ describe("two meal combinations", () => {
 
   it("delays meal 2 by meal 1 extra drive plus dwell across legs and admits a meal-2 stop only valid in the pair", async () => {
     const summary = storedSummary();
-    const a = restaurant(127.25, 37.001);
+    const a = restaurant(127.1, 37.001);
     const b = restaurant(127.75, 37.001);
     const overrides = { [a.id]: [3600, 4200], [b.id]: [3600, 4200] };
     const { result, requestProvider } = await run(summary, twoMeals("10:00", "13:00"), [a, b], { overrides });
@@ -398,20 +435,37 @@ describe("two meal combinations", () => {
     });
   });
 
-  it("applies the detour limit to the pair total even when each stop is within it", async () => {
+  it("applies the 60-minute cap to the pair total even when each stop is within it", async () => {
     const summary = storedSummary();
-    const a = restaurant(127.25, 37.001);
+    const a = restaurant(127.1, 37.001);
     const b = restaurant(127.75, 37.001);
-    const overrides = { [a.id]: [3600, 4600], [b.id]: [3600, 4500] }; // 1000 + 900 > 1800
+    // 2000 + 1700 = 3700 > 3600; meal 2 would arrive 02:50 + 2000 s + 60 min = 04:23:20 (in window).
+    const overrides = { [a.id]: [3600, 5600], [b.id]: [3000, 5900] };
     const { result } = await run(summary, twoMeals("10:00", "13:00"), [a, b], { overrides });
     expect(result.pairs).toEqual([]);
     expect(ids(result.meals[0].candidates)).toEqual([a.id]);
     expect(result.meals[1].candidates).toEqual([]); // partial result: meal 2 has nothing
   });
 
+  it("includes a pair whose total extra drive is exactly the 60-minute cap", async () => {
+    const summary = storedSummary();
+    const a = restaurant(127.1, 37.001);
+    const b = restaurant(127.75, 37.001);
+    const overrides = { [a.id]: [3600, 5600], [b.id]: [3000, 5800] }; // 2000 + 1600 = 3600
+    const { result } = await run(summary, twoMeals("10:00", "13:00"), [a, b], { overrides });
+    expect(result.pairs).toEqual([{
+      firstSavedPlaceId: a.id, secondSavedPlaceId: b.id,
+      firstArrivalAt: "2030-01-01T01:00:00.000Z",
+      secondArrivalAt: "2030-01-01T04:23:20.000Z",
+      extraDriveSeconds: 3600,
+      returnAt: "2030-01-01T07:00:00.000Z", // 04:00 + 3600 s + 2 × 60 min
+    }]);
+    expect(result.meals[1].candidates[0]).toMatchObject({ savedPlaceId: b.id, single: { feasible: false, reason: "WINDOW" } });
+  });
+
   it("keeps both meal lists when each is feasible alone but no pair is", async () => {
     const summary = storedSummary();
-    const a = restaurant(127.25, 37.001);
+    const a = restaurant(127.1, 37.001);
     const b = restaurant(127.75, 37.001);
     const overrides = { [a.id]: [3600, 4200], [b.id]: [3600, 3700] };
     const { result } = await run(summary, twoMeals("10:00", "12:00"), [a, b], { overrides });
@@ -448,14 +502,15 @@ describe("two meal combinations", () => {
   });
 
   it("does not form pairs that reverse the visiting order across legs", async () => {
-    // Leg 1 bends back north-west so the meal-2 stop is only near leg 0.
-    const bent: Point = { id: "destination", longitude: 127.0, latitude: 37.5 };
-    const summary = storedSummary([O, W, bent], [7200, 7200]);
-    const a = restaurant(127.25, 37.25); // on leg 1 (lon+lat = 164.5)
-    const b = restaurant(127.3, 37.01); // only near leg 0
-    const overrides = { [a.id]: [3600, 3700], [b.id]: [4320, 2980] };
+    // Leg 1 turns north so the meal-2 stop is only within 30 km of leg 0.
+    const north: Point = { id: "destination", longitude: 127.5, latitude: 37.8 };
+    const summary = storedSummary([O, W, north], [7200, 7200]);
+    const a = restaurant(127.5, 37.4); // on leg 1, passed at 03:00Z
+    const b = restaurant(127.1, 37.01); // ~35 km from leg 1
+    // Paired as if in order, meal 2 would arrive 00:40 + 100 s + 170 min = 03:31:40 (inside its window).
+    const overrides = { [a.id]: [3600, 3700], [b.id]: [2400, 4900] };
     const { result, requestProvider } = await run(
-      summary, { ...twoMeals("12:00", "13:00", 170), detourLimitMinutes: 10 }, [a, b], { overrides },
+      summary, twoMeals("12:00", "13:00", 170), [a, b], { overrides },
     );
     expect(requestProvider.mock.calls.map(([input]) => input.origin.id).sort()).toEqual(["occ-w", "origin"]);
     expect(result.meals[1].candidates).toEqual([]);
@@ -511,7 +566,7 @@ describe("provider execution", () => {
 
   it("selects current or future endpoints per leg departure using the same five-minute rule", async () => {
     const summary = storedSummary();
-    const a = restaurant(127.25, 37.001);
+    const a = restaurant(127.1, 37.001);
     const b = restaurant(127.75, 37.001);
     const overrides = { [a.id]: [3600, 4200], [b.id]: [3600, 4200] };
     // Leg 0 departs exactly 5 minutes after now (current); leg 1 two hours later (future).
@@ -666,7 +721,7 @@ describe("shared Android response fixtures", () => {
     },
   });
   const twoMeals = { mealCount: 2, meals: [{ desiredTime: "10:00", dwellMinutes: 60 }, { desiredTime: "13:00", dwellMinutes: 60 }] };
-  const first = fixedRow("0003", 127.25, 37.001, "공개 시험 칼국수");
+  const first = fixedRow("0003", 127.1, 37.001, "공개 시험 칼국수");
   const second = fixedRow("0004", 127.75, 37.001, "공개 시험 막국수", "저녁 후보");
   const scenarios: Record<string, () => ReturnType<typeof run>> = {
     "ok-one-meal": () => {
@@ -682,7 +737,7 @@ describe("shared Android response fixtures", () => {
       overrides: { [first.id]: [3600, 4200], [second.id]: [3600, 4200] },
     }),
     "ok-partial": () => run(storedSummary(), twoMeals, [first, second], {
-      overrides: { [first.id]: [3600, 4600], [second.id]: [3600, 4500] },
+      overrides: { [first.id]: [3600, 5600], [second.id]: [3000, 5900] },
     }),
     "ok-no-result": () => run(storedSummary(), {}, [fixedRow("0007", 127.75, 37.001, "공개 시험 백반")], {
       overrides: { "00000000-0000-4000-8000-0000000a0007": [3600, 9000] },

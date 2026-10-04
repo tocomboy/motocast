@@ -76,6 +76,9 @@ export type RecommendationDependencies = {
 // Fixed limits
 
 export const MAX_ROUTE_WAYPOINTS = 30;
+// Fixed server cap on added driving (two meals: their total). Not a request field;
+// it is echoed in settings for display and client-side re-checks.
+export const DETOUR_LIMIT_MINUTES = 60;
 export const SINGLE_MEAL_EVALUATIONS = 6;
 export const TWO_MEAL_EVALUATIONS_PER_MEAL = 5;
 export const SAME_LEG_PAIR_EVALUATIONS = 4;
@@ -736,7 +739,7 @@ export async function recommendRestaurants(
     departureMs: route.departureMs,
     baseReturnMs: route.returnMs,
     toleranceMs: request.toleranceMinutes * 60_000,
-    limitSeconds: request.detourLimitMinutes * 60,
+    limitSeconds: DETOUR_LIMIT_MINUTES * 60,
   };
   const { restaurants, invalid } = parseSavedRestaurants(input.savedRows);
   const coverage: RecommendationCoverage = {
@@ -760,7 +763,7 @@ export async function recommendRestaurants(
     settings: {
       mealCount: request.mealCount,
       toleranceMinutes: request.toleranceMinutes,
-      detourLimitMinutes: request.detourLimitMinutes,
+      detourLimitMinutes: DETOUR_LIMIT_MINUTES,
     },
   };
   const mealShell = (window: MealWindow) => ({
@@ -780,7 +783,7 @@ export async function recommendRestaurants(
     };
   }
 
-  const screened = screenCandidates(route, restaurants, targets, request.detourLimitMinutes);
+  const screened = screenCandidates(route, restaurants, targets, DETOUR_LIMIT_MINUTES);
   coverage.alreadyInRoute = screened.alreadyInRoute;
   coverage.nearRoute = screened.nearRoute;
   const perMealLimit = request.mealCount === 1 ? SINGLE_MEAL_EVALUATIONS : TWO_MEAL_EVALUATIONS_PER_MEAL;
