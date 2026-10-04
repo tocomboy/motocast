@@ -230,13 +230,13 @@ describe("PlannerDashboard restaurant recommendation", () => {
     const row = dialog(renderer).find((node) => node.type === "button" && node.props["aria-pressed"] === false);
     expect(row.props["aria-label"]).toContain("단골 국밥, 테스트 주소");
     expect(row.props["aria-label"]).toContain("영업정보 없음");
-    expect(text(row)).toContain("12:00 도착 · 9분 더 달려요");
-    expect(row.props["aria-label"]).toContain("12시 0분 도착, 9분 더 달려요, 영업정보 없음");
+    expect(text(row)).toContain("12:00 도착 · 주행 +9분");
+    expect(row.props["aria-label"]).toContain("12시 0분 도착, 추가 주행 9분, 영업정보 없음");
     await act(async () => row.props.onClick());
     const shown = text(dialog(renderer));
-    expect(shown).toContain("9분 더 달려요 · 예상 복귀");
+    expect(shown).toContain("주행 +9분 · 예상 복귀");
     expect(shown).toContain("경로에서 1시간 넘게 돌아가는 식당은 제외해요.");
-    expect(shown).not.toMatch(/추가 주행|한도/);
+    expect(shown).not.toMatch(/한도|더 달려요/);
     const totalCalls = mocks.invoke.mock.calls.length;
     const rpcCalls = mocks.rpc.mock.calls.length;
     await act(async () => buttons(dialog(renderer), "선택한 식당 1곳 일정에 추가")[0].props.onClick());
@@ -354,7 +354,7 @@ describe("PlannerDashboard restaurant recommendation", () => {
     expect(text(dialog(renderer))).toContain("조건에 맞는 음식점이 없습니다");
     expect(mocks.focused.at(-1)).toBe("h3:조건에 맞는 음식점이 없습니다");
     expect(text(dialog(renderer))).toContain("저장한 식당 1곳 중 경로 근처 1곳을 실제 도로 경로로 확인했어요.");
-    expect(text(dialog(renderer))).toContain("원하는 식사 시간 앞뒤 30분 안에 도착하고 1시간 이내로 더 달리는 식당이 없어요.");
+    expect(text(dialog(renderer))).toContain("원하는 식사 시간 앞뒤 30분 안에 도착하고 주행이 1시간 이내로 늘어나는 식당이 없어요.");
     expect(text(dialog(renderer))).toContain("식사 1 12:00 · 앞뒤 30분 · 60분");
     expect(dialog(renderer).findAll((node) => typeof node.type === "string" && node.props.role === "alert")).toHaveLength(0);
     await act(async () => buttons(dialog(renderer), "조건 바꾸기")[0].props.onClick());
@@ -472,7 +472,7 @@ describe("PlannerDashboard restaurant recommendation", () => {
     await act(async () => buttons(dialog(renderer), "2곳")[0].props.onClick());
     const minute = dialog(renderer).findByProps({ "aria-label": "식사 2 원하는 식사 시간 시" });
     await act(async () => minute.props.onChange({ target: { value: "11" } }));
-    expect(text(dialog(renderer))).toContain("식사 2 희망 시각은 식사 1보다 늦어야 해요.");
+    expect(text(dialog(renderer))).toContain("식사 2의 원하는 식사 시간은 식사 1보다 늦어야 해요.");
     expect(buttons(dialog(renderer), "추천 받기")[0].props.disabled).toBe(true);
     // Switching back to one meal keeps meal 2's value and clears the block.
     await act(async () => buttons(dialog(renderer), "1곳")[0].props.onClick());

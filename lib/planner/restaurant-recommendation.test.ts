@@ -10,6 +10,7 @@ import {
   defaultRecommendationInput,
   durationLabel,
   extraDriveLabel,
+  extraDriveSpoken,
   isDailyBudgetFailure,
   mealTargetAt,
   parseRecommendationResponse,
@@ -147,6 +148,15 @@ const waypoint = (key: string): EditableWaypoint => ({ id: key, role: "waypoint"
 describe("recommendation response parser", () => {
   it.each(fixtures.responses.map((response) => [response.id, response.body] as const))("accepts the contract fixture %s unchanged", (_name, body) => {
     expect(parseRecommendationResponse(structuredClone(body))).toEqual(body);
+  });
+
+  it("targets contract 2.0.0: the server echoes its fixed 60-minute cap and a 30/60/90 window", () => {
+    expect(fixtures.contractVersion).toBe("2.0.0");
+    for (const { body } of fixtures.responses) {
+      const parsed = parseRecommendationResponse(structuredClone(body));
+      expect(parsed.settings.detourLimitMinutes).toBe(60);
+      expect([30, 60, 90]).toContain(parsed.settings.toleranceMinutes);
+    }
   });
 
   it("normalizes offset timestamps to UTC instants", () => {
@@ -373,10 +383,10 @@ describe("request building and pre-request checks", () => {
     const departure = "2030-01-01T00:00:00.000Z"; // 09:00 KST
     const two = (first: string, second: string) => ({ ...defaultRecommendationInput, mealCount: 2 as const, meals: [{ desiredTime: first, dwellMinutes: 60 }, { desiredTime: second, dwellMinutes: 60 }] as typeof defaultRecommendationInput.meals });
     expect(recommendationInputError(two("12:00", "18:00"), departure, 0)).toBeNull();
-    expect(recommendationInputError(two("12:00", "12:00"), departure, 0)).toBe("식사 2 희망 시각은 식사 1보다 늦어야 해요.");
-    expect(recommendationInputError(two("12:00", "08:45"), departure, 0)).toBe("식사 2 희망 시각은 식사 1보다 늦어야 해요.");
+    expect(recommendationInputError(two("12:00", "12:00"), departure, 0)).toBe("식사 2의 원하는 식사 시간은 식사 1보다 늦어야 해요.");
+    expect(recommendationInputError(two("12:00", "08:45"), departure, 0)).toBe("식사 2의 원하는 식사 시간은 식사 1보다 늦어야 해요.");
     // 11:00 falls today before 12:00; 08:00 is before departure − 30, so it means tomorrow.
-    expect(recommendationInputError(two("12:00", "11:00"), departure, 0)).toBe("식사 2 희망 시각은 식사 1보다 늦어야 해요.");
+    expect(recommendationInputError(two("12:00", "11:00"), departure, 0)).toBe("식사 2의 원하는 식사 시간은 식사 1보다 늦어야 해요.");
     expect(recommendationInputError(two("12:00", "08:00"), departure, 0)).toBeNull();
     expect(recommendationInputError(defaultRecommendationInput, departure, 29)).toBeNull();
     expect(recommendationInputError(two("12:00", "18:00"), departure, 29)).toBe("경유지가 30개를 넘어 식당을 추가할 수 없어요.");
@@ -439,12 +449,12 @@ describe("candidate selection", () => {
     ]);
     const withB = { 1: id("b") };
     expect(candidateRows(response, withB, 2).map((row) => [row.candidate.displayName, row.selectable, row.reason, row.extraDriveSeconds])).toEqual([
-      ["식당 d", true, null, 1100], ["식당 e", false, "식사 1과 함께 가면 시간이 맞지 않거나 30분 넘게 더 달려요", 500],
+      ["식당 d", true, null, 1100], ["식당 e", false, "식사 1과 함께 가면 시간이 맞지 않거나 주행이 30분 넘게 늘어나요", 500],
     ]);
     expect(toggleSelection(response, withB, 2, id("e"))).toEqual(withB);
     const withE = { 2: id("e") };
     expect(candidateRows(response, withE, 1).map((row) => [row.candidate.displayName, row.selectable, row.reason])).toEqual([
-      ["식당 a", true, null], ["식당 b", false, "식사 2와 함께 가면 시간이 맞지 않거나 30분 넘게 더 달려요"], ["식당 c", true, null],
+      ["식당 a", true, null], ["식당 b", false, "식사 2와 함께 가면 시간이 맞지 않거나 주행이 30분 넘게 늘어나요"], ["식당 c", true, null],
     ]);
     expect(resolveSelection(response, { 1: id("c"), 2: id("e") })?.extraDriveSeconds).toBe(1700);
     expect(resolveSelection(response, { 1: id("b"), 2: id("e") })).toBeNull();
@@ -468,11 +478,15 @@ describe("candidate selection", () => {
 
   it("formats Seoul wall clock and signed extra drive", () => {
     expect(seoulClock("2030-01-01T03:06:00.000Z")).toBe("12:06");
-    expect(extraDriveLabel(540)).toBe("9분 더 달려요");
-    expect(extraDriveLabel(1320, true)).toBe("두 곳 합계 22분 더 달려요");
-    // Traffic-model differences can make the detour non-positive.
-    expect(extraDriveLabel(-90)).toBe("더 달리지 않아요");
-    expect(extraDriveLabel(20)).toBe("더 달리지 않아요");
+    expect(extraDriveLabel(540)).toBe("주행 +9분");
+    expect(extraDriveLabel(1320, true)).toBe("두 곳 합계 주행 +22분");
+    // Traffic-model differences can make the detour zero or negative; the sign is kept.
+    expect(extraDriveLabel(20)).toBe("주행 ±0분");
+    expect(extraDriveLabel(-180)).toBe("주행 −3분");
+    expect(extraDriveSpoken(720)).toBe("추가 주행 12분");
+    expect(extraDriveSpoken(20)).toBe("추가 주행 0분");
+    expect(extraDriveSpoken(-180)).toBe("주행 3분 줄어듦");
+    expect(extraDriveSpoken(1320, true)).toBe("두 곳 합계 추가 주행 22분");
     expect(durationLabel(60)).toBe("1시간");
     expect(durationLabel(30)).toBe("30분");
     expect(durationLabel(90)).toBe("1시간 30분");

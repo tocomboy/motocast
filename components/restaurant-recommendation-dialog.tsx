@@ -8,6 +8,7 @@ import {
   defaultRecommendationInput,
   durationLabel,
   extraDriveLabel,
+  extraDriveSpoken,
   isDailyBudgetFailure,
   recommendationFailureMessage,
   recommendationInputError,
@@ -206,7 +207,7 @@ export function RestaurantRecommendationDialog(props: Props) {
           : <><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={() => void submit(input)}>다시 시도</button></>} />
           : view.name === "stale" ? <StatusView key="stale" stateTitleRef={stateTitleRef} tone="tint" role="status" icon={<LineIcon name="clock" />} title="경로가 바뀌어 이전 추천을 사용할 수 없습니다" text="선택한 식당은 일정에 추가하지 않았어요." note="경로 편집에서 경로 다시 계산을 누른 뒤 추천을 다시 받아 주세요." actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onEditRoute}>경로 편집으로</button></>} />
             : view.response.status === "NO_SAVED_RESTAURANTS" ? <StatusView key="no-saved" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="star" />} title="저장한 식당이 없습니다" text="즐겨찾기에 식당을 저장하면 이 경로에 맞춰 추천해 드려요." note="추천은 저장한 식당 중에서만 해요. 외부 검색으로 새 음식점을 추가하지 않아요." actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onOpenFavorites}>즐겨찾기에서 식당 등록</button></>} />
-              : view.response.meals.every((meal) => meal.candidates.length === 0) ? <StatusView key="none" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="search" />} title="조건에 맞는 음식점이 없습니다" text={`원하는 식사 시간 앞뒤 ${view.response.settings.toleranceMinutes}분 안에 도착하고 ${durationLabel(view.response.settings.detourLimitMinutes)} 이내로 더 달리는 식당이 없어요. 시간 범위를 자동으로 넓히지 않아요.`} note={coverageText(view.response)} conditions={conditionLines({ ...input, mealCount: view.response.settings.mealCount, toleranceMinutes: view.response.settings.toleranceMinutes }, view.response.settings.detourLimitMinutes)} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={backToInput}>조건 바꾸기</button></>} />
+              : view.response.meals.every((meal) => meal.candidates.length === 0) ? <StatusView key="none" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="search" />} title="조건에 맞는 음식점이 없습니다" text={`원하는 식사 시간 앞뒤 ${view.response.settings.toleranceMinutes}분 안에 도착하고 주행이 ${durationLabel(view.response.settings.detourLimitMinutes)} 이내로 늘어나는 식당이 없어요. 시간 범위를 자동으로 넓히지 않아요.`} note={coverageText(view.response)} conditions={conditionLines({ ...input, mealCount: view.response.settings.mealCount, toleranceMinutes: view.response.settings.toleranceMinutes }, view.response.settings.detourLimitMinutes)} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={backToInput}>조건 바꾸기</button></>} />
                 : <ResultView response={view.response} selection={view.selection} input={input} onSelect={select} onChangeConditions={backToInput} onConfirm={confirmSelection} />}
   </dialog>;
 }
@@ -346,13 +347,13 @@ function ResultView({ response, selection, input, onSelect, onChangeConditions, 
             {meal.candidates.length === 0
               ? <p className={styles.emptyMeal}>식사 {meal.index} 시간에는 조건에 맞는 음식점이 없습니다.</p>
               : <>
-                <p className={styles.hint}>{otherName ? `식사 ${otherIndex} '${otherName}'${andParticle(otherName)} 함께 가는 기준이에요. 도착 시각과 두 곳 합계가 바뀌었어요.` : "더 달리는 시간이 짧은 순서예요."}</p>
+                <p className={styles.hint}>{otherName ? `식사 ${otherIndex} '${otherName}'${andParticle(otherName)} 함께 가는 기준이에요. 도착 시각과 두 곳 합계가 바뀌었어요.` : "늘어나는 주행이 짧은 순서예요."}</p>
                 <ul className={styles.rows}>{rows.map((row) => <li key={row.candidate.savedPlaceId}><CandidateRow row={row} onSelect={() => onSelect(meal.index, row.candidate.savedPlaceId)} /></li>)}</ul>
               </>}
           </section>;
         })}
       </div>
-      <p className={styles.footnote}>{coverageText(response)}<br />도착 시각과 더 달리는 시간은 추정값이에요. 일정에 추가한 뒤 경로 다시 계산으로 확인해 주세요.</p>
+      <p className={styles.footnote}>{coverageText(response)}<br />도착 시각과 늘어나는 주행 시간은 추정값이에요. 일정에 추가한 뒤 경로 다시 계산으로 확인해 주세요.</p>
     </div>
     <footer className={styles.footer}>
       <div className={styles.selectionSummary} aria-live="polite">
@@ -370,11 +371,12 @@ function CandidateRow({ row, onSelect }: { row: CandidateRowState; onSelect: () 
   const { candidate } = row;
   const blocked = !row.selectable && !row.selected;
   const extra = extraDriveLabel(row.extraDriveSeconds, row.combined);
+  const extraSpoken = extraDriveSpoken(row.extraDriveSeconds, row.combined);
   const spoken = [
     candidate.displayName,
     candidate.address,
     `${spokenClock(row.arrivalAt)} 도착`,
-    extra,
+    extraSpoken,
     "영업정보 없음",
     row.selected ? "선택됨" : blocked ? `선택 불가, ${row.reason}` : null,
   ].filter(Boolean).join(", ");

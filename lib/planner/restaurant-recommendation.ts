@@ -399,7 +399,7 @@ export function mealTargetAt(departureAt: string, toleranceMinutes: number, desi
 
 export function recommendationInputError(input: RecommendationInput, departureAt: string, waypointCount: number): string | null {
   const meals = input.meals.slice(0, input.mealCount);
-  if (meals.some((meal) => !DESIRED_TIME.test(meal.desiredTime))) return "희망 시각을 선택해 주세요.";
+  if (meals.some((meal) => !DESIRED_TIME.test(meal.desiredTime))) return "원하는 식사 시간을 선택해 주세요.";
   if (meals.some((meal) => !Number.isInteger(meal.dwellMinutes) || meal.dwellMinutes < 1 || meal.dwellMinutes > 1440)) {
     return "식사 시간은 1분 이상 1440분 이하로 정해 주세요.";
   }
@@ -407,7 +407,7 @@ export function recommendationInputError(input: RecommendationInput, departureAt
   if (input.mealCount === 2) {
     const first = mealTargetAt(departureAt, input.toleranceMinutes, meals[0].desiredTime);
     const second = mealTargetAt(departureAt, input.toleranceMinutes, meals[1].desiredTime);
-    if (!first || !second || second.getTime() <= first.getTime()) return "식사 2 희망 시각은 식사 1보다 늦어야 해요.";
+    if (!first || !second || second.getTime() <= first.getTime()) return "식사 2의 원하는 식사 시간은 식사 1보다 늦어야 해요.";
   }
   if (waypointCount + input.mealCount > waypointLimits.total) return "경유지가 30개를 넘어 식당을 추가할 수 없어요.";
   return null;
@@ -543,7 +543,7 @@ export function candidateRows(response: RecommendationResponse, selection: Recom
         candidate, selected, selectable: false, combined: false,
         arrivalAt: candidate.single.arrivalAt,
         extraDriveSeconds: candidate.single.extraDriveSeconds,
-        reason: `${withAnd(`식사 ${otherIndex}`)} 함께 가면 시간이 맞지 않거나 ${durationLabel(response.settings.detourLimitMinutes)} 넘게 더 달려요`,
+        reason: `${withAnd(`식사 ${otherIndex}`)} 함께 가면 시간이 맞지 않거나 주행이 ${durationLabel(response.settings.detourLimitMinutes)} 넘게 늘어나요`,
       };
     }
     return {
@@ -666,12 +666,19 @@ export function seoulDateTime(iso: string) {
   return `${local.getUTCMonth() + 1}월 ${local.getUTCDate()}일 ${seoulClock(iso)}`;
 }
 
-// "{n}분 더 달려요"; a non-positive rounded value (traffic-model difference)
-// means no extra riding.
+// "주행 +12분" (pairs: "두 곳 합계 주행 +22분"). The sign is kept: a rounded
+// zero is "±0분" and a negative value (traffic-model difference) "−3분".
 export function extraDriveLabel(seconds: number, combined = false) {
   const minutes = Math.round(seconds / 60);
-  const prefix = combined ? "두 곳 합계 " : "";
-  return minutes > 0 ? `${prefix}${minutes}분 더 달려요` : `${prefix}더 달리지 않아요`;
+  const sign = minutes > 0 ? "+" : minutes < 0 ? "−" : "±";
+  return `${combined ? "두 곳 합계 " : ""}주행 ${sign}${Math.abs(minutes)}분`;
+}
+
+// Screen-reader wording: "추가 주행 12분" / "추가 주행 0분" / "주행 3분 줄어듦".
+export function extraDriveSpoken(seconds: number, combined = false) {
+  const minutes = Math.round(seconds / 60);
+  const text = minutes < 0 ? `주행 ${Math.abs(minutes)}분 줄어듦` : `추가 주행 ${minutes}분`;
+  return `${combined ? "두 곳 합계 " : ""}${text}`;
 }
 
 export function durationLabel(minutes: number) {
