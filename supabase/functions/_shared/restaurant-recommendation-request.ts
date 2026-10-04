@@ -1,0 +1,109 @@
+import { parseStrictRfc3339 } from "./strict-time.ts";
+
+export type RecommendationMealRequest = { desiredTime: string; dwellMinutes: number };
+
+export type RecommendationRequest = {
+  tripId: string;
+  basis: { departureAt: string; returnAt: string; pointIds: string[] };
+  mealCount: 1 | 2;
+  meals: RecommendationMealRequest[];
+  toleranceMinutes: number;
+  detourLimitMinutes: number;
+};
+
+export type MealTarget = {
+  index: number;
+  targetAt: Date;
+  windowStartAt: Date;
+  windowEndAt: Date;
+  dwellMinutes: number;
+};
+
+const REQUEST_KEYS = ["basis", "detourLimitMinutes", "mealCount", "meals", "toleranceMinutes", "tripId"];
+const BASIS_KEYS = ["departureAt", "pointIds", "returnAt"];
+const MEAL_KEYS = ["desiredTime", "dwellMinutes"];
+const TRIP_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DESIRED_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const SEOUL_OFFSET_MS = 9 * 60 * 60_000;
+const DAY_MS = 24 * 60 * 60_000;
+
+function invalid(): never {
+  throw new Error("INVALID_RECOMMENDATION_REQUEST");
+}
+
+function exactRecord(value: unknown, keys: string[]): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
+  const actual = Object.keys(value).sort();
+  if (actual.length !== keys.length || actual.some((key, index) => key !== keys[index])) invalid();
+  return value as Record<string, unknown>;
+}
+
+function integerIn(value: unknown, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) invalid();
+  return value;
+}
+
+// Seoul has no daylight saving time, so a fixed +09:00 offset is exact.
+function firstSeoulTimeAtOrAfter(reference: Date, desiredTime: string): Date {
+  const [, hourText, minuteText] = DESIRED_TIME.exec(desiredTime)!;
+  const localReference = reference.getTime() + SEOUL_OFFSET_MS;
+  const localDayStart = Math.floor(localReference / DAY_MS) * DAY_MS;
+  let local = localDayStart + (Number(hourText) * 60 + Number(minuteText)) * 60_000;
+  if (local < localReference) local += DAY_MS;
+  return new Date(local - SEOUL_OFFSET_MS);
+}
+
+export function parseRecommendationRequest(value: unknown): RecommendationRequest {
+  const body = exactRecord(value, REQUEST_KEYS);
+  if (typeof body.tripId !== "string" || !TRIP_ID.test(body.tripId)) invalid();
+
+  const basis = exactRecord(body.basis, BASIS_KEYS);
+  const departure = parseStrictRfc3339(basis.departureAt);
+  const returned = parseStrictRfc3339(basis.returnAt);
+  if (!departure || !returned || returned.getTime() <= departure.getTime()) invalid();
+  if (
+    !Array.isArray(basis.pointIds) || basis.pointIds.length < 2 || basis.pointIds.length > 32 ||
+    !basis.pointIds.every((id) => typeof id === "string" && id.length >= 1 && id.length <= 100)
+  ) invalid();
+
+  const mealCount = integerIn(body.mealCount, 1, 2) as 1 | 2;
+  if (!Array.isArray(body.meals) || body.meals.length !== mealCount) invalid();
+  const meals = body.meals.map((value) => {
+    const meal = exactRecord(value, MEAL_KEYS);
+    if (typeof meal.desiredTime !== "string" || !DESIRED_TIME.test(meal.desiredTime)) invalid();
+    return { desiredTime: meal.desiredTime, dwellMinutes: integerIn(meal.dwellMinutes, 1, 1440) };
+  });
+
+  return {
+    tripId: body.tripId,
+    basis: {
+      departureAt: departure.toISOString(),
+      returnAt: returned.toISOString(),
+      pointIds: [...basis.pointIds as string[]],
+    },
+    mealCount,
+    meals,
+    toleranceMinutes: integerIn(body.toleranceMinutes, 5, 180),
+    detourLimitMinutes: integerIn(body.detourLimitMinutes, 5, 180),
+  };
+}
+
+// Each target is the first Seoul wall-clock occurrence of the desired time at
+// or after (departure − tolerance). The second meal must follow the first.
+export function mealTargets(request: RecommendationRequest): MealTarget[] {
+  const departure = new Date(request.basis.departureAt);
+  const reference = new Date(departure.getTime() - request.toleranceMinutes * 60_000);
+  const toleranceMs = request.toleranceMinutes * 60_000;
+  const targets = request.meals.map((meal, index) => {
+    const targetAt = firstSeoulTimeAtOrAfter(reference, meal.desiredTime);
+    return {
+      index: index + 1,
+      targetAt,
+      windowStartAt: new Date(targetAt.getTime() - toleranceMs),
+      windowEndAt: new Date(targetAt.getTime() + toleranceMs),
+      dwellMinutes: meal.dwellMinutes,
+    };
+  });
+  if (targets.length === 2 && targets[1].targetAt.getTime() <= targets[0].targetAt.getTime()) invalid();
+  return targets;
+}
