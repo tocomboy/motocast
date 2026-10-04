@@ -7,7 +7,7 @@ Console에서 확인한 Play 서명3개와 일치한다. 실제 Android 도메�
 `https://motocast-three.vercel.app`이며 Preview와 링크 발행·수신을 빌드별로 분리한다.
 재조회에서 운영 인증 파일은404다. 운영 지문 설정·후보 웹 배포 후 공개200/JSON을
 확인하고, 사용자가 실제 Play 설치본의 운영 도메인 연결을 검증한다.
-[재개 기록과 실기기 확인 절차](../work/research/2026-09-30-play-production-resume.md)를 따른다.
+[재개 기록과 실기기 확인 절차](../archive/2026-09/2026-09-30-play-production-resume.md)를 따른다.
 
 Android는 HTTPS `/share#<token>`과 `/invite#<token>`을 받고, MainActivity가 처음 실행되거나
 이미 실행 중일 때 같은 엄격한 URI 검사를 수행한다. 토큰은 fragment에 유지하고 query나

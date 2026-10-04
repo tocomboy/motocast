@@ -1,6 +1,6 @@
 # 주행 날씨 요청 계약 v1
 
-로컬 계산/요청 계약이다. 배포된 API 또는 인증 성공 증거가 아니다. 근거는 제품 정본 ROUTE-008 및 `docs/work/research/2026-09-08-android-ride-requirements.md` 3–5절, Q14·Q19다.
+로컬 계산/요청 계약이다. 배포된 API 또는 인증 성공 증거가 아니다. 근거는 제품 정본 ROUTE-008 및 `docs/archive/2026-09/2026-09-08-android-ride-requirements.md` 3–5절, Q14·Q19다.
 
 `remaining.json`은 개인 데이터가 없는 합성 예시다. Android의 `contracts/journey-weather/remaining.json`과 바이트가 같으며, Kotlin 요청 생성 결과도 JSON 값이 일치한다. 출발→휴식→동일 장소 2회→목적지의 방문 순서를 보존한다. 30분 휴식 중 20분이 지났으므로 10분 후 출발한다.
 
@@ -28,4 +28,4 @@ Android `JourneyWeatherSchedule`은 기본 10분(설정 주입 가능), 진행 �
 
 Figma W01–W06 카드와 전면 위치 추적 서비스의 취소·복구·GPS 단절을 연결했다. 가장 가까운 강수를 우선하고 없으면 다음 행선지의 날씨를 표시한다. 예보가 2시간 범위 밖이면 확보한 예상 경로의 날씨로 구분하며 목적지 예보라고 주장하지 않는다.
 
-[Preview 연결 계획](../../../docs/work/research/2026-09-22-journey-weather-preview.md)를 따른다. 로컬 실행 검증이며 Hosted 배포·실제 KMA 왕복·실기기 주행은 NOT_RUN. 90/60/30분 소리·진동 강수 알림과 복구 중복 방지는 다음 단위다.
+[Preview 연결 계획](../../../docs/archive/2026-09/2026-09-22-journey-weather-preview.md)를 따른다. 로컬 실행 검증이며 Hosted 배포·실제 KMA 왕복·실기기 주행은 NOT_RUN. 90/60/30분 소리·진동 강수 알림과 복구 중복 방지는 다음 단위다.
