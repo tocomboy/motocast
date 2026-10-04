@@ -63,8 +63,7 @@ function synthetic({ meals, pairs, waypointCount = 2, revision = 2 }: {
       tripId, departureAt: "2030-01-01T00:00:00.000Z", returnAt: "2030-01-01T10:00:00.000Z", pointIds,
       arrivalAts: pointIds.slice(1).map((_, index) => new Date(Date.parse("2030-01-01T00:00:00.000Z") + (index + 1) * 600 / (pointIds.length) * 60_000).toISOString()),
     },
-    // The echoed cap is 30 here (server sends 60) so tests prove the UI reads it.
-    settings: { mealCount: meals.length, toleranceMinutes: 30, detourLimitMinutes: 30 },
+    settings: { mealCount: meals.length, toleranceMinutes: 30, detourLimitMinutes: 60 },
     meals: meals.map((candidates, index) => ({
       index: index + 1,
       targetAt: targets[index],
@@ -107,7 +106,7 @@ const rich = () => synthetic({
     [
       { key: "a", leg: 0, feasible: true, extra: 300, arrival: "2030-01-01T03:00:00.000Z" },
       { key: "b", leg: 1, feasible: true, extra: 600, arrival: "2030-01-01T03:10:00.000Z" },
-      { key: "c", leg: 1, feasible: false, extra: 2000, arrival: "2030-01-01T03:20:00.000Z", reason: "DETOUR" },
+      { key: "c", leg: 1, feasible: false, extra: 4000, arrival: "2030-01-01T03:20:00.000Z", reason: "DETOUR" },
     ],
     [
       { key: "d", leg: 1, feasible: true, extra: 400, arrival: "2030-01-01T09:00:00.000Z" },
@@ -212,7 +211,7 @@ describe("recommendation response parser", () => {
   const d0 = "meals.0.candidates.0.single";
   const verdicts: Array<[string, (body: Json) => void]> = [
     ["feasible arrival outside the window", (body) => set(body, `${d0}.arrivalAt`, "2030-01-01T03:31:00.000Z")],
-    ["feasible extra drive over the echoed 60-minute cap", (body) => { set(body, `${d0}.extraDriveSeconds`, 3601); set(body, `${d0}.returnAt`, "2030-01-01T06:00:01.000Z"); }],
+    ["feasible extra drive over the 60-minute cap (correct return)", (body) => { set(body, `${d0}.extraDriveSeconds`, 3601); set(body, `${d0}.returnAt`, "2030-01-01T05:45:01.000Z"); }],
     ["return not base + extra + dwell", (body) => set(body, `${d0}.returnAt`, "2030-01-01T05:10:00.000Z")],
     ["reason that is not the violated rule", (body) => { set(body, `${d0}.feasible`, false); set(body, `${d0}.reason`, "DETOUR"); set(body, `${d0}.arrivalAt`, "2030-01-01T04:00:00.000Z"); }],
     ["return-24h reason without a 24h return", (body) => { set(body, `${d0}.feasible`, false); set(body, `${d0}.reason`, "RETURN_24H"); }],
@@ -221,6 +220,21 @@ describe("recommendation response parser", () => {
     ["arrival after the return", (body) => set(body, "basis.arrivalAts", ["2030-01-01T02:00:00.000Z", "2030-01-01T04:00:01.000Z"])],
     ["missing arrival list", (body) => { delete at(body, "basis").arrivalAts; }],
   ];
+
+  it("accepts a feasible candidate at exactly the 60-minute cap with the matching return", () => {
+    const body = fixtureBody("ok-one-meal");
+    set(body, `${d0}.extraDriveSeconds`, 3600);
+    set(body, `${d0}.returnAt`, "2030-01-01T05:45:00.000Z");
+    expect(parseRecommendationResponse(body).meals[0].candidates.find((item) => item.single.extraDriveSeconds === 3600)?.single.feasible).toBe(true);
+  });
+
+  it.each([30, 59, 61, 90])("rejects a response whose echoed cap is %i instead of the fixed 60", (cap) => {
+    for (const id of ["ok-one-meal", "ok-no-result"]) {
+      const body = fixtureBody(id);
+      set(body, "settings.detourLimitMinutes", cap);
+      expect(() => parseRecommendationResponse(body)).toThrow();
+    }
+  });
 
   it.each(verdicts)("rejects a candidate or basis with %s", (_name, mutate) => {
     const body = fixtureBody("ok-one-meal");
@@ -236,10 +250,10 @@ describe("recommendation response parser", () => {
       set(body, "meals.0.candidates.0.single.returnAt", new Date(Date.parse(baseReturn) + (extra + 45 * 60) * 1000).toISOString());
       return body;
     };
-    expect(() => parseRecommendationResponse(one("2030-01-01T03:30:00.000Z", 1800))).not.toThrow();
-    expect(() => parseRecommendationResponse(one("2030-01-01T02:30:00.000Z", 1800))).not.toThrow();
-    expect(() => parseRecommendationResponse(one("2030-01-01T03:30:01.000Z", 1800))).toThrow();
-    expect(() => parseRecommendationResponse(one("2030-01-01T03:30:00.000Z", 1801))).toThrow();
+    expect(() => parseRecommendationResponse(one("2030-01-01T03:30:00.000Z", 3600))).not.toThrow();
+    expect(() => parseRecommendationResponse(one("2030-01-01T02:30:00.000Z", 3600))).not.toThrow();
+    expect(() => parseRecommendationResponse(one("2030-01-01T03:30:01.000Z", 3600))).toThrow();
+    expect(() => parseRecommendationResponse(one("2030-01-01T03:30:00.000Z", 3601))).toThrow();
     // Departure 00:00Z with a 45-minute meal: base return 23:14 returns at 23:59, 23:15 at exactly 24h.
     expect(() => parseRecommendationResponse(one("2030-01-01T03:00:00.000Z", 0, "2030-01-01T23:14:00.000Z"))).not.toThrow();
     expect(() => parseRecommendationResponse(one("2030-01-01T03:00:00.000Z", 0, "2030-01-01T23:15:00.000Z"))).toThrow();
@@ -255,7 +269,7 @@ describe("recommendation response parser", () => {
   it.each([
     ["first arrival outside meal 1's window", (pair: Json) => { pair.firstArrivalAt = "2030-01-01T03:31:00.000Z"; }],
     ["second arrival outside meal 2's window", (pair: Json) => { pair.secondArrivalAt = "2030-01-01T08:29:00.000Z"; }],
-    ["combined extra drive over the limit", (pair: Json) => { pair.extraDriveSeconds = 1801; pair.returnAt = returnAfter(1801, 90); }],
+    ["combined extra drive over the limit", (pair: Json) => { pair.extraDriveSeconds = 3601; pair.returnAt = returnAfter(3601, 90); }],
     ["return not base + extra + both dwells", (pair: Json) => { pair.returnAt = returnAfter(700, 45); }],
     ["same restaurant twice", (pair: Json) => { pair.secondSavedPlaceId = pair.firstSavedPlaceId; }],
   ])("rejects a pair with %s", (_name, mutate) => {
@@ -478,12 +492,12 @@ describe("candidate selection", () => {
     ]);
     const withB = { 1: id("b") };
     expect(candidateRows(response, withB, 2).map((row) => [row.candidate.displayName, row.selectable, row.reason, row.extraDriveSeconds])).toEqual([
-      ["식당 d", true, null, 1100], ["식당 e", false, "식사 1과 함께 가면 시간이 맞지 않거나 주행이 30분 넘게 늘어나요", 500],
+      ["식당 d", true, null, 1100], ["식당 e", false, "식사 1과 함께 가면 시간이 맞지 않거나 주행이 1시간 넘게 늘어나요", 500],
     ]);
     expect(toggleSelection(response, withB, 2, id("e"))).toEqual(withB);
     const withE = { 2: id("e") };
     expect(candidateRows(response, withE, 1).map((row) => [row.candidate.displayName, row.selectable, row.reason])).toEqual([
-      ["식당 a", true, null], ["식당 b", false, "식사 2와 함께 가면 시간이 맞지 않거나 주행이 30분 넘게 늘어나요"], ["식당 c", true, null],
+      ["식당 a", true, null], ["식당 b", false, "식사 2와 함께 가면 시간이 맞지 않거나 주행이 1시간 넘게 늘어나요"], ["식당 c", true, null],
     ]);
     expect(resolveSelection(response, { 1: id("c"), 2: id("e") })?.extraDriveSeconds).toBe(1700);
     expect(resolveSelection(response, { 1: id("b"), 2: id("e") })).toBeNull();

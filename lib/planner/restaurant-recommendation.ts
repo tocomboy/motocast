@@ -97,9 +97,9 @@ export function stepTolerance(current: ToleranceMinutes, direction: -1 | 1): Tol
   return toleranceOptions[Math.min(toleranceOptions.length - 1, Math.max(0, index))];
 }
 
-// The server's fixed extra-drive cap (§1.1). Results use the value the
-// response echoes in `settings.detourLimitMinutes`; this constant only
-// words the notice shown before any response exists.
+// The server's fixed extra-drive cap (§1.1, contract 3.0.1). A response must
+// echo exactly this value in `settings.detourLimitMinutes`; anything else is a
+// contract violation, so judging and wording always use one 60-minute cap.
 export const SERVER_DETOUR_CAP_MINUTES = 60;
 
 export class RecommendationContractError extends Error {
@@ -286,7 +286,8 @@ export function parseRecommendationResponse(value: unknown): RecommendationRespo
   const mealCount = integer(settings.mealCount, 1, 2) as 1 | 2;
   if (!toleranceOptions.includes(settings.toleranceMinutes as ToleranceMinutes)) fail();
   const toleranceMinutes = settings.toleranceMinutes as ToleranceMinutes;
-  const detourLimitMinutes = integer(settings.detourLimitMinutes, 5, 180);
+  if (settings.detourLimitMinutes !== SERVER_DETOUR_CAP_MINUTES) fail("INVALID_RECOMMENDATION_SETTINGS");
+  const detourLimitMinutes = SERVER_DETOUR_CAP_MINUTES;
   if (!Array.isArray(raw.meals) || raw.meals.length !== mealCount || !Array.isArray(raw.pairs)) fail();
   const meals = raw.meals.map((meal, index) => parseMeal(meal, index, toleranceMinutes, pointIds));
   if (meals.length === 2 && ms(meals[1].targetAt) <= ms(meals[0].targetAt)) fail("INVALID_RECOMMENDATION_WINDOW");
