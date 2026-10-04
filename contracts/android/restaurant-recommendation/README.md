@@ -1,12 +1,12 @@
-# 저장 식당 기반 음식점 추천 계약 2.0.0
+# 저장 식당 기반 음식점 추천 계약 3.0.0
 
 웹/서버 정본은 이 디렉터리의 `fixtures.json`이며 Android는 검증한 동일 바이트를 보존한다. 설계 정본은 `docs/work/research/2026-10-05-restaurant-recommendation.md` §3(요청·처리·응답·오류)·§5·§6이다. `sourceCommit`은 변경 전 기반이며, 실제 구현 후보는 이 파일을 포함하는 Git commit과 배포 기록으로 고정한다. 함수 배포 여부는 이 계약으로 증명되지 않는다.
 
 ## 요청 — `POST /functions/v1/recommend-restaurants` (JWT 필요)
 
-- 정확히 `tripId`, `basis{departureAt, returnAt, pointIds, arrivalAts}`, `mealCount`, `meals[{desiredTime, dwellMinutes}]`, `toleranceMinutes`만 허용한다. 키 추가·누락, 경로 정책 키(`car_type` 등), 2.0.0에서 삭제된 `detourLimitMinutes`는 거부한다. 서버는 기본값을 채우지 않으므로 화면 기본값(식사 1 `12:00`, 식사 2 `18:00`, 체류 60, 원하는 식사 시간 ±30)은 클라이언트가 보낸다.
+- 정확히 `tripId`, `basis{departureAt, returnAt, pointIds, arrivalAts}`, `mealCount`, `meals[{desiredTime, dwellMinutes}]`, `toleranceMinutes`만 허용한다. 키 추가·누락, 경로 정책 키(`car_type` 등), 2.0.0에서 삭제된 `detourLimitMinutes`는 거부한다. 서버는 기본값을 채우지 않으므로 화면 기본값(식사 1 `12:00`, 식사 2 `18:00`, 원하는 식사 시간 ±30)과 고정 식사 시간 45분은 클라이언트가 보낸다.
 - `tripId` UUID. `basis`는 화면에 표시한 계산 결과 그대로: 첫 구간 출발, 예상 복귀, `[legs[0].from.id, ...legs.map(to.id)]`(2–32개, 각 1–100자), 구간별 `legs[i].arrivalAt`(`arrivalAts`, 길이 = `pointIds.length − 1`, 필수). 서버는 저장 경로와 출발·복귀·ID 순서·모든 구간 도착이 같아야 받아들이므로 출발·복귀·ID가 같고 중간 체류만 바뀐 재계산도 409로 거부한다. 저장 경로의 인접 구간이 공유 지점의 ID·좌표·시각으로 이어지지 않아도 409다. 시각은 RFC 3339이며 서버는 순간(instant)으로 비교하고 응답 `basis`(`arrivalAts` 포함)에는 저장값을 UTC `Z` 표기로 돌려준다. 복귀는 출발보다 늦어야 한다.
-- `mealCount` 1|2, `meals.length === mealCount`. `desiredTime` `HH:MM`(00–23:00–59, 두 자리). `dwellMinutes` 정수 1–1440. `toleranceMinutes`는 원하는 식사 시간 앞뒤 허용 범위로 `30`·`60`·`90` 중 하나(그 밖의 정수·소수·문자열 거부).
+- `mealCount` 1|2, `meals.length === mealCount`. `desiredTime` `HH:MM`(00–23:00–59, 두 자리). `dwellMinutes`는 `45`만 허용한다(SOT PLAN-003 2026-10-05 amendment). 형식이 맞는 다른 정수(1–1440)는 이전 앱으로 보고 400 `MEAL_DWELL_FIXED`와 업데이트 안내 문구 `식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.`를 돌려주며, 0·1441·소수 같은 형식 오류는 400 `RECOMMENDATION_INPUT_INVALID`다. 두 경우 모두 저장 데이터 조회·예산·공급자 작업 전에 거부한다. `toleranceMinutes`는 원하는 식사 시간 앞뒤 허용 범위로 `30`·`60`·`90` 중 하나(그 밖의 정수·소수·문자열 거부).
 - 추가 주행 상한은 요청 값이 아니라 서버 고정값 60분이다(2곳은 두 곳 합계 60분). 사전 선별 반경은 상한 ÷ 2 = 30km(60km/h 왕복 가정)다.
 - 식사 목표 시각: 서울 시각 `HH:MM`이 `departureAt − toleranceMinutes` **이후(같은 순간 포함)** 처음 나오는 순간. 허용 창은 목표 ± 허용 범위(경계 포함). 식사 2 목표는 식사 1 목표보다 엄격히 늦어야 한다.
 
@@ -35,5 +35,6 @@
 
 ## 변경 이력
 
+- 3.0.0 (2026-10-05, 호환되지 않음, PLAN-003 식사 45분 고정): `meals[].dwellMinutes`는 45만 허용. 요청 사례의 식사 체류를 45로 바꾸고 범위 최소·최대 사례의 체류 1/1440도 45로 맞췄다. `MEAL_DWELL_FIXED` 거부 사례(44·46·60·1·1440, 식사 2만 60)를 추가했다. 응답 예시는 실제 계산 출력으로 다시 만들었고 바뀐 값은 `meals[].dwellMinutes` 60 → 45와 그에 따른 `single.returnAt`(15분 이른 복귀), `ok-two-meals-pair`의 `secondArrivalAt` 04:10 → 03:55Z·`returnAt` 06:20 → 05:50Z다. 후보·조합 구성과 의미는 같다.
 - 2.0.0 (2026-10-05, 호환되지 않음, PLAN-005 2차 변경): 요청 `detourLimitMinutes` 삭제(보내면 400), `toleranceMinutes ∈ {30, 60, 90}`, 서버 고정 상한 60분·선별 반경 30km, 응답 `settings.detourLimitMinutes`는 60. 요청 사례: 허용 범위 5/180 경계와 한도 4/181 사례를 30/60/90 허용, 0·29·45·120·180·소수·문자열·`detourLimitMinutes` 포함 거부로 바꿨다. 응답 예시 변경과 이유: 모든 예시의 `settings.detourLimitMinutes` 30 → 60. 식사 1 예시 식당 경도 127.25 → 127.1(반경이 30km로 넓어져 127.25가 구간 1 식사 2 후보로도 잡혀 호출이 1회 늘어나는 것을 피하고 같은 의미 유지). `ok-partial`은 두 식당 추가 주행을 1000+900초에서 2000+1700초로 바꿔 각각은 60분 이하지만 합계 3700초가 60분을 넘는 같은 의미를 유지했다(식사 1 후보 `extraDriveSeconds` 2000, `returnAt` 05:33:20Z).
 - 1.1.0 (2026-10-05): 요청·응답 `basis.arrivalAts` 필수 추가, 저장 경로 인접 구간 좌표 연결 검사(Codex V2 지적 반영). 1.0.0 요청은 400으로 거부된다.

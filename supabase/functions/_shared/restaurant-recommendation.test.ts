@@ -71,7 +71,7 @@ function requestFor(summary: Summary, overrides: Record<string, unknown> = {}) {
       arrivalAts: summary.legs.map((leg) => leg.arrivalAt),
     },
     mealCount: 1,
-    meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
+    meals: [{ desiredTime: "12:00", dwellMinutes: 45 }],
     toleranceMinutes: 30,
     ...overrides,
   });
@@ -219,7 +219,7 @@ describe("stored route basis", () => {
     const twentyNine = route(29);
     expect(() => prepareStoredRoute(requestFor(twentyNine), twentyNine)).not.toThrow();
     const twoMeals = requestFor(twentyNine, {
-      mealCount: 2, meals: [{ desiredTime: "10:00", dwellMinutes: 60 }, { desiredTime: "11:00", dwellMinutes: 60 }],
+      mealCount: 2, meals: [{ desiredTime: "10:00", dwellMinutes: 45 }, { desiredTime: "11:00", dwellMinutes: 45 }],
     });
     expect(() => prepareStoredRoute(twoMeals, twentyNine)).toThrow("RECOMMENDATION_WAYPOINT_LIMIT");
     const thirty = route(30);
@@ -304,10 +304,10 @@ describe("single meal judgement", () => {
     const start = result.meals[0].candidates.find((candidate) => candidate.savedPlaceId === atStart.id)!;
     expect(start.single).toEqual({
       feasible: true, arrivalAt: "2030-01-01T02:30:00.000Z", extraDriveSeconds: 0,
-      returnAt: "2030-01-01T05:00:00.000Z", reason: null,
+      returnAt: "2030-01-01T04:45:00.000Z", reason: null,
     });
     expect(result.meals[0]).toMatchObject({
-      windowStartAt: "2030-01-01T02:30:00.000Z", windowEndAt: "2030-01-01T03:30:00.000Z", dwellMinutes: 60,
+      windowStartAt: "2030-01-01T02:30:00.000Z", windowEndAt: "2030-01-01T03:30:00.000Z", dwellMinutes: 45,
     });
   });
 
@@ -368,12 +368,12 @@ describe("single meal judgement", () => {
   });
 
   it("excludes a stop whose return reaches 24 hours after departure", async () => {
-    const summary = storedSummary([O, W, D], [36000, 36000]); // returns 20:00Z
-    const atBoundary = restaurant(127.75, 37.001);
-    const justUnder = restaurant(127.751, 37.001);
-    const overrides = { [atBoundary.id]: [18000, 18600], [justUnder.id]: [18000, 18599] };
+    const summary = storedSummary([O, W, D], [36000, 47100]); // returns 23:05Z
+    const atBoundary = restaurant(127.691, 37.001);
+    const justUnder = restaurant(127.692, 37.001);
+    const overrides = { [atBoundary.id]: [18000, 29700], [justUnder.id]: [18000, 29699] }; // extra 600 / 599
     // 00:00 Seoul on Jan 2 is 15:00Z, the middle of leg 1 (10:00Z–20:00Z).
-    const { result } = await run(summary, { meals: [{ desiredTime: "00:00", dwellMinutes: 230 }] }, [atBoundary, justUnder], { overrides });
+    const { result } = await run(summary, { meals: [{ desiredTime: "00:00", dwellMinutes: 45 }] }, [atBoundary, justUnder], { overrides });
     expect(result.meals[0].targetAt).toBe("2030-01-01T15:00:00.000Z");
     expect(ids(result.meals[0].candidates)).toEqual([justUnder.id]);
     expect(result.meals[0].candidates[0].single.returnAt).toBe("2030-01-01T23:59:59.000Z");
@@ -409,7 +409,7 @@ describe("single meal judgement", () => {
 // --- Two meals ------------------------------------------------------------------
 
 describe("two meal combinations", () => {
-  const twoMeals = (first: string, second: string, firstDwell = 60, secondDwell = 60) => ({
+  const twoMeals = (first: string, second: string, firstDwell = 45, secondDwell = 45) => ({
     mealCount: 2,
     meals: [{ desiredTime: first, dwellMinutes: firstDwell }, { desiredTime: second, dwellMinutes: secondDwell }],
   });
@@ -424,9 +424,9 @@ describe("two meal combinations", () => {
     expect(result.pairs).toEqual([{
       firstSavedPlaceId: a.id, secondSavedPlaceId: b.id,
       firstArrivalAt: "2030-01-01T01:00:00.000Z",
-      secondArrivalAt: "2030-01-01T04:10:00.000Z", // 03:00 + 600 s + 60 min
+      secondArrivalAt: "2030-01-01T03:55:00.000Z", // 03:00 + 600 s + 45 min
       extraDriveSeconds: 1200,
-      returnAt: "2030-01-01T06:20:00.000Z", // 04:00 + 1200 s + 2 × 60 min
+      returnAt: "2030-01-01T05:50:00.000Z", // 04:00 + 1200 s + 2 × 45 min
     }]);
     expect(ids(result.meals[0].candidates)).toEqual([a.id]);
     expect(result.meals[1].candidates).toHaveLength(1);
@@ -439,7 +439,7 @@ describe("two meal combinations", () => {
     const summary = storedSummary();
     const a = restaurant(127.1, 37.001);
     const b = restaurant(127.75, 37.001);
-    // 2000 + 1700 = 3700 > 3600; meal 2 would arrive 02:50 + 2000 s + 60 min = 04:23:20 (in window).
+    // 2000 + 1700 = 3700 > 3600; meal 2 would arrive 02:50 + 2000 s + 45 min = 04:08:20 (in window).
     const overrides = { [a.id]: [3600, 5600], [b.id]: [3000, 5900] };
     const { result } = await run(summary, twoMeals("10:00", "13:00"), [a, b], { overrides });
     expect(result.pairs).toEqual([]);
@@ -456,9 +456,9 @@ describe("two meal combinations", () => {
     expect(result.pairs).toEqual([{
       firstSavedPlaceId: a.id, secondSavedPlaceId: b.id,
       firstArrivalAt: "2030-01-01T01:00:00.000Z",
-      secondArrivalAt: "2030-01-01T04:23:20.000Z",
+      secondArrivalAt: "2030-01-01T04:08:20.000Z",
       extraDriveSeconds: 3600,
-      returnAt: "2030-01-01T07:00:00.000Z", // 04:00 + 3600 s + 2 × 60 min
+      returnAt: "2030-01-01T06:30:00.000Z", // 04:00 + 3600 s + 2 × 45 min
     }]);
     expect(result.meals[1].candidates[0]).toMatchObject({ savedPlaceId: b.id, single: { feasible: false, reason: "WINDOW" } });
   });
@@ -492,9 +492,9 @@ describe("two meal combinations", () => {
     expect(result.pairs).toEqual([{
       firstSavedPlaceId: a.id, secondSavedPlaceId: b.id,
       firstArrivalAt: "2030-01-01T02:30:00.000Z",
-      secondArrivalAt: "2030-01-01T04:31:40.000Z", // 02:30 + 60 min + 3700 s
+      secondArrivalAt: "2030-01-01T04:16:40.000Z", // 02:30 + 45 min + 3700 s
       extraDriveSeconds: 200, // 1800 + 3700 + 1900 − 7200
-      returnAt: "2030-01-01T06:03:20.000Z", // 04:00 + 200 s + 120 min
+      returnAt: "2030-01-01T05:33:20.000Z", // 04:00 + 200 s + 90 min
     }]);
     expect(result.pairs.some((pair) => pair.firstSavedPlaceId === pair.secondSavedPlaceId)).toBe(false);
     expect(ids(result.meals[1].candidates)).toEqual([b.id]);
@@ -506,11 +506,12 @@ describe("two meal combinations", () => {
     const north: Point = { id: "destination", longitude: 127.5, latitude: 37.8 };
     const summary = storedSummary([O, W, north], [7200, 7200]);
     const a = restaurant(127.5, 37.4); // on leg 1, passed at 03:00Z
-    const b = restaurant(127.1, 37.01); // ~35 km from leg 1
-    // Paired as if in order, meal 2 would arrive 00:40 + 100 s + 170 min = 03:31:40 (inside its window).
-    const overrides = { [a.id]: [3600, 3700], [b.id]: [2400, 4900] };
+    const b = restaurant(127.45, 37.001); // leg 0 (passed 01:48Z) is its closest leg
+    // Paired as if in order, meal 2 would arrive 02:46:40 + 100 s + 45 min = 03:33:20 (inside its window)
+    // with 100 + 2900 s of extra driving (within the cap).
+    const overrides = { [a.id]: [3600, 3700], [b.id]: [10000, 100] };
     const { result, requestProvider } = await run(
-      summary, twoMeals("12:00", "13:00", 170), [a, b], { overrides },
+      summary, twoMeals("12:00", "13:00"), [a, b], { overrides },
     );
     expect(requestProvider.mock.calls.map(([input]) => input.origin.id).sort()).toEqual(["occ-w", "origin"]);
     expect(result.meals[1].candidates).toEqual([]);
@@ -549,7 +550,7 @@ describe("provider execution", () => {
     const firsts = Array.from({ length: 6 }, (_, index) => restaurant(127.625 + index * 0.002, 37.03 + index * 0.004));
     const seconds = Array.from({ length: 6 }, (_, index) => restaurant(127.875 + index * 0.002, 37.002 + index * 0.002));
     const { result, requestProvider, consumeBudget } = await run(
-      summary, { mealCount: 2, meals: [{ desiredTime: "11:30", dwellMinutes: 60 }, { desiredTime: "13:30", dwellMinutes: 60 }] },
+      summary, { mealCount: 2, meals: [{ desiredTime: "11:30", dwellMinutes: 45 }, { desiredTime: "13:30", dwellMinutes: 45 }] },
       [...firsts, ...seconds],
     );
     expect(requestProvider).toHaveBeenCalledTimes(14);
@@ -572,7 +573,7 @@ describe("provider execution", () => {
     // Leg 0 departs exactly 5 minutes after now (current); leg 1 two hours later (future).
     const now = Date.parse(DEPARTURE) - 5 * 60_000;
     const { requestProvider, consumeBudget, limitFor } = await run(
-      summary, { mealCount: 2, meals: [{ desiredTime: "10:00", dwellMinutes: 60 }, { desiredTime: "13:00", dwellMinutes: 60 }] },
+      summary, { mealCount: 2, meals: [{ desiredTime: "10:00", dwellMinutes: 45 }, { desiredTime: "13:00", dwellMinutes: 45 }] },
       [a, b], { overrides, now },
     );
     const byOrigin = Object.fromEntries(requestProvider.mock.calls.map(([input]) => [input.origin.id, input.isFuture]));
@@ -700,6 +701,7 @@ describe("public error mapping", () => {
     ["PROVIDER_RATE_LIMITED", 503, "RECOMMENDATION_PROVIDER_TEMPORARY"],
     ["INVALID_ROUTE_PROVIDER_RESPONSE", 502, "RECOMMENDATION_RESPONSE_INVALID"],
     ["RECOMMENDATION_STORAGE_FAILED", 500, "RECOMMENDATION_FAILED"],
+    ["MEAL_DWELL_FIXED", 400, "MEAL_DWELL_FIXED"],
     ["fixture-private-detail 127.1 37.5", 502, "RECOMMENDATION_FAILED"],
   ])("maps %s to %i %s with a fixed Korean message", (message, status, code) => {
     const failure = recommendationFailure(new Error(message));
@@ -720,7 +722,7 @@ describe("shared Android response fixtures", () => {
       roadAddress: suffix === "0001" ? "공개 시험 도로명 주소" : null, longitude, latitude,
     },
   });
-  const twoMeals = { mealCount: 2, meals: [{ desiredTime: "10:00", dwellMinutes: 60 }, { desiredTime: "13:00", dwellMinutes: 60 }] };
+  const twoMeals = { mealCount: 2, meals: [{ desiredTime: "10:00", dwellMinutes: 45 }, { desiredTime: "13:00", dwellMinutes: 45 }] };
   const first = fixedRow("0003", 127.1, 37.001, "공개 시험 칼국수");
   const second = fixedRow("0004", 127.75, 37.001, "공개 시험 막국수", "저녁 후보");
   const scenarios: Record<string, () => ReturnType<typeof run>> = {
@@ -750,5 +752,13 @@ describe("shared Android response fixtures", () => {
     const example = (fixture.responses as Array<{ id: string; status: number; body: unknown }>).find((item) => item.id === id);
     expect(example?.status).toBe(200);
     expect(result).toEqual(example?.body);
+  });
+});
+
+describe("fixed 45-minute meal dwell", () => {
+  it("returns the update guidance with a fixed code for an outdated meal dwell", () => {
+    expect(recommendationFailure(new Error("MEAL_DWELL_FIXED"))).toEqual({
+      status: 400, code: "MEAL_DWELL_FIXED", message: "식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.",
+    });
   });
 });

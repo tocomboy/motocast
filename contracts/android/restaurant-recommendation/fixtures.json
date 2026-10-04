@@ -1,5 +1,5 @@
 {
-  "contractVersion": "2.0.0",
+  "contractVersion": "3.0.0",
   "sourceCommit": "70d3bf3507976ac8dda47982a060f5cba2cbdfdc",
   "endpoint": "POST /functions/v1/recommend-restaurants",
   "requests": [
@@ -24,7 +24,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -49,7 +49,7 @@
           "meals": [
             {
               "desiredTime": "12:00",
-              "dwellMinutes": 60
+              "dwellMinutes": 45
             }
           ],
           "toleranceMinutes": 30
@@ -84,11 +84,11 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           },
           {
             "desiredTime": "18:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -113,11 +113,11 @@
           "meals": [
             {
               "desiredTime": "12:00",
-              "dwellMinutes": 60
+              "dwellMinutes": 45
             },
             {
               "desiredTime": "18:00",
-              "dwellMinutes": 60
+              "dwellMinutes": 45
             }
           ],
           "toleranceMinutes": 30
@@ -157,7 +157,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -182,7 +182,7 @@
           "meals": [
             {
               "desiredTime": "12:00",
-              "dwellMinutes": 60
+              "dwellMinutes": 45
             }
           ],
           "toleranceMinutes": 30
@@ -215,7 +215,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 1
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -238,7 +238,7 @@
           "meals": [
             {
               "desiredTime": "12:00",
-              "dwellMinutes": 1
+              "dwellMinutes": 45
             }
           ],
           "toleranceMinutes": 30
@@ -331,7 +331,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 1440
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 90
@@ -414,7 +414,7 @@
           "meals": [
             {
               "desiredTime": "12:00",
-              "dwellMinutes": 1440
+              "dwellMinutes": 45
             }
           ],
           "toleranceMinutes": 90
@@ -449,7 +449,7 @@
         "meals": [
           {
             "desiredTime": "00:10",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -474,7 +474,7 @@
           "meals": [
             {
               "desiredTime": "00:10",
-              "dwellMinutes": 60
+              "dwellMinutes": 45
             }
           ],
           "toleranceMinutes": 30
@@ -509,7 +509,7 @@
         "meals": [
           {
             "desiredTime": "08:30",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -534,7 +534,7 @@
           "meals": [
             {
               "desiredTime": "08:30",
-              "dwellMinutes": 60
+              "dwellMinutes": 45
             }
           ],
           "toleranceMinutes": 30
@@ -569,7 +569,7 @@
         "meals": [
           {
             "desiredTime": "08:29",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -594,7 +594,7 @@
           "meals": [
             {
               "desiredTime": "08:29",
-              "dwellMinutes": 60
+              "dwellMinutes": 45
             }
           ],
           "toleranceMinutes": 30
@@ -629,11 +629,11 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           },
           {
             "desiredTime": "08:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -658,11 +658,11 @@
           "meals": [
             {
               "desiredTime": "12:00",
-              "dwellMinutes": 60
+              "dwellMinutes": 45
             },
             {
               "desiredTime": "08:00",
-              "dwellMinutes": 60
+              "dwellMinutes": 45
             }
           ],
           "toleranceMinutes": 30
@@ -712,7 +712,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30,
@@ -741,7 +741,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30,
@@ -770,7 +770,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ]
       },
@@ -798,7 +798,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -826,7 +826,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60,
+            "dwellMinutes": 45,
             "role": "lunch"
           }
         ],
@@ -855,7 +855,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -883,15 +883,15 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           },
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           },
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -919,7 +919,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -947,7 +947,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -975,11 +975,11 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           },
           {
             "desiredTime": "18:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1007,7 +1007,7 @@
         "meals": [
           {
             "desiredTime": "24:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1035,7 +1035,7 @@
         "meals": [
           {
             "desiredTime": "12:60",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1063,7 +1063,7 @@
         "meals": [
           {
             "desiredTime": "9:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1091,7 +1091,7 @@
         "meals": [
           {
             "desiredTime": "12:00:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1198,7 +1198,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1286,7 +1286,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1314,7 +1314,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1342,7 +1342,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1370,7 +1370,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1398,7 +1398,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1426,11 +1426,11 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           },
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1458,11 +1458,11 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           },
           {
             "desiredTime": "11:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1486,7 +1486,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1513,7 +1513,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1542,7 +1542,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1567,7 +1567,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1595,7 +1595,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1623,7 +1623,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1651,7 +1651,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30
@@ -1679,7 +1679,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 60
@@ -1704,7 +1704,7 @@
           "meals": [
             {
               "desiredTime": "12:00",
-              "dwellMinutes": 60
+              "dwellMinutes": 45
             }
           ],
           "toleranceMinutes": 60
@@ -1739,7 +1739,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 90
@@ -1764,7 +1764,7 @@
           "meals": [
             {
               "desiredTime": "12:00",
-              "dwellMinutes": 60
+              "dwellMinutes": 45
             }
           ],
           "toleranceMinutes": 90
@@ -1799,7 +1799,7 @@
         "meals": [
           {
             "desiredTime": "07:30",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 90
@@ -1824,7 +1824,7 @@
           "meals": [
             {
               "desiredTime": "07:30",
-              "dwellMinutes": 60
+              "dwellMinutes": 45
             }
           ],
           "toleranceMinutes": 90
@@ -1859,7 +1859,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 0
@@ -1887,7 +1887,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 29
@@ -1915,7 +1915,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 45
@@ -1943,7 +1943,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 120
@@ -1971,7 +1971,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 180
@@ -1999,7 +1999,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30.5
@@ -2027,7 +2027,7 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": "30"
@@ -2055,13 +2055,185 @@
         "meals": [
           {
             "desiredTime": "12:00",
-            "dwellMinutes": 60
+            "dwellMinutes": 45
           }
         ],
         "toleranceMinutes": 30,
         "detourLimitMinutes": 60
       },
       "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "meal-dwell-44",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 44
+          }
+        ],
+        "toleranceMinutes": 30
+      },
+      "error": "MEAL_DWELL_FIXED"
+    },
+    {
+      "id": "meal-dwell-46",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 46
+          }
+        ],
+        "toleranceMinutes": 30
+      },
+      "error": "MEAL_DWELL_FIXED"
+    },
+    {
+      "id": "meal-dwell-60",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30
+      },
+      "error": "MEAL_DWELL_FIXED"
+    },
+    {
+      "id": "meal-dwell-1",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 1
+          }
+        ],
+        "toleranceMinutes": 30
+      },
+      "error": "MEAL_DWELL_FIXED"
+    },
+    {
+      "id": "meal-dwell-1440",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 1440
+          }
+        ],
+        "toleranceMinutes": 30
+      },
+      "error": "MEAL_DWELL_FIXED"
+    },
+    {
+      "id": "second-meal-dwell-60",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 2,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 45
+          },
+          {
+            "desiredTime": "18:00",
+            "dwellMinutes": 60
+          }
+        ],
+        "toleranceMinutes": 30
+      },
+      "error": "MEAL_DWELL_FIXED"
     }
   ],
   "responses": [
@@ -2096,7 +2268,7 @@
             "targetAt": "2030-01-01T03:00:00.000Z",
             "windowStartAt": "2030-01-01T02:30:00.000Z",
             "windowEndAt": "2030-01-01T03:30:00.000Z",
-            "dwellMinutes": 60,
+            "dwellMinutes": 45,
             "candidates": [
               {
                 "savedPlaceId": "00000000-0000-4000-8000-0000000a0001",
@@ -2115,7 +2287,7 @@
                   "feasible": true,
                   "arrivalAt": "2030-01-01T03:00:00.000Z",
                   "extraDriveSeconds": 540,
-                  "returnAt": "2030-01-01T05:09:00.000Z",
+                  "returnAt": "2030-01-01T04:54:00.000Z",
                   "reason": null
                 }
               },
@@ -2136,7 +2308,7 @@
                   "feasible": true,
                   "arrivalAt": "2030-01-01T03:06:00.000Z",
                   "extraDriveSeconds": 600,
-                  "returnAt": "2030-01-01T05:10:00.000Z",
+                  "returnAt": "2030-01-01T04:55:00.000Z",
                   "reason": null
                 }
               }
@@ -2187,7 +2359,7 @@
             "targetAt": "2030-01-01T01:00:00.000Z",
             "windowStartAt": "2030-01-01T00:30:00.000Z",
             "windowEndAt": "2030-01-01T01:30:00.000Z",
-            "dwellMinutes": 60,
+            "dwellMinutes": 45,
             "candidates": [
               {
                 "savedPlaceId": "00000000-0000-4000-8000-0000000a0003",
@@ -2206,7 +2378,7 @@
                   "feasible": true,
                   "arrivalAt": "2030-01-01T01:00:00.000Z",
                   "extraDriveSeconds": 600,
-                  "returnAt": "2030-01-01T05:10:00.000Z",
+                  "returnAt": "2030-01-01T04:55:00.000Z",
                   "reason": null
                 }
               }
@@ -2217,7 +2389,7 @@
             "targetAt": "2030-01-01T04:00:00.000Z",
             "windowStartAt": "2030-01-01T03:30:00.000Z",
             "windowEndAt": "2030-01-01T04:30:00.000Z",
-            "dwellMinutes": 60,
+            "dwellMinutes": 45,
             "candidates": [
               {
                 "savedPlaceId": "00000000-0000-4000-8000-0000000a0004",
@@ -2236,7 +2408,7 @@
                   "feasible": false,
                   "arrivalAt": "2030-01-01T03:00:00.000Z",
                   "extraDriveSeconds": 600,
-                  "returnAt": "2030-01-01T05:10:00.000Z",
+                  "returnAt": "2030-01-01T04:55:00.000Z",
                   "reason": "WINDOW"
                 }
               }
@@ -2248,9 +2420,9 @@
             "firstSavedPlaceId": "00000000-0000-4000-8000-0000000a0003",
             "secondSavedPlaceId": "00000000-0000-4000-8000-0000000a0004",
             "firstArrivalAt": "2030-01-01T01:00:00.000Z",
-            "secondArrivalAt": "2030-01-01T04:10:00.000Z",
+            "secondArrivalAt": "2030-01-01T03:55:00.000Z",
             "extraDriveSeconds": 1200,
-            "returnAt": "2030-01-01T06:20:00.000Z"
+            "returnAt": "2030-01-01T05:50:00.000Z"
           }
         ],
         "coverage": {
@@ -2296,7 +2468,7 @@
             "targetAt": "2030-01-01T01:00:00.000Z",
             "windowStartAt": "2030-01-01T00:30:00.000Z",
             "windowEndAt": "2030-01-01T01:30:00.000Z",
-            "dwellMinutes": 60,
+            "dwellMinutes": 45,
             "candidates": [
               {
                 "savedPlaceId": "00000000-0000-4000-8000-0000000a0003",
@@ -2315,7 +2487,7 @@
                   "feasible": true,
                   "arrivalAt": "2030-01-01T01:00:00.000Z",
                   "extraDriveSeconds": 2000,
-                  "returnAt": "2030-01-01T05:33:20.000Z",
+                  "returnAt": "2030-01-01T05:18:20.000Z",
                   "reason": null
                 }
               }
@@ -2326,7 +2498,7 @@
             "targetAt": "2030-01-01T04:00:00.000Z",
             "windowStartAt": "2030-01-01T03:30:00.000Z",
             "windowEndAt": "2030-01-01T04:30:00.000Z",
-            "dwellMinutes": 60,
+            "dwellMinutes": 45,
             "candidates": []
           }
         ],
@@ -2374,7 +2546,7 @@
             "targetAt": "2030-01-01T03:00:00.000Z",
             "windowStartAt": "2030-01-01T02:30:00.000Z",
             "windowEndAt": "2030-01-01T03:30:00.000Z",
-            "dwellMinutes": 60,
+            "dwellMinutes": 45,
             "candidates": []
           }
         ],
@@ -2422,7 +2594,7 @@
             "targetAt": "2030-01-01T03:00:00.000Z",
             "windowStartAt": "2030-01-01T02:30:00.000Z",
             "windowEndAt": "2030-01-01T03:30:00.000Z",
-            "dwellMinutes": 60,
+            "dwellMinutes": 45,
             "candidates": []
           }
         ],
@@ -2445,6 +2617,11 @@
       "code": "RECOMMENDATION_INPUT_INVALID",
       "status": 400,
       "meaning": "입력 형식·범위·식사 순서"
+    },
+    {
+      "code": "MEAL_DWELL_FIXED",
+      "status": 400,
+      "meaning": "식사 체류가 45분이 아님(이전 앱) → 앱 업데이트 안내"
     },
     {
       "code": "AUTH_REQUIRED",

@@ -235,3 +235,39 @@ describe("parseRouteRequest", () => {
     await expect(parse(await request(rests))).rejects.toThrow("INVALID_WAYPOINTS");
   });
 });
+
+describe("fixed 45-minute meal dwell at the plan-route write boundary", () => {
+  const stop = (stopRole: "meal" | "lunch" | "dinner", dwellMinutes: number) => point({
+    id: `${stopRole}-occurrence`, kakaoPlaceId: stopRole, kind: "stop", dwellMinutes, stopRole,
+  });
+
+  it.each(["meal", "lunch", "dinner"] as const)("passes a 45-minute %s to provider work", async (stopRole) => {
+    const provider = vi.fn(async () => "planned");
+    const input = { ...await request(), waypoints: [await stop(stopRole, 45)] };
+    await expect(withValidatedRouteRequest(input, secret, provider, fixedNow)).resolves.toBe("planned");
+    expect(provider.mock.calls[0][0].waypoints.map((waypoint: RoutePointRequest) => waypoint.dwellMinutes)).toEqual([45]);
+  });
+
+  it.each([["meal", 44], ["meal", 46], ["meal", 60], ["lunch", 60], ["dinner", 60]] as const)(
+    "refuses a %s dwell of %i minutes before verification and provider work", async (stopRole, dwellMinutes) => {
+      const provider = vi.fn();
+      // A forged token proves the dwell check precedes place verification.
+      const forged = { ...await stop(stopRole, dwellMinutes), verificationToken: "b".repeat(43) };
+      await expect(withValidatedRouteRequest({ ...await request(), waypoints: [forged] }, secret, provider, fixedNow))
+        .rejects.toThrow("MEAL_DWELL_FIXED");
+      expect(provider).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([30, 60])("keeps rest dwell editable (%i minutes)", async (dwellMinutes) => {
+    const provider = vi.fn(async () => "planned");
+    const rest = await point({ id: "rest-occurrence", kakaoPlaceId: "rest", kind: "optional", dwellMinutes, stopRole: "rest" });
+    const input = { ...await request(), waypoints: [await stop("meal", 45), rest] };
+    await expect(withValidatedRouteRequest(input, secret, provider, fixedNow)).resolves.toBe("planned");
+  });
+
+  it("still parses a stored or shared course with an older meal dwell (journey source)", async () => {
+    const input = { ...await request(), waypoints: [await stop("meal", 60)] };
+    await expect(parse(input)).resolves.toMatchObject({ waypoints: [{ stopRole: "meal", dwellMinutes: 60 }] });
+  });
+});

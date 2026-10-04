@@ -1,3 +1,4 @@
+import { MEAL_DWELL_FIXED, MEAL_DWELL_MINUTES } from "./meal-dwell.ts";
 import { parseStrictRfc3339 } from "./strict-time.ts";
 
 export type RecommendationMealRequest = { desiredTime: string; dwellMinutes: number };
@@ -80,7 +81,10 @@ export function parseRecommendationRequest(value: unknown): RecommendationReques
   const meals = body.meals.map((value) => {
     const meal = exactRecord(value, MEAL_KEYS);
     if (typeof meal.desiredTime !== "string" || !DESIRED_TIME.test(meal.desiredTime)) invalid();
-    return { desiredTime: meal.desiredTime, dwellMinutes: integerIn(meal.dwellMinutes, 1, 1440) };
+    // Contract 3.0.0: any other well-formed meal dwell comes from an outdated client.
+    const dwellMinutes = integerIn(meal.dwellMinutes, 1, 1440);
+    if (dwellMinutes !== MEAL_DWELL_MINUTES) throw new Error(MEAL_DWELL_FIXED);
+    return { desiredTime: meal.desiredTime, dwellMinutes };
   });
 
   return {

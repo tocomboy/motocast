@@ -1,5 +1,6 @@
 import { executeBudgetedProviderCall } from "./budgeted-call.ts";
 import { isRoutePointErrorCode, routeResponseDiagnostic, type NormalizedKakaoRoute } from "./kakao-route.ts";
+import { MEAL_DWELL_FIXED, MEAL_DWELL_FIXED_MESSAGE } from "./meal-dwell.ts";
 import type { MealTarget, RecommendationRequest } from "./restaurant-recommendation-request.ts";
 import { isFutureDeparture, type RoutablePoint, type RouteChunkRequest, type RouteOperation } from "./route-orchestration.ts";
 import { parseStrictRfc3339 } from "./strict-time.ts";
@@ -966,6 +967,7 @@ export function recommendationFailure(error: unknown): RecommendationFailure {
   if (message === "INVALID_RECOMMENDATION_REQUEST" || error instanceof SyntaxError) {
     return { status: 400, code: "RECOMMENDATION_INPUT_INVALID", message: "추천 조건을 확인해 주세요." };
   }
+  if (message === MEAL_DWELL_FIXED) return { status: 400, code: MEAL_DWELL_FIXED, message: MEAL_DWELL_FIXED_MESSAGE };
   if (message.includes("AUTH_REQUIRED")) return { status: 401, code: "AUTH_REQUIRED", message: "로그인이 필요합니다." };
   if (message.includes("MEMBERSHIP_REQUIRED")) {
     return { status: 403, code: "MEMBERSHIP_REQUIRED", message: "서비스 이용 권한이 없습니다." };

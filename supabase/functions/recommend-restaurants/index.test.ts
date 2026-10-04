@@ -89,7 +89,7 @@ function body(overrides: Record<string, unknown> = {}) {
     tripId: TRIP_ID,
     basis: basisOf(storedSummary()),
     mealCount: 1,
-    meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
+    meals: [{ desiredTime: "12:00", dwellMinutes: 45 }],
     toleranceMinutes: 30,
     ...overrides,
   };
@@ -257,6 +257,15 @@ describe("recommend-restaurants handler", () => {
     expectNoProviderWork();
   });
 
+  it.each([44, 46, 60])("refuses a %i-minute meal dwell with update guidance before any storage, budget or provider work", async (dwellMinutes) => {
+    const response = await call(body({ meals: [{ desiredTime: "12:00", dwellMinutes }] }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.", code: "MEAL_DWELL_FIXED" });
+    expect(queries).toEqual([]);
+    expectNoProviderWork();
+    expect(errorLog).toHaveBeenCalledExactlyOnceWith("recommend-restaurants failed", "MEAL_DWELL_FIXED", "UNKNOWN");
+  });
+
   it("rejects a malformed JSON body as invalid input", async () => {
     const response = await call(null, { raw: "{not json" });
     expect(response.status).toBe(400);
@@ -304,7 +313,7 @@ describe("recommend-restaurants handler", () => {
     store.cache = { summary };
     const response = await call(body({
       basis: basisOf(summary),
-      mealCount: 2, meals: [{ desiredTime: "10:00", dwellMinutes: 60 }, { desiredTime: "18:00", dwellMinutes: 60 }],
+      mealCount: 2, meals: [{ desiredTime: "10:00", dwellMinutes: 45 }, { desiredTime: "18:00", dwellMinutes: 45 }],
     }));
     expect(response.status).toBe(422);
     expect((await response.json()).code).toBe("RECOMMENDATION_WAYPOINT_LIMIT");

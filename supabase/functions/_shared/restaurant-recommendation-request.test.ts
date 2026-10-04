@@ -44,7 +44,7 @@ describe("meal target time", () => {
     tripId: "11111111-1111-4111-8111-111111111111",
     basis: { departureAt, returnAt: "2030-01-03T00:00:00.000Z", pointIds: ["a", "b"], arrivalAts: ["2030-01-03T00:00:00.000Z"] },
     mealCount: desiredTimes.length,
-    meals: desiredTimes.map((desiredTime) => ({ desiredTime, dwellMinutes: 60 })),
+    meals: desiredTimes.map((desiredTime) => ({ desiredTime, dwellMinutes: 45 })),
     toleranceMinutes,
   });
 

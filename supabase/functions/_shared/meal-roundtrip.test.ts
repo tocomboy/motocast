@@ -45,7 +45,7 @@ async function roundtrip(firstRole: "meal" | "lunch", lastRole: "meal" | "dinner
   const original = {
     planningId: "123e4567-e89b-42d3-a456-426614174000", serviceDate: "2026-09-01", departureAt,
     origin: await point(0), destination: await point(4),
-    waypoints: [await point(1, firstRole, 17), await point(2, "rest", 15), await point(3, lastRole, 93)],
+    waypoints: [await point(1, firstRole, 45), await point(2, "rest", 15), await point(3, lastRole, 45)],
   };
   const originalBytes = JSON.stringify(original);
   const request = await parseRouteRequest(original, secret, () => new Date(departureAt));
@@ -98,17 +98,17 @@ async function roundtrip(firstRole: "meal" | "lunch", lastRole: "meal" | "dinner
 
 describe("meal server contract roundtrip", () => {
   it.each([["meal", "meal"], ["lunch", "dinner"]] as const)(
-    "preserves %s/rest/%s order, edited dwell, ETA, weather and reusable collection", async (first, last) => {
+    "preserves %s/rest/%s order, fixed meal and edited rest dwell, ETA, weather and reusable collection", async (first, last) => {
       const { provider, request, route, share, saved } = await roundtrip(first, last);
       expect(request.waypoints.map((point) => point.stopRole)).toEqual([first, "rest", last]);
       expect(saved.points.map((point) => [point.id, point.stopRole, point.dwellMinutes]))
         .toEqual(request.waypoints.map((point) => [point.id, point.stopRole, point.dwellMinutes]));
       expect(route.legs.map((leg) => [leg.to.stopRole, leg.dwellMinutes]))
-        .toEqual([[first, 17], ["rest", 15], [last, 93], [undefined, 0]]);
+        .toEqual([[first, 45], ["rest", 15], [last, 45], [undefined, 0]]);
       expect(provider.mock.calls.map(([call]) => call.departureAt.toISOString()))
-        .toEqual([departureAt, "2026-09-01T00:18:00.000Z", "2026-09-01T00:34:00.000Z", "2026-09-01T02:08:00.000Z"]);
-      expect(route.returnAt).toBe("2026-09-01T02:09:00.000Z");
-      expect(route.totalDurationSeconds).toBe((4 + 17 + 15 + 93) * 60);
+        .toEqual([departureAt, "2026-09-01T00:46:00.000Z", "2026-09-01T01:02:00.000Z", "2026-09-01T01:48:00.000Z"]);
+      expect(route.returnAt).toBe("2026-09-01T01:49:00.000Z");
+      expect(route.totalDurationSeconds).toBe((4 + 45 + 15 + 45) * 60);
       expect(share.schemaVersion).toBe(3);
       if (share.schemaVersion !== 3) throw new Error("UNEXPECTED_SHARE_SCHEMA");
       expect(share.route.legs.map((leg) => leg.to.stopRole)).toEqual([first, "rest", last, undefined]);
