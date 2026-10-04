@@ -48,7 +48,7 @@
 ```json
 {
   "tripId": "uuid",
-  "basis": { "departureAt": "ISO-8601", "returnAt": "ISO-8601", "pointIds": ["origin-id", "occurrence-id", "destination-id"] },
+  "basis": { "departureAt": "ISO-8601", "returnAt": "ISO-8601", "pointIds": ["origin-id", "occurrence-id", "destination-id"], "arrivalAts": ["ISO-8601", "ISO-8601"] },
   "mealCount": 1,
   "meals": [{ "desiredTime": "12:00", "dwellMinutes": 60 }],
   "toleranceMinutes": 30,
@@ -57,7 +57,7 @@
 ```
 
 - 정확히 위 키만 허용한다(추가 키, 경로 정책 키는 거부).
-- `tripId` UUID. `basis.pointIds`는 화면에 표시한 경로의 `[legs[0].from.id, ...legs.map(to.id)]`, 2–32개, 각 1–100자.
+- `tripId` UUID. `basis.pointIds`는 화면에 표시한 경로의 `[legs[0].from.id, ...legs.map(to.id)]`, 2–32개, 각 1–100자. `basis.arrivalAts`는 같은 경로의 구간별 `arrivalAt`(구간 수 = `pointIds.length − 1`). 중간 체류만 바뀐 재계산도 기준 불일치로 잡기 위해 포함한다(Codex V2 지적 1, 2026-10-05).
 - `mealCount ∈ {1,2}`이고 `meals.length === mealCount`. `desiredTime`은 `HH:MM`(00–23, 00–59). `dwellMinutes` 정수 1–1440.
 - `toleranceMinutes` 정수 5–180, `detourLimitMinutes` 정수 5–180.
 - 식사 목표 시각: 서울 시각 `HH:MM`이 `departureAt − toleranceMinutes` 이후 처음 나오는 순간. 식사 2 목표는 식사 1 목표보다 늦어야 한다.
@@ -66,7 +66,7 @@
 
 1. 회원 확인(`requireMember`). 입력 검증 실패는 공급자·예산 작업 전에 거부한다.
 2. 소유자 RLS로 `trips`(id)와 `route_cache.summary`(profile `recommended`)를 읽는다. 없거나 형식이 잘못되면 `RECOMMENDATION_ROUTE_STALE`.
-3. 저장 경로와 `basis`를 대조한다: 첫 구간 출발 시각, `returnAt`, 순서 있는 지점 ID가 정확히 같아야 한다. 다르면 `RECOMMENDATION_ROUTE_STALE`(다른 기기 재계산, 화면의 오래된 결과 포함).
+3. 저장 경로와 `basis`를 대조한다: 첫 구간 출발 시각, `returnAt`, 순서 있는 지점 ID, 구간별 도착 시각이 정확히 같아야 한다. 저장 경로의 인접 구간은 공유 지점의 ID·좌표·시각이 이어져야 한다. 다르면 `RECOMMENDATION_ROUTE_STALE`(다른 기기 재계산, 화면의 오래된 결과 포함).
 4. 현재 중간 지점 수 + `mealCount`가 30을 넘으면 `RECOMMENDATION_WAYPOINT_LIMIT`.
 5. 소유자의 `kind='restaurant'` 저장 장소를 읽는다(최대 1,000). 좌표·이름이 유효하지 않은 행은 제외하고 개수를 `coverage.invalidSaved`와 로그에 남긴다. 0개면 공급자 호출 없이 `status: "NO_SAVED_RESTAURANTS"`.
 6. 경로 지점과 같은 좌표(±0.000001°)의 식당은 이미 일정에 있으므로 제외한다.
@@ -231,7 +231,9 @@ Figma 파일 `wVNriNWb1OlF21DVq8rqlJ`, v2 디자인 체계 페이지 `284:2253`.
 | --- | --- | --- |
 | 설계·계약 | 작성 | 이 문서 |
 | Figma 디자인 | 완료(디자인만, 앱 적용 전) | 섹션 `345:6663`, §7 |
-| 서버 `recommend-restaurants` | 구현·인수 (`00e3aaf`) | 작성자 검사: 대상 3개 파일 113 PASS, `supabase/functions` 38 파일 677 PASS / FAIL 0 / SKIP 0, deno check 9개 함수 PASS, lint·typecheck·diff-check PASS. 메인 재실행: `supabase/functions` 677 PASS. 메인 검수 LOW 1: 식당 좌표가 도로 스냅 허용(0.005°) 밖이면 후보 제외가 아니라 요청 전체 `RECOMMENDATION_RESPONSE_INVALID`(기존 경로 계산과 같은 보수적 실패, 미수정). 실제 RLS·예산 RPC·Kakao 호출·응답 시간은 NOT_RUN. |
-| 웹 화면 | 디자인 후 | |
+| 서버 `recommend-restaurants` | V2 대기(재수정 중), 최초 `00e3aaf` | 작성자 검사: 대상 3개 파일 113 PASS, `supabase/functions` 38 파일 677 PASS / FAIL 0 / SKIP 0, deno check 9개 함수 PASS, lint·typecheck·diff-check PASS. 메인 재실행: `supabase/functions` 677 PASS. 메인 검수 LOW 1: 식당 좌표가 도로 스냅 허용(0.005°) 밖이면 후보 제외가 아니라 요청 전체 `RECOMMENDATION_RESPONSE_INVALID`(기존 경로 계산과 같은 보수적 실패, 미수정). 실제 RLS·예산 RPC·Kakao 호출·응답 시간은 NOT_RUN. |
+| 웹 화면 | V2 대기(재수정 중), 최초 `5aef2e7` | 작성자: lint·typecheck PASS, `npm test` 95 파일 1125 PASS, build PASS, e2e 63 PASS / 2 SKIP(기존 Preview 전용), LOCAL_UI 임시 하네스 4폭×16상태 64장 클리핑 0(합성 응답). 로컬 Playwright는 데모 모드라 추천 흐름 spec 없음(메인 결정 B, 연결 흐름은 Preview에서 검증). 큰 글자는 CSS zoom 근사만. |
 | Android 화면 | 디자인 후 | |
-| 연결 Preview·실기기 | NOT_RUN | 배포 승인 범위 확인 필요 |
+| Codex 검증(V2/V3) | 진행 중 | 누락 정정: 서버 `00e3aaf`를 메인 검수만으로 인수했다(사용자 지적 2026-10-05). 원인과 재발 방지는 MOTOCAST `bbce8f6`(검증 규칙 §5의 대체된 lead 단독 검수 문구 정리, 인수 gate)와 dev-environment `8175a7c`(전역 인수 단계 V2 연결, 역할 변경 시 프로젝트 문서 대조) — [점검 기록](https://github.com/tocomboy/dev-environment/blob/main/docs/reviews/2026-10-05-verifier-acceptance-gate.md). V2 결과: 서버 `00e3aaf` FAIL(MEDIUM 3: basis가 중간 도착 변경을 못 잡음→`arrivalAts` 추가, 저장 구간 좌표 연결 미검사, 치명 오류 직후 새 호출 경합), 웹 `5aef2e7` FAIL(MEDIUM 2: 응답 목표 시각 미대조, 조건 위반 후보·조합 수용; LOW 1: 결과 없음 상태 포커스). 각 작업자 수정 중. 수정 SHA마다 V2 재검증, 병합 전 V3. 그 전까지 Preview·출시 단계 보류. |
+| 연결 Preview·실기기 | 승인됨, 미실행 | 2026-10-05 사용자 승인: 검수한 고정 SHA의 `review-*` CI 전용 PR → Preview `recommend-restaurants` 배포·readback → `develop` fast-forward(Vercel Preview) → 웹·Android(previewDebug) 연결 E2E, 응답 시간·API 사용량 측정, 시험 자원 정확한 ID 정리. (Production·Play는 아래 출시 승인 행). |
+| 공동 출시 | 승인됨, 미실행 | 2026-10-05 사용자 확장 승인("play 게시 까지가 허용 범위" → 선택 "웹·앱 함께 내부 출시"): Preview 검증 통과 후 서비스 버전 0.12.0으로 웹 `develop → main` Production 배포, Production Supabase `recommend-restaurants` 배포·readback, Android `develop → main` 및 Play **내부 테스트 트랙** 게시. Play 정식 트랙 승격은 제외. 각 저장소 gate(검증·CI·Preview·Production·Play readback)와 버전·태그·Release 절차를 따른다. |
