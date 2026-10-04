@@ -8,6 +8,7 @@ import {
   buildRecommendationRequest,
   candidateRows,
   defaultRecommendationInput,
+  durationLabel,
   extraDriveLabel,
   isDailyBudgetFailure,
   mealTargetAt,
@@ -60,6 +61,7 @@ function synthetic({ meals, pairs, waypointCount = 2, revision = 2 }: {
       tripId, departureAt: "2030-01-01T00:00:00.000Z", returnAt: "2030-01-01T10:00:00.000Z", pointIds,
       arrivalAts: pointIds.slice(1).map((_, index) => new Date(Date.parse("2030-01-01T00:00:00.000Z") + (index + 1) * 600 / (pointIds.length) * 60_000).toISOString()),
     },
+    // The echoed cap is 30 here (server sends 60) so tests prove the UI reads it.
     settings: { mealCount: meals.length, toleranceMinutes: 30, detourLimitMinutes: 30 },
     meals: meals.map((candidates, index) => ({
       index: index + 1,
@@ -165,6 +167,7 @@ describe("recommendation response parser", () => {
     ["meal index out of order", (body) => set(body, "meals.0.index", 2)],
     ["window not target ± tolerance", (body) => set(body, "meals.0.windowEndAt", "2030-01-01T03:31:00.000Z")],
     ["tolerance out of range", (body) => set(body, "settings.toleranceMinutes", 3)],
+    ["tolerance not a 30-minute choice", (body) => set(body, "settings.toleranceMinutes", 45)],
     ["insertion not matching basis", (body) => set(body, `${c0}.insertion.afterPointId`, "origin")],
     ["insertion beyond last leg", (body) => set(body, `${c0}.insertion.legIndex`, 2)],
     ["feasible with a reason", (body) => set(body, `${c0}.single.reason`, "WINDOW")],
@@ -191,7 +194,7 @@ describe("recommendation response parser", () => {
   const d0 = "meals.0.candidates.0.single";
   const verdicts: Array<[string, (body: Json) => void]> = [
     ["feasible arrival outside the window", (body) => set(body, `${d0}.arrivalAt`, "2030-01-01T03:31:00.000Z")],
-    ["feasible extra drive over the limit", (body) => { set(body, `${d0}.extraDriveSeconds`, 1801); set(body, `${d0}.returnAt`, "2030-01-01T05:30:01.000Z"); }],
+    ["feasible extra drive over the echoed 60-minute cap", (body) => { set(body, `${d0}.extraDriveSeconds`, 3601); set(body, `${d0}.returnAt`, "2030-01-01T06:00:01.000Z"); }],
     ["return not base + extra + dwell", (body) => set(body, `${d0}.returnAt`, "2030-01-01T05:10:00.000Z")],
     ["reason that is not the violated rule", (body) => { set(body, `${d0}.feasible`, false); set(body, `${d0}.reason`, "DETOUR"); set(body, `${d0}.arrivalAt`, "2030-01-01T04:00:00.000Z"); }],
     ["return-24h reason without a 24h return", (body) => { set(body, `${d0}.feasible`, false); set(body, `${d0}.reason`, "RETURN_24H"); }],
@@ -289,14 +292,13 @@ describe("recommendation response parser", () => {
       },
       mealCount: 1 as const,
       meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
-      toleranceMinutes: 30,
-      detourLimitMinutes: 30,
+      toleranceMinutes: 30 as const,
     };
     expect(responseMatchesRequest(response, request)).toBe(true);
     expect(responseMatchesRequest(response, { ...request, basis: { ...request.basis, pointIds: ["origin", "destination"] } })).toBe(false);
     expect(responseMatchesRequest(response, { ...request, tripId: "22222222-2222-4222-8222-222222222222" })).toBe(false);
     expect(responseMatchesRequest(response, { ...request, meals: [{ desiredTime: "12:00", dwellMinutes: 90 }] })).toBe(false);
-    expect(responseMatchesRequest(response, { ...request, detourLimitMinutes: 35 })).toBe(false);
+    expect(responseMatchesRequest(response, { ...request, toleranceMinutes: 60 })).toBe(false);
     // Same IDs but a recalculated route whose middle arrival changed.
     expect(responseMatchesRequest(response, { ...request, basis: { ...request.basis, arrivalAts: ["2030-01-01T02:10:00.000Z", "2030-01-01T04:00:00.000Z"] } })).toBe(false);
   });
@@ -307,8 +309,7 @@ describe("recommendation response parser", () => {
       basis: { departureAt: "2030-01-01T00:00:00.000Z", returnAt: "2030-01-01T04:00:00.000Z", pointIds: ["origin", "occ-w", "destination"], arrivalAts: ["2030-01-01T02:00:00.000Z", "2030-01-01T04:00:00.000Z"] },
       mealCount: 1 as const,
       meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
-      toleranceMinutes: 30,
-      detourLimitMinutes: 30,
+      toleranceMinutes: 30 as const,
     };
     const empty = fixtureBody("ok-no-result");
     expect(responseMatchesRequest(parseRecommendationResponse(empty), request)).toBe(true);
@@ -346,8 +347,8 @@ describe("request building and pre-request checks", () => {
       mealCount: 1,
       meals: [{ desiredTime: "12:00", dwellMinutes: 60 }],
       toleranceMinutes: 30,
-      detourLimitMinutes: 30,
     });
+    expect(buildRecommendationRequest(tripId, route, defaultRecommendationInput)).not.toHaveProperty("detourLimitMinutes");
     expect(buildRecommendationRequest(tripId, route, { ...defaultRecommendationInput, mealCount: 2 })?.meals).toEqual([
       { desiredTime: "12:00", dwellMinutes: 60 }, { desiredTime: "18:00", dwellMinutes: 60 },
     ]);
@@ -380,7 +381,8 @@ describe("request building and pre-request checks", () => {
     expect(recommendationInputError(defaultRecommendationInput, departure, 29)).toBeNull();
     expect(recommendationInputError(two("12:00", "18:00"), departure, 29)).toBe("경유지가 30개를 넘어 식당을 추가할 수 없어요.");
     expect(recommendationInputError({ ...defaultRecommendationInput, meals: [{ desiredTime: "12:00", dwellMinutes: 0 }, defaultRecommendationInput.meals[1]] }, departure, 0)).toContain("1440");
-    expect(recommendationInputError({ ...defaultRecommendationInput, toleranceMinutes: 185 }, departure, 0)).toContain("180");
+    expect(recommendationInputError({ ...defaultRecommendationInput, toleranceMinutes: 45 as unknown as 30 }, departure, 0)).toBe("원하는 식사 시간 허용 범위를 골라 주세요.");
+    expect(recommendationInputError({ ...defaultRecommendationInput, toleranceMinutes: 90 }, departure, 0)).toBeNull();
   });
 });
 
@@ -437,12 +439,12 @@ describe("candidate selection", () => {
     ]);
     const withB = { 1: id("b") };
     expect(candidateRows(response, withB, 2).map((row) => [row.candidate.displayName, row.selectable, row.reason, row.extraDriveSeconds])).toEqual([
-      ["식당 d", true, null, 1100], ["식당 e", false, "식사 1과 함께 가면 조건을 벗어나요", 500],
+      ["식당 d", true, null, 1100], ["식당 e", false, "식사 1과 함께 가면 시간이 맞지 않거나 30분 넘게 더 달려요", 500],
     ]);
     expect(toggleSelection(response, withB, 2, id("e"))).toEqual(withB);
     const withE = { 2: id("e") };
     expect(candidateRows(response, withE, 1).map((row) => [row.candidate.displayName, row.selectable, row.reason])).toEqual([
-      ["식당 a", true, null], ["식당 b", false, "식사 2와 함께 가면 조건을 벗어나요"], ["식당 c", true, null],
+      ["식당 a", true, null], ["식당 b", false, "식사 2와 함께 가면 시간이 맞지 않거나 30분 넘게 더 달려요"], ["식당 c", true, null],
     ]);
     expect(resolveSelection(response, { 1: id("c"), 2: id("e") })?.extraDriveSeconds).toBe(1700);
     expect(resolveSelection(response, { 1: id("b"), 2: id("e") })).toBeNull();
@@ -466,8 +468,14 @@ describe("candidate selection", () => {
 
   it("formats Seoul wall clock and signed extra drive", () => {
     expect(seoulClock("2030-01-01T03:06:00.000Z")).toBe("12:06");
-    expect(extraDriveLabel(540)).toBe("+9분");
-    expect(extraDriveLabel(-90)).toBe("−2분");
+    expect(extraDriveLabel(540)).toBe("9분 더 달려요");
+    expect(extraDriveLabel(1320, true)).toBe("두 곳 합계 22분 더 달려요");
+    // Traffic-model differences can make the detour non-positive.
+    expect(extraDriveLabel(-90)).toBe("더 달리지 않아요");
+    expect(extraDriveLabel(20)).toBe("더 달리지 않아요");
+    expect(durationLabel(60)).toBe("1시간");
+    expect(durationLabel(30)).toBe("30분");
+    expect(durationLabel(90)).toBe("1시간 30분");
   });
 });
 

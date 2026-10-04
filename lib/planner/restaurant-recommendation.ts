@@ -60,7 +60,7 @@ export type RecommendationCoverage = {
 export type RecommendationResponse = {
   status: "OK" | "NO_SAVED_RESTAURANTS";
   basis: { tripId: string; departureAt: string; returnAt: string; pointIds: string[]; arrivalAts: string[] };
-  settings: { mealCount: 1 | 2; toleranceMinutes: number; detourLimitMinutes: number };
+  settings: { mealCount: 1 | 2; toleranceMinutes: ToleranceMinutes; detourLimitMinutes: number };
   meals: RecommendationMeal[];
   pairs: RecommendationPair[];
   coverage: RecommendationCoverage;
@@ -71,28 +71,33 @@ export type RecommendationRequest = {
   basis: { departureAt: string; returnAt: string; pointIds: string[]; arrivalAts: string[] };
   mealCount: 1 | 2;
   meals: Array<{ desiredTime: string; dwellMinutes: number }>;
-  toleranceMinutes: number;
-  detourLimitMinutes: number;
+  toleranceMinutes: ToleranceMinutes;
 };
 
 export type RecommendationInput = {
   mealCount: 1 | 2;
   meals: [{ desiredTime: string; dwellMinutes: number }, { desiredTime: string; dwellMinutes: number }];
-  toleranceMinutes: number;
-  detourLimitMinutes: number;
+  toleranceMinutes: ToleranceMinutes;
 };
 
 export const defaultRecommendationInput: RecommendationInput = {
   mealCount: 1,
   meals: [{ desiredTime: "12:00", dwellMinutes: 60 }, { desiredTime: "18:00", dwellMinutes: 60 }],
   toleranceMinutes: 30,
-  detourLimitMinutes: 30,
 };
 
 export const recommendationLimits = {
   dwell: { min: 1, max: 1440 },
-  window: { min: 5, max: 180, step: 5 },
 } as const;
+
+// `원하는 식사 시간` 앞뒤 허용 범위 (§1.1 2차 변경).
+export const toleranceOptions = [30, 60, 90] as const;
+export type ToleranceMinutes = (typeof toleranceOptions)[number];
+
+// The server's fixed extra-drive cap (§1.1). Results use the value the
+// response echoes in `settings.detourLimitMinutes`; this constant only
+// words the notice shown before any response exists.
+export const SERVER_DETOUR_CAP_MINUTES = 60;
 
 export class RecommendationContractError extends Error {
   constructor(public readonly code: string) {
@@ -275,7 +280,8 @@ export function parseRecommendationResponse(value: unknown): RecommendationRespo
     ms(arrival) <= (index === 0 ? ms(departureAt) : ms(arrivalAts[index - 1])) || ms(arrival) > ms(returnAt)
   ))) fail("INVALID_RECOMMENDATION_TIME");
   const mealCount = integer(settings.mealCount, 1, 2) as 1 | 2;
-  const toleranceMinutes = integer(settings.toleranceMinutes, 5, 180);
+  if (!toleranceOptions.includes(settings.toleranceMinutes as ToleranceMinutes)) fail();
+  const toleranceMinutes = settings.toleranceMinutes as ToleranceMinutes;
   const detourLimitMinutes = integer(settings.detourLimitMinutes, 5, 180);
   if (!Array.isArray(raw.meals) || raw.meals.length !== mealCount || !Array.isArray(raw.pairs)) fail();
   const meals = raw.meals.map((meal, index) => parseMeal(meal, index, toleranceMinutes, pointIds));
@@ -337,7 +343,6 @@ export function responseMatchesRequest(response: RecommendationResponse, request
     sameBasis(response.basis, request.basis) &&
     response.settings.mealCount === request.mealCount &&
     response.settings.toleranceMinutes === request.toleranceMinutes &&
-    response.settings.detourLimitMinutes === request.detourLimitMinutes &&
     response.meals.length === request.meals.length &&
     response.meals.every((meal, index) => {
       const asked = request.meals[index];
@@ -377,7 +382,6 @@ export function buildRecommendationRequest(tripId: string, route: RouteBasisSour
     mealCount: input.mealCount,
     meals: input.meals.slice(0, input.mealCount).map((meal) => ({ ...meal })),
     toleranceMinutes: input.toleranceMinutes,
-    detourLimitMinutes: input.detourLimitMinutes,
   };
 }
 
@@ -399,11 +403,7 @@ export function recommendationInputError(input: RecommendationInput, departureAt
   if (meals.some((meal) => !Number.isInteger(meal.dwellMinutes) || meal.dwellMinutes < 1 || meal.dwellMinutes > 1440)) {
     return "식사 시간은 1분 이상 1440분 이하로 정해 주세요.";
   }
-  for (const value of [input.toleranceMinutes, input.detourLimitMinutes]) {
-    if (!Number.isInteger(value) || value < recommendationLimits.window.min || value > recommendationLimits.window.max) {
-      return "허용 범위와 추가 주행 한도는 5분 이상 180분 이하로 정해 주세요.";
-    }
-  }
+  if (!toleranceOptions.includes(input.toleranceMinutes)) return "원하는 식사 시간 허용 범위를 골라 주세요.";
   if (input.mealCount === 2) {
     const first = mealTargetAt(departureAt, input.toleranceMinutes, meals[0].desiredTime);
     const second = mealTargetAt(departureAt, input.toleranceMinutes, meals[1].desiredTime);
@@ -543,7 +543,7 @@ export function candidateRows(response: RecommendationResponse, selection: Recom
         candidate, selected, selectable: false, combined: false,
         arrivalAt: candidate.single.arrivalAt,
         extraDriveSeconds: candidate.single.extraDriveSeconds,
-        reason: `${withAnd(`식사 ${otherIndex}`)} 함께 가면 조건을 벗어나요`,
+        reason: `${withAnd(`식사 ${otherIndex}`)} 함께 가면 시간이 맞지 않거나 ${durationLabel(response.settings.detourLimitMinutes)} 넘게 더 달려요`,
       };
     }
     return {
@@ -666,7 +666,16 @@ export function seoulDateTime(iso: string) {
   return `${local.getUTCMonth() + 1}월 ${local.getUTCDate()}일 ${seoulClock(iso)}`;
 }
 
-export function extraDriveLabel(seconds: number) {
-  const minutes = Math.round(Math.abs(seconds) / 60);
-  return seconds < 0 && minutes > 0 ? `−${minutes}분` : `+${minutes}분`;
+// "{n}분 더 달려요"; a non-positive rounded value (traffic-model difference)
+// means no extra riding.
+export function extraDriveLabel(seconds: number, combined = false) {
+  const minutes = Math.round(seconds / 60);
+  const prefix = combined ? "두 곳 합계 " : "";
+  return minutes > 0 ? `${prefix}${minutes}분 더 달려요` : `${prefix}더 달리지 않아요`;
+}
+
+export function durationLabel(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours === 0 ? `${rest}분` : rest === 0 ? `${hours}시간` : `${hours}시간 ${rest}분`;
 }
