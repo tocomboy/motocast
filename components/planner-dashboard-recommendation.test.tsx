@@ -343,6 +343,18 @@ describe("PlannerDashboard restaurant recommendation", () => {
     await act(async () => renderer.unmount());
   });
 
+  it("shows the server guidance as an error for MEAL_DWELL_FIXED", async () => {
+    const renderer = await openRecommendation();
+    mocks.invoke.mockImplementationOnce(async () => ({ data: null, error: { context: new Response(JSON.stringify({ error: "식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.", code: "MEAL_DWELL_FIXED" }), { status: 400 }) } }));
+    await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
+    await flush();
+    const shown = text(dialog(renderer));
+    expect(shown).toContain("추천을 계산하지 못했습니다");
+    expect(shown).toContain("식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.");
+    expect(dialog(renderer).findAll((node) => typeof node.type === "string" && node.props.role === "alert")).toHaveLength(1);
+    await act(async () => renderer.unmount());
+  });
+
   it("treats an empty result and no saved restaurants as answers, not failures", async () => {
     const renderer = await openRecommendation();
     mocks.invoke.mockImplementationOnce(async (_name: string, options: { body: RecommendationRequest }) => {

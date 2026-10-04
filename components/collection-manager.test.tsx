@@ -101,6 +101,27 @@ describe("CollectionManager direct course", () => {
     await act(async () => renderer.unmount());
   });
 
+  it.each([
+    ["MEAL_DWELL_FIXED", "식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.", true],
+    ["UNVERIFIED_PLACE", "server detail", false],
+  ])("a %s refusal shows the server guidance only for the fixed meal dwell", async (code, serverText, shown) => {
+    browserMocks.invoke.mockResolvedValueOnce({ data: null, error: { context: new Response(JSON.stringify({ error: serverText, code }), { status: 400 }) } });
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<CollectionManager mode="save-panel" currentCourse={directCourse} onApply={vi.fn()} onShare={vi.fn()} />);
+    });
+    await act(async () => renderer.root.findByType("input").props.onChange({ target: { value: "옛 코스" } }));
+    await act(async () => buttonWithText(renderer.root, "내 경로에 저장")?.props.onClick());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const rendered = JSON.stringify(renderer.toJSON());
+    if (shown) expect(rendered).toContain(serverText);
+    else {
+      expect(rendered).not.toContain(serverText);
+      expect(rendered).toContain("컬렉션을 저장하지 못했습니다.");
+    }
+    await act(async () => renderer.unmount());
+  });
+
   it("reuses one operation id after an unknown response outcome", async () => {
     browserMocks.invoke
       .mockResolvedValueOnce({ data: null, error: { message: "response lost" } })

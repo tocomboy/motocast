@@ -56,6 +56,7 @@ import {
   type RecommendationResponse,
   type RecommendationSelection,
 } from "@/lib/planner/restaurant-recommendation";
+import { readMealDwellFixedMessage } from "@/lib/planner/meal-dwell-failure";
 import { readRouteFailureCode, routeFailureNotice, routeFailurePopup, type RouteFailureCode } from "@/lib/planner/route-failure";
 import { buildTimeline, formatRideTime, weatherRiskLabel } from "@/lib/planner/schedule";
 import type { PlannedSegment, RouteCandidate } from "@/lib/planner/types";
@@ -805,6 +806,12 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       if (result.error) {
         if (sharingForCalculation) setShareIntentGeneration(null);
         if (liveRoute) setLiveResultStale(true);
+        const mealMessage = await readMealDwellFixedMessage(result.error);
+        if (!mountedRef.current || calculationGeneration !== routeGenerationRef.current) return;
+        if (mealMessage) {
+          setNotice(mealMessage, "error");
+          return;
+        }
         const code = await readRouteFailureCode(result.error);
         if (!mountedRef.current || calculationGeneration !== routeGenerationRef.current) return;
         setNotice(routeFailureNotice(code, Boolean(liveRoute)), "error");

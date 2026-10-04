@@ -15,6 +15,7 @@ import {
   mealTargetAt,
   parseRecommendationResponse,
   readRecommendationFailure,
+  recommendationFailureMessage,
   recommendationInputError,
   resolveSelection,
   responseMatchesRequest,
@@ -150,9 +151,8 @@ describe("recommendation response parser", () => {
     expect(parseRecommendationResponse(structuredClone(body))).toEqual(body);
   });
 
-  it("targets contract 3.x: fixed 60-minute cap, 30/60/90 window and 45-minute meals", () => {
-    // Major 3 is the fixed 45-minute meal contract; patch releases keep the wire format.
-    expect(fixtures.contractVersion).toMatch(/^3\.\d+\.\d+$/);
+  it("targets contract 3.0.1: fixed 60-minute cap, 30/60/90 window and 45-minute meals", () => {
+    expect(fixtures.contractVersion).toBe("3.0.1");
     for (const { body } of fixtures.responses) {
       const parsed = parseRecommendationResponse(structuredClone(body));
       expect(parsed.settings.detourLimitMinutes).toBe(60);
@@ -419,6 +419,20 @@ describe("failure classification", () => {
     await expect(readRecommendationFailure(httpError(500, { code: "PRIVATE_DETAIL" }))).resolves.toEqual({ code: "RECOMMENDATION_FAILED", status: 500 });
     await expect(readRecommendationFailure(new Error("CLIENT_REQUEST_TIMEOUT"))).resolves.toEqual({ code: "CLIENT_REQUEST_TIMEOUT", status: null });
     await expect(readRecommendationFailure({})).resolves.toEqual({ code: "RECOMMENDATION_FAILED", status: null });
+  });
+
+  it("shows the server's own guidance for MEAL_DWELL_FIXED and nothing else", async () => {
+    const guidance = "식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.";
+    const failure = await readRecommendationFailure(httpError(400, { error: guidance, code: "MEAL_DWELL_FIXED" }));
+    expect(failure).toEqual({ code: "MEAL_DWELL_FIXED", status: 400, serverMessage: guidance });
+    expect(recommendationFailureMessage(failure)).toBe(guidance);
+    // Another code never surfaces server text.
+    const other = await readRecommendationFailure(httpError(400, { error: "server detail", code: "RECOMMENDATION_INPUT_INVALID" }));
+    expect(other).toEqual({ code: "RECOMMENDATION_INPUT_INVALID", status: 400 });
+    expect(recommendationFailureMessage(other)).not.toContain("server detail");
+    // An unusable guidance falls back to the client's own text.
+    const blank = await readRecommendationFailure(httpError(400, { error: 42, code: "MEAL_DWELL_FIXED" }));
+    expect(recommendationFailureMessage(blank)).toBe("식사 시간은 45분으로 바뀌었어요. 화면을 새로고침한 뒤 다시 시도해 주세요.");
   });
 
   it("treats only the exhausted daily budget (429) as close-first", async () => {

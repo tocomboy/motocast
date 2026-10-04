@@ -195,6 +195,19 @@ describe("PlannerDashboard collection share intent", () => {
     await act(async () => renderer.unmount());
   });
 
+  it("shows the server guidance when route calculation refuses an outdated meal dwell", async () => {
+    mocks.invoke.mockImplementation(async () => ({ data: null, error: { context: new Response(JSON.stringify({ error: "식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.", code: "MEAL_DWELL_FIXED" }), { status: 400 }) } }));
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={course} navigationMode="memory" />, { createNodeMock }); });
+    await chooseSchedule(renderer);
+    await act(async () => renderer.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }));
+    const alert = renderer.root.findByType("form").findByProps({ role: "alert" });
+    expect(renderedText(alert)).toContain("식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.");
+    expect(renderer.root.findAllByType(RouteFailureDialog)).toHaveLength(0);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    await act(async () => renderer.unmount());
+  });
+
   it("binds owner handoff to the calculated inputs and invalidates it on account change", async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={course} navigationMode="memory" />, { createNodeMock }); });

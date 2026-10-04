@@ -1,6 +1,7 @@
 import type { PlaceSearchResult } from "../places/search";
 import type { SavedPlace } from "../places/saved";
 import { isKoreanCoordinate } from "./input";
+import { MEAL_DWELL_FIXED, mealDwellFixedMessage } from "./meal-dwell-failure";
 import { MEAL_DWELL_MINUTES, roleAssignmentError, waypointLimits, type EditableWaypoint } from "./ordered-waypoints";
 import { parseStrictRfc3339 } from "../../supabase/functions/_shared/strict-time";
 
@@ -426,14 +427,16 @@ export type RecommendationFailureCode =
   | "RECOMMENDATION_PROVIDER_TEMPORARY"
   | "RECOMMENDATION_RESPONSE_INVALID"
   | "RECOMMENDATION_FAILED"
+  | "MEAL_DWELL_FIXED"
   | "CLIENT_REQUEST_TIMEOUT";
 
-export type RecommendationFailure = { code: RecommendationFailureCode; status: number | null };
+// `serverMessage` is kept only for MEAL_DWELL_FIXED, whose guidance is shown as-is.
+export type RecommendationFailure = { code: RecommendationFailureCode; status: number | null; serverMessage?: string };
 
 const failureCodes = new Set<RecommendationFailureCode>([
   "RECOMMENDATION_INPUT_INVALID", "AUTH_REQUIRED", "MEMBERSHIP_REQUIRED", "RECOMMENDATION_ROUTE_STALE",
   "RECOMMENDATION_WAYPOINT_LIMIT", "RECOMMENDATION_BUDGET_OR_CONFIG", "RECOMMENDATION_PROVIDER_TEMPORARY",
-  "RECOMMENDATION_RESPONSE_INVALID", "RECOMMENDATION_FAILED",
+  "RECOMMENDATION_RESPONSE_INVALID", "RECOMMENDATION_FAILED", MEAL_DWELL_FIXED,
 ]);
 
 export async function readRecommendationFailure(error: unknown): Promise<RecommendationFailure> {
@@ -445,7 +448,8 @@ export async function readRecommendationFailure(error: unknown): Promise<Recomme
     const code = typeof body.code === "string" && failureCodes.has(body.code as RecommendationFailureCode)
       ? body.code as RecommendationFailureCode
       : "RECOMMENDATION_FAILED";
-    return { code, status: context.status };
+    const serverMessage = code === MEAL_DWELL_FIXED ? mealDwellFixedMessage(body) : null;
+    return serverMessage ? { code, status: context.status, serverMessage } : { code, status: context.status };
   } catch {
     return { code: "RECOMMENDATION_FAILED", status: context.status };
   }
@@ -462,6 +466,7 @@ export function isDailyBudgetFailure(failure: RecommendationFailure) {
 
 export function recommendationFailureMessage(failure: RecommendationFailure) {
   if (isDailyBudgetFailure(failure)) return "오늘의 무료 경로 계산 한도를 모두 사용했습니다. 내일 다시 시도해 주세요.";
+  if (failure.code === MEAL_DWELL_FIXED && failure.serverMessage) return failure.serverMessage;
   return {
     RECOMMENDATION_INPUT_INVALID: "추천 조건을 확인한 뒤 다시 시도해 주세요.",
     AUTH_REQUIRED: "로그인 상태를 확인한 뒤 다시 시도해 주세요.",
@@ -473,6 +478,7 @@ export function recommendationFailureMessage(failure: RecommendationFailure) {
     RECOMMENDATION_RESPONSE_INVALID: "추천 결과를 안전하게 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
     RECOMMENDATION_FAILED: "추천 계산을 완료하지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
     CLIENT_REQUEST_TIMEOUT: "응답이 늦어 추천을 받지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.",
+    MEAL_DWELL_FIXED: "식사 시간은 45분으로 바뀌었어요. 화면을 새로고침한 뒤 다시 시도해 주세요.",
   }[failure.code];
 }
 

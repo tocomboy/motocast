@@ -4,6 +4,7 @@ import { LineIcon } from "@/components/line-icon";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { parseCollectionRows, type CollectionCourse, type RidingCollection } from "@/lib/collections/contracts";
+import { readMealDwellFixedMessage } from "@/lib/planner/meal-dwell-failure";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 type CollectionManagerProps = {
@@ -112,9 +113,11 @@ export function CollectionManager({ currentCourse, onApply, onShare, disabled = 
     }
     if (!mountedRef.current) return;
     if (error || !data || typeof data !== "object" || !Number.isInteger((data as { versionNumber?: unknown }).versionNumber)) {
+      const mealMessage = error ? await readMealDwellFixedMessage(error) : null;
+      if (!mountedRef.current) return;
       savePendingRef.current = false;
       setBusyId(null);
-      const message = "컬렉션을 저장하지 못했습니다. 입력과 이용 권한을 확인해 주세요.";
+      const message = mealMessage ?? "컬렉션을 저장하지 못했습니다. 입력과 이용 권한을 확인해 주세요.";
       if (collection) setOperationFeedback(message);
       else setStatus(message);
       return;
