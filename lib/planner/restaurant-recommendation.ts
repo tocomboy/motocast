@@ -243,6 +243,17 @@ function checkPair(pair: RecommendationPair, meals: RecommendationMeal[], judge:
     pair.extraDriveSeconds > judge.limitSeconds ||
     ms(pair.returnAt) !== expectedReturn || !within24Hours(pair.returnAt, judge)
   ) fail("INVALID_RECOMMENDATION_PAIR");
+  // Different legs are combined from the two single results (contracts README):
+  // meal 1 arrives as alone; meal 2 is delayed by meal 1's extra drive and dwell;
+  // the extra drive adds up. A same-leg pair is its own provider route, so its
+  // values are not derived from the singles.
+  const first = meals[0].candidates.find((candidate) => candidate.savedPlaceId === pair.firstSavedPlaceId)!;
+  const second = meals[1].candidates.find((candidate) => candidate.savedPlaceId === pair.secondSavedPlaceId)!;
+  if (first.insertion.legIndex < second.insertion.legIndex && (
+    ms(pair.firstArrivalAt) !== ms(first.single.arrivalAt) ||
+    ms(pair.secondArrivalAt) !== ms(second.single.arrivalAt) + (first.single.extraDriveSeconds + meals[0].dwellMinutes * 60) * 1000 ||
+    pair.extraDriveSeconds !== first.single.extraDriveSeconds + second.single.extraDriveSeconds
+  )) fail("INVALID_RECOMMENDATION_PAIR");
 }
 
 function parsePair(value: unknown, meals: RecommendationMeal[]): RecommendationPair {

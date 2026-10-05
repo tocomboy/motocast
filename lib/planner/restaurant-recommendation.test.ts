@@ -47,6 +47,7 @@ type Spec = { key: string; leg: number; feasible: boolean; extra: number; arriva
 // base return + extra drive + dwell(s).
 const BASE_RETURN_MS = Date.parse("2030-01-01T10:00:00.000Z");
 const DWELL = [45, 45];
+const shift = (value: unknown, seconds: number) => new Date(Date.parse(String(value)) + seconds * 1000).toISOString();
 const returnAfter = (extraSeconds: number, dwellMinutes: number) => new Date(BASE_RETURN_MS + (extraSeconds + dwellMinutes * 60) * 1000).toISOString();
 
 function synthetic({ meals, pairs, waypointCount = 2, revision = 2 }: {
@@ -88,28 +89,36 @@ function synthetic({ meals, pairs, waypointCount = 2, revision = 2 }: {
         },
       })),
     })),
-    pairs: pairs.map(([first, second, extra]) => ({
-      firstSavedPlaceId: id(first),
-      secondSavedPlaceId: id(second),
-      firstArrivalAt: "2030-01-01T03:05:00.000Z",
-      secondArrivalAt: "2030-01-01T09:10:00.000Z",
-      extraDriveSeconds: extra,
-      returnAt: returnAfter(extra, DWELL[0] + DWELL[1]),
-    })),
+    pairs: pairs.map(([first, second, extra]) => {
+      const a = meals[0].find((spec) => spec.key === first)!;
+      const b = meals[1].find((spec) => spec.key === second)!;
+      // Different legs: meal 1 as alone, meal 2 delayed by meal 1's extra + dwell, extras add up.
+      const combined = a.leg < b.leg;
+      const total = combined ? a.extra + b.extra : extra;
+      return {
+        firstSavedPlaceId: id(first),
+        secondSavedPlaceId: id(second),
+        firstArrivalAt: combined ? a.arrival : "2030-01-01T03:05:00.000Z",
+        secondArrivalAt: combined ? new Date(Date.parse(b.arrival) + (a.extra + DWELL[0] * 60) * 1000).toISOString() : "2030-01-01T09:10:00.000Z",
+        extraDriveSeconds: total,
+        returnAt: returnAfter(total, DWELL[0] + DWELL[1]),
+      };
+    }),
     coverage: { savedRestaurants: 6, invalidSaved: 0, alreadyInRoute: 0, nearRoute: 5, evaluated: 5, unreachable: 0, notEvaluated: 0, providerRequests: 9 },
   };
 }
 
-// Meal 1: a (leg 0), b (leg 1), c (leg 1, only with e). Meal 2: d (leg 1), e (leg 2, only with a meal 1 choice).
+// Meal 1: a (leg 0), b (leg 1), c (leg 2, only with e). Meal 2: d (leg 1), e (leg 2, only with a meal 1 choice).
+// Pairs a+d and a+e span legs (derived values); b+d and c+e share a leg (own route values).
 const rich = () => synthetic({
   meals: [
     [
       { key: "a", leg: 0, feasible: true, extra: 300, arrival: "2030-01-01T03:00:00.000Z" },
       { key: "b", leg: 1, feasible: true, extra: 600, arrival: "2030-01-01T03:10:00.000Z" },
-      { key: "c", leg: 1, feasible: false, extra: 4000, arrival: "2030-01-01T03:20:00.000Z", reason: "DETOUR" },
+      { key: "c", leg: 2, feasible: false, extra: 4000, arrival: "2030-01-01T03:20:00.000Z", reason: "DETOUR" },
     ],
     [
-      { key: "d", leg: 1, feasible: true, extra: 400, arrival: "2030-01-01T09:00:00.000Z" },
+      { key: "d", leg: 1, feasible: true, extra: 400, arrival: "2030-01-01T08:35:00.000Z" },
       { key: "e", leg: 2, feasible: false, extra: 500, arrival: "2030-01-01T08:00:00.000Z" },
     ],
   ],
@@ -275,13 +284,46 @@ describe("recommendation response parser", () => {
   ])("rejects a pair with %s", (_name, mutate) => {
     expect(() => parseRecommendationResponse(rich())).not.toThrow();
     const body = rich();
-    mutate(body.pairs[0] as unknown as Json);
+    mutate(body.pairs[2] as unknown as Json); // b+d, same leg
     expect(() => parseRecommendationResponse(body)).toThrow();
+  });
+
+  it("accepts different-leg pairs derived from the singles, like ok-two-meals-pair", () => {
+    const response = parseRecommendationResponse(rich());
+    expect(response.pairs.find((pair) => pair.secondSavedPlaceId === id("d") && pair.firstSavedPlaceId === id("a"))).toMatchObject({
+      firstArrivalAt: "2030-01-01T03:00:00.000Z",
+      secondArrivalAt: "2030-01-01T09:25:00.000Z", // 08:35 + 300 s + 45 min
+      extraDriveSeconds: 700,
+    });
+    expect(() => parseRecommendationResponse(fixtureBody("ok-two-meals-pair"))).not.toThrow();
+  });
+
+  it.each([
+    ["meal 1 arrival not its single arrival", (pair: Json) => { pair.firstArrivalAt = shift(pair.firstArrivalAt, 60); }],
+    ["meal 2 arrival not single + meal 1 extra + dwell", (pair: Json) => { pair.secondArrivalAt = shift(pair.secondArrivalAt, -60); }],
+    ["extra drive not the sum of the singles", (pair: Json) => {
+      pair.extraDriveSeconds = Number(pair.extraDriveSeconds) + 1;
+      pair.returnAt = shift(pair.returnAt, 1); // keep the return formula consistent
+    }],
+  ])("rejects a different-leg pair whose %s (values still inside the windows)", (_name, mutate) => {
+    const body = rich();
+    mutate(body.pairs[0] as unknown as Json); // a (leg 0) + d (leg 1)
+    expect(() => parseRecommendationResponse(body)).toThrow();
+    const fixture = fixtureBody("ok-two-meals-pair") as Record<string, unknown>;
+    mutate((fixture.pairs as Json[])[0]);
+    expect(() => parseRecommendationResponse(fixture)).toThrow();
+  });
+
+  it("does not derive same-leg pair values from the singles", () => {
+    const body = rich();
+    const sameLeg = body.pairs[2] as unknown as Json; // b+d on leg 1
+    expect(sameLeg.extraDriveSeconds).not.toBe(600 + 400);
+    expect(() => parseRecommendationResponse(body)).not.toThrow();
   });
 
   it("rejects a pair whose return is 24 hours or more after departure", () => {
     const body = synthetic({
-      meals: [[{ key: "a", leg: 0, feasible: true, extra: 0, arrival: "2030-01-01T03:00:00.000Z" }], [{ key: "d", leg: 1, feasible: true, extra: 0, arrival: "2030-01-01T09:00:00.000Z" }]],
+      meals: [[{ key: "a", leg: 0, feasible: true, extra: 0, arrival: "2030-01-01T03:00:00.000Z" }], [{ key: "d", leg: 0, feasible: true, extra: 0, arrival: "2030-01-01T09:00:00.000Z" }]],
       pairs: [["a", "d", 0]],
     });
     expect(() => parseRecommendationResponse(body)).not.toThrow();
@@ -595,7 +637,7 @@ describe("confirming recommended meals", () => {
     expect(order(base(response, {}))).toBe("SELECTION");
     const crowded = parseRecommendationResponse(synthetic({
       waypointCount: 29,
-      meals: [[{ key: "a", leg: 0, feasible: true, extra: 1, arrival: "2030-01-01T03:00:00.000Z" }], [{ key: "d", leg: 29, feasible: true, extra: 1, arrival: "2030-01-01T09:00:00.000Z" }]],
+      meals: [[{ key: "a", leg: 0, feasible: true, extra: 1, arrival: "2030-01-01T03:00:00.000Z" }], [{ key: "d", leg: 29, feasible: true, extra: 1, arrival: "2030-01-01T08:44:59.000Z" }]],
       pairs: [["a", "d", 2]],
     }));
     const points = Array.from({ length: 29 }, (_, index) => waypoint(`w${index + 1}`));
