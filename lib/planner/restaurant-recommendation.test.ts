@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import fixtures from "../../contracts/android/restaurant-recommendation/fixtures.json";
 import type { SavedPlace } from "../places/saved";
@@ -487,6 +487,38 @@ describe("route-based default meal times and next-day hint", () => {
     expect(times.every((time) => Number(time.slice(3)) % 5 === 0)).toBe(true);
     expect(mealTargetAt(departureAt, 30, times[1])!.getTime()).toBeGreaterThan(mealTargetAt(departureAt, 30, times[0])!.getTime());
     expect(recommendationInputError({ ...defaultRecommendationInput, mealCount: 2, meals: [{ desiredTime: times[0] }, { desiredTime: times[1] }] }, departureAt, 0)).toBeNull();
+  });
+
+  it("keeps meal 2 after meal 1 when 12:00 resolves to the next day on a near-24-hour route", () => {
+    // 12:40 → next day 12:20: 12:00 is tomorrow and inside, 18:00 is today, so the
+    // first pair is out of order; both thirds (20:30 today, 04:30 tomorrow) are used.
+    const departureAt = kst("12:40");
+    const times = defaultMealTimes(departureAt, kst("12:20", 2));
+    expect(times).toEqual(["20:30", "04:30"]);
+    expect(mealTargetAt(departureAt, 30, times[1])!.getTime()).toBeGreaterThan(mealTargetAt(departureAt, 30, times[0])!.getTime());
+    expect(recommendationInputError({ ...defaultRecommendationInput, mealCount: 2, meals: [{ desiredTime: times[0] }, { desiredTime: times[1] }] }, departureAt, 0)).toBeNull();
+  });
+
+  it("gives ordered, selectable defaults for every 10-minute departure and route length up to 23:50", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const lengths = [10, 60, 360, 720, 1380, 1430];
+    const failures: string[] = [];
+    for (let minute = 0; minute < 24 * 60; minute += 10) {
+      const departureAt = new Date(Date.parse(kst("00:00")) + minute * 60_000).toISOString();
+      for (const length of lengths) {
+        const returnAt = new Date(Date.parse(departureAt) + length * 60_000).toISOString();
+        const times = defaultMealTimes(departureAt, returnAt);
+        const [first, second] = times.map((time) => mealTargetAt(departureAt, 30, time)!.getTime());
+        const input = { ...defaultRecommendationInput, mealCount: 2 as const, meals: [{ desiredTime: times[0] }, { desiredTime: times[1] }] as typeof defaultRecommendationInput.meals };
+        if (
+          recommendationInputError(input, departureAt, 0) !== null || !(second > first) ||
+          !times.every((time) => /^([01]\d|2[0-3]):[0-5][05]$/.test(time))
+        ) failures.push(`${seoulClock(departureAt)} +${length}m → ${times.join("/")}`);
+      }
+    }
+    expect(failures).toEqual([]);
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
   });
 
   it("flags a desired time that lands on the next Seoul date", () => {

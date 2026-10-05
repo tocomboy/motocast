@@ -425,21 +425,30 @@ function roundedSeoulClock(instantMs: number) {
   return seoulClock(new Date(Math.round(instantMs / TEN_MINUTES_MS) * TEN_MINUTES_MS).toISOString());
 }
 
-// Route-based default meal times (§4.1 A, judged with the default ±30 window):
-// meal 1 is 12:00 when that target falls inside [departure, return], otherwise
-// one third of the way; meal 2 is 18:00 when inside and after meal 1, otherwise
-// two thirds of the way, and never earlier than meal 1 + 10 minutes.
+// Route-based default meal times (§4.1 A, judged with the default ±30 window).
+// Each step is checked on the targets mealTargetAt resolves (an HH:MM alone can
+// land on another date), falling back until meal 2 targets a later moment:
+// 1. meal 1 = 12:00 when its target lies within [departure, return], else one
+//    third of the way; meal 2 = 18:00 when inside and after meal 1, else two
+//    thirds of the way (thirds rounded to 10 minutes);
+// 2. otherwise both thirds;
+// 3. otherwise meal 2 = meal 1's target + 10 minutes.
+// Thirds of a route shorter than 24 hours always resolve to their own moment,
+// so step 3 settles every such route; a failure is reported, and the dialog
+// still shows the ordinary meal-order input error.
 export function defaultMealTimes(departureAt: string, returnAt: string, toleranceMinutes = defaultRecommendationInput.toleranceMinutes): [string, string] {
   const start = ms(departureAt);
   const end = ms(returnAt);
-  const inside = (target: Date | null) => target !== null && target.getTime() >= start && target.getTime() <= end;
-  const lunch = mealTargetAt(departureAt, toleranceMinutes, "12:00");
-  const first = inside(lunch) ? "12:00" : roundedSeoulClock(start + (end - start) / 3);
-  const firstTarget = mealTargetAt(departureAt, toleranceMinutes, first)!.getTime();
-  const dinner = mealTargetAt(departureAt, toleranceMinutes, "18:00");
-  let second = inside(dinner) && dinner!.getTime() > firstTarget ? "18:00" : roundedSeoulClock(start + (2 * (end - start)) / 3);
-  if (mealTargetAt(departureAt, toleranceMinutes, second)!.getTime() <= firstTarget) second = seoulClock(new Date(firstTarget + TEN_MINUTES_MS).toISOString());
-  return [first, second];
+  const target = (time: string) => mealTargetAt(departureAt, toleranceMinutes, time)!.getTime();
+  const inside = (time: string) => target(time) >= start && target(time) <= end;
+  const ordered = ([first, second]: [string, string]) => target(second) > target(first);
+  const thirds: [string, string] = [roundedSeoulClock(start + (end - start) / 3), roundedSeoulClock(start + (2 * (end - start)) / 3)];
+  const first = inside("12:00") ? "12:00" : thirds[0];
+  let pair: [string, string] = [first, inside("18:00") && target("18:00") > target(first) ? "18:00" : thirds[1]];
+  if (!ordered(pair)) pair = thirds;
+  if (!ordered(pair)) pair = [pair[0], seoulClock(new Date(target(pair[0]) + TEN_MINUTES_MS).toISOString())];
+  if (!ordered(pair)) console.error("defaultMealTimes: no ordered default meal times", { departureAt, returnAt });
+  return pair;
 }
 
 export function recommendationDefaults(departureAt: string, returnAt: string): RecommendationInput {
