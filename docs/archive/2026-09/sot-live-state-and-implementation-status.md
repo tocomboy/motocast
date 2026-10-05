@@ -3,6 +3,18 @@
 > 2026-10-05에 `docs/product/MOTOCAST_SOT.md`에서 옮긴 기록이며 현재 지침이 아니다.
 > 현재 출시 상태는 [GitHub Releases](https://github.com/tocomboy/motocast/releases), 현재 작업은 [GitHub Issues](https://github.com/tocomboy/motocast/issues)를 따른다.
 
+## SOT header addenda (2026-09-05 to 2026-09-16)
+
+Last verified: 2026-09-05 (Asia/Seoul)
+
+Diagnostic release addendum, 2026-09-16: the user approved PR and deployment of 0.2.2 after a Production `ROUTE_DURATION_TOTAL` failure was identified. Closed signed-duration categories improve observation of already-rejected responses without changing `SCOPE-002`, `ROUTE-001/004/006`, budget, persistence or public error contracts. This is not proof of a route fix or full-product acceptance. [Current diagnostic evidence](2026-09-16-route-duration-diagnostic.md).
+
+Production execution addendum, 2026-09-15: PR41/main89977ef is deployed publicly. The first real login identified missing empty-string Auth placeholders in the one-time transfer; an exact-two-user repair preserved all other Auth/app data, and the operator now initializes/verifies these nonsecret empty fields. Administrator login and live route/weather pass after repair. Other identities and remaining Production gates require their own evidence; the whole product gate is not yet declared complete. [Execution record](2026-09-15-production-user-migration-plan.md).
+
+Verification addendum, 2026-09-15: existing-admin Kakao browser login and the actual Preview route/weather/collection/share/revoke path passed. Controlled active-provider401 and internal-budget exhaustion verified stale/no-snapshot UI handling and sharing denial; original key/limit restoration, live recovery and exact test cleanup passed with existing data preserved. Production schema/functions and the authorized two-user data transfer are complete, while Production web promotion and its separate product gate remain NOT_RUN. This adds execution evidence without changing a product contract. [Current evidence and limits](2026-09-15-production-user-migration-plan.md).
+
+Verification addendum, 2026-09-06: approved temporary Auth/ownership checks passed149, and seeded missing/stale/naturally expired weather sharing checks passed11, each with exact cleanup readback and preserved real-user data. These are bounded Preview evidence, not full Kakao/provider/budget or Production completion. No confirmed product contract changed. [Sharing evidence and limits](2026-09-06-negative-share-connected-proof.md), [remaining gates](2026-09-06-preview-remaining-gates.md).
+
 ## Live-state snapshot
 
 ### Latest connected Auth update — 2026-09-06 KST
