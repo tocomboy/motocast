@@ -677,6 +677,21 @@ describe("candidate selection", () => {
     ]);
   });
 
+  it("breaks equal smallest pair totals of pair-only rows by arrival gap, then name and ID", () => {
+    // a is shorter alone but arrives further from the target than b; both pair at 600.
+    const response = parseRecommendationResponse(synthetic({
+      meals: [
+        [
+          { key: "a", leg: 0, feasible: false, extra: 0, arrival: "2030-01-01T02:10:00.000Z", reason: "WINDOW" },
+          { key: "b", leg: 0, feasible: false, extra: 300, arrival: "2030-01-01T02:20:00.000Z", reason: "WINDOW" },
+        ],
+        [{ key: "e", leg: 0, feasible: true, extra: 100, arrival: "2030-01-01T09:00:00.000Z" }],
+      ],
+      pairs: [["a", "e", 600], ["b", "e", 600]],
+    }));
+    expect(candidateRows(response, {}, 1).map((row) => row.candidate.displayName)).toEqual(["식당 b", "식당 a"]);
+  });
+
   it("orders rows by the combined extra drive they show once the other meal is chosen", () => {
     // Single order: d (100) < a (600) < b (1200). Paired with c: b (1800) < a (3000); d cannot pair.
     const response = parseRecommendationResponse(synthetic({

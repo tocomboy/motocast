@@ -642,12 +642,17 @@ export function candidateRows(response: RecommendationResponse, selection: Recom
   });
   if (!other) {
     // Rows feasible alone keep their single order; pair-only rows follow,
-    // ordered by their smallest pair total (then the single-order ties).
+    // ordered by their smallest pair total, then the single arrival gap to the
+    // target, name and ID (same rule as the Android client).
+    const target = ms(meal.targetAt);
     const minPair = (row: CandidateRowState) => Math.min(...pairTotals(response, mealIndex, row.candidate.savedPlaceId));
     const alone = rows.filter((row) => !row.pairOnly);
-    const pairOnlyRows = rows.map((row, index) => ({ row, index })).filter(({ row }) => row.pairOnly)
-      .sort((left, right) => minPair(left.row) - minPair(right.row) || left.index - right.index)
-      .map(({ row }) => row);
+    const pairOnlyRows = rows.filter((row) => row.pairOnly).sort((left, right) => (
+      minPair(left) - minPair(right) ||
+      Math.abs(ms(left.arrivalAt) - target) - Math.abs(ms(right.arrivalAt) - target) ||
+      compareText(left.candidate.displayName, right.candidate.displayName) ||
+      compareText(left.candidate.savedPlaceId, right.candidate.savedPlaceId)
+    ));
     return [...alone, ...pairOnlyRows];
   }
   // With the other meal chosen, rows show pair values: order the possible rows
