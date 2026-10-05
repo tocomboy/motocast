@@ -350,7 +350,7 @@ function ResultView({ response, selection, input, onSelect, onChangeConditions, 
             {meal.candidates.length === 0
               ? <p className={styles.emptyMeal}>식사 {meal.index} 시간에는 조건에 맞는 음식점이 없습니다.</p>
               : <>
-                <p className={styles.hint}>{otherName ? `식사 ${otherIndex} '${otherName}'${andParticle(otherName)} 함께 가는 기준이에요. 도착 시각과 두 곳 합계가 바뀌었어요.` : "늘어나는 주행이 짧은 순서예요."}</p>
+                <p className={styles.hint}>{otherName ? `식사 ${otherIndex} '${otherName}'${andParticle(otherName)} 함께 가는 기준이에요. 도착 시각과 두 곳 합계가 바뀌었어요.` : rows.some((row) => row.pairOnly) ? "늘어나는 주행이 짧은 순서예요. 함께 갈 때만 가능한 곳은 뒤에 두었어요." : "늘어나는 주행이 짧은 순서예요."}</p>
                 <ul className={styles.rows}>{rows.map((row) => <li key={row.candidate.savedPlaceId}><CandidateRow row={row} onSelect={() => onSelect(meal.index, row.candidate.savedPlaceId)} /></li>)}</ul>
               </>}
           </section>;

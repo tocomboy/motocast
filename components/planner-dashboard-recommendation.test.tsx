@@ -446,6 +446,7 @@ describe("PlannerDashboard restaurant recommendation", () => {
     await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
     const row = (name: string) => dialog(renderer).find((node) => node.type === "button" && typeof node.props["aria-label"] === "string" && node.props["aria-label"].startsWith(`${name},`));
     const confirm = () => dialog(renderer).find((node) => node.type === "button" && node.props.className === "primary-button");
+    expect(text(dialog(renderer))).toContain("늘어나는 주행이 짧은 순서예요. 함께 갈 때만 가능한 곳은 뒤에 두었어요.");
     const a = row("식당 a");
     expect(text(a)).toContain("식사 2와 함께 갈 때만 가능해요");
     expect(text(a)).not.toContain("선택 불가");
