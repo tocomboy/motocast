@@ -91,6 +91,51 @@ function recommendationBody(request: RecommendationRequest, candidateRevision = 
   };
 }
 
+// Two meals on the single leg: meal 1 a (alone 10 min) and b (alone 20 min); meal 2 c.
+// Paired with c the totals flip: b + c 30 min < a + c 50 min (same-leg pairs).
+function twoMealBody(request: RecommendationRequest) {
+  const base = Date.parse(request.basis.returnAt);
+  const iso = (value: number) => new Date(value).toISOString();
+  const meals = request.meals.map((asked, index) => {
+    const target = mealTargetAt(request.basis.departureAt, request.toleranceMinutes, asked.desiredTime)!.getTime();
+    return { index: index + 1, target, dwellMinutes: asked.dwellMinutes };
+  });
+  const candidate = (key: string, name: string, meal: number, extraMinutes: number) => ({
+    savedPlaceId: `30000000-0000-4000-8000-00000000000${key}`,
+    savedPlaceRevision: 1,
+    displayName: name,
+    placeName: name,
+    address: "테스트 주소",
+    longitude: 127.1,
+    latitude: 37.5,
+    insertion: { legIndex: 0, afterPointId: request.basis.pointIds[0], beforePointId: request.basis.pointIds[1] },
+    single: { feasible: true, arrivalAt: iso(meals[meal].target), extraDriveSeconds: extraMinutes * 60, returnAt: iso(base + (extraMinutes + 45) * 60_000), reason: null },
+  });
+  const pair = (first: string, extraMinutes: number) => ({
+    firstSavedPlaceId: `30000000-0000-4000-8000-00000000000${first}`,
+    secondSavedPlaceId: "30000000-0000-4000-8000-00000000000c",
+    firstArrivalAt: iso(meals[0].target),
+    secondArrivalAt: iso(meals[1].target),
+    extraDriveSeconds: extraMinutes * 60,
+    returnAt: iso(base + (extraMinutes + 90) * 60_000),
+  });
+  return {
+    status: "OK",
+    basis: { tripId: request.tripId, ...request.basis },
+    settings: { mealCount: 2, toleranceMinutes: request.toleranceMinutes, detourLimitMinutes: 60 },
+    meals: meals.map((meal) => ({
+      index: meal.index,
+      targetAt: iso(meal.target),
+      windowStartAt: iso(meal.target - request.toleranceMinutes * 60_000),
+      windowEndAt: iso(meal.target + request.toleranceMinutes * 60_000),
+      dwellMinutes: meal.dwellMinutes,
+      candidates: meal.index === 1 ? [candidate("a", "식당 a", 0, 10), candidate("b", "식당 b", 0, 20)] : [candidate("c", "식당 c", 1, 5)],
+    })),
+    pairs: [pair("b", 30), pair("a", 50)],
+    coverage: { savedRestaurants: 3, invalidSaved: 0, alreadyInRoute: 0, nearRoute: 3, evaluated: 3, unreachable: 0, notEvaluated: 0, providerRequests: 3 },
+  };
+}
+
 function text(node: ReactTestInstance | string): string {
   if (typeof node === "string") return node;
   return node.children.map((child) => typeof child === "string" ? child : text(child)).join("");
@@ -352,6 +397,24 @@ describe("PlannerDashboard restaurant recommendation", () => {
     expect(shown).toContain("추천을 계산하지 못했습니다");
     expect(shown).toContain("식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.");
     expect(dialog(renderer).findAll((node) => typeof node.type === "string" && node.props.role === "alert")).toHaveLength(1);
+    await act(async () => renderer.unmount());
+  });
+
+  it("lists meal-1 rows by the displayed combined drive once a meal-2 restaurant is chosen", async () => {
+    const renderer = await openRecommendation();
+    mocks.invoke.mockImplementationOnce(async (_name: string, options: { body: RecommendationRequest }) => ({ error: null, data: twoMealBody(options.body) }));
+    await act(async () => buttons(dialog(renderer), "2곳")[0].props.onClick());
+    await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
+    const mealOneRows = () => dialog(renderer).findByProps({ id: "meal-heading-1" }).parent!.parent!
+      .findAll((node) => node.type === "button" && typeof node.props["aria-pressed"] === "boolean")
+      .map((row) => text(row));
+    expect(mealOneRows().map((row) => row.match(/식당 [ab]/)?.[0])).toEqual(["식당 a", "식당 b"]);
+    const mealTwo = dialog(renderer).find((node) => node.type === "button" && typeof node.props["aria-label"] === "string" && node.props["aria-label"].startsWith("식당 c,"));
+    await act(async () => mealTwo.props.onClick());
+    const rows = mealOneRows();
+    expect(rows.map((row) => row.match(/식당 [ab]/)?.[0])).toEqual(["식당 b", "식당 a"]);
+    expect(rows[0]).toContain("두 곳 합계 주행 +30분");
+    expect(rows[1]).toContain("두 곳 합계 주행 +50분");
     await act(async () => renderer.unmount());
   });
 

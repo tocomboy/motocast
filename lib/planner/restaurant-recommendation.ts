@@ -545,7 +545,7 @@ export function candidateRows(response: RecommendationResponse, selection: Recom
   if (!meal) return [];
   const otherIndex: MealIndex = mealIndex === 1 ? 2 : 1;
   const other = response.settings.mealCount === 2 ? selection[otherIndex] : undefined;
-  return sortCandidates(meal).map((candidate) => {
+  const rows: CandidateRowState[] = sortCandidates(meal).map((candidate) => {
     const selected = selection[mealIndex] === candidate.savedPlaceId;
     if (other) {
       const pair = mealIndex === 1 ? findPair(response, candidate.savedPlaceId, other) : findPair(response, other, candidate.savedPlaceId);
@@ -571,6 +571,18 @@ export function candidateRows(response: RecommendationResponse, selection: Recom
       reason: candidate.single.feasible ? null : `식사 ${otherIndex} 식당을 함께 골라야 가능해요`,
     };
   });
+  if (!other) return rows;
+  // With the other meal chosen, rows show pair values: order the possible rows
+  // by the combined extra drive they display (then arrival gap, name, ID), and
+  // keep the rows that cannot pair after them in their single-value order.
+  const target = ms(meal.targetAt);
+  const possible = rows.filter((row) => row.combined).sort((left, right) => (
+    left.extraDriveSeconds - right.extraDriveSeconds ||
+    Math.abs(ms(left.arrivalAt) - target) - Math.abs(ms(right.arrivalAt) - target) ||
+    compareText(left.candidate.displayName, right.candidate.displayName) ||
+    compareText(left.candidate.savedPlaceId, right.candidate.savedPlaceId)
+  ));
+  return [...possible, ...rows.filter((row) => !row.combined)];
 }
 
 // Selecting a row toggles it. A row that is not selectable cannot be chosen,

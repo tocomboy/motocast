@@ -527,7 +527,7 @@ describe("candidate selection", () => {
     expect(candidateRows(response, orphan, 2)[0]).toMatchObject({ selected: true, selectable: false });
   });
 
-  it("two meals: rows without a pair for the other choice show why they are blocked, in sorted position", () => {
+  it("two meals: rows without a pair for the other choice show why they are blocked, after the pairable rows", () => {
     const response = parseRecommendationResponse(rich());
     expect(candidateRows(response, {}, 1).map((row) => [row.candidate.displayName, row.selectable, row.reason])).toEqual([
       ["식당 a", true, null], ["식당 b", true, null], ["식당 c", false, "식사 2 식당을 함께 골라야 가능해요"],
@@ -539,11 +539,30 @@ describe("candidate selection", () => {
     expect(toggleSelection(response, withB, 2, id("e"))).toEqual(withB);
     const withE = { 2: id("e") };
     expect(candidateRows(response, withE, 1).map((row) => [row.candidate.displayName, row.selectable, row.reason])).toEqual([
-      ["식당 a", true, null], ["식당 b", false, "식사 2와 함께 가면 시간이 맞지 않거나 주행이 1시간 넘게 늘어나요"], ["식당 c", true, null],
+      // a + e (800) and c + e (1700) by combined drive, then b which cannot pair.
+      ["식당 a", true, null], ["식당 c", true, null], ["식당 b", false, "식사 2와 함께 가면 시간이 맞지 않거나 주행이 1시간 넘게 늘어나요"],
     ]);
     expect(resolveSelection(response, { 1: id("c"), 2: id("e") })?.extraDriveSeconds).toBe(1700);
     expect(resolveSelection(response, { 1: id("b"), 2: id("e") })).toBeNull();
     expect(resolveSelection(response, { 1: id("ff") })).toBeNull();
+  });
+
+  it("orders rows by the combined extra drive they show once the other meal is chosen", () => {
+    // Single order: d (100) < a (600) < b (1200). Paired with c: b (1800) < a (3000); d cannot pair.
+    const response = parseRecommendationResponse(synthetic({
+      meals: [
+        [
+          { key: "a", leg: 0, feasible: true, extra: 600, arrival: "2030-01-01T03:00:00.000Z" },
+          { key: "b", leg: 0, feasible: true, extra: 1200, arrival: "2030-01-01T03:00:00.000Z" },
+          { key: "d", leg: 0, feasible: true, extra: 100, arrival: "2030-01-01T03:00:00.000Z" },
+        ],
+        [{ key: "c", leg: 0, feasible: true, extra: 300, arrival: "2030-01-01T09:00:00.000Z" }],
+      ],
+      pairs: [["a", "c", 3000], ["b", "c", 1800]],
+    }));
+    const order = (selection: Record<number, string>) => candidateRows(response, selection, 1).map((row) => [row.candidate.displayName, row.extraDriveSeconds, row.selectable]);
+    expect(order({})).toEqual([["식당 d", 100, true], ["식당 a", 600, true], ["식당 b", 1200, true]]);
+    expect(order({ 2: id("c") })).toEqual([["식당 b", 1800, true], ["식당 a", 3000, true], ["식당 d", 100, false]]);
   });
 
   it("partial result: the meal with candidates can be chosen alone", () => {
