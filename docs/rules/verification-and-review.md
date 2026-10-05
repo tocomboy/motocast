@@ -118,7 +118,7 @@ The orchestrator and the Codex verifier review the fixed candidate commit SHA, n
 2. The orchestrator reads the exact committed changed set.
 3. The commit contains no user-owned `.gitignore` or unrelated changes unless explicitly included and reviewed.
 4. The orchestrator checks Decision IDs, invariants, file scope, acceptance criteria, and reusable verification evidence directly.
-5. The Codex V2 report for that exact SHA is recorded under section 5.
+5. For a high-risk SHA (section 5), the Codex V2 report for that exact SHA is recorded under section 5.
 
 ## 5. Orchestrator design, Codex verification and review
 
@@ -127,10 +127,10 @@ Roles follow the personal routing policy (decision 0010, confirmed 2026-10-04): 
 - Delegate with a fixed contract: owned files, design and interfaces, protected invariants, acceptance criteria, failure paths and exact verification commands. Product, architecture, scope, prerequisite or acceptance changes return to the orchestrator.
 - Codex checkpoints, proportional to risk:
   - **V1 design** before implementation for slices touching authentication, authorization, RLS or ownership, migrations or transactions, concurrency, budgets, route safety, or recovery.
-  - **V2 code** for every implementer commit SHA: the diff against the contract and invariants, test adequacy, focused checks, document synchronization and, for UI changes, real browser or device flows.
+  - **V2 code** for each implementer commit SHA that touches a high-risk area: money or orders, DB or migrations, authentication, authorization, RLS or ownership, security boundaries, cost or budgets, concurrency, or recovery. It checks the diff against the contract and invariants, test adequacy, focused checks and document synchronization. Other commits (screens, copy, CI wiring, documents) go without V2 and are covered by V3.
   - **V3 final candidate** before a `develop` integration or `develop -> main` merge and before the hosted Preview or Production mutation that depends on it.
 - Review-only checkpoints use the read-only Codex plugin `task`. Real DB, browser and device runs follow the routing policy's execution mode and resource ownership. The verifier writes no product code or tests.
-- **Acceptance gate:** an implementer SHA is accepted only after its V2 report is recorded with every `BLOCKER`/`HIGH` resolved and every `MEDIUM` fixed or given a recorded follow-up decision under section 6. Until then the work record states `V2 pending`, and no dependent Preview, merge, release or deployment step proceeds.
+- **Acceptance gate:** a high-risk implementer SHA is accepted only after its V2 report is recorded with every `BLOCKER`/`HIGH` resolved and every `MEDIUM` fixed or given a recorded follow-up decision under section 6. Until then the work record states `V2 pending`, and no dependent Preview, merge, release or deployment step proceeds. Every candidate still needs V3 before the merge or hosted mutation that depends on it (`V3 pending` until recorded).
 - The orchestrator still performs the required review axes below on the exact changed set. Orchestrator review and implementer self-checks are not verifier approval, and verifier results do not replace required tests, CI, Preview, Production or post-merge checks.
 
 Required review axes:
@@ -161,7 +161,7 @@ Rules:
 - A `MEDIUM` is fixed now or receives an explicit recorded follow-up decision.
 - A `LOW` may remain but is disclosed.
 - The implementer fixes findings and reruns affected verification; valid baseline evidence is reused unless invalidated or required by a mandatory gate.
-- The Codex verifier re-checks the new fixed SHA (V2) and the orchestrator labels each finding `RESOLVED`, `STILL_OPEN`, or `REGRESSED`.
+- The Codex verifier re-checks the new fixed SHA (V2 for high-risk fixes, otherwise in V3) and the orchestrator labels each finding `RESOLVED`, `STILL_OPEN`, or `REGRESSED`.
 - If the same root cause survives two correction rounds, reconsider the design, narrow the scope, or interview the user instead of expanding tests indefinitely.
 
 ## 7. Preview gate
@@ -186,7 +186,7 @@ A same-repository `develop -> main` PR may merge only when:
 - Changed set and fixed SHA are recorded.
 - Implementer verification is GREEN with exact taxonomy.
 - The orchestrator's required correctness, security, data integrity and other applicable review axes are complete.
-- Codex V2 reports exist for every included implementer SHA and the Codex V3 report for the fixed candidate is recorded.
+- Codex V2 reports exist for every included high-risk implementer SHA and the Codex V3 report for the fixed candidate is recorded.
 - `BLOCKER=0` and `HIGH=0`.
 - GitHub `verify` and `develop-only` are GREEN.
 - The actual Vercel Preview context is stable and GREEN.
