@@ -210,15 +210,26 @@ Each current collection version contains a verified origin, verified destination
 
 No migration or new secret. `recommend-restaurants` is a new JWT-verified Edge Function that reads the caller's own `trips`, `route_cache` (`recommended`) and `saved_places` rows through RLS and uses the existing `KAKAO_CURRENT_DAILY_LIMIT`/`KAKAO_FUTURE_DAILY_LIMIT` budgets plus `KAKAO_REST_API_KEY`. Each request makes at most 6 (one meal) or 14 (two meals) budget-reserved Kakao Mobility calls with the unchanged motorcycle policy, and zero calls for invalid input, a stale route basis, the waypoint limit, a non-45 meal dwell or no saved restaurant.
 
-The same candidate also changes existing behavior: `plan-route` and `save-collection` accept only a 45-minute meal/lunch/dinner dwell and refuse any other value with HTTP 400 `{ error, code: "MEAL_DWELL_FIXED" }` before place-signature, budget, provider or storage work. `journey-route` keeps accepting the stored course or immutable share as saved. Shared modules (`_shared/http.ts`, `kakao-route.ts`, `route-orchestration.ts`, `route-request.ts`, `collection-request.ts`, `meal-dwell.ts`) changed, so the source closure of every function that imports them changes even where behavior does not.
+The same candidate also changes existing behavior: `plan-route` and `save-collection` accept only a 45-minute meal/lunch/dinner dwell and refuse any other value with HTTP 400 `{ error, code: "MEAL_DWELL_FIXED" }` after shape and place-signature validation and before budget, provider or storage work (a malformed or unsigned request keeps its own error). `journey-route` keeps accepting the stored course or immutable share as saved. Shared modules (`_shared/http.ts`, `kakao-route.ts`, `route-orchestration.ts`, `route-request.ts`, `collection-request.ts`, `meal-dwell.ts`) changed, so the source closure of every function that imports them changes even where behavior does not.
 
-Release order for each project (Preview from the reviewed `develop` candidate, Production from the merged `main` SHA):
+Functions whose source closure changes for 0.12.0 (against both `838ca06` and Production `dc2136e`): `recommend-restaurants`, `plan-route`, `save-collection`, `journey-route`, `journey-weather`, `search-places`, `weather-timeline` and `kakao-oidc`; `play-admission` is unchanged. Deploy all eight so deployed sources match the Play readiness requirements; `verify_jwt=true` for all except the intentionally public `kakao-oidc`.
 
-1. From the exact reviewed SHA, deploy every Edge Function whose source closure differs from the currently deployed SHA. For 0.12.0 that is at least `recommend-restaurants`, `plan-route` and `save-collection` (behavior) plus the other functions that import the changed shared modules, so deployed sources match the Play readiness requirements. Keep `verify_jwt=true` for all of them (only `kakao-oidc` stays public). Read back each function version and JWT setting.
-2. Immediately deploy the web (fast-forward `develop` for Preview, merge `develop -> main` for Production) and confirm the Vercel deployment is Ready for that SHA.
-3. Smoke: a real member calculates a route with a 45-minute meal, saves the course, receives a recommendation from a saved restaurant and adds it; an existing course or share with a 60-minute meal still opens and is normalized in the editor; `journey-route` still accepts an existing stored course.
+Preview (from the reviewed candidate SHA on its slash-free `review-*` branch):
 
-Between steps 1 and 2, and afterwards for any client that has not updated, an older web page (before reload) or the Android code12 app that sends a non-45 meal dwell receives the refusal. The older clients do not recognize `MEAL_DWELL_FIXED` and show their generic input or save-refusal message; the user accepted this and testers are told to reload/update (restaurant recommendation record §1.2). Keep the step 1→2 window short.
+1. After the CI-only PR for that exact SHA passes with zero Deployments/Vercel checks, deploy the eight functions to the Preview project from that SHA and read back each version and JWT setting.
+2. Re-read `origin/develop`, then fast-forward `develop` to the same SHA and confirm the Vercel Preview deployment for it is Ready.
+3. Run the smoke below.
+
+Production (from the same reviewed candidate after the Preview gate):
+
+1. Open the `develop -> main` PR for that candidate and wait for its required checks, without merging.
+2. Deploy the eight functions to the Production project from the candidate SHA and read back versions and JWT settings. Merging is what publishes the web on Vercel, so the server goes first.
+3. Merge the PR, then prove that the `supabase/functions` tree of the resulting `main` commit is identical to the candidate's (`git diff --quiet <candidate> <main> -- supabase/functions`). If it differs, stop and redeploy from `main` before announcing the release. Confirm the Vercel Production deployment of that `main` SHA is Ready.
+4. Run the smoke below, then publish the tag and GitHub Release for the verified `main` commit.
+
+Smoke: a real member calculates a route with a 45-minute meal, saves the course, receives a recommendation from a saved restaurant and adds it; an existing course or share with a 60-minute meal still opens and is normalized in the editor; `journey-route` still accepts an existing stored course.
+
+Between the Edge step and the web step, and afterwards for any client that has not updated, an older web page (before reload) or the Android code12 app that sends a non-45 meal dwell receives the refusal. The older clients do not recognize `MEAL_DWELL_FIXED` and show their generic input or save-refusal message; the user accepted this and testers are told to reload/update (restaurant recommendation record §1.2). Keep the window between the Edge and web steps short.
 
 Rollback uses compatible bundles only:
 
