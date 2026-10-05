@@ -553,6 +553,9 @@ export type CandidateRowState = {
   selected: boolean;
   selectable: boolean;
   combined: boolean;
+  // Not feasible alone but a member of at least one listed pair for this meal:
+  // selectable, and only confirmable together with a pairing other meal.
+  pairOnly: boolean;
   arrivalAt: string;
   extraDriveSeconds: number;
   reason: string | null;
@@ -585,6 +588,12 @@ export function sortCandidates(meal: RecommendationMeal) {
   ));
 }
 
+// Extra drive totals of the listed pairs this candidate joins as `mealIndex`.
+function pairTotals(response: RecommendationResponse, mealIndex: MealIndex, savedPlaceId: string) {
+  const key = mealIndex === 1 ? "firstSavedPlaceId" : "secondSavedPlaceId";
+  return response.pairs.filter((pair) => pair[key] === savedPlaceId).map((pair) => pair.extraDriveSeconds);
+}
+
 function findPair(response: RecommendationResponse, first: string, second: string) {
   return response.pairs.find((pair) => pair.firstSavedPlaceId === first && pair.secondSavedPlaceId === second) ?? null;
 }
@@ -599,7 +608,7 @@ export function candidateRows(response: RecommendationResponse, selection: Recom
     if (other) {
       if (candidate.savedPlaceId === other) {
         return {
-          candidate, selected, selectable: false, combined: false,
+          candidate, selected, selectable: false, combined: false, pairOnly: false,
           arrivalAt: candidate.single.arrivalAt,
           extraDriveSeconds: candidate.single.extraDriveSeconds,
           reason: `식사 ${otherIndex}에서 고른 식당이에요`,
@@ -608,27 +617,39 @@ export function candidateRows(response: RecommendationResponse, selection: Recom
       const pair = mealIndex === 1 ? findPair(response, candidate.savedPlaceId, other) : findPair(response, other, candidate.savedPlaceId);
       if (pair) {
         return {
-          candidate, selected, selectable: true, combined: true,
+          candidate, selected, selectable: true, combined: true, pairOnly: false,
           arrivalAt: mealIndex === 1 ? pair.firstArrivalAt : pair.secondArrivalAt,
           extraDriveSeconds: pair.extraDriveSeconds,
           reason: null,
         };
       }
       return {
-        candidate, selected, selectable: false, combined: false,
+        candidate, selected, selectable: false, combined: false, pairOnly: false,
         arrivalAt: candidate.single.arrivalAt,
         extraDriveSeconds: candidate.single.extraDriveSeconds,
         reason: `${withAnd(`식사 ${otherIndex}`)} 함께 가면 시간이 맞지 않거나 주행이 ${durationLabel(response.settings.detourLimitMinutes)} 넘게 늘어나요`,
       };
     }
+    const pairOnly = !candidate.single.feasible && pairTotals(response, mealIndex, candidate.savedPlaceId).length > 0;
     return {
-      candidate, selected, selectable: candidate.single.feasible, combined: false,
+      candidate, selected, selectable: candidate.single.feasible || pairOnly, combined: false, pairOnly,
       arrivalAt: candidate.single.arrivalAt,
       extraDriveSeconds: candidate.single.extraDriveSeconds,
-      reason: candidate.single.feasible ? null : `식사 ${otherIndex} 식당을 함께 골라야 가능해요`,
+      reason: pairOnly
+        ? `${withAnd(`식사 ${otherIndex}`)} 함께 갈 때만 가능해요`
+        : candidate.single.feasible ? null : `식사 ${otherIndex} 식당을 함께 골라야 가능해요`,
     };
   });
-  if (!other) return rows;
+  if (!other) {
+    // Rows feasible alone keep their single order; pair-only rows follow,
+    // ordered by their smallest pair total (then the single-order ties).
+    const minPair = (row: CandidateRowState) => Math.min(...pairTotals(response, mealIndex, row.candidate.savedPlaceId));
+    const alone = rows.filter((row) => !row.pairOnly);
+    const pairOnlyRows = rows.map((row, index) => ({ row, index })).filter(({ row }) => row.pairOnly)
+      .sort((left, right) => minPair(left.row) - minPair(right.row) || left.index - right.index)
+      .map(({ row }) => row);
+    return [...alone, ...pairOnlyRows];
+  }
   // With the other meal chosen, rows show pair values: order the possible rows
   // by the combined extra drive they display (then arrival gap, name, ID), and
   // keep the rows that cannot pair after them in their single-value order.
@@ -679,6 +700,17 @@ export function resolveSelection(response: RecommendationResponse, selection: Re
   }
   const pair = findPair(response, chosen[0].candidate.savedPlaceId, chosen[1].candidate.savedPlaceId);
   return pair ? { items: chosen, extraDriveSeconds: pair.extraDriveSeconds, returnAt: pair.returnAt } : null;
+}
+
+// Why the current selection cannot be confirmed yet: a pair-only restaurant
+// chosen without its partner asks for the other meal.
+export function selectionGuidance(response: RecommendationResponse, selection: RecommendationSelection): string | null {
+  if (resolveSelection(response, selection)) return null;
+  const chosen = ([1, 2] as const).filter((mealIndex) => selection[mealIndex]);
+  if (chosen.length !== 1) return null;
+  const mealIndex = chosen[0];
+  const candidate = response.meals[mealIndex - 1]?.candidates.find((item) => item.savedPlaceId === selection[mealIndex]);
+  return candidate && !candidate.single.feasible ? `식사 ${mealIndex === 1 ? 2 : 1}도 함께 골라 주세요` : null;
 }
 
 // ---------------------------------------------------------------------------

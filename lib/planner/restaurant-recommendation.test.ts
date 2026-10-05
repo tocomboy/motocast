@@ -22,6 +22,7 @@ import {
   resolveSelection,
   responseMatchesRequest,
   seoulClock,
+  selectionGuidance,
   toggleSelection,
   withAnd,
   type RecommendationResponse,
@@ -575,11 +576,14 @@ describe("candidate selection", () => {
     expect(resolveSelection(response, {})).toBeNull();
   });
 
-  it("two meals: a meal-2 row that needs meal 1 is blocked until a pairing meal-1 row is chosen", () => {
+  it("two meals: a meal-2 row that only fits with meal 1 can be chosen first but needs its partner to confirm", () => {
     const response = parseRecommendationResponse(fixtureBody("ok-two-meals-pair"));
     const [evening] = candidateRows(response, {}, 2);
-    expect(evening).toMatchObject({ selectable: false, reason: "식사 1 식당을 함께 골라야 가능해요" });
-    expect(toggleSelection(response, {}, 2, evening.candidate.savedPlaceId)).toEqual({});
+    expect(evening).toMatchObject({ selectable: true, pairOnly: true, reason: "식사 1과 함께 갈 때만 가능해요" });
+    const eveningOnly = toggleSelection(response, {}, 2, evening.candidate.savedPlaceId);
+    expect(eveningOnly).toEqual({ 2: evening.candidate.savedPlaceId });
+    expect(resolveSelection(response, eveningOnly)).toBeNull();
+    expect(selectionGuidance(response, eveningOnly)).toBe("식사 1도 함께 골라 주세요");
     const lunch = toggleSelection(response, {}, 1, id("a0003"));
     const [paired] = candidateRows(response, lunch, 2);
     expect(paired).toMatchObject({ selectable: true, combined: true, arrivalAt: "2030-01-01T03:55:00.000Z", extraDriveSeconds: 1200 });
@@ -590,13 +594,14 @@ describe("candidate selection", () => {
     const orphan = toggleSelection(response, both, 1, id("a0003"));
     expect(orphan).toEqual({ 2: paired.candidate.savedPlaceId });
     expect(resolveSelection(response, orphan)).toBeNull();
-    expect(candidateRows(response, orphan, 2)[0]).toMatchObject({ selected: true, selectable: false });
+    expect(selectionGuidance(response, orphan)).toBe("식사 1도 함께 골라 주세요");
+    expect(candidateRows(response, orphan, 2)[0]).toMatchObject({ selected: true, pairOnly: true });
   });
 
   it("two meals: rows without a pair for the other choice show why they are blocked, after the pairable rows", () => {
     const response = parseRecommendationResponse(rich());
     expect(candidateRows(response, {}, 1).map((row) => [row.candidate.displayName, row.selectable, row.reason])).toEqual([
-      ["식당 a", true, null], ["식당 b", true, null], ["식당 c", false, "식사 2 식당을 함께 골라야 가능해요"],
+      ["식당 a", true, null], ["식당 b", true, null], ["식당 c", true, "식사 2와 함께 갈 때만 가능해요"],
     ]);
     const withB = { 1: id("b") };
     expect(candidateRows(response, withB, 2).map((row) => [row.candidate.displayName, row.selectable, row.reason, row.extraDriveSeconds])).toEqual([
@@ -611,6 +616,65 @@ describe("candidate selection", () => {
     expect(resolveSelection(response, { 1: id("c"), 2: id("e") })?.extraDriveSeconds).toBe(1700);
     expect(resolveSelection(response, { 1: id("b"), 2: id("e") })).toBeNull();
     expect(resolveSelection(response, { 1: id("ff") })).toBeNull();
+  });
+
+  it("lets two pair-only restaurants be chosen and confirmed together (Codex reproduction)", () => {
+    // 09:00–13:00 KST, 12:00/13:00 ±30: A alone 11:20 and B alone 11:50 miss their
+    // windows; together (same leg) they arrive 11:30 / 12:30 with no extra drive.
+    const body = synthetic({
+      meals: [
+        [{ key: "a", leg: 0, feasible: false, extra: 0, arrival: "2030-01-01T02:20:00.000Z", reason: "WINDOW" }],
+        [{ key: "b", leg: 0, feasible: false, extra: 0, arrival: "2030-01-01T02:50:00.000Z", reason: "WINDOW" }],
+      ],
+      pairs: [["a", "b", 0]],
+    });
+    set(body, "basis.returnAt", "2030-01-01T04:00:00.000Z");
+    set(body, "basis.arrivalAts", ["2030-01-01T01:00:00.000Z", "2030-01-01T02:00:00.000Z", "2030-01-01T04:00:00.000Z"]);
+    for (const [index, target] of [[0, "2030-01-01T03:00:00.000Z"], [1, "2030-01-01T04:00:00.000Z"]] as const) {
+      set(body, `meals.${index}.targetAt`, target);
+      set(body, `meals.${index}.windowStartAt`, new Date(Date.parse(target) - 30 * 60_000).toISOString());
+      set(body, `meals.${index}.windowEndAt`, new Date(Date.parse(target) + 30 * 60_000).toISOString());
+      set(body, `meals.${index}.candidates.0.single.returnAt`, "2030-01-01T04:45:00.000Z");
+    }
+    set(body, "pairs.0.firstArrivalAt", "2030-01-01T02:30:00.000Z");
+    set(body, "pairs.0.secondArrivalAt", "2030-01-01T03:30:00.000Z");
+    set(body, "pairs.0.returnAt", "2030-01-01T05:30:00.000Z");
+    const response = parseRecommendationResponse(body);
+    const [a] = candidateRows(response, {}, 1);
+    const [b] = candidateRows(response, {}, 2);
+    expect([a.selectable, a.pairOnly, a.reason]).toEqual([true, true, "식사 2와 함께 갈 때만 가능해요"]);
+    expect([b.selectable, b.pairOnly, b.reason]).toEqual([true, true, "식사 1과 함께 갈 때만 가능해요"]);
+    const first = toggleSelection(response, {}, 1, a.candidate.savedPlaceId);
+    expect(resolveSelection(response, first)).toBeNull();
+    expect(selectionGuidance(response, first)).toBe("식사 2도 함께 골라 주세요");
+    // With A chosen, B shows the pair values and is selectable.
+    expect(candidateRows(response, first, 2)[0]).toMatchObject({ selectable: true, combined: true, arrivalAt: "2030-01-01T03:30:00.000Z", extraDriveSeconds: 0 });
+    const both = toggleSelection(response, first, 2, b.candidate.savedPlaceId);
+    expect(resolveSelection(response, both)).toMatchObject({ extraDriveSeconds: 0, returnAt: "2030-01-01T05:30:00.000Z" });
+    expect(selectionGuidance(response, both)).toBeNull();
+    // Clearing the partner disables confirmation again.
+    const cleared = toggleSelection(response, both, 2, b.candidate.savedPlaceId);
+    expect(resolveSelection(response, cleared)).toBeNull();
+    expect(selectionGuidance(response, cleared)).toBe("식사 2도 함께 골라 주세요");
+  });
+
+  it("orders pair-only rows after the rows that fit alone, by their smallest pair total", () => {
+    const response = parseRecommendationResponse(synthetic({
+      meals: [
+        [
+          { key: "a", leg: 0, feasible: true, extra: 900, arrival: "2030-01-01T03:00:00.000Z" },
+          { key: "b", leg: 0, feasible: false, extra: 100, arrival: "2030-01-01T02:20:00.000Z", reason: "WINDOW" },
+          { key: "c", leg: 0, feasible: false, extra: 200, arrival: "2030-01-01T02:20:00.000Z", reason: "WINDOW" },
+          { key: "d", leg: 0, feasible: true, extra: 300, arrival: "2030-01-01T03:00:00.000Z" },
+        ],
+        [{ key: "e", leg: 0, feasible: true, extra: 100, arrival: "2030-01-01T09:00:00.000Z" }],
+      ],
+      // Same-leg pairs: c's total (500) is below b's (2000), although b is shorter alone.
+      pairs: [["b", "e", 2000], ["c", "e", 500]],
+    }));
+    expect(candidateRows(response, {}, 1).map((row) => [row.candidate.displayName, row.pairOnly])).toEqual([
+      ["식당 d", false], ["식당 a", false], ["식당 c", true], ["식당 b", true],
+    ]);
   });
 
   it("orders rows by the combined extra drive they show once the other meal is chosen", () => {

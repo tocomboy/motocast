@@ -119,6 +119,8 @@
 .candidate { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 12px; width: 100%; padding: 14px 16px; border: 1px solid var(--mc-border-card); border-radius: 16px; background: var(--mc-surface-card); color: var(--mc-text-primary); font: inherit; text-align: left; cursor: pointer; }
 .candidate[aria-pressed="true"] { border: 2px solid var(--mc-border-strong); background: var(--mc-signal-tint); padding: 13px 15px; }
 .candidate[aria-disabled="true"] { background: var(--mc-surface-ground); cursor: not-allowed; }
+/* Pair-only rows reuse the empty-meal dashed border to differ from rows that fit alone. */
+.candidate[data-pair-only="true"]:not([aria-pressed="true"]) { border-style: dashed; border-color: var(--mc-border-default); }
 .candidate:focus-visible { outline: 2px solid var(--mc-text-primary); outline-offset: 2px; }
 .radio { display: grid; place-items: center; width: 24px; height: 24px; margin-top: 2px; border: 2px solid var(--mc-border-strong); border-radius: 50%; box-sizing: border-box; }
 .radio[data-state="selected"] { background: var(--mc-signal-fill); }

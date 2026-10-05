@@ -136,6 +136,26 @@ function twoMealBody(request: RecommendationRequest) {
   };
 }
 
+// Both restaurants miss their windows alone (40 minutes early) but fit together
+// on the single leg: pair-only rows on both sides (Codex V3 reproduction shape).
+function pairOnlyBody(request: RecommendationRequest) {
+  const body = twoMealBody(request);
+  const [lunch, dinner] = body.meals;
+  const early = (iso: string) => new Date(Date.parse(iso) - 40 * 60_000).toISOString();
+  const pairOnly = (candidate: (typeof lunch.candidates)[number], arrivalAt: string) => ({
+    ...candidate,
+    single: { ...candidate.single, feasible: false, arrivalAt: early(arrivalAt), reason: "WINDOW" as const },
+  });
+  return {
+    ...body,
+    meals: [
+      { ...lunch, candidates: [pairOnly(lunch.candidates[0], lunch.targetAt)] },
+      { ...dinner, candidates: [pairOnly(dinner.candidates[0], dinner.targetAt)] },
+    ],
+    pairs: [body.pairs.find((pair) => pair.firstSavedPlaceId.endsWith("a"))!],
+  };
+}
+
 function text(node: ReactTestInstance | string): string {
   if (typeof node === "string") return node;
   return node.children.map((child) => typeof child === "string" ? child : text(child)).join("");
@@ -416,6 +436,34 @@ describe("PlannerDashboard restaurant recommendation", () => {
     expect(rows.map((row) => row.match(/식당 [ab]/)?.[0])).toEqual(["식당 b", "식당 a"]);
     expect(rows[0]).toContain("두 곳 합계 주행 +30분");
     expect(rows[1]).toContain("두 곳 합계 주행 +50분");
+    await act(async () => renderer.unmount());
+  });
+
+  it("lets pair-only restaurants be chosen, asks for the partner, and confirms only as a pair", async () => {
+    const renderer = await openRecommendation();
+    mocks.invoke.mockImplementationOnce(async (_name: string, options: { body: RecommendationRequest }) => ({ error: null, data: pairOnlyBody(options.body) }));
+    await act(async () => buttons(dialog(renderer), "2곳")[0].props.onClick());
+    await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
+    const row = (name: string) => dialog(renderer).find((node) => node.type === "button" && typeof node.props["aria-label"] === "string" && node.props["aria-label"].startsWith(`${name},`));
+    const confirm = () => dialog(renderer).find((node) => node.type === "button" && node.props.className === "primary-button");
+    const a = row("식당 a");
+    expect(text(a)).toContain("식사 2와 함께 갈 때만 가능해요");
+    expect(text(a)).not.toContain("선택 불가");
+    expect(a.props["aria-disabled"]).toBeUndefined();
+    expect(a.props["data-pair-only"]).toBe(true);
+    expect(a.props["aria-label"]).toContain("식사 2와 함께 갈 때만 가능해요");
+    await act(async () => a.props.onClick());
+    expect(confirm().props.disabled).toBe(true);
+    expect(text(dialog(renderer))).toContain("식사 2도 함께 골라 주세요");
+    // With A chosen, C shows the pair total and can be added.
+    expect(text(row("식당 c"))).toContain("두 곳 합계 주행 +50분");
+    await act(async () => row("식당 c").props.onClick());
+    expect(confirm().props.disabled).toBe(false);
+    expect(text(confirm())).toBe("선택한 식당 2곳 일정에 추가");
+    // Clearing the partner disables confirmation again.
+    await act(async () => row("식당 c").props.onClick());
+    expect(confirm().props.disabled).toBe(true);
+    expect(text(dialog(renderer))).toContain("식사 2도 함께 골라 주세요");
     await act(async () => renderer.unmount());
   });
 

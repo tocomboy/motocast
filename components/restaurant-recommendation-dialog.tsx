@@ -14,6 +14,7 @@ import {
   recommendationFailureMessage,
   recommendationInputError,
   resolveSelection,
+  selectionGuidance,
   SERVER_DETOUR_CAP_MINUTES,
   seoulClock,
   seoulDateTime,
@@ -362,7 +363,7 @@ function ResultView({ response, selection, input, onSelect, onChangeConditions, 
         {resolved ? <>
           <strong>{resolved.items.map((item) => `식사 ${item.mealIndex} · ${item.candidate.displayName}`).join(" / ")}</strong>
           <span>{extraDriveLabel(resolved.extraDriveSeconds, resolved.items.length === 2)} · 예상 복귀 {seoulClock(resolved.returnAt)}</span>
-        </> : <span>{chosenCount ? "선택한 식당은 함께 추가할 수 없어요. 선택을 바꿔 주세요." : "일정에 추가할 식당을 골라 주세요."}</span>}
+        </> : <span>{selectionGuidance(response, selection) ?? (chosenCount ? "선택한 식당은 함께 추가할 수 없어요. 선택을 바꿔 주세요." : "일정에 추가할 식당을 골라 주세요.")}</span>}
       </div>
       <button type="button" className="primary-button" disabled={!resolved} onClick={onConfirm}>{resolved ? `선택한 식당 ${resolved.items.length}곳 일정에 추가` : "선택한 식당 일정에 추가"}</button>
     </footer>
@@ -380,6 +381,7 @@ function CandidateRow({ row, onSelect }: { row: CandidateRowState; onSelect: () 
     `${spokenClock(row.arrivalAt)} 도착`,
     extraSpoken,
     "영업정보 없음",
+    row.pairOnly ? row.reason : null,
     row.selected ? "선택됨" : blocked ? `선택 불가, ${row.reason}` : null,
   ].filter(Boolean).join(", ");
   return <button
@@ -387,6 +389,7 @@ function CandidateRow({ row, onSelect }: { row: CandidateRowState; onSelect: () 
     className={styles.candidate}
     aria-pressed={row.selected}
     aria-disabled={blocked || undefined}
+    data-pair-only={row.pairOnly || undefined}
     aria-label={spoken}
     onClick={() => { if (!blocked) onSelect(); }}
   >
@@ -396,7 +399,7 @@ function CandidateRow({ row, onSelect }: { row: CandidateRowState; onSelect: () 
       <span>{candidate.address}</span>
       <span className={styles.candidateFacts}>{seoulClock(row.arrivalAt)} 도착 · {extra}</span>
       <small>영업정보 없음 · 방문 전 확인</small>
-      {row.reason && (blocked || row.selected) ? <em>선택 불가 · {row.reason}</em> : null}
+      {row.pairOnly ? <em>{row.reason}</em> : row.reason && (blocked || row.selected) ? <em>선택 불가 · {row.reason}</em> : null}
     </span>
   </button>;
 }
