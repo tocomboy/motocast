@@ -269,14 +269,15 @@ describe("PlannerDashboard restaurant recommendation", () => {
         arrivalAts: [new Date(new Date(planned.departureAt).getTime() + 30 * 60_000).toISOString()],
       },
       mealCount: 1,
-      meals: [{ desiredTime: "12:00", dwellMinutes: 45 }],
+      // 08:00–08:30 route: 12:00 is outside, so meal 1 defaults to a third of the way (08:10).
+      meals: [{ desiredTime: "08:10", dwellMinutes: 45 }],
       toleranceMinutes: 30,
     });
     const row = dialog(renderer).find((node) => node.type === "button" && node.props["aria-pressed"] === false);
     expect(row.props["aria-label"]).toContain("단골 국밥, 테스트 주소");
     expect(row.props["aria-label"]).toContain("영업정보 없음");
-    expect(text(row)).toContain("12:00 도착 · 주행 +9분");
-    expect(row.props["aria-label"]).toContain("12시 0분 도착, 추가 주행 9분, 영업정보 없음");
+    expect(text(row)).toContain("08:10 도착 · 주행 +9분");
+    expect(row.props["aria-label"]).toContain("8시 10분 도착, 추가 주행 9분, 영업정보 없음");
     await act(async () => row.props.onClick());
     const shown = text(dialog(renderer));
     expect(shown).toContain("주행 +9분 · 예상 복귀");
@@ -430,7 +431,7 @@ describe("PlannerDashboard restaurant recommendation", () => {
     expect(mocks.focused.at(-1)).toBe("h3:조건에 맞는 음식점이 없습니다");
     expect(text(dialog(renderer))).toContain("저장한 식당 1곳 중 경로 근처 1곳을 실제 도로 경로로 확인했어요.");
     expect(text(dialog(renderer))).toContain("원하는 식사 시간 앞뒤 30분 안에 도착하고 주행이 1시간 이내로 늘어나는 식당이 없어요.");
-    expect(text(dialog(renderer))).toContain("식사 1 12:00 · 앞뒤 30분 · 45분");
+    expect(text(dialog(renderer))).toContain("식사 1 08:10 · 앞뒤 30분 · 45분");
     expect(dialog(renderer).findAll((node) => typeof node.type === "string" && node.props.role === "alert")).toHaveLength(0);
     await act(async () => buttons(dialog(renderer), "조건 바꾸기")[0].props.onClick());
     expect(buttons(dialog(renderer), "추천 받기")).toHaveLength(1);
@@ -552,18 +553,36 @@ describe("PlannerDashboard restaurant recommendation", () => {
     await act(async () => renderer.unmount());
   });
 
+  it("starts from route-based defaults and explains a desired time that falls on the next day", async () => {
+    const renderer = await openRecommendation();
+    const value = (label: string) => dialog(renderer).findByProps({ "aria-label": label }).props.value;
+    expect([value("식사 1 원하는 식사 시간 시"), value("식사 1 원하는 식사 시간 분")]).toEqual(["08", "10"]);
+    expect(text(dialog(renderer))).not.toContain("다음 날");
+    // 07:10 is before departure − 30 min (07:30), so it means tomorrow.
+    await act(async () => dialog(renderer).findByProps({ "aria-label": "식사 1 원하는 식사 시간 시" }).props.onChange({ target: { value: "07" } }));
+    const hint = dialog(renderer).find((node) => node.type === "p" && text(node) === "다음 날 07:10으로 계산돼요.");
+    const group = dialog(renderer).find((node) => node.props.role === "group" && typeof node.props["aria-labelledby"] === "string" && node.props["aria-labelledby"].endsWith("-time-0"));
+    expect(group.props["aria-describedby"]).toBe(hint.props.id);
+    await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
+    expect(calls("recommend-restaurants")[0][1].body.meals[0].desiredTime).toBe("07:10");
+    expect(text(dialog(renderer))).toContain("식사 1 다음 날 07:10 · 앞뒤 30분 · 45분");
+    await act(async () => renderer.unmount());
+  });
+
   it("blocks the request before sending when meal 2 is not later than meal 1", async () => {
     const renderer = await openRecommendation();
     await act(async () => buttons(dialog(renderer), "2곳")[0].props.onClick());
-    const minute = dialog(renderer).findByProps({ "aria-label": "식사 2 원하는 식사 시간 시" });
-    await act(async () => minute.props.onChange({ target: { value: "11" } }));
+    // Defaults are 08:10 / 08:20; 08:00 for meal 2 is before meal 1.
+    expect(dialog(renderer).findByProps({ "aria-label": "식사 2 원하는 식사 시간 분" }).props.value).toBe("20");
+    const minute = dialog(renderer).findByProps({ "aria-label": "식사 2 원하는 식사 시간 분" });
+    await act(async () => minute.props.onChange({ target: { value: "00" } }));
     expect(text(dialog(renderer))).toContain("식사 2의 원하는 식사 시간은 식사 1보다 늦어야 해요.");
     expect(buttons(dialog(renderer), "추천 받기")[0].props.disabled).toBe(true);
     // Switching back to one meal keeps meal 2's value and clears the block.
     await act(async () => buttons(dialog(renderer), "1곳")[0].props.onClick());
     expect(buttons(dialog(renderer), "추천 받기")[0].props.disabled).toBe(false);
     await act(async () => buttons(dialog(renderer), "2곳")[0].props.onClick());
-    expect(dialog(renderer).findByProps({ "aria-label": "식사 2 원하는 식사 시간 시" }).props.value).toBe("11");
+    expect(dialog(renderer).findByProps({ "aria-label": "식사 2 원하는 식사 시간 분" }).props.value).toBe("00");
     expect(calls("recommend-restaurants")).toHaveLength(0);
     await act(async () => renderer.unmount());
   });

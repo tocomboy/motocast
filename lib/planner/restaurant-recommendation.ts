@@ -413,6 +413,46 @@ export function mealTargetAt(departureAt: string, toleranceMinutes: number, desi
   return new Date(local - SEOUL_OFFSET_MS);
 }
 
+const TEN_MINUTES_MS = 10 * 60_000;
+
+function seoulDay(instantMs: number) {
+  return Math.floor((instantMs + SEOUL_OFFSET_MS) / DAY_MS);
+}
+
+// Seoul wall clock of an instant rounded to the nearest 10 minutes (always a
+// valid choice for the 5-minute minute picker).
+function roundedSeoulClock(instantMs: number) {
+  return seoulClock(new Date(Math.round(instantMs / TEN_MINUTES_MS) * TEN_MINUTES_MS).toISOString());
+}
+
+// Route-based default meal times (§4.1 A, judged with the default ±30 window):
+// meal 1 is 12:00 when that target falls inside [departure, return], otherwise
+// one third of the way; meal 2 is 18:00 when inside and after meal 1, otherwise
+// two thirds of the way, and never earlier than meal 1 + 10 minutes.
+export function defaultMealTimes(departureAt: string, returnAt: string, toleranceMinutes = defaultRecommendationInput.toleranceMinutes): [string, string] {
+  const start = ms(departureAt);
+  const end = ms(returnAt);
+  const inside = (target: Date | null) => target !== null && target.getTime() >= start && target.getTime() <= end;
+  const lunch = mealTargetAt(departureAt, toleranceMinutes, "12:00");
+  const first = inside(lunch) ? "12:00" : roundedSeoulClock(start + (end - start) / 3);
+  const firstTarget = mealTargetAt(departureAt, toleranceMinutes, first)!.getTime();
+  const dinner = mealTargetAt(departureAt, toleranceMinutes, "18:00");
+  let second = inside(dinner) && dinner!.getTime() > firstTarget ? "18:00" : roundedSeoulClock(start + (2 * (end - start)) / 3);
+  if (mealTargetAt(departureAt, toleranceMinutes, second)!.getTime() <= firstTarget) second = seoulClock(new Date(firstTarget + TEN_MINUTES_MS).toISOString());
+  return [first, second];
+}
+
+export function recommendationDefaults(departureAt: string, returnAt: string): RecommendationInput {
+  const [first, second] = defaultMealTimes(departureAt, returnAt);
+  return { ...defaultRecommendationInput, meals: [{ desiredTime: first }, { desiredTime: second }] };
+}
+
+// The desired time lands on a later Seoul date than the departure (§4.1 B).
+export function isNextDayMeal(departureAt: string, toleranceMinutes: number, desiredTime: string) {
+  const target = mealTargetAt(departureAt, toleranceMinutes, desiredTime);
+  return target !== null && seoulDay(target.getTime()) > seoulDay(ms(departureAt));
+}
+
 export function recommendationInputError(input: RecommendationInput, departureAt: string, waypointCount: number): string | null {
   const meals = input.meals.slice(0, input.mealCount);
   if (meals.some((meal) => !DESIRED_TIME.test(meal.desiredTime))) return "원하는 식사 시간을 선택해 주세요.";
@@ -548,6 +588,14 @@ export function candidateRows(response: RecommendationResponse, selection: Recom
   const rows: CandidateRowState[] = sortCandidates(meal).map((candidate) => {
     const selected = selection[mealIndex] === candidate.savedPlaceId;
     if (other) {
+      if (candidate.savedPlaceId === other) {
+        return {
+          candidate, selected, selectable: false, combined: false,
+          arrivalAt: candidate.single.arrivalAt,
+          extraDriveSeconds: candidate.single.extraDriveSeconds,
+          reason: `식사 ${otherIndex}에서 고른 식당이에요`,
+        };
+      }
       const pair = mealIndex === 1 ? findPair(response, candidate.savedPlaceId, other) : findPair(response, other, candidate.savedPlaceId);
       if (pair) {
         return {

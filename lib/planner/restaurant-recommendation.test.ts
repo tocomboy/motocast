@@ -7,7 +7,9 @@ import {
   applyRecommendedMeals,
   buildRecommendationRequest,
   candidateRows,
+  defaultMealTimes,
   defaultRecommendationInput,
+  isNextDayMeal,
   durationLabel,
   extraDriveLabel,
   extraDriveSpoken,
@@ -467,6 +469,38 @@ describe("request building and pre-request checks", () => {
   });
 });
 
+describe("route-based default meal times and next-day hint", () => {
+  // Seoul times on 2030-01-01 (UTC+9) unless noted.
+  const kst = (clock: string, day = 1) => new Date(`2030-01-${String(day).padStart(2, "0")}T${clock}:00+09:00`).toISOString();
+
+  it.each([
+    ["a full day 09:00–19:00", kst("09:00"), kst("19:00"), ["12:00", "18:00"]],
+    ["12:50–13:34 (12:00 would be tomorrow)", kst("12:50"), kst("13:34"), ["13:00", "13:20"]],
+    ["11:00–11:42 (before lunch)", kst("11:00"), kst("11:42"), ["11:10", "11:30"]],
+    ["10:00–15:00 (lunch inside, dinner not)", kst("10:00"), kst("15:00"), ["12:00", "13:20"]],
+    ["a 6-minute route (meal 2 = meal 1 + 10 min)", kst("12:50"), kst("12:56"), ["12:50", "13:00"]],
+    ["22:00 → 02:00 across midnight", kst("22:00"), kst("02:00", 2), ["23:20", "00:40"]],
+  ])("%s", (_name, departureAt, returnAt, expected) => {
+    const times = defaultMealTimes(departureAt, returnAt);
+    expect(times).toEqual(expected);
+    // Every default is a valid 5-minute choice and meal 2 targets a later moment.
+    expect(times.every((time) => Number(time.slice(3)) % 5 === 0)).toBe(true);
+    expect(mealTargetAt(departureAt, 30, times[1])!.getTime()).toBeGreaterThan(mealTargetAt(departureAt, 30, times[0])!.getTime());
+    expect(recommendationInputError({ ...defaultRecommendationInput, mealCount: 2, meals: [{ desiredTime: times[0] }, { desiredTime: times[1] }] }, departureAt, 0)).toBeNull();
+  });
+
+  it("flags a desired time that lands on the next Seoul date", () => {
+    const departureAt = kst("12:50");
+    expect(isNextDayMeal(departureAt, 30, "12:00")).toBe(true);
+    expect(isNextDayMeal(departureAt, 30, "13:00")).toBe(false);
+    // A wider window moves the reference back to 11:20, so 12:00 is today.
+    expect(isNextDayMeal(departureAt, 90, "12:00")).toBe(false);
+    // Across midnight: 00:40 after a 22:00 departure is the next date.
+    expect(isNextDayMeal(kst("22:00"), 30, "00:40")).toBe(true);
+    expect(isNextDayMeal(kst("22:00"), 30, "23:20")).toBe(false);
+  });
+});
+
 describe("failure classification", () => {
   const httpError = (status: number, body: unknown) => ({ context: new Response(JSON.stringify(body), { status }) });
 
@@ -563,6 +597,30 @@ describe("candidate selection", () => {
     const order = (selection: Record<number, string>) => candidateRows(response, selection, 1).map((row) => [row.candidate.displayName, row.extraDriveSeconds, row.selectable]);
     expect(order({})).toEqual([["식당 d", 100, true], ["식당 a", 600, true], ["식당 b", 1200, true]]);
     expect(order({ 2: id("c") })).toEqual([["식당 b", 1800, true], ["식당 a", 3000, true], ["식당 d", 100, false]]);
+  });
+
+  it("names the other meal's choice as the reason when the same restaurant is listed for both meals", () => {
+    const response = parseRecommendationResponse(synthetic({
+      meals: [
+        [{ key: "a", leg: 0, feasible: true, extra: 300, arrival: "2030-01-01T03:00:00.000Z" }],
+        [
+          { key: "a", leg: 0, feasible: true, extra: 300, arrival: "2030-01-01T09:00:00.000Z" },
+          { key: "d", leg: 0, feasible: true, extra: 400, arrival: "2030-01-01T09:00:00.000Z" },
+        ],
+      ],
+      pairs: [["a", "d", 800]],
+    }));
+    const mealOne = candidateRows(response, { 2: id("a") }, 1);
+    expect(mealOne.map((row) => [row.candidate.displayName, row.selectable, row.reason])).toEqual([["식당 a", false, "식사 2에서 고른 식당이에요"]]);
+    const mealTwo = candidateRows(response, { 1: id("a") }, 2);
+    expect(mealTwo.map((row) => [row.candidate.displayName, row.selectable, row.reason])).toEqual([
+      ["식당 d", true, null],
+      ["식당 a", false, "식사 1에서 고른 식당이에요"],
+    ]);
+    // A different restaurant without a pair keeps the existing reason.
+    const other = parseRecommendationResponse(rich());
+    expect(candidateRows(other, { 1: id("b") }, 2).find((row) => row.candidate.displayName === "식당 e")?.reason)
+      .toBe("식사 1과 함께 가면 시간이 맞지 않거나 주행이 1시간 넘게 늘어나요");
   });
 
   it("partial result: the meal with candidates can be chosen alone", () => {

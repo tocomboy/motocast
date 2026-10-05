@@ -5,7 +5,8 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode,
 import { LineIcon } from "@/components/line-icon";
 import {
   candidateRows,
-  defaultRecommendationInput,
+  isNextDayMeal,
+  recommendationDefaults,
   durationLabel,
   extraDriveLabel,
   extraDriveSpoken,
@@ -64,9 +65,9 @@ function excludedNotice(detourLimitMinutes: number) {
 }
 
 // "식사 1 12:00 · 식사 2 18:00 · 앞뒤 30분 · 각 60분" and the server cap notice.
-function conditionLines(input: Pick<RecommendationInput, "mealCount" | "meals" | "toleranceMinutes">, detourLimitMinutes: number) {
+function conditionLines(input: Pick<RecommendationInput, "mealCount" | "meals" | "toleranceMinutes">, detourLimitMinutes: number, departureAt: string) {
   const meals = input.meals.slice(0, input.mealCount);
-  const times = meals.map((meal, index) => `식사 ${index + 1} ${meal.desiredTime}`).join(" · ");
+  const times = meals.map((meal, index) => `식사 ${index + 1} ${isNextDayMeal(departureAt, input.toleranceMinutes, meal.desiredTime) ? "다음 날 " : ""}${meal.desiredTime}`).join(" · ");
   const dwell = meals.length === 1 ? `${MEAL_DWELL_MINUTES}분` : `각 ${MEAL_DWELL_MINUTES}분`;
   return [`${times} · 앞뒤 ${input.toleranceMinutes}분 · ${dwell}`, excludedNotice(detourLimitMinutes)] as const;
 }
@@ -103,7 +104,9 @@ export function RestaurantRecommendationDialog(props: Props) {
   const requestSerial = useRef(0);
   const mounted = useRef(true);
   const titleId = useId();
-  const [input, setInput] = useState<RecommendationInput>(defaultRecommendationInput);
+  // Defaults follow the route this dialog opened for (it remounts per opening);
+  // edits within the opening are kept as before.
+  const [input, setInput] = useState<RecommendationInput>(() => recommendationDefaults(props.departureAt, props.returnAt));
   const [phase, setPhase] = useState<Phase>({ name: "input" });
   const view: Phase = stale ? { name: "stale" } : phase;
 
@@ -199,13 +202,13 @@ export function RestaurantRecommendationDialog(props: Props) {
       <button type="button" aria-label="음식점 추천 닫기" onClick={onClose}><LineIcon name="close" /></button>
     </header>
     {view.name === "input" ? <InputView routeLabel={props.routeLabel} departureAt={props.departureAt} returnAt={props.returnAt} idPrefix={titleId} onSubmit={(values) => void submit(values)} input={input} error={inputError} setInput={setInput} updateMeal={updateMeal} />
-      : view.name === "loading" ? <StatusView key="loading" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<span className={styles.spinner} aria-hidden="true" />} title="추천을 계산하고 있어요" text="저장한 식당 중 경로 근처 식당을 실제 도로 경로로 확인하고 있어요." note="닫으면 이번 추천 결과는 받지 않아요." conditions={conditionLines(input, SERVER_DETOUR_CAP_MINUTES)} actions={<button type="button" className={styles.textAction} onClick={onClose}>닫기</button>} />
-        : view.name === "error" ? <StatusView key="error" stateTitleRef={stateTitleRef} tone="danger" role="alert" icon={<span className={styles.alertMark} aria-hidden="true">!</span>} title="추천을 계산하지 못했습니다" text={recommendationFailureMessage(view.failure)} note={`음식점이 없다는 뜻이 아닙니다.${view.failure.code === "RECOMMENDATION_BUDGET_OR_CONFIG" ? " 이미 시도한 계산도 오늘 사용 한도에 포함돼요." : ""}`} conditions={conditionLines(input, SERVER_DETOUR_CAP_MINUTES)} actions={isDailyBudgetFailure(view.failure)
+      : view.name === "loading" ? <StatusView key="loading" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<span className={styles.spinner} aria-hidden="true" />} title="추천을 계산하고 있어요" text="저장한 식당 중 경로 근처 식당을 실제 도로 경로로 확인하고 있어요." note="닫으면 이번 추천 결과는 받지 않아요." conditions={conditionLines(input, SERVER_DETOUR_CAP_MINUTES, props.departureAt)} actions={<button type="button" className={styles.textAction} onClick={onClose}>닫기</button>} />
+        : view.name === "error" ? <StatusView key="error" stateTitleRef={stateTitleRef} tone="danger" role="alert" icon={<span className={styles.alertMark} aria-hidden="true">!</span>} title="추천을 계산하지 못했습니다" text={recommendationFailureMessage(view.failure)} note={`음식점이 없다는 뜻이 아닙니다.${view.failure.code === "RECOMMENDATION_BUDGET_OR_CONFIG" ? " 이미 시도한 계산도 오늘 사용 한도에 포함돼요." : ""}`} conditions={conditionLines(input, SERVER_DETOUR_CAP_MINUTES, props.departureAt)} actions={isDailyBudgetFailure(view.failure)
           ? <><button type="button" className={styles.textAction} onClick={() => void submit(input)}>다시 시도</button><button type="button" className="primary-button" onClick={onClose}>닫기</button></>
           : <><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={() => void submit(input)}>다시 시도</button></>} />
           : view.name === "stale" ? <StatusView key="stale" stateTitleRef={stateTitleRef} tone="tint" role="status" icon={<LineIcon name="clock" />} title="경로가 바뀌어 이전 추천을 사용할 수 없습니다" text="선택한 식당은 일정에 추가하지 않았어요." note="경로 편집에서 경로 다시 계산을 누른 뒤 추천을 다시 받아 주세요." actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onEditRoute}>경로 편집으로</button></>} />
             : view.response.status === "NO_SAVED_RESTAURANTS" ? <StatusView key="no-saved" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="star" />} title="저장한 식당이 없습니다" text="즐겨찾기에 식당을 저장하면 이 경로에 맞춰 추천해 드려요." note="추천은 저장한 식당 중에서만 해요. 외부 검색으로 새 음식점을 추가하지 않아요." actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onOpenFavorites}>즐겨찾기에서 식당 등록</button></>} />
-              : view.response.meals.every((meal) => meal.candidates.length === 0) ? <StatusView key="none" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="search" />} title="조건에 맞는 음식점이 없습니다" text={`원하는 식사 시간 앞뒤 ${view.response.settings.toleranceMinutes}분 안에 도착하고 주행이 ${durationLabel(view.response.settings.detourLimitMinutes)} 이내로 늘어나는 식당이 없어요. 시간 범위를 자동으로 넓히지 않아요.`} note={coverageText(view.response)} conditions={conditionLines({ ...input, mealCount: view.response.settings.mealCount, toleranceMinutes: view.response.settings.toleranceMinutes }, view.response.settings.detourLimitMinutes)} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={backToInput}>조건 바꾸기</button></>} />
+              : view.response.meals.every((meal) => meal.candidates.length === 0) ? <StatusView key="none" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="search" />} title="조건에 맞는 음식점이 없습니다" text={`원하는 식사 시간 앞뒤 ${view.response.settings.toleranceMinutes}분 안에 도착하고 주행이 ${durationLabel(view.response.settings.detourLimitMinutes)} 이내로 늘어나는 식당이 없어요. 시간 범위를 자동으로 넓히지 않아요.`} note={coverageText(view.response)} conditions={conditionLines({ ...input, mealCount: view.response.settings.mealCount, toleranceMinutes: view.response.settings.toleranceMinutes }, view.response.settings.detourLimitMinutes, view.response.basis.departureAt)} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={backToInput}>조건 바꾸기</button></>} />
                 : <ResultView response={view.response} selection={view.selection} input={input} onSelect={select} onChangeConditions={backToInput} onConfirm={confirmSelection} />}
   </dialog>;
 }
@@ -241,16 +244,19 @@ function InputView(viewProps: {
         {values.meals.slice(0, values.mealCount).map((meal, index) => {
           const [hour, minute] = meal.desiredTime.split(":");
           const label = `식사 ${index + 1}`;
+          const nextDay = isNextDayMeal(viewProps.departureAt, values.toleranceMinutes, meal.desiredTime);
+          const hintId = `${viewProps.idPrefix}-next-day-${index}`;
           return <fieldset key={index} className={styles.mealCard}>
             <legend>{label}</legend>
             <div className={styles.fieldRow}>
               <span id={`${viewProps.idPrefix}-time-${index}`}>원하는 식사 시간</span>
-              <span className={styles.timeSelect} role="group" aria-labelledby={`${viewProps.idPrefix}-time-${index}`}>
+              <span className={styles.timeSelect} role="group" aria-labelledby={`${viewProps.idPrefix}-time-${index}`} aria-describedby={nextDay ? hintId : undefined}>
                 <select aria-label={`${label} 원하는 식사 시간 시`} value={hour} onChange={(event) => viewProps.updateMeal(index as 0 | 1, { desiredTime: `${event.target.value}:${minute}` })}>{hours.map((value) => <option key={value} value={value}>{value}</option>)}</select>
                 <span aria-hidden="true">:</span>
                 <select aria-label={`${label} 원하는 식사 시간 분`} value={minute} onChange={(event) => viewProps.updateMeal(index as 0 | 1, { desiredTime: `${hour}:${event.target.value}` })}>{(minutes.includes(minute) ? minutes : [...minutes, minute].sort()).map((value) => <option key={value} value={value}>{value}</option>)}</select>
               </span>
             </div>
+            {nextDay ? <p id={hintId} className={styles.nextDayNote}>다음 날 {meal.desiredTime}으로 계산돼요.</p> : null}
             <p className={styles.mealNote}>{MEAL_DWELL_NOTE}</p>
           </fieldset>;
         })}
@@ -318,7 +324,7 @@ function ResultView({ response, selection, input, onSelect, onChangeConditions, 
 }) {
   const twoMeals = response.settings.mealCount === 2;
   const resolved = resolveSelection(response, selection);
-  const conditions = conditionLines({ ...input, mealCount: response.settings.mealCount, toleranceMinutes: response.settings.toleranceMinutes }, response.settings.detourLimitMinutes);
+  const conditions = conditionLines({ ...input, mealCount: response.settings.mealCount, toleranceMinutes: response.settings.toleranceMinutes }, response.settings.detourLimitMinutes, response.basis.departureAt);
   const noPairs = twoMeals && response.meals.every((meal) => meal.candidates.length > 0) && response.pairs.length === 0;
   const selectedName = (mealIndex: MealIndex) => response.meals[mealIndex - 1]?.candidates.find((candidate) => candidate.savedPlaceId === selection[mealIndex])?.displayName;
   const chosenCount = Object.values(selection).filter(Boolean).length;

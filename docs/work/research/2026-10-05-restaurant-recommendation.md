@@ -164,6 +164,10 @@
 - 저장 식당 없음: `저장한 식당이 없습니다` + 즐겨찾기 식당 등록 진입.
 - 오류: `추천을 계산하지 못했습니다` + 원인 + `다시 시도`. 결과 없음과 다른 제목·아이콘·역할(`alert`)을 사용한다.
 - 확정: `선택한 식당 일정에 추가`(선택 수 표시). 성공하면 편집 화면으로 이동해 `식당 n곳을 식사로 추가했어요. 경로 업데이트 필요: 경로 다시 계산을 눌러 주세요.`
+- 기본 원하는 시각·다음 날 안내·같은 식당 사유(웹, Preview 연결 E2E 결함 수정 2026-10-05, Figma 노드 재사용):
+  - 기본값은 경로 기준 D=첫 구간 출발, R=복귀로 대화상자를 열 때마다 계산한다(같은 열기 안의 수정값은 유지). 허용 범위 30 기준 `mealTargetAt`으로 판정해 식사 1은 12:00이 [D, R] 안이면 12:00, 아니면 D+(R−D)/3의 서울 시각을 10분 단위 반올림. 식사 2는 18:00이 [D, R] 안이고 식사 1 목표보다 늦으면 18:00, 아니면 D+2(R−D)/3을 10분 반올림하고 그래도 식사 1 목표 이하이면 식사 1+10분.
+  - 원하는 시각의 목표가 D의 서울 날짜보다 뒤면 시간 선택 아래 `다음 날 HH:MM으로 계산돼요.`(시간 그룹의 접근성 설명으로 연결), 조건 요약은 `식사 1 다음 날 12:00`.
+  - 다른 식사에서 고른 식당과 같은 행은 `선택 불가 · 식사 N에서 고른 식당이에요`. 그 외 조합 불가 문구는 그대로.
 
 ### 4.2 오래된 결과 차단
 
@@ -261,6 +265,7 @@ Figma 파일 `wVNriNWb1OlF21DVq8rqlJ`, v2 디자인 체계 페이지 `284:2253`.
 | Figma 디자인 | 완료(디자인만, 앱 적용 전) | 섹션 `345:6663`, §7 |
 | 서버 `recommend-restaurants` | 인수 (`e1e6c24` 계약 3.0.1·식사 45분 강제, Codex V2 PASS: `68134b9` FAIL M1/L1 → `e1e6c24`·`0af544c` RESOLVED, `5772210` journey 호환 테스트 포함). 이전: (`634b0ec` 계약 2.0.0, Codex V2 PASS — LOW 1 문서 잔존 표기 수정) — 이전 `849fbae` V2 PASS, 최초 `00e3aaf` V2 FAIL 후 수정 | 작성자 검사: 대상 3개 파일 113 PASS, `supabase/functions` 38 파일 677 PASS / FAIL 0 / SKIP 0, deno check 9개 함수 PASS, lint·typecheck·diff-check PASS. 메인 재실행: `supabase/functions` 677 PASS. 메인 검수 LOW 1: 식당 좌표가 도로 스냅 허용(0.005°) 밖이면 후보 제외가 아니라 요청 전체 `RECOMMENDATION_RESPONSE_INVALID`(기존 경로 계산과 같은 보수적 실패, 미수정). 실제 RLS·예산 RPC·Kakao 호출·응답 시간은 NOT_RUN. |
 | 웹 화면 | 인수 (`454a96d`, Codex V2 PASS — `b8f0c50` LOW 2 RESOLVED, `454a96d` 다른 구간 조합 계산 관계 검증, 새 지적 0; Codex 실행 vitest 50 파일 457 PASS·typecheck·lint·diff-check PASS, 0.12.0 버전 동기화 확인). 이전: `631cff5`, Codex V2 PASS — 2차·3차·문구·MEAL_DWELL_FIXED 표시: `a3f5b40`·`3740648`·`cc1d69a`·`87cfde5`·`631cff5`. V2 경과: `cc1d69a` 기준 FAIL(M1 응답 상한 60 미검증, L1 경계 테스트 복귀 시각 오류) → `631cff5` RESOLVED. 남은 LOW 2(저장 실패 role, C1 제어문자) 후속 수정 중. 작성자 최종: lint·typecheck PASS, `npm test` 99 파일 1253 PASS, build PASS, e2e 63 PASS / 2 SKIP. LOCAL_UI(합성) 3차 화면 4폭 확인. 이전: `921c9a0` V2 PASS. |
+| 웹 화면 결함 수정(기본 시각·다음 날·같은 식당) | 구현됨, V2 대기 | Preview 연결 E2E에서 발견(12:50–13:34 경로의 기본 12:00이 다음 날로 해석, 같은 식당 사유 오표시). 커밋 SHA·검증 결과는 작업자 보고 참조. |
 | Android 화면 | 인수 (`d3f6eda`, Codex V2 PASS) — 브랜치 `feature/restaurant-recommendation-20261005`(기반 `a79c68f`): `23b7a17`→`7dcd5ff`→`7fda30d`→`b14a97d`→`2891bf0`→`f4f7755`→`1d90ddc`→`86a57d0`→`d3f6eda`. V2 경과: `1d90ddc` FAIL(M 확정 직후 재계산 실패 안내 가림, M 다른 구간 조합 관계 미검증, L 오류 본문 형식) → `86a57d0` 부분 해결(로컬 INPUT 거절 가림 잔존, L 비현실 테스트 값) → `d3f6eda` 전부 RESOLVED, 남은 LOW 1(근거 문서 옛 식사 입력 설명, 출시 준비 커밋에서 수정). 작성자 최종: verify.ps1 두 flavor 426 PASS / 0 FAIL / 0 SKIP, 기기 LOCAL_UI s23·small 각 2회 16단계 PASS(합성 API). 간헐 기기 실패는 접근성 창 준비 전 판정이 유력 원인(미확정)으로 검사 대기 로직 수정. 03:35–10:53 정지는 40분 timeout(도구 상한 초과)으로 묶은 기기 명령의 앞 단계 정지(원인 단계 미특정) → 단계별 ≤10분 실행으로 재발 방지. |
 | Codex 검증(V2/V3) | 웹·서버 V3 PASS (`f8ceafb`) | V2: 서버 `e1e6c24`·웹 `454a96d`·`ed9d418`·Android `d3f6eda` PASS(경과는 각 행). V3(웹·서버): `400cdea` FAIL(H 배포·롤백 묶음, M 조합 정렬, M 업데이트 e2e 문구, L 2) → `1be77f7` FAIL(M Production 순서 모순, L 2) → `f8ceafb` PASS, 새 지적 0. 메인 기준선: `400cdea` npm ci·lint·typecheck·Deno 9·vitest 1259·build PASS, e2e 1 FAIL(updates.spec 0.11.0 문구) → `8615d08` e2e 63 PASS / 2 SKIP; 웹 작성자 `ed9d418` vitest 1261·build·e2e 63/2 PASS. 이후 문서만 변경. Android V3·CI V2 재검증 남음. 원인과 재발 방지: dev-environment `8175a7c`, MOTOCAST `bbce8f6`. |
 | 연결 Preview·실기기 | 승인됨, 미실행 | 2026-10-05 사용자 승인: 검수한 고정 SHA의 `review-*` CI 전용 PR → Preview `recommend-restaurants` 배포·readback → `develop` fast-forward(Vercel Preview) → 웹·Android(previewDebug) 연결 E2E, 응답 시간·API 사용량 측정, 시험 자원 정확한 ID 정리. (Production·Play는 아래 출시 승인 행). |
