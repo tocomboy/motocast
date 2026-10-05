@@ -31,7 +31,7 @@ test.describe("public update notes", () => {
     const dialog = page.getByRole("dialog", { name: "새로운 소식을 확인해 보세요" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`현재 v${currentVersion}`)).toBeVisible();
-    await expect(dialog.getByText("도착 시각과 구간별 날씨를 더 크고 또렷하게 보여줘요.")).toBeVisible();
+    await expect(dialog.getByText("경로를 계산한 뒤 '음식점 추천 받기'로 들를 식당 1곳 또는 2곳을 추천받아요.")).toBeVisible();
     const layout = await dialog.evaluate((element) => ({
       dialogHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
       documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
