@@ -235,3 +235,55 @@ describe("parseRouteRequest", () => {
     await expect(parse(await request(rests))).rejects.toThrow("INVALID_WAYPOINTS");
   });
 });
+
+describe("fixed 45-minute meal dwell at the plan-route write boundary", () => {
+  const stop = (stopRole: "meal" | "lunch" | "dinner", dwellMinutes: number) => point({
+    id: `${stopRole}-occurrence`, kakaoPlaceId: stopRole, kind: "stop", dwellMinutes, stopRole,
+  });
+
+  it.each(["meal", "lunch", "dinner"] as const)("passes a 45-minute %s to provider work", async (stopRole) => {
+    const provider = vi.fn(async () => "planned");
+    const input = { ...await request(), waypoints: [await stop(stopRole, 45)] };
+    await expect(withValidatedRouteRequest(input, secret, provider, fixedNow)).resolves.toBe("planned");
+    expect(provider.mock.calls[0][0].waypoints.map((waypoint: RoutePointRequest) => waypoint.dwellMinutes)).toEqual([45]);
+  });
+
+  it.each([["meal", 44], ["meal", 46], ["meal", 60], ["lunch", 60], ["dinner", 60]] as const)(
+    "refuses a %s dwell of %i minutes from an otherwise valid outdated client before provider work", async (stopRole, dwellMinutes) => {
+      const provider = vi.fn();
+      await expect(withValidatedRouteRequest({ ...await request(), waypoints: [await stop(stopRole, dwellMinutes)] }, secret, provider, fixedNow))
+        .rejects.toThrow("MEAL_DWELL_FIXED");
+      expect(provider).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports format, policy-key, time and integrity errors before the meal dwell policy", async () => {
+    const provider = vi.fn();
+    const meal = await stop("meal", 60);
+    const badRest = await point({ id: "rest-occurrence", kakaoPlaceId: "rest", kind: "optional", dwellMinutes: 0, stopRole: "rest" });
+    const base = { ...await request(), waypoints: [meal] };
+    const cases: Array<[unknown, string]> = [
+      [{ ...base, waypoints: [meal, badRest] }, "INVALID_WAYPOINTS"],
+      [{ ...base, car_type: 7 }, "CLIENT_ROUTE_POLICY_FORBIDDEN"],
+      [{ ...base, serviceDate: "2026-08-29", departureAt: "2026-08-29T07:30:00+09:00" }, "PAST_DEPARTURE"],
+      [{ ...base, planningId: "not-a-uuid" }, "INVALID_PLANNING_ID"],
+      [{ ...base, waypoints: [{ ...meal, verificationToken: "b".repeat(43) }] }, "UNVERIFIED_PLACE"],
+    ];
+    for (const [input, code] of cases) {
+      await expect(withValidatedRouteRequest(input, secret, provider, fixedNow)).rejects.toThrow(code);
+    }
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it.each([30, 60])("keeps rest dwell editable (%i minutes)", async (dwellMinutes) => {
+    const provider = vi.fn(async () => "planned");
+    const rest = await point({ id: "rest-occurrence", kakaoPlaceId: "rest", kind: "optional", dwellMinutes, stopRole: "rest" });
+    const input = { ...await request(), waypoints: [await stop("meal", 45), rest] };
+    await expect(withValidatedRouteRequest(input, secret, provider, fixedNow)).resolves.toBe("planned");
+  });
+
+  it("still parses a stored or shared course with an older meal dwell (journey source)", async () => {
+    const input = { ...await request(), waypoints: [await stop("meal", 60)] };
+    await expect(parse(input)).resolves.toMatchObject({ waypoints: [{ stopRole: "meal", dwellMinutes: 60 }] });
+  });
+});

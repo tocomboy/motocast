@@ -29,7 +29,7 @@ const points = {
     latitude: 37.697,
     longitude: 127.888,
     kind: "stop",
-    dwellMinutes: 60,
+    dwellMinutes: 45,
     selected: true,
   },
   rest: {

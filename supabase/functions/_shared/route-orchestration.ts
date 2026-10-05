@@ -24,6 +24,11 @@ type RouteOrchestrationDependencies = {
   requestProvider: (input: RouteChunkRequest) => Promise<NormalizedKakaoRoute>;
 };
 
+// Departures more than five minutes ahead use the forecast-traffic endpoint and budget.
+export function isFutureDeparture(departure: Date, now: number) {
+  return departure.getTime() > now + 5 * 60_000;
+}
+
 function nextChunk(points: RoutablePoint[], startIndex: number) {
   const furthest = Math.min(startIndex + 6, points.length - 1);
   let endIndex = furthest;
@@ -65,7 +70,7 @@ export async function orchestrateRecommendedRoute(
 
   while (cursor < points.length - 1) {
     const { endIndex, via } = nextChunk(points, cursor);
-    const isFuture = departure.getTime() > dependencies.now() + 5 * 60_000;
+    const isFuture = isFutureDeparture(departure, dependencies.now());
     const operation: RouteOperation = isFuture ? "future_directions" : "directions";
     const hardLimit = dependencies.limitFor(operation);
     const chunkRequest = {

@@ -13,6 +13,8 @@ import { SavedPlacesProvider, useSavedPlaces } from "@/components/saved-places-p
 import { SavedPlacesManager } from "@/components/saved-places-manager";
 import { MapPointConfirmation, type MapPlacePickerHandle } from "@/components/map-point-confirmation";
 import { RouteFailureDialog } from "@/components/route-failure-dialog";
+import { RestaurantRecommendationDialog, type RecommendationOutcome } from "@/components/restaurant-recommendation-dialog";
+import recommendationStyles from "@/components/restaurant-recommendation-dialog.module.css";
 import { PlaceSearchField } from "@/components/place-search-field";
 import { PlannerHome } from "@/components/planner-home";
 import { PlannerScheduleDialog } from "@/components/planner-schedule-dialog";
@@ -34,11 +36,27 @@ import { formatRideDuration, formatSummaryDeparture } from "@/lib/planner/displa
 import { buildPlannerMapPoints } from "@/lib/planner/map-points";
 import {
   collectionPointFromEditableWaypoint,
+  dwellError,
   editableWaypointFromCollectionPoint,
+  mealDwellNormalized,
   roleAssignmentError,
   type EditableWaypoint, type WaypointRole,
 } from "@/lib/planner/ordered-waypoints";
 import { parseSafeRecommendedRoute, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
+import {
+  applyRecommendedMeals,
+  buildRecommendationRequest,
+  isRouteStaleFailure,
+  parseRecommendationResponse,
+  readRecommendationFailure,
+  recommendationBasis,
+  responseMatchesRequest,
+  sameBasis,
+  type RecommendationInput,
+  type RecommendationResponse,
+  type RecommendationSelection,
+} from "@/lib/planner/restaurant-recommendation";
+import { readMealDwellFixedMessage } from "@/lib/planner/meal-dwell-failure";
 import { readRouteFailureCode, routeFailureNotice, routeFailurePopup, type RouteFailureCode } from "@/lib/planner/route-failure";
 import { buildTimeline, formatRideTime, weatherRiskLabel } from "@/lib/planner/schedule";
 import type { PlannedSegment, RouteCandidate } from "@/lib/planner/types";
@@ -243,6 +261,8 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   const [summarySaveBusy, setSummarySaveBusy] = useState(false);
   const [placeSelectionRevision, setPlaceSelectionRevision] = useState(0);
   const [favoriteTarget, setFavoriteTarget] = useState<"origin" | "destination" | string | null>("origin");
+  const [recommendationOpen, setRecommendationOpen] = useState(false);
+  const [recommendationStale, setRecommendationStale] = useState(false);
   const plannerPanelRef = useRef<HTMLElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
   const rideDateRef = useRef<HTMLButtonElement>(null);
@@ -258,6 +278,8 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   const initialCourseAppliedRef = useRef(false);
   const mountedRef = useRef(true);
   const summaryActionsDialogRef = useRef<HTMLDialogElement>(null);
+  const recommendationSerialRef = useRef(0);
+  const recommendationResultRef = useRef<{ generation: number; tripId: string; response: RecommendationResponse } | null>(null);
   function setNotice(
     message: string,
     severity: PlannerNotice["severity"] = "info",
@@ -297,6 +319,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       const next = session?.user.id ?? null;
       if (userId !== undefined && userId !== next) {
         routeGenerationRef.current += 1;
+        discardRecommendation();
         setLiveResultStale(true);
         setMapFailure(null);
         setPlaceSelectionRevision((current) => current + 1);
@@ -318,6 +341,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       const hash = window.location.hash;
       const next: PlannerView = hash === "#favorites" ? "favorites" : hash === "#collections" ? "collections" : hash === "#editor" ? "editor" : hash === "#summary" ? "summary" : "home";
       navigationGenerationRef.current += 1;
+      setRecommendationOpen(false);
       setView(next);
       resetViewScroll();
       window.setTimeout(() => { if (mountedRef.current && typeof document !== "undefined") document.querySelector<HTMLElement>(`[data-view-title="${next}"]`)?.focus({ preventScroll: true }); }, 0);
@@ -411,9 +435,18 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     setShareManagerEpoch((current) => current + 1);
   }
 
+  // Any route, schedule, account or calculation change makes an open or pending
+  // recommendation unusable (§4.2). The dialog shows the route-changed state.
+  function discardRecommendation() {
+    recommendationSerialRef.current += 1;
+    recommendationResultRef.current = null;
+    setRecommendationStale(true);
+  }
+
   function markRouteInputChanged(preserveShareIntent = false) {
     setMapFailure(null);
     routeGenerationRef.current += 1;
+    discardRecommendation();
     setShareIntentGeneration((current) => preserveShareIntent && current !== null ? routeGenerationRef.current : null);
     invalidateShareSession();
     weatherRequestRef.current += 1;
@@ -424,6 +457,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   function navigate(next: PlannerView, replace = false) {
     setMapFailure(null);
     if (next !== "summary") {
+      setRecommendationOpen(false);
       setSummaryActionsOpen(false);
       if (summaryActionsDialogRef.current?.open) summaryActionsDialogRef.current.close();
     }
@@ -449,6 +483,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       return;
     }
     routeGenerationRef.current += 1;
+    discardRecommendation();
     weatherRequestRef.current += 1;
     invalidateShareSession();
     liveTripIdRef.current = null;
@@ -527,7 +562,8 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     if (!connected || actionGateRef.current.planning || calculating || summarySaveBusy) return "현재 처리가 끝난 뒤 추가해 주세요.";
     const error = roleAssignmentError(waypoints, role);
     if (error) return error;
-    if (!Number.isInteger(dwellMinutes) || (role === "waypoint" ? dwellMinutes !== 0 : dwellMinutes < 1 || dwellMinutes > 1440)) return "머무는 시간은 1분 이상 1440분 이하로 정해 주세요.";
+    const invalidDwell = dwellError(role, dwellMinutes);
+    if (invalidDwell) return invalidDwell;
     updateWaypoints([...waypoints, { id: crypto.randomUUID(), role, dwellMinutes, place }]);
     setNotice("경유지를 추가했어요. 경로 업데이트 필요: 방문 순서와 일정을 확인하고 경로 다시 계산을 눌러 주세요.", "warning");
     navigate("editor");
@@ -548,7 +584,9 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       return;
     }
     const application = prepareCollectionApplication(course);
+    const mealNote = mealDwellNormalized(application.orderedPoints) ? " 식사 시간은 45분으로 맞췄어요." : "";
     const collectionGeneration = ++routeGenerationRef.current;
+    discardRecommendation();
     weatherRequestRef.current += 1;
     setWeatherLoading(null);
     invalidateShareSession();
@@ -564,9 +602,9 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     setShareIntentGeneration(sharing ? collectionGeneration : null);
     if (liveRoute) setLiveResultStale(true);
     setWaypointStatus(`${title} 컬렉션의 최신 불변 버전을 계획에 적용했습니다.`);
-    setNotice(sharing
+    setNotice(`${sharing
       ? "컬렉션 전체 코스를 적용했습니다. 새 날짜와 출발 시각을 선택해 계산하면 공유 요약 미리보기가 열립니다."
-      : "컬렉션 전체 코스를 적용했습니다. 새 날짜와 출발 시각을 선택한 뒤 안전 경로를 계산해 주세요.", "warning");
+      : "컬렉션 전체 코스를 적용했습니다. 새 날짜와 출발 시각을 선택한 뒤 안전 경로를 계산해 주세요."}${mealNote}`, "warning");
     navigate("editor");
     window.setTimeout(() => rideDateRef.current?.click(), 0);
   }
@@ -740,6 +778,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     weatherRequestRef.current += 1;
     setWeatherLoading(null);
     const calculationGeneration = ++routeGenerationRef.current;
+    discardRecommendation();
     if (sharingForCalculation) setShareIntentGeneration(calculationGeneration);
     const targetTripId = liveTripIdRef.current;
     const planningId = crypto.randomUUID();
@@ -767,6 +806,12 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       if (result.error) {
         if (sharingForCalculation) setShareIntentGeneration(null);
         if (liveRoute) setLiveResultStale(true);
+        const mealMessage = await readMealDwellFixedMessage(result.error);
+        if (!mountedRef.current || calculationGeneration !== routeGenerationRef.current) return;
+        if (mealMessage) {
+          setNotice(mealMessage, "error");
+          return;
+        }
         const code = await readRouteFailureCode(result.error);
         if (!mountedRef.current || calculationGeneration !== routeGenerationRef.current) return;
         setNotice(routeFailureNotice(code, Boolean(liveRoute)), "error");
@@ -833,10 +878,105 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     }
   }
 
+  const recommendationAvailable = Boolean(connected && liveRoute && !liveResultStale && liveTripId && !calculating && !summarySaveBusy);
+
+  function openRecommendation() {
+    if (!recommendationAvailable || calculatedGenerationRef.current !== routeGenerationRef.current || actionGateRef.current.planning) return;
+    recommendationSerialRef.current += 1;
+    recommendationResultRef.current = null;
+    setRecommendationStale(false);
+    setRecommendationOpen(true);
+  }
+
+  function closeRecommendation() {
+    recommendationSerialRef.current += 1;
+    recommendationResultRef.current = null;
+    setRecommendationOpen(false);
+  }
+
+  // The request is bound to the displayed route generation and trip; a reply
+  // that arrives after a route/account change, a close or an unmount is dropped.
+  async function requestRecommendations(input: RecommendationInput): Promise<RecommendationOutcome> {
+    const supabase = getBrowserSupabase();
+    const generation = routeGenerationRef.current;
+    const tripId = liveTripIdRef.current;
+    const body = liveRoute && tripId ? buildRecommendationRequest(tripId, liveRoute, input) : null;
+    if (!supabase || !body || !tripId || liveResultStale || calculatedGenerationRef.current !== generation) return { kind: "stale" };
+    const serial = ++recommendationSerialRef.current;
+    recommendationResultRef.current = null;
+    const current = () => mountedRef.current && serial === recommendationSerialRef.current;
+    const sameRoute = () => generation === routeGenerationRef.current && liveTripIdRef.current === tripId;
+    try {
+      const operation: PromiseLike<{ data: unknown; error: unknown }> = supabase.functions.invoke("recommend-restaurants", { body });
+      const { data, error } = await withClientTimeout(operation, 25_000);
+      if (!sameRoute()) return { kind: "stale" };
+      if (!current()) return { kind: "discarded" };
+      if (error) {
+        const failure = await readRecommendationFailure(error);
+        if (!sameRoute()) return { kind: "stale" };
+        if (!current()) return { kind: "discarded" };
+        return isRouteStaleFailure(failure) ? { kind: "stale" } : { kind: "error", failure };
+      }
+      const response = parseRecommendationResponse(data);
+      if (!responseMatchesRequest(response, body)) return { kind: "error", failure: { code: "RECOMMENDATION_RESPONSE_INVALID", status: null } };
+      recommendationResultRef.current = { generation, tripId, response };
+      return { kind: "ok", response };
+    } catch (error) {
+      if (!sameRoute()) return { kind: "stale" };
+      if (!current()) return { kind: "discarded" };
+      const failure = await readRecommendationFailure(error);
+      return { kind: "error", failure: failure.code === "RECOMMENDATION_FAILED" && failure.status === null ? { code: "RECOMMENDATION_RESPONSE_INVALID", status: null } : failure };
+    }
+  }
+
+  // Confirmation never calls the server: it re-checks the live plan and saved
+  // places, inserts the chosen meals and asks for an explicit recalculation.
+  function confirmRecommendation(response: RecommendationResponse, selection: RecommendationSelection): boolean {
+    const bound = recommendationResultRef.current;
+    const generation = routeGenerationRef.current;
+    const basis = liveRoute ? recommendationBasis(liveRoute) : null;
+    if (
+      !bound || bound.response !== response || bound.generation !== generation ||
+      calculatedGenerationRef.current !== generation || liveTripIdRef.current !== bound.tripId ||
+      !recommendationAvailable || actionGateRef.current.planning || !basis || !places.origin || !places.destination ||
+      !sameBasis(basis, response.basis)
+    ) return false;
+    const result = applyRecommendedMeals({
+      originId: places.origin.kakaoPlaceId,
+      destinationId: places.destination.kakaoPlaceId,
+      waypoints,
+      savedPlaces: favoriteControls.places,
+      savedPlacesReady: favoriteControls.status === "ready",
+      response,
+      selection,
+      createId: () => crypto.randomUUID(),
+    });
+    if (!result.ok) return false;
+    updateWaypoints(result.waypoints);
+    closeRecommendation();
+    navigate("editor");
+    setNotice(`식당 ${result.added}곳을 식사로 추가했어요. 경로 업데이트 필요: 경로 다시 계산을 눌러 주세요.`, "warning");
+    return true;
+  }
+
+  const recommendationRouteLabel = [selected.segments[0]?.from.label, ...selected.segments.map((segment) => segment.to.label)].filter(Boolean).join(" → ");
+
   return (
     <main className={`app-shell app-view-${view}`} data-view={view}>
       {connected ? <MapPointConfirmation key={`${view}:${placeSelectionRevision}`} onSelect={addMapWaypoint} pickerRef={mapPickerRef} /> : null}
       {mapFailure ? <RouteFailureDialog code={mapFailure} onClose={() => setMapFailure(null)} onEdit={() => { setMapFailure(null); navigate("editor"); }} /> : null}
+      {recommendationOpen && view === "summary" && liveRoute ? <RestaurantRecommendationDialog
+        stale={recommendationStale}
+        routeLabel={recommendationRouteLabel}
+        departureAt={displayedDepartureAt}
+        returnAt={liveRoute.returnAt}
+        waypointCount={waypoints.length}
+        request={requestRecommendations}
+        confirm={confirmRecommendation}
+        onClose={closeRecommendation}
+        onEditRoute={() => { closeRecommendation(); navigate("editor"); }}
+        onOpenFavorites={() => { closeRecommendation(); navigate("favorites"); }}
+      /> : null}
       <header className="app-header">
         <button className="brand" type="button" aria-label="MOTOCAST 홈" onClick={() => navigationMode === "memory" && onExit ? onExit() : navigate("home")}>
           <span>MOTOCAST</span>
@@ -979,10 +1119,11 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
                     <CollectionManager mode="save-panel" currentCourse={currentCourse} onApply={applyCollection} onShare={prepareCollectionShare} disabled={calculating} onBusyChange={setSummarySaveBusy} onCancel={() => setSummaryActionMode("choice")} onSaved={(title) => { setHomeStatus(`${title}을(를) 내 경로에 저장했습니다.`); summaryActionsDialogRef.current?.close(); navigate("home"); }} />
                   </div>
                 </dialog>
+                <button className={`secondary-button ${recommendationStyles.entryButton}`} type="button" disabled={!recommendationAvailable} onClick={openRecommendation}>음식점 추천 받기</button>
               </> : null}
             </>}
             map={<><h2 className="summary-course-title">{routeTitle}</h2><div className="route-map-meta"><div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>{liveRoute ? <span className="live-data-badge">{liveResultStale ? "경로 업데이트 필요" : "실제 경로"}</span> : <span className="example-data-badge">예시 데이터</span>}</div><div className="map-area"><KakaoMapCanvas points={selectedMapPoints} path={selectedMapPath} showLegend={false} onSelectCoordinate={connected && !calculating && !summarySaveBusy ? selectMapCoordinate : undefined} /></div></>}
-            mapDetails={<div className="route-map-details"><p className="summary-route-order">{[selected.segments[0]?.from.label, ...selected.segments.map((segment) => segment.to.label)].filter(Boolean).join(" → ")}</p><p className="route-safety-copy">이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</p><MapMarkerLegend points={selectedMapPoints} inline /><section className="summary-visits"><h3>구간별 도착 시간</h3><ol><li><span className="visit-symbol" aria-hidden="true">출</span><strong>{selected.segments[0]?.from.label}</strong><span>{formatRideTime(displayedDepartureAt, displayedDepartureAt)} 출발</span></li>{timeline.segments.map((segment, index) => <li key={segment.id}><span className="visit-symbol" aria-hidden="true">{index === timeline.segments.length - 1 ? "도" : index + 1}</span><strong>{segment.to.label}</strong><span>{formatRideTime(displayedDepartureAt, segment.arrivalAt)} 도착{segment.to.selected && segment.to.dwellMinutes ? ` · ${segment.to.dwellMinutes}분 정차` : " · 통과"}</span></li>)}</ol></section></div>}
+            mapDetails={<div className="route-map-details"><p className="summary-route-order">{[selected.segments[0]?.from.label, ...selected.segments.map((segment) => segment.to.label)].filter(Boolean).join(" → ")}</p><p className="route-safety-copy">이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</p><MapMarkerLegend points={selectedMapPoints} inline /><section className="summary-visits"><h3>구간별 도착 시간</h3><ol><li><span className="visit-symbol" aria-hidden="true">출</span><strong>{selected.segments[0]?.from.label}</strong><span>{formatRideTime(displayedDepartureAt, displayedDepartureAt)} 출발</span></li>{timeline.segments.map((segment, index) => <li key={segment.id}><span className="visit-symbol" aria-hidden="true">{index === timeline.segments.length - 1 ? "도" : index + 1}</span><strong>{segment.to.label}</strong><span>{formatRideTime(displayedDepartureAt, segment.arrivalAt)} 도착{segment.to.selected && segment.to.dwellMinutes ? ` · ${segment.to.dwellMinutes}분 정차` : " · 통과"}</span></li>)}</ol></section>{connected ? <section className={recommendationStyles.mobileEntry} aria-labelledby="mobile-recommendation-title"><h3 id="mobile-recommendation-title">식사할 곳</h3><p>즐겨찾기에 저장한 식당 중 이 경로에 들르기 좋은 곳을 추천해요. 고른 식당만 일정에 추가돼요.</p><button className="secondary-button" type="button" disabled={!recommendationAvailable} onClick={openRecommendation}>음식점 추천 받기</button></section> : null}</div>}
             weather={<><div className="forecast-heading"><div><h2>구간별 날씨</h2></div><span className="forecast-issued">{weatherLoading === selected.id ? "기상청 예보 조회 중" : selectedWeatherStatus?.header ?? "날씨 미조회"}</span></div><p className="sr-only" role="status" aria-live="polite">{selectedWeatherAnnouncement}</p><div className="timeline-list">{timeline.segments.map((segment) => { const effectiveDwell = segment.to.selected ? segment.to.dwellMinutes : 0; return <RidingWeatherCard key={segment.id} time={formatRideTime(displayedDepartureAt, segment.arrivalAt)} place={segment.to.label} stopDetail={effectiveDwell ? `${effectiveDwell}분 정차` : "통과"} condition={segment.weather.condition} conditionLabel={weatherIcon(segment.weather.condition)} wind={`바람 ${segment.weather.windSpeedMps ?? "–"}m/s`} temperature={`${segment.weather.temperatureC ?? "–"}°`} probability={`${segment.weather.precipitationProbability ?? "–"}%`} statusNote={segment.weather.status === "outside-window" ? weatherModelLabel(segment.weather.status, segment.weather.model) : undefined} />; })}</div><details className="weather-detail"><summary>날씨 상세정보</summary><ul>{timeline.segments.map((segment) => <li key={segment.id}><strong>{segment.to.label}</strong><span>바람 {segment.weather.windSpeedMps ?? "–"}m/s · {weatherModelLabel(segment.weather.status, segment.weather.model)}</span></li>)}</ul></details></>}
             notices={<>{selectedWeatherStatus ? <div className="stale-notice"><LineIcon name="info" />{selectedWeatherStatus.notice}</div> : null}<div ref={noticeRef} className={`action-notice ${notice.severity}`} role={notice.severity === "error" ? "alert" : "status"} aria-live={notice.severity === "error" ? "assertive" : "polite"} tabIndex={-1}><LineIcon className="notice-symbol" name="info" /><p><strong>{notice.severity === "error" ? "계획을 완료하지 못했습니다" : notice.severity === "warning" ? "확인이 필요합니다" : "진행 상태"}</strong><span>{notice.message}</span></p></div></>}
           />

@@ -1,6 +1,7 @@
 import { requireMember, serviceClient } from "../_shared/auth.ts";
 import { parseCollectionSaveRequest } from "../_shared/collection-request.ts";
 import { corsHeaders, jsonResponse, safeErrorMessage, safeErrorStatus } from "../_shared/http.ts";
+import { isMealDwellError, MEAL_DWELL_FIXED } from "../_shared/meal-dwell.ts";
 
 Deno.serve(async (request) => {
   const cors = corsHeaders(request);
@@ -37,6 +38,8 @@ Deno.serve(async (request) => {
     }, 200, cors);
   } catch (error) {
     console.error("save-collection failed", error instanceof Error ? error.message : "unknown error");
-    return jsonResponse({ error: safeErrorMessage(error) }, safeErrorStatus(error), cors);
+    // Only the fixed-meal-dwell refusal carries a code; older clients still show `error`.
+    const code = isMealDwellError(error) ? { code: MEAL_DWELL_FIXED } : {};
+    return jsonResponse({ error: safeErrorMessage(error), ...code }, safeErrorStatus(error), cors);
   }
 });

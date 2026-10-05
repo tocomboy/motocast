@@ -1,3 +1,5 @@
+import { MEAL_DWELL_FIXED, MEAL_DWELL_FIXED_MESSAGE } from "./meal-dwell.ts";
+
 export const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 
 export function corsHeaders(request: Request): HeadersInit | null {
@@ -39,6 +41,7 @@ export function safeErrorMessage(error: unknown) {
   if (!(error instanceof Error)) return "요청을 처리하지 못했습니다.";
   const pointMessage = routePointMessage(error);
   if (pointMessage) return pointMessage;
+  if (error.message === MEAL_DWELL_FIXED) return MEAL_DWELL_FIXED_MESSAGE;
   if (error.message === "WEATHER_STORAGE_CAPACITY") return "현재 날씨 정보를 갱신할 수 없습니다. 잠시 후 다시 시도해 주세요.";
   if (error.message.includes("API_DAILY_BUDGET_EXHAUSTED")) return "오늘의 무료 API 사용 한도를 모두 사용했습니다.";
   if (error.message.includes("API_BUDGET_NOT_CONFIGURED")) return "무료 API 사용 한도가 설정되지 않았습니다.";
@@ -65,6 +68,7 @@ export function safeErrorMessage(error: unknown) {
 export function safeErrorCode(error: unknown) {
   if (!(error instanceof Error)) return "ROUTE_REQUEST_FAILED";
   if (routePointMessage(error)) return error.message;
+  if (error.message === MEAL_DWELL_FIXED) return MEAL_DWELL_FIXED;
   if (error.message === "SAFE_ROUTE_NOT_FOUND") return "SAFE_ROUTE_NOT_FOUND";
   if (error.message === "ROUTE_EXCEEDS_24_HOURS") return "ROUTE_LIMIT_EXCEEDED";
   if (error.message === "ROUTE_PERSIST_FAILED" || error.message === "INVALID_TRIP_TARGET") return "ROUTE_SAVE_FAILED";
@@ -92,6 +96,7 @@ export function safeErrorCode(error: unknown) {
 export function safeErrorStatus(error: unknown) {
   if (!(error instanceof Error)) return 500;
   if (routePointMessage(error)) return 422;
+  if (error.message === MEAL_DWELL_FIXED) return 400;
   if (error.message === "WEATHER_STORAGE_CAPACITY") return 503;
   if (error.message.includes("AUTH_REQUIRED")) return 401;
   if (error.message.includes("MEMBERSHIP_REQUIRED")) return 403;

@@ -8,6 +8,13 @@ it("reports weather storage admission failure without internal capacity details"
   expect(safeErrorMessage(error)).toBe("현재 날씨 정보를 갱신할 수 없습니다. 잠시 후 다시 시도해 주세요.");
 });
 
+it("maps the fixed meal dwell refusal to a 400 with update guidance", () => {
+  const error = new Error("MEAL_DWELL_FIXED");
+  expect(safeErrorStatus(error)).toBe(400);
+  expect(safeErrorCode(error)).toBe("MEAL_DWELL_FIXED");
+  expect(safeErrorMessage(error)).toBe("식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.");
+});
+
 describe("safe provider errors", () => {
   it.each([
     ["ROUTE_WAYPOINT_ROAD_NOT_FOUND", "경유지"],

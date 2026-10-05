@@ -1,3 +1,4 @@
+import { assertFixedMealDwell } from "./meal-dwell.ts";
 import { verifyPlace, type VerifiablePlace } from "./place-verification.ts";
 import { isMandatoryPassThrough, isWindingOnlyWaypoint } from "./route-request.ts";
 
@@ -112,6 +113,9 @@ export async function parseCollectionSaveRequest(value: unknown, verificationSec
     verifyPlace(point, point.verificationToken, verificationSecret)
   )));
   if (verified.some((result) => !result)) throw new Error("UNVERIFIED_PLACE");
+  // Policy after every format and integrity check: only an otherwise valid request
+  // from an outdated client is told to update.
+  assertFixedMealDwell(points);
   return {
     saveOperationId: raw.saveOperationId,
     collectionId: typeof raw.collectionId === "string" ? raw.collectionId : null,

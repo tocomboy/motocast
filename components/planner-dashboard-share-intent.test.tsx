@@ -195,6 +195,19 @@ describe("PlannerDashboard collection share intent", () => {
     await act(async () => renderer.unmount());
   });
 
+  it("shows the server guidance when route calculation refuses an outdated meal dwell", async () => {
+    mocks.invoke.mockImplementation(async () => ({ data: null, error: { context: new Response(JSON.stringify({ error: "식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.", code: "MEAL_DWELL_FIXED" }), { status: 400 }) } }));
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={course} navigationMode="memory" />, { createNodeMock }); });
+    await chooseSchedule(renderer);
+    await act(async () => renderer.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }));
+    const alert = renderer.root.findByType("form").findByProps({ role: "alert" });
+    expect(renderedText(alert)).toContain("식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.");
+    expect(renderer.root.findAllByType(RouteFailureDialog)).toHaveLength(0);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    await act(async () => renderer.unmount());
+  });
+
   it("binds owner handoff to the calculated inputs and invalidates it on account change", async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={course} navigationMode="memory" />, { createNodeMock }); });
@@ -313,6 +326,31 @@ describe("PlannerDashboard collection share intent", () => {
     await act(async () => { await submission; });
     expect(mocks.rpc.mock.calls.filter(([name]) => name === "finalize_trip_plan")).toHaveLength(0);
     expect(mocks.invoke.mock.calls.filter(([name]) => name === "weather-timeline")).toHaveLength(0);
+  });
+
+  it.each([
+    ["a legacy 60-minute lunch", { stopRole: "lunch" as const, dwellMinutes: 60 }, true],
+    ["a meal already at 45 minutes", { stopRole: "meal" as const, dwellMinutes: 45 }, false],
+  ])("applying a course with %s normalizes the draft and mentions it only when it changed", async (_name, meal, changed) => {
+    const mealPoint = { ...place("meal-place", 127.1), id: "occ-meal", label: "식사 장소", kind: "stop" as const, selected: true, winding: false, ...meal };
+    const restPoint = { ...place("rest-place", 127.15), id: "occ-rest", label: "휴식 장소", kind: "optional" as const, selected: true, winding: false, stopRole: "rest" as const, dwellMinutes: 50 };
+    const mealCourse: CollectionCourse = { ...course, points: [mealPoint, restPoint] };
+    const snapshot = structuredClone(mealCourse);
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={mealCourse} navigationMode="memory" />, { createNodeMock }); });
+    const waypoints = renderer.root.findByType(OrderedWaypointEditor).props.waypoints;
+    expect(waypoints.map((point: { id: string; role: string; dwellMinutes: number }) => [point.id, point.role, point.dwellMinutes])).toEqual([
+      ["occ-meal", "meal", 45],
+      ["occ-rest", "rest", 50],
+    ]);
+    const notice = renderedText(renderer.root.findByProps({ className: "action-notice warning" }));
+    expect(notice).toContain("컬렉션 전체 코스를 적용했습니다.");
+    if (changed) expect(notice).toContain("식사 시간은 45분으로 맞췄어요.");
+    else expect(notice).not.toContain("식사 시간은 45분으로 맞췄어요.");
+    // The course object handed in (stored collection / received share) is not rewritten.
+    expect(mealCourse).toEqual(snapshot);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    await act(async () => renderer.unmount());
   });
 
   it("keeps a connected input error visible and focused inside the editor form", async () => {

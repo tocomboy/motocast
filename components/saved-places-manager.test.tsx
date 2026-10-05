@@ -121,6 +121,26 @@ it("explicit waypoint confirmation forwards role and dwell with the immutable or
   expect(saved.place.name).toBe("원래 장소");
   await act(async () => r.unmount());
 });
+it("meals forward the fixed 45 minutes without a dwell input and rest rejects an invalid dwell", async () => {
+  const r = await mount();
+  await act(async () =>
+    r.root.findByProps({ "aria-label": "내 별명 상세 보기" }).props.onClick(),
+  );
+  await act(async () => button(r, "경유지에 추가").props.onClick());
+  await act(async () => button(r, "휴식").props.onClick());
+  await act(async () =>
+    r.root.findByProps({ type: "number" }).props.onChange({ target: { value: "0" } }),
+  );
+  await act(async () => button(r, "경유지 추가하기").props.onClick());
+  expect(text(r.root)).toContain("휴식 시간은 1~1440분 사이의 정수로 입력해 주세요.");
+  expect(props.onAddWaypoint).not.toHaveBeenCalled();
+  await act(async () => button(r, "식사").props.onClick());
+  expect(r.root.findAllByProps({ type: "number" })).toHaveLength(0);
+  expect(text(r.root)).toContain("식사는 45분으로 계산해요.");
+  await act(async () => button(r, "경유지 추가하기").props.onClick());
+  expect(props.onAddWaypoint).toHaveBeenCalledExactlyOnceWith(saved.place, "meal", 45);
+  await act(async () => r.unmount());
+});
 it("opens the saved place detail only after a confirmed save and fresh list", async () => {
   mocks.controls.places = [];
   mocks.controls.favorites = [];

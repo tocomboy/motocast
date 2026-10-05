@@ -1,6 +1,6 @@
 # MOTOCAST verification and review rules
 
-This document extends the active Codex home's global `AGENTS.md` verification baseline. It is the single source of truth for MOTOCAST writer verification, lead-owned review, finding closure, and deployment gates. The personal routing source owns model allocation; this project does not duplicate a model matrix.
+This document extends the active Codex home's global `AGENTS.md` verification baseline. It is the single source of truth for MOTOCAST implementer verification, orchestrator review, Codex verification checkpoints, finding closure, and deployment gates. The personal routing source owns model allocation; this project does not duplicate a model matrix.
 
 ## 1. Evidence and result taxonomy
 
@@ -58,7 +58,7 @@ After each logical implementation unit:
 npm ci
 npm run lint
 npm run typecheck
-npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts supabase/functions/save-collection/index.ts supabase/functions/kakao-oidc/index.ts supabase/functions/play-admission/index.ts supabase/functions/journey-route/index.ts supabase/functions/journey-weather/index.ts
+npx --yes deno check supabase/functions/search-places/index.ts supabase/functions/plan-route/index.ts supabase/functions/weather-timeline/index.ts supabase/functions/save-collection/index.ts supabase/functions/kakao-oidc/index.ts supabase/functions/play-admission/index.ts supabase/functions/journey-route/index.ts supabase/functions/journey-weather/index.ts supabase/functions/recommend-restaurants/index.ts
 npm test
 npx playwright install chromium
 npm run test:e2e
@@ -112,28 +112,26 @@ Additional required suites by boundary:
 
 ## 4. Commit and fixed-SHA review boundary
 
-The lead reviews the fixed candidate commit SHA, not a moving branch name. Before final review:
+The orchestrator and the Codex verifier review the fixed candidate commit SHA, not a moving branch name. Before accepting an implementer commit:
 
-1. Writer verification is recorded.
-2. The lead reads the exact committed changed set.
+1. Implementer verification is recorded.
+2. The orchestrator reads the exact committed changed set.
 3. The commit contains no user-owned `.gitignore` or unrelated changes unless explicitly included and reviewed.
-4. The lead checks Decision IDs, invariants, file scope, acceptance criteria, and reusable verification evidence directly.
+4. The orchestrator checks Decision IDs, invariants, file scope, acceptance criteria, and reusable verification evidence directly.
+5. For a high-risk slice (section 5), the Codex V2 report for that exact SHA is recorded.
 
-## 5. Lead-owned design and review
+## 5. Orchestrator design, Codex verification and review
 
-The lead directly performs root-cause analysis, design, alternative comparison,
-dependency and scope decisions, code review, integration and final verification
-judgment. Uncertain multi-module designs stay with the lead until concrete.
-High-risk authentication, authorization, RLS, tokens, migrations, transactions,
-concurrency, budgets, route safety, secrets and operations require deeper lead
-review and real validation, without additional design or reviewer agents.
+Roles follow the personal routing policy (decision 0010, confirmed 2026-10-04; verification scope narrowed by decision 0011, 2026-10-05): the Claude Code main session is the orchestrator and owns root-cause analysis, design, alternative comparison, dependency and scope decisions, delegation contracts, acceptance, integration, publication and final verification judgment. Claude subagents implement code and tests, and design screens only when a slice changes UI. Codex is the verifier. Models and effort are owned by that policy and are not duplicated here. The earlier lead-only review and single-writer wording (2026-09-11 to 2026-10-03) is historical and must not be restored.
 
-- Delegate only fixed-design code changes and related tests to the sole writer permitted by personal routing.
-- Default to `fork_turns="none"` with owned files, fixed design, acceptance criteria and exact verification commands.
-- The writer may inspect local code and repair test failures within the accepted design; product/architecture/scope/prerequisite/acceptance changes return to the lead.
-- Do not delegate design or independent review under any role name, use other models/roles, or fall back to lead code implementation.
-- Writer tests are execution evidence. The lead reuses valid evidence and directly handles review-only, short lookup, explanation and planning requests.
-- Do not describe lead review or writer self-checks as independent approval. Existing required checks and operational authorization remain in force.
+- Delegate with a fixed contract: owned files, design and interfaces, protected invariants, acceptance criteria, failure paths and exact verification commands. Product, architecture, scope, prerequisite or acceptance changes return to the orchestrator.
+- Codex checkpoints, proportional to risk:
+  - **V1 design** before implementation for high-risk slices: those touching authentication, authorization, RLS or ownership, migrations or transactions, security boundaries (secrets, tokens), concurrency, budgets or cost, route safety, or recovery.
+  - **V2 code** for every implementer commit SHA in a high-risk slice: the diff against the contract and invariants, test adequacy, focused checks, document synchronization and, for UI changes, real browser or device flows. Other slices (UI-only, documentation, CI) skip V2; the orchestrator accepts them and V3 covers them.
+  - **V3 final candidate** before a `develop` integration or `develop -> main` merge and before the hosted Preview or Production mutation that depends on it.
+- Review-only checkpoints use the read-only Codex plugin `task`. Real DB, browser and device runs follow the routing policy's execution mode and resource ownership. The verifier writes no product code or tests.
+- **Acceptance gate:** an implementer SHA in a high-risk slice is accepted only after its V2 report is recorded with every `BLOCKER`/`HIGH` resolved and every `MEDIUM` fixed or given a recorded follow-up decision under section 6. Until then the work record states `V2 pending`, and no dependent Preview, merge, release or deployment step proceeds.
+- The orchestrator still performs the required review axes below on the exact changed set. Orchestrator review and implementer self-checks are not verifier approval, and verifier results do not replace required tests, CI, Preview, Production or post-merge checks.
 
 Required review axes:
 
@@ -162,8 +160,8 @@ Rules:
 - Any `BLOCKER` or `HIGH` stops merge and Production deployment.
 - A `MEDIUM` is fixed now or receives an explicit recorded follow-up decision.
 - A `LOW` may remain but is disclosed.
-- The writer fixes findings and reruns affected verification; valid baseline evidence is reused unless invalidated or required by a mandatory gate.
-- The lead evaluates the new fixed SHA and labels each finding `RESOLVED`, `STILL_OPEN`, or `REGRESSED`.
+- The implementer fixes findings and reruns affected verification; valid baseline evidence is reused unless invalidated or required by a mandatory gate.
+- The Codex verifier re-checks the new fixed SHA (V2 for high-risk slices, otherwise in the V3 re-check of the final candidate) and the orchestrator labels each finding `RESOLVED`, `STILL_OPEN`, or `REGRESSED`.
 - If the same root cause survives two correction rounds, reconsider the design, narrow the scope, or interview the user instead of expanding tests indefinitely.
 
 ## 7. Preview gate
@@ -186,8 +184,9 @@ A same-repository `develop -> main` PR may merge only when:
 
 - No in-scope `NEEDS_INTERVIEW` remains.
 - Changed set and fixed SHA are recorded.
-- Writer verification is GREEN with exact taxonomy.
-- The lead's required correctness, security, data integrity and other applicable review axes are complete.
+- Implementer verification is GREEN with exact taxonomy.
+- The orchestrator's required correctness, security, data integrity and other applicable review axes are complete.
+- Codex V2 reports exist for every included high-risk implementer SHA and the Codex V3 report for the fixed candidate is recorded.
 - `BLOCKER=0` and `HIGH=0`.
 - GitHub `verify` and `develop-only` are GREEN.
 - The actual Vercel Preview context is stable and GREEN.
@@ -218,7 +217,7 @@ The final release report includes:
 - Product completion status and remaining blockers.
 - Decision IDs and interview outcomes, including deprecated decisions.
 - Fixed SHA, PR, CI runs, Vercel deployment ID/URL, and Supabase migration/function readback.
-- Writer execution evidence and lead review results by axis.
+- Implementer execution evidence, orchestrator review results by axis, and Codex V1/V2/V3 reports with finding closure.
 - Exact counts for pass/fail/error/skip/deselected/xfail/setup-or-import-failure/not-run.
 - Remaining findings and operational next actions.
 

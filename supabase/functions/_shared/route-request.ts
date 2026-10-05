@@ -1,3 +1,4 @@
+import { assertFixedMealDwell } from "./meal-dwell.ts";
 import { verifyPlace, type VerifiablePlace } from "./place-verification.ts";
 import { isStrictCalendarDate, parseStrictRfc3339, seoulCalendarDate } from "./strict-time.ts";
 
@@ -79,6 +80,9 @@ export async function parseRouteRequest(
   value: unknown,
   verificationSecret: string,
   now: () => Date = () => new Date(),
+  // Client-authored writes (plan-route) require the fixed meal dwell. Courses read back
+  // from stored trips or immutable shares (journey source) are validated as stored.
+  options: { fixedMealDwell?: boolean } = {},
 ): Promise<RouteRequest> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_REQUEST");
   const body = value as Partial<RouteRequest>;
@@ -130,6 +134,9 @@ export async function parseRouteRequest(
     verifyPlace(point, point.verificationToken, verificationSecret)
   )));
   if (verified.some((result) => !result)) throw new Error("UNVERIFIED_PLACE");
+  // Policy after every format and integrity check: only an otherwise valid request
+  // from an outdated client is told to update.
+  if (options.fixedMealDwell) assertFixedMealDwell(selectedWaypoints);
 
   return {
     planningId: body.planningId,
@@ -148,6 +155,6 @@ export async function withValidatedRouteRequest<T>(
   providerWork: (input: RouteRequest) => Promise<T>,
   now: () => Date = () => new Date(),
 ): Promise<T> {
-  const input = await parseRouteRequest(value, verificationSecret, now);
+  const input = await parseRouteRequest(value, verificationSecret, now, { fixedMealDwell: true });
   return providerWork(input);
 }

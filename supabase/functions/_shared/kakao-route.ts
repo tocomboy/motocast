@@ -39,6 +39,13 @@ const kakaoPointErrorCodes = {
   RESULT_CODE_107: "ROUTE_WAYPOINT_BLOCKED",
 } as const;
 
+const routePointErrorCodes = new Set<string>(Object.values(kakaoPointErrorCodes));
+
+// True for the fixed public codes that blame one requested point (result codes 101–107).
+export function isRoutePointErrorCode(code: string) {
+  return routePointErrorCodes.has(code);
+}
+
 const routeValidationReasons = [
   "JSON_BODY", "OBJECT_SHAPE", "INTEGER_VALUE", "SUMMARY_POINT", "ROAD_VERTEX_SHAPE",
   "ROAD_VERTEX_RANGE", "SECTION_ROADS", "SECTION_DISTANCE_TOTAL", "SECTION_DURATION_TOTAL",

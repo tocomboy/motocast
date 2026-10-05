@@ -39,17 +39,17 @@ async function requestBody(points?: Awaited<ReturnType<typeof requestPoint>>[]) 
       id: "lunch-occurrence",
       kakaoPlaceId: "lunch",
       kind: "stop",
-      dwellMinutes: 60,
+      dwellMinutes: 45,
       stopRole: "lunch",
     })],
   };
 }
 
 describe("parseCollectionSaveRequest", () => {
-  it("round-trips thirty ordered meals at one physical place and preserves edited dwell", async () => {
+  it("round-trips thirty ordered 45-minute meals at one physical place", async () => {
     const meals = await Promise.all(Array.from({ length: 31 }, (_, index) => requestPoint({
       id: `meal-${index}`, kakaoPlaceId: "same-restaurant", kind: "stop",
-      dwellMinutes: index + 1, stopRole: "meal",
+      dwellMinutes: 45, stopRole: "meal",
     })));
     const parsed = await parseCollectionSaveRequest(await requestBody(meals.slice(0, 30)), secret);
     expect(parsed.points.map(({ id, dwellMinutes, stopRole }) => ({ id, dwellMinutes, stopRole })))
@@ -61,7 +61,7 @@ describe("parseCollectionSaveRequest", () => {
     { dwellMinutes: 0 }, { dwellMinutes: -1 }, { dwellMinutes: 1.5 },
     { kind: "optional" }, { kind: "pass-through" }, { winding: true }, { selected: false },
   ])("rejects invalid immutable meal semantics %#", async (overrides) => {
-    const meal = await requestPoint({ kind: "stop", dwellMinutes: 60, stopRole: "meal", ...overrides });
+    const meal = await requestPoint({ kind: "stop", dwellMinutes: 45, stopRole: "meal", ...overrides });
     await expect(parseCollectionSaveRequest(await requestBody([meal]), secret)).rejects.toThrow("INVALID_COLLECTION");
   });
 
@@ -88,7 +88,7 @@ describe("parseCollectionSaveRequest", () => {
       ...await requestPoint(),
       selected: true,
       kind: "stop",
-      dwellMinutes: 60,
+      dwellMinutes: 45,
       stopRole: "lunch",
       winding: true,
     };
@@ -96,7 +96,7 @@ describe("parseCollectionSaveRequest", () => {
   });
 
   it("accepts five ordered rests with distinct occurrence ids and rejects a sixth", async () => {
-    const lunch = await requestPoint({ id: "lunch", kakaoPlaceId: "lunch", kind: "stop", dwellMinutes: 60, stopRole: "lunch" });
+    const lunch = await requestPoint({ id: "lunch", kakaoPlaceId: "lunch", kind: "stop", dwellMinutes: 45, stopRole: "lunch" });
     const rests = await Promise.all(Array.from({ length: 6 }, (_, index) => requestPoint({
       id: `rest-occurrence-${index}`,
       kakaoPlaceId: "same-rest-place",
@@ -125,7 +125,7 @@ describe("parseCollectionSaveRequest", () => {
   });
 
   it("rejects duplicate occurrence ids even when the Kakao places differ", async () => {
-    const lunch = await requestPoint({ id: "same-occurrence", kakaoPlaceId: "lunch", kind: "stop", dwellMinutes: 60, stopRole: "lunch" });
+    const lunch = await requestPoint({ id: "same-occurrence", kakaoPlaceId: "lunch", kind: "stop", dwellMinutes: 45, stopRole: "lunch" });
     const rest = await requestPoint({ id: "same-occurrence", kakaoPlaceId: "rest", kind: "optional", dwellMinutes: 30, stopRole: "rest" });
     await expect(parseCollectionSaveRequest(await requestBody([lunch, rest]), secret))
       .rejects.toThrow("INVALID_COLLECTION");
@@ -136,7 +136,7 @@ describe("parseCollectionSaveRequest", () => {
       id: `lunch-occurrence-${index}`,
       kakaoPlaceId,
       kind: "stop",
-      dwellMinutes: 60,
+      dwellMinutes: 45,
       stopRole: "lunch",
     })));
     await expect(parseCollectionSaveRequest(await requestBody(lunches), secret))
@@ -151,5 +151,37 @@ describe("parseCollectionSaveRequest", () => {
     const point = await requestPoint({ id: "invalid-semantics", ...overrides });
     await expect(parseCollectionSaveRequest(await requestBody([point]), secret))
       .rejects.toThrow("INVALID_COLLECTION");
+  });
+
+  it.each(["meal", "lunch", "dinner"] as const)("accepts a %s with the fixed 45-minute dwell", async (stopRole) => {
+    const point = await requestPoint({ id: `${stopRole}-occurrence`, kakaoPlaceId: stopRole, kind: "stop", dwellMinutes: 45, stopRole });
+    await expect(parseCollectionSaveRequest(await requestBody([point]), secret))
+      .resolves.toMatchObject({ points: [{ stopRole, dwellMinutes: 45 }] });
+  });
+
+  it.each([
+    ["meal", 44], ["meal", 46], ["meal", 60], ["lunch", 60], ["dinner", 60], ["dinner", 1],
+  ] as const)("rejects a %s dwell of %i minutes from an otherwise valid outdated client", async (stopRole, dwellMinutes) => {
+    const point = await requestPoint({ id: `${stopRole}-occurrence`, kakaoPlaceId: stopRole, kind: "stop", dwellMinutes, stopRole });
+    await expect(parseCollectionSaveRequest(await requestBody([point]), secret)).rejects.toThrow("MEAL_DWELL_FIXED");
+  });
+
+  it("reports format and integrity errors before the meal dwell policy", async () => {
+    const meal = await requestPoint({ id: "meal-occurrence", kakaoPlaceId: "meal", kind: "stop", dwellMinutes: 60, stopRole: "meal" });
+    const badRest = await requestPoint({ id: "rest-occurrence", kakaoPlaceId: "rest", kind: "optional", dwellMinutes: 0, stopRole: "rest" });
+    const rests = await Promise.all(Array.from({ length: 6 }, (_, index) => requestPoint({
+      id: `rest-${index}`, kakaoPlaceId: "rest", kind: "optional", dwellMinutes: 30, stopRole: "rest",
+    })));
+    await expect(parseCollectionSaveRequest(await requestBody([meal, badRest]), secret)).rejects.toThrow("INVALID_COLLECTION");
+    await expect(parseCollectionSaveRequest(await requestBody([meal, ...rests]), secret)).rejects.toThrow("INVALID_COLLECTION");
+    await expect(parseCollectionSaveRequest({ ...await requestBody([meal]), title: " " }, secret)).rejects.toThrow("INVALID_COLLECTION");
+    const forged = { ...meal, verificationToken: "b".repeat(43) };
+    await expect(parseCollectionSaveRequest(await requestBody([forged]), secret)).rejects.toThrow("UNVERIFIED_PLACE");
+  });
+
+  it.each([30, 60, 5])("keeps rest dwell editable (%i minutes)", async (dwellMinutes) => {
+    const rest = await requestPoint({ id: "rest-occurrence", kakaoPlaceId: "rest", kind: "optional", dwellMinutes, stopRole: "rest" });
+    await expect(parseCollectionSaveRequest(await requestBody([rest]), secret))
+      .resolves.toMatchObject({ points: [{ stopRole: "rest", dwellMinutes }] });
   });
 });

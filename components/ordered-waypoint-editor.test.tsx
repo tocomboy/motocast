@@ -110,6 +110,9 @@ describe("OrderedWaypointEditor", () => {
     const applyAdd = () => renderer.root.findAllByType("button").find((button) => button.children.includes("추가하고 장소 선택"))!;
     await act(async () => add().props.onClick());
     await act(async () => chooseRole("식사").props.onClick());
+    // Meals show the fixed-duration note instead of a dwell input.
+    expect(renderer.root.findAllByProps({ className: "dwell-stepper" })).toHaveLength(0);
+    expect(renderer.root.findByProps({ className: "meal-dwell-note" }).children).toEqual(["식사는 45분으로 계산해요."]);
     await act(async () => applyAdd().props.onClick());
     await act(async () => add().props.onClick());
     await act(async () => chooseRole("휴식").props.onClick());
@@ -119,7 +122,12 @@ describe("OrderedWaypointEditor", () => {
     await act(async () => renderer.root.findAllByProps({ "aria-pressed": false }).find((button) => button.children.includes("식사"))!.props.onClick());
     await act(async () => renderer.root.findAllByType("button").find((button) => button.children.includes("설정 적용"))!.props.onClick());
     expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
-    expect(renderer.root.findByProps({ "aria-label": "경유 2 설정" }).children.join("")).toBe("식사 60분");
+    expect(renderer.root.findByProps({ "aria-label": "경유 2 설정" }).children.join("")).toBe("식사 45분");
+    // Rest keeps its editable stepper.
+    await act(async () => renderer.root.findByProps({ "aria-label": "경유 2 설정" }).props.onClick());
+    await act(async () => renderer.root.findAllByProps({ "aria-pressed": false }).find((button) => button.children.includes("휴식"))!.props.onClick());
+    expect(renderer.root.findAllByProps({ className: "dwell-stepper" })).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ className: "meal-dwell-note" })).toHaveLength(0);
 
     await act(async () => renderer.root.findAllByProps({ "aria-pressed": false }).find((button) => button.children.includes("통과"))!.props.onClick());
     expect(renderer.root.findAllByProps({ className: "dwell-stepper" })).toHaveLength(0);
@@ -131,12 +139,14 @@ it("selects repeated saved meals only on confirmation and preserves add settings
   await act(async () => { renderer = create(<Harness />, { createNodeMock: () => ({ showModal: vi.fn(), close: vi.fn(), focus: vi.fn() }) }); });
   const click = async (label: string) => act(async () => renderer.root.findAllByType("button").find(b => b.children.includes(label))!.props.onClick());
   await act(async () => renderer.root.findByProps({ "aria-label": "+ 경유지 추가" }).props.onClick());
-  await click("식사");
+  // A rest's edited dwell survives a round trip through the saved places.
+  await click("휴식");
   await act(async () => renderer.root.findByProps({ "aria-label": "머무는 시간 10분 늘리기" }).props.onClick());
   await click("즐겨찾기에서 선택");
   expect(renderer.root.findAllByProps({ className: "ordered-waypoint waypoint-card" })).toHaveLength(0);
   await click("뒤로");
-  expect(renderer.root.findByProps({ className: "dwell-stepper" }).findByType("strong").children).toEqual(["70", "분"]);
+  expect(renderer.root.findByProps({ className: "dwell-stepper" }).findByType("strong").children).toEqual(["40", "분"]);
+  await click("식사");
   for (let i = 0; i < 3; i++) {
     if (i) { await act(async () => renderer.root.findByProps({ "aria-label": "+ 경유지 추가" }).props.onClick()); await click("식사"); }
     await click("즐겨찾기에서 선택");
@@ -149,7 +159,7 @@ it("selects repeated saved meals only on confirmation and preserves add settings
   const cards = renderer.root.findAllByProps({ className: "ordered-waypoint waypoint-card" });
   expect(cards).toHaveLength(3);
   expect(new Set(cards.map(c => c.props["data-waypoint-id"])).size).toBe(3);
-  expect(cards[0].findByProps({ "aria-label": "경유 1 설정" }).children.join("")).toBe("식사 70분");
+  expect(cards.map((card) => card.findByProps({ "aria-label": `경유 ${cards.indexOf(card) + 1} 설정` }).children.join(""))).toEqual(["식사 45분", "식사 45분", "식사 45분"]);
   await act(async () => renderer.unmount());
 });
 
