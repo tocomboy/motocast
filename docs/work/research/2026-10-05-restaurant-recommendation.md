@@ -264,3 +264,11 @@ Figma 파일 `wVNriNWb1OlF21DVq8rqlJ`, v2 디자인 체계 페이지 `284:2253`.
 | Codex 검증(V2/V3) | 진행 중 | 누락 정정: 서버 `00e3aaf`를 메인 검수만으로 인수했다(사용자 지적 2026-10-05). 원인과 재발 방지는 MOTOCAST `bbce8f6`(검증 규칙 §5의 대체된 lead 단독 검수 문구 정리, 인수 gate)와 dev-environment `8175a7c`(전역 인수 단계 V2 연결, 역할 변경 시 프로젝트 문서 대조) — [점검 기록](https://github.com/tocomboy/dev-environment/blob/main/docs/reviews/2026-10-05-verifier-acceptance-gate.md). V2 결과: 서버 `00e3aaf` FAIL(MEDIUM 3: basis가 중간 도착 변경을 못 잡음→`arrivalAts` 추가, 저장 구간 좌표 연결 미검사, 치명 오류 직후 새 호출 경합), 웹 `5aef2e7` FAIL(MEDIUM 2: 응답 목표 시각 미대조, 조건 위반 후보·조합 수용; LOW 1: 결과 없음 상태 포커스). 재검증(HEAD `586c4bd`, 서버 = `849fbae`, 웹 = `921c9a0`): **PASS**, 6건 모두 RESOLVED, 새 지적 LOW 1(§3.3 응답 예시 `arrivalAts` 누락 → 문서 수정). Codex 실행: vitest 40 파일 773 PASS(`--pool threads --configLoader native --no-cache`), typecheck(`--incremental false`)·lint·deno check 2 PASS. Android V2와 병합 전 V3는 남음. 그 전까지 Preview·출시 보류. |
 | 연결 Preview·실기기 | 승인됨, 미실행 | 2026-10-05 사용자 승인: 검수한 고정 SHA의 `review-*` CI 전용 PR → Preview `recommend-restaurants` 배포·readback → `develop` fast-forward(Vercel Preview) → 웹·Android(previewDebug) 연결 E2E, 응답 시간·API 사용량 측정, 시험 자원 정확한 ID 정리. (Production·Play는 아래 출시 승인 행). |
 | 공동 출시 | 승인됨, 미실행 | 2026-10-05 사용자 확장 승인("play 게시 까지가 허용 범위" → 선택 "웹·앱 함께 내부 출시"): Preview 검증 통과 후 서비스 버전 0.12.0으로 웹 `develop → main` Production 배포, Production Supabase `recommend-restaurants` 배포·readback, Android `develop → main` 및 Play **내부 테스트 트랙** 게시. Play 정식 트랙 승격은 제외. 각 저장소 gate(검증·CI·Preview·Production·Play readback)와 버전·태그·Release 절차를 따른다. |
+
+## 9. 임시 검증 자원
+
+| 자원 | 소유·목적 | 위치 | 크기(2026-10-05 측정) | 상태·처분 조건 |
+| --- | --- | --- | --- | --- |
+| LOCAL_UI 스크린샷·기기 로그·하네스 | 메인 세션(작업자 생성), 화면·기기 검증 증거 | 세션 scratchpad `web-recommend/`, `android-recommend/` | 약 104MB(Android 76MB, 웹 28MB) | 최종 후보 증거(마지막 기기 실행분, 웹 `shots/`, Figma 캡처)와 실패 원인 증거(`flake*/`)만 보존. 대체된 이전 회차(Android `c2–c4`·`v2`·`v3`·`s23-run*`·`final-*`·중간 로그, 웹 `shots-v1–v3`, 임시 편집 스크립트)는 Android V2 PASS 직후 목록 확인 뒤 정확한 경로만 처분하고 용량 재확인. 출시 완료 후 남은 증거는 48시간 뒤 처분 검토. 일괄 `rm -rf` 사용 금지, 작업자는 실행마다 새 폴더를 쓰고 삭제는 메인이 수행. |
+| Android 에뮬레이터 `MOTOCAST_S23Plus_API34` | 기존 소유 AVD 재사용 | 로컬 AVD | 기존 자원 | 스냅숏 저장 없음, 화면 설정 readback, 사용 후 종료. 삭제 대상 아님. |
+
