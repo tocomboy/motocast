@@ -269,5 +269,5 @@ Figma 파일 `wVNriNWb1OlF21DVq8rqlJ`, v2 디자인 체계 페이지 `284:2253`.
 
 | 자원 | 소유·목적 | 위치 | 크기(2026-10-05 측정) | 상태·처분 조건 |
 | --- | --- | --- | --- | --- |
-| LOCAL_UI 스크린샷·기기 로그·하네스 | 메인 세션(작업자 생성), 화면·기기 검증 증거 | 세션 scratchpad `web-recommend/`, `android-recommend/` | 약 104MB(Android 76MB, 웹 28MB) | 최종 후보 증거(마지막 기기 실행분, 웹 `shots/`, Figma 캡처)와 실패 원인 증거(`flake*/`)만 보존. 대체된 이전 회차(Android `c2–c4`·`v2`·`v3`·`s23-run*`·`final-*`·중간 로그, 웹 `shots-v1–v3`, 임시 편집 스크립트)는 Android V2 PASS 직후 목록 확인 뒤 정확한 경로만 처분하고 용량 재확인. 출시 완료 후 남은 증거는 48시간 뒤 처분 검토. 일괄 `rm -rf` 사용 금지, 작업자는 실행마다 새 폴더를 쓰고 삭제는 메인이 수행. |
+| LOCAL_UI 스크린샷·기기 로그·하네스 | 메인 세션(작업자 생성), 화면·기기 검증 증거 | 세션 scratchpad `web-recommend/`, `android-recommend/` | 약 104MB(Android 76MB, 웹 28MB) → 2026-10-05 Android V2 PASS 후 대체된 이전 회차 101개(약 123MB, 측정 시점 증가분 포함) 처분, 남은 scratchpad 28.4MB(Android `c7-*`·`flake*`·`figma*`, 웹 `shots/`·`figma/`·하네스) | 최종 후보 증거(마지막 기기 실행분, 웹 `shots/`, Figma 캡처)와 실패 원인 증거(`flake*/`)만 보존. 대체된 이전 회차(Android `c2–c4`·`v2`·`v3`·`s23-run*`·`final-*`·중간 로그, 웹 `shots-v1–v3`, 임시 편집 스크립트)는 Android V2 PASS 직후 목록 확인 뒤 정확한 경로만 처분하고 용량 재확인. 출시 완료 후 남은 증거는 48시간 뒤 처분 검토. 일괄 `rm -rf` 사용 금지, 작업자는 실행마다 새 폴더를 쓰고 삭제는 메인이 수행. |
 | Android 에뮬레이터 `MOTOCAST_S23Plus_API34` | 기존 소유 AVD 재사용 | 로컬 AVD | 기존 자원 | 스냅숏 저장 없음, 화면 설정 readback, 사용 후 종료. 삭제 대상 아님. |
