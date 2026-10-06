@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { KakaoMapCanvas, type MapPoint } from "./kakao-map-canvas";
+import { KakaoMapCanvas, type MapDisplayState, type MapPoint } from "./kakao-map-canvas";
 import {
   MapPointConfirmation,
   type MapPlacePickerHandle,
@@ -116,6 +116,8 @@ function SavedPlacesManagerContent({
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [pressedPoint, setPressedPoint] = useState<{ latitude: number; longitude: number } | null>(null);
   const [clustersVisible, setClustersVisible] = useState(false);
+  const [mapStatus, setMapStatus] = useState<MapDisplayState>("loading");
+  const [mapHelpOpen, setMapHelpOpen] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
   const popupKey = useRef(0);
   // Retries use the newest revision from the re-read list, never the one captured at open.
@@ -365,7 +367,34 @@ function SavedPlacesManagerContent({
             {layerToggle("라이딩 스팟", spots, setSpots)}
             {layerToggle("식당", restaurants, setRestaurants)}
           </div>
-          <div className={styles.map}>
+          {/* FP41: a failed map keeps its place with an error card; lists and search stay usable. */}
+          {mapStatus === "error" ? (
+            <div className={styles.mapFailure} role="alert">
+              <strong>지도를 불러오지 못했어요</strong>
+              <p>목록과 검색은 그대로 쓸 수 있어요.</p>
+              <button type="button" className={styles.secondaryButton} aria-expanded={mapHelpOpen} onClick={() => setMapHelpOpen((open) => !open)}>지도 도움말·다시 불러오기</button>
+              {mapHelpOpen ? (
+                <div className={styles.mapHelpPanel}>
+                  <p className={styles.helper}>S 원형은 라이딩 스팟, 식 사각형은 식당이고 노란 별 배지는 자주 찾는 장소예요. 숫자 원은 그 자리에 묶인 장소 수예요. 지도를 길게 누르거나 전체화면에서 가운데 표시로 장소를 등록할 수 있어요.</p>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => {
+                      // Retry only an explicitly failed loader. Keep the draft and healthy SDK.
+                      const script = document.querySelector<HTMLScriptElement>("script[data-motocast-kakao-map]");
+                      if (script?.dataset.motocastKakaoMapStatus === "error" && !window.kakao?.maps) script.remove();
+                      setMapHelpOpen(false);
+                      setMapStatus("loading");
+                      setMapAttempt((n) => n + 1);
+                    }}
+                  >
+                    지도 다시 불러오기
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          <div className={styles.map} hidden={mapStatus === "error"}>
             <KakaoMapCanvas
               key={mapAttempt}
               points={routePoints}
@@ -382,10 +411,13 @@ function SavedPlacesManagerContent({
                   ? (point) => picker.current?.open(point)
                   : undefined
               }
-              coordinateActionLabel="지도 중심에서 등록 위치 선택"
+              coordinateActionLabel="이 지점 등록"
               coordinateActionInFullscreenOnly
               markerPoint={pressedPoint}
               onClustersChange={setClustersVisible}
+              fullscreenTitle="저장 장소 지도"
+              fullscreenControls={<div className={styles.layers} role="group" aria-label="전체화면 지도 핀 표시">{layerToggle("라이딩 스팟", spots, setSpots)}{layerToggle("식당", restaurants, setRestaurants)}</div>}
+              onStatusChange={setMapStatus}
             />
           </div>
           {clustersVisible && (spots || restaurants) && !(preview && !wide) ? <p className={styles.helper}>숫자는 그 자리에 묶인 장소 수예요. 누르면 확대돼요. 별 배지는 자주 찾는 장소가 포함된 묶음이에요.</p> : null}
@@ -400,45 +432,31 @@ function SavedPlacesManagerContent({
               <StarIconButton place={preview} disabled={blocked} onClick={() => confirm(preview, "star")} />
             </div>
           ) : null}
-          <details className={styles.mapHelp}><summary>지도 도움말·다시 불러오기</summary><p className={styles.helper}>
-            S 원형은 라이딩 스팟, 식 사각형은 식당이고 노란 별 배지는 자주 찾는 장소예요. 숫자 원은 그 자리에 묶인 장소 수예요. 누르면 확대돼요. 핀을 누르면 장소가 지도 아래에 보여요. 지도를 길게 눌러 장소를 등록하거나, 전체화면에서 중심 지점을 선택하세요.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              // Retry only an explicitly failed loader. Keep the draft and healthy SDK.
-              const script = document.querySelector<HTMLScriptElement>(
-                "script[data-motocast-kakao-map]",
-              );
-              if (
-                script?.dataset.motocastKakaoMapStatus === "error" &&
-                !window.kakao?.maps
-              )
-                script.remove();
-              setMapAttempt((n) => n + 1);
-            }}
-          >
-            지도 다시 불러오기
-          </button>
-          </details>
-          {selected && wide ? <section className={styles.desktopDetail} aria-label="장소 상세">
-            <span className={styles.placeKind}>{kindLabel(selected.kind)} · {selected.province ?? "지역 미확인"}{selected.starPosition !== null ? " · 자주 찾는 장소" : ""}</span>
-            <h2>{savedPlaceName(selected)}</h2>
-            <p>{placeLine(selected)}</p>
-            {failure}
-            <div className={styles.desktopActions}>
-              <StarButton place={selected} full={full} count={starredCount} disabled={blocked} onClick={() => confirm(selected, "star")} />
-              <button type="button" className={styles.secondaryButton} disabled={blocked || disabled} onClick={() => setAdding(selected)}>경유지에 추가</button>
-              <button type="button" className={styles.secondaryButton} disabled={blocked} onClick={() => setForm({place:selected.place, existing:selected})}>별명·분류 수정</button>
-              <button type="button" className={styles.dangerButton} disabled={blocked} onClick={() => confirm(selected, "delete")}>장소 삭제</button>
-            </div>
-            {selected.starPosition === null && full ? <><p className={styles.helper}>자주 찾는 장소 {FREQUENT_PLACE_LIMIT}곳이 모두 찼어요. 다른 장소의 별표를 빼면 추가할 수 있어요.</p><button type="button" className={styles.textButton} onClick={manageStars}>자주 찾는 장소 관리</button></> : null}
-          </section> : null}
         </div>
         <section
           className={styles.listColumn}
-          aria-label={`${tab === "starred" ? "자주 찾는 장소" : kindLabel(tab)} 목록`}
+          aria-label={selected && wide ? "장소 상세" : `${tab === "starred" ? "자주 찾는 장소" : kindLabel(tab)} 목록`}
         >
+          {selected && wide ? (
+            <div className={styles.pcDetail}>
+              <div className={styles.pcDetailHeading}>
+                <button type="button" className={styles.iconButton} aria-label="장소 상세 뒤로" onClick={() => selectPlace(null)}><LineIcon name="chevron-left" /></button>
+                <h2>장소 상세</h2>
+              </div>
+              <div className={`${styles.placeSummary} ${styles.detailSummary}`}>
+                <span className={styles.placeKind}>{kindLabel(selected.kind)} · {selected.province ?? "지역 미확인"}{selected.starPosition !== null ? " · 자주 찾는 장소" : ""}</span>
+                <strong>{savedPlaceName(selected)}</strong>
+                <span>{placeLine(selected)}</span>
+                <StarIconButton place={selected} disabled={blocked} onClick={() => confirm(selected, "star")} />
+              </div>
+              {failure}
+              <StarButton place={selected} full={full} count={starredCount} disabled={blocked} onClick={() => confirm(selected, "star")} />
+              {selected.starPosition === null && full ? <p className={styles.helper}>자주 찾는 장소 {FREQUENT_PLACE_LIMIT}곳이 모두 찼어요. 다른 장소의 별표를 빼면 추가할 수 있어요.</p> : null}
+              <button type="button" className={styles.secondaryButton} disabled={blocked || disabled} onClick={() => setAdding(selected)}>경유지에 추가</button>
+              <button type="button" className={styles.secondaryButton} disabled={blocked} onClick={() => setForm({ place: selected.place, existing: selected })}>별명·분류 수정</button>
+              <button type="button" className={styles.dangerButton} disabled={blocked} onClick={() => confirm(selected, "delete")}>장소 삭제</button>
+            </div>
+          ) : <>
           <nav className={styles.tabs} aria-label="저장 장소 목록">
             {([["starred", "자주 찾는 장소"], ["riding_spot", "라이딩 스팟"], ["restaurant", "식당"]] as const).map(([key, label]) => <button type="button" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}
           </nav>
@@ -455,10 +473,14 @@ function SavedPlacesManagerContent({
             </label>
             <div className={styles.desktopOnly}>{regionSelect("compact")}</div>
           </div>
+          {/* FP01/FP04: starred "7 / 10"; kind tabs "34곳 · 저장 장소 전체 46 / 1,000" (counts follow the filters). */}
           <p className={styles.listCount}>
             <strong>{tab === "starred" ? "자주 찾는 장소" : kindLabel(tab)}</strong>
-            <b className={styles.countNumber}>{tab === "starred" ? `${starredCount} / ${FREQUENT_PLACE_LIMIT}` : `${list.length}곳`}</b>
-            {tab !== "starred" ? <span>전체 {saved.places.length.toLocaleString()}/1,000</span> : null}
+            {tab === "starred" ? <b className={styles.countNumber}>{starredCount} / {FREQUENT_PLACE_LIMIT}</b> : <>
+              <b className={styles.countNumber}>{list.length.toLocaleString()}</b>
+              <span>곳 · 저장 장소 전체</span>
+              <b className={styles.countNumber}>{saved.places.length.toLocaleString()} / 1,000</b>
+            </>}
           </p>
           {tab === "starred" ? <p className={`${styles.helper} ${styles.mobileOnly}`}>라이딩 스팟과 식당을 합쳐 최대 {FREQUENT_PLACE_LIMIT}곳까지 별표할 수 있어요.</p> : null}
           {saved.status === "loading" ? (
@@ -497,6 +519,7 @@ function SavedPlacesManagerContent({
               저장 한도에 도달했어요. 기존 장소를 정리한 뒤 등록해 주세요.
             </p>
           ) : null}
+          </>}
         </section>
       </div>
       <footer className={styles.registerFooter}>

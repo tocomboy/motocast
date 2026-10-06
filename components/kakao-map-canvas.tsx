@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type Ref } from "react";
+import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import { designTokens } from "@/packages/shared-ui/src/design-tokens";
 import { LineIcon } from "@/components/line-icon";
 import { CENTER_TARGET, clusterPinImage, numberedPinImage, savedPinImage, type PinImage } from "@/components/map-pin-images";
@@ -23,7 +23,7 @@ export type MapCenterHandle = { getCenter(): PathPoint | null };
 const MAX_MAP_LEVEL = 14;
 const markerImageFrom = (maps: KakaoMapsNamespace, image: PinImage) =>
   new maps.MarkerImage(`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(image.svg)}`, new maps.Size(image.width, image.height), { offset: new maps.Point(image.offsetX, image.offsetY) });
-type MapDisplayState = "empty" | "loading" | "ready" | "demo" | "error";
+export type MapDisplayState = "empty" | "loading" | "ready" | "demo" | "error";
 const KAKAO_MAP_LOAD_TIMEOUT_MS = 10_000;
 const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; color: string }> = {
   origin: { label: "출발", symbol: "출", color: designTokens["text-primary"] },
@@ -103,6 +103,9 @@ export function KakaoMapCanvas({
   allowFullscreen = true,
   markerPoint = null,
   onClustersChange,
+  fullscreenTitle,
+  fullscreenControls,
+  onStatusChange,
 }: {
   points: MapPoint[];
   path?: PathPoint[];
@@ -135,6 +138,11 @@ export function KakaoMapCanvas({
   markerPoint?: PathPoint | null;
   /** Whether any saved-pin cluster is drawn, for the cluster hint under the map (FP30). */
   onClustersChange?: (visible: boolean) => void;
+  /** Saved-place fullscreen (FP40): titled header card, layer controls and a center-target register sheet. */
+  fullscreenTitle?: string;
+  fullscreenControls?: ReactNode;
+  /** Reports the visible map state so a page can replace a failed map (FP41). */
+  onStatusChange?: (state: MapDisplayState) => void;
 }) {
   const titleId = useId();
   const surfaceRef = useRef<HTMLDialogElement>(null);
@@ -180,6 +188,10 @@ export function KakaoMapCanvas({
       ? mapState.geometryKey === geometryKey ? mapState.status : "loading"
       : "demo";
   const isReady = state === "ready";
+  const statusRef = useRef(onStatusChange);
+  useEffect(() => { statusRef.current = onStatusChange; }, [onStatusChange]);
+  useEffect(() => { statusRef.current?.(state); }, [state]);
+  const savedFullscreen = Boolean(fullscreenTitle);
   const previewLatitude = selectionPreview ? points[0]?.latitude : undefined;
   const previewLongitude = selectionPreview ? points[0]?.longitude : undefined;
 
@@ -608,19 +620,23 @@ export function KakaoMapCanvas({
 
   return (
     <div className="map-shell" aria-label="선택한 라이딩 경로 지도">
-      <dialog ref={surfaceRef} open className={`map-surface${fullscreen ? " is-fullscreen" : ""}`}
+      <dialog ref={surfaceRef} open className={`map-surface${fullscreen ? " is-fullscreen" : ""}${savedFullscreen ? " is-saved-map" : ""}`}
         role={fullscreen ? "dialog" : "region"} aria-modal={fullscreen || undefined}
         aria-label={fullscreen ? undefined : "선택한 라이딩 경로 지도"} aria-labelledby={fullscreen ? titleId : undefined}
         onKeyDown={keepFocusInMap}
         onCancel={(event) => { event.preventDefault(); event.stopPropagation(); setFullscreen(false); }}>
         <header className="map-fullscreen-header" hidden={!fullscreen}>
-          <h2 id={titleId}>경로 지도</h2>
-          <button type="button" ref={closeRef} onClick={() => setFullscreen(false)}>닫기</button>
+          <h2 id={titleId}>{fullscreenTitle ?? "경로 지도"}</h2>
+          {savedFullscreen
+            ? <button type="button" ref={closeRef} className="map-fullscreen-close" aria-label="닫기" onClick={() => setFullscreen(false)}><LineIcon name="close" /></button>
+            : <button type="button" ref={closeRef} onClick={() => setFullscreen(false)}>닫기</button>}
         </header>
+        {fullscreen && fullscreenControls ? <div className="map-fullscreen-controls">{fullscreenControls}</div> : null}
         <div className="map-viewport">
           <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert={!isReady} />
           <MapStatus state={state} actualRoute={Boolean(path?.length)} savedPlaces={allowEmptyMap} />
           <button type="button" ref={expandRef} className="map-fullscreen-trigger" hidden={fullscreen || centerPicker || !allowFullscreen} onClick={() => setFullscreen(true)}>전체화면</button>
+          {savedFullscreen && fullscreen && isReady && onSelectCoordinate ? <span className="map-center-marker" aria-hidden="true" /> : null}
           {centerPicker && isReady ? <>
             <span className="map-center-marker" aria-hidden="true" />
             <div className="map-zoom-controls">
@@ -631,7 +647,8 @@ export function KakaoMapCanvas({
           {isReady && showLegend ? <MapMarkerLegend points={points} /> : null}
           {!isReady && state !== "empty" && !allowEmptyMap ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
         </div>
-        {isReady && onSelectCoordinate && (!coordinateActionInFullscreenOnly || fullscreen) ? <div className="map-waypoint-actions"><p>{coordinateActionLabel ? "지도를 길게 누르거나 중심 지점을 선택해 장소를 등록하세요." : fullscreen ? "확대·이동하거나 지도를 길게 눌러 경유지를 선택하세요." : "지도를 길게 눌러 경유지를 선택하세요. 확대·이동 후 중심 지점을 선택할 수도 있어요."}</p><button type="button" onClick={() => { const point = mapRef.current?.getCenter(); if (point) onSelectCoordinate({ latitude: point.getLat(), longitude: point.getLng() }); }}>{coordinateActionLabel ?? "지도 중심에서 경유지 선택"}</button></div>
+        {savedFullscreen && fullscreen && isReady && onSelectCoordinate ? <div className="map-register-sheet"><p>지도를 움직여 가운데 표시를 등록할 지점에 맞추세요.</p><button type="button" className="primary-button" onClick={() => { const point = mapRef.current?.getCenter(); if (point) onSelectCoordinate({ latitude: point.getLat(), longitude: point.getLng() }); }}>{coordinateActionLabel ?? "이 지점 등록"}</button></div>
+          : isReady && onSelectCoordinate && (!coordinateActionInFullscreenOnly || fullscreen) ? <div className="map-waypoint-actions"><p>{coordinateActionLabel ? "지도를 길게 누르거나 중심 지점을 선택해 장소를 등록하세요." : fullscreen ? "확대·이동하거나 지도를 길게 눌러 경유지를 선택하세요." : "지도를 길게 눌러 경유지를 선택하세요. 확대·이동 후 중심 지점을 선택할 수도 있어요."}</p><button type="button" onClick={() => { const point = mapRef.current?.getCenter(); if (point) onSelectCoordinate({ latitude: point.getLat(), longitude: point.getLng() }); }}>{coordinateActionLabel ?? "지도 중심에서 경유지 선택"}</button></div>
           : fullscreen && isReady ? <div className="map-viewing-hint"><p>확대·이동하며 경로를 확인하세요.</p></div> : null}
       </dialog>
     </div>

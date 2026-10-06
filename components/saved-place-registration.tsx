@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { LineIcon } from "@/components/line-icon";
+import { LineIcon, StarMark } from "@/components/line-icon";
 import { KakaoMapCanvas, type MapCenterHandle } from "./kakao-map-canvas";
 import { resolveMapPoint } from "./map-point-confirmation";
 import { SavedDialog } from "./saved-dialog";
@@ -433,16 +433,20 @@ function FormStep({ place, existing, stars, blocked, onSave }: {
         </div>
         {!existing ? (
           <>
-            <button
-              type="button"
-              className={styles.starToggle}
-              aria-pressed={starred && !full}
-              disabled={full}
-              onClick={() => setStarred((value) => !value)}
-            >
-              {`${starred && !full ? "★" : "☆"} 자주 찾는 장소에 추가 · ${stars} / ${FREQUENT_PLACE_LIMIT}${full ? " 가득 참" : ""}`}
-            </button>
-            {full ? <p className={styles.helper}>자주 찾는 장소 {FREQUENT_PLACE_LIMIT}곳이 모두 찼어요. 이 장소는 별표 없이 저장되고, 나중에 다른 별표를 빼고 추가할 수 있어요.</p> : null}
+            {starred && !full ? (
+              // FP27b: on — tint, ink border, filled star and the count it will reach.
+              <button type="button" className={styles.starSaved} aria-pressed onClick={() => setStarred(false)}>
+                <StarMark filled />
+                <span>자주 찾는 장소에 추가</span>
+                <b className={styles.countNumber}>· {stars} → {stars + 1} / {FREQUENT_PLACE_LIMIT}</b>
+              </button>
+            ) : (
+              <button type="button" className={styles.starToggle} aria-pressed={false} disabled={full} onClick={() => setStarred(true)}>
+                {`☆ 자주 찾는 장소에 추가 · ${stars} / ${FREQUENT_PLACE_LIMIT}${full ? " 가득 참" : ""}`}
+              </button>
+            )}
+            {full ? <p className={styles.helper}>자주 찾는 장소 {FREQUENT_PLACE_LIMIT}곳이 모두 찼어요. 이 장소는 별표 없이 저장되고, 나중에 다른 별표를 빼고 추가할 수 있어요.</p>
+              : starred ? <p className={styles.helper}>저장하면 자주 찾는 장소에도 들어가요. 다시 누르면 별표 없이 저장해요.</p> : null}
           </>
         ) : null}
       </div>

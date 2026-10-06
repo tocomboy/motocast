@@ -267,6 +267,23 @@ it("reads the fixed center through the picker handle and zooms with buttons", as
   await act(async () => r.unmount());
 });
 
+it("opens the saved-place fullscreen with a titled header, layer controls and the register sheet (FP40)", async () => {
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser(); const maps = installMaps(); const pick = vi.fn(); const status = vi.fn();
+  let r!: ReactTestRenderer;
+  await act(async () => { r = create(<KakaoMapCanvas points={[]} allowEmptyMap onSelectCoordinate={pick} coordinateActionLabel="이 지점 등록" coordinateActionInFullscreenOnly fullscreenTitle="저장 장소 지도" fullscreenControls={<span>핀 토글</span>} onStatusChange={status} />, { createNodeMock: () => ({ close: vi.fn(), show: vi.fn(), showModal: vi.fn(), focus: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() }) }); });
+  await flush(maps.loadCallbacks);
+  expect(status).toHaveBeenLastCalledWith("ready");
+  expect(r.root.findAllByProps({ className: "map-register-sheet" })).toHaveLength(0);
+  await act(async () => r.root.findByProps({ className: "map-fullscreen-trigger" }).props.onClick());
+  expect(r.root.findByType("h2").children).toEqual(["저장 장소 지도"]);
+  expect(r.root.findAllByProps({ className: "map-fullscreen-controls" })).toHaveLength(1);
+  expect(r.root.findAllByProps({ className: "map-center-marker" })).toHaveLength(1);
+  const sheet = r.root.findByProps({ className: "map-register-sheet" });
+  await act(async () => sheet.findByType("button").props.onClick());
+  expect(pick).toHaveBeenCalledExactlyOnceWith({ latitude: 37.5, longitude: 127.1 });
+  await act(async () => r.unmount());
+});
+
 it("shows the exact temporary selected point and disposes it without a route or edit controls", async () => {
   vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser();
   const maps = installMaps();

@@ -503,3 +503,54 @@ it("confirms a delete with the red button and the star count it removes (FP37)",
   expect(mocks.controls.deletePlace).toHaveBeenCalledTimes(1);
   await act(async () => r.unmount());
 });
+
+it("replaces a failed map with the FP41 card and reloads the map on request", async () => {
+  vi.stubGlobal("window", { kakao: undefined });
+  const r = await mount();
+  const map = mocks.canvases.find((canvas) => canvas.onStatusChange)!;
+  expect(map).toMatchObject({ fullscreenTitle: "저장 장소 지도", coordinateActionLabel: "이 지점 등록" });
+  await act(async () => (map.onStatusChange as (state: string) => void)("error"));
+  expect(text(r.root)).toContain("지도를 불러오지 못했어요");
+  expect(text(r.root)).toContain("목록과 검색은 그대로 쓸 수 있어요.");
+  await act(async () => button(r, "지도 도움말·다시 불러오기").props.onClick());
+  const before = mocks.canvases.length;
+  vi.stubGlobal("document", { activeElement: null, querySelector: () => null });
+  await act(async () => button(r, "지도 다시 불러오기").props.onClick());
+  expect(text(r.root)).not.toContain("지도를 불러오지 못했어요");
+  expect(mocks.canvases.length).toBeGreaterThan(before);
+  await act(async () => r.unmount());
+});
+
+it("shows the FP04 count line for kind tabs", async () => {
+  const spots = [entry(1, null, { kind: "riding_spot" }), entry(2, null, { kind: "riding_spot" }), entry(3, null)];
+  mocks.controls.places = spots;
+  mocks.controls.favorites = [];
+  const r = await mount();
+  const line = text(r.root.findAll((node) => node.type === "p" && text(node).startsWith("라이딩 스팟"))[0]);
+  expect(line).toBe("라이딩 스팟2곳 · 저장 장소 전체3 / 1,000");
+  await act(async () => r.unmount());
+});
+
+it("turns the save-form star on with the count it will reach (FP27b)", async () => {
+  const r = await mount();
+  await act(async () => mocks.mapSelect?.(regionPlace));
+  await act(async () => button(r, "☆ 자주 찾는 장소에 추가 · 1 / 10").props.onClick());
+  const on = r.root.findAll((node) => node.type === "button" && node.props["aria-pressed"] === true && text(node).includes("자주 찾는 장소에 추가"))[0];
+  expect(text(on)).toContain("· 1 → 2 / 10");
+  expect(text(r.root)).toContain("저장하면 자주 찾는 장소에도 들어가요. 다시 누르면 별표 없이 저장해요.");
+  await act(async () => on.props.onClick());
+  expect(button(r, "☆ 자주 찾는 장소에 추가 · 1 / 10")).toBeDefined();
+  await act(async () => r.unmount());
+});
+
+it("opens the PC detail in the list panel and returns to the list (FPW04/FPW05)", async () => {
+  vi.stubGlobal("window", { matchMedia: () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }) });
+  const r = await mount();
+  await act(async () => r.root.findByProps({ "aria-label": "내 별명 상세 보기" }).props.onClick());
+  expect(r.root.findAll((node) => node.type === "dialog")).toHaveLength(0);
+  expect(r.root.findByProps({ "aria-label": "장소 상세" }).type).toBe("section");
+  expect(r.root.findAllByProps({ "aria-label": "자주 찾는 장소에 저장됨, 눌러서 빼기" }).filter((n) => n.type === "button")).toHaveLength(1);
+  await act(async () => r.root.findByProps({ "aria-label": "장소 상세 뒤로" }).props.onClick());
+  expect(r.root.findAllByProps({ "aria-label": "내 별명 상세 보기" }).length).toBeGreaterThan(0);
+  await act(async () => r.unmount());
+});
