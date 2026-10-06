@@ -1,6 +1,6 @@
 "use client";
 
-import { LineIcon } from "@/components/line-icon";
+import { LineIcon, StarMark } from "@/components/line-icon";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
@@ -24,6 +24,7 @@ import { prepareCollectionApplication } from "@/lib/collections/application";
 import type { CollectionCourse, CollectionPoint } from "@/lib/collections/contracts";
 import type { PlaceSearchResult } from "@/lib/places/search";
 import { favoriteAsSearchResult } from "@/lib/places/favorites";
+import { FREQUENT_PLACE_LIMIT } from "@/lib/places/saved";
 import {
   demoRoute,
   demoDepartureAt,
@@ -1046,13 +1047,13 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
             </section>
             <button className="route-reset-button" type="button" disabled={calculating} onClick={startNewRoute}>경로 초기화</button>
             </fieldset>
-            {connected ? <section className="editor-favorites" aria-label={`자주 찾는 곳, 적용 위치 ${favoriteTargetLabel}`}>
-              <div className="editor-favorites-heading"><strong>자주 찾는 곳 {favoriteControls.favorites.length}/5</strong><span>적용 위치: {favoriteTargetLabel}</span></div>
+            {connected ? <section className="editor-favorites" aria-label={`자주 찾는 장소, 적용 위치 ${favoriteTargetLabel}`}>
+              <div className="editor-favorites-heading"><strong>자주 찾는 장소 {favoriteControls.favorites.length} / {FREQUENT_PLACE_LIMIT}</strong><span>적용 위치: {favoriteTargetLabel}</span></div>
               <div className="editor-favorite-slots">
-                {[0, 1, 2, 3, 4].map((index) => {
-                  const favorite = favoriteControls.favorites[index];
-                  return <button key={favorite?.slot ?? `empty-${index}`} type="button" disabled={!favorite || !favoriteTarget || calculating} onClick={() => favorite && applyFavorite(favoriteAsSearchResult(favorite))}>{favorite ? <><LineIcon name="star" />{favorite.displayName ?? favorite.place.name}</> : "비어 있음"}</button>;
-                })}
+                {/* Up to ten stars; an empty list keeps one placeholder instead of ten empty slots. */}
+                {favoriteControls.favorites.length ? favoriteControls.favorites.map((favorite) => (
+                  <button key={favorite.slot} type="button" disabled={!favoriteTarget || calculating} onClick={() => applyFavorite(favoriteAsSearchResult(favorite))}><StarMark filled size={20} />{favorite.displayName ?? favorite.place.name}</button>
+                )) : <button type="button" disabled>비어 있음</button>}
               </div>
               {favoriteControls.status === "error" ? <div className="editor-favorites-error" role="alert"><span>{favoriteControls.message}</span><button type="button" onClick={favoriteControls.retry}>다시 시도</button></div> : <p className="sr-only" role="status">{favoriteControls.message}</p>}
             </section> : null}

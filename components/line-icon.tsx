@@ -27,3 +27,11 @@ export function LineIcon({ name, className = "", ...props }: SVGProps<SVGSVGElem
     <path d={paths[name]} />
   </svg>;
 }
+
+/** Frequent-place star: filled yellow with a 1.5 ink outline when starred, outline only otherwise.
+ * Decorative; the surrounding control carries the accessible name. */
+export function StarMark({ filled, className = "", size = 24 }: { filled: boolean; className?: string; size?: number }) {
+  return <svg className={`mc-icon mc-star${filled ? " is-filled" : ""} ${className}`} viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" focusable="false" data-filled={filled}>
+    <path d={paths.star} fill={filled ? "var(--mc-star-fill)" : "none"} stroke="var(--mc-text-primary)" strokeWidth="1.5" strokeLinejoin="round" />
+  </svg>;
+}

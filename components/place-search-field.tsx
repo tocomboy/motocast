@@ -1,9 +1,10 @@
 "use client";
 
-import { LineIcon } from "@/components/line-icon";
+import { LineIcon, StarMark } from "@/components/line-icon";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { favoriteAsSearchResult, type PlaceFavorite } from "@/lib/places/favorites";
+import { FREQUENT_PLACE_LIMIT } from "@/lib/places/saved";
 import { parsePlaceSearchResponse, type PlaceSearchResult } from "@/lib/places/search";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
@@ -167,10 +168,10 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
           </div>
           <div className="place-picker-content">
             <aside className="place-favorites" aria-labelledby={`${titleId}-favorites`}>
-              <div className="place-favorites-heading"><h3 id={`${titleId}-favorites`}>자주 찾는 곳</h3><span>{favorites?.favorites.length ?? 0}/5</span></div>
+              <div className="place-favorites-heading"><h3 id={`${titleId}-favorites`}>자주 찾는 장소</h3><span>{favorites?.favorites.length ?? 0} / {FREQUENT_PLACE_LIMIT}</span></div>
               {!favorites ? <p>즐겨찾기 연결 전입니다.</p> : favorites.status === "loading" ? <p role="status">즐겨찾기를 불러오는 중입니다.</p> : favorites.status === "error" ? <div className="place-favorites-error"><p role="alert">{favorites.message}</p><button type="button" onClick={favorites.retry}>다시 시도</button></div> : favorites.favorites.length ? (
-                <ul>{favorites.favorites.map((favorite) => <li key={favorite.slot}><button type="button" onClick={() => choose(favoriteAsSearchResult(favorite))}><strong><LineIcon name="star" /> {favorite.displayName ?? favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span></button></li>)}</ul>
-              ) : <p>저장한 즐겨찾기가 없습니다. 홈의 즐겨찾기에서 장소를 추가할 수 있어요.</p>}
+                <ul>{favorites.favorites.map((favorite) => <li key={favorite.slot}><button type="button" onClick={() => choose(favoriteAsSearchResult(favorite))}><strong><StarMark filled size={20} /> {favorite.displayName ?? favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span></button></li>)}</ul>
+              ) : <p>별표한 자주 찾는 장소가 없어요. 홈의 즐겨찾기에서 별표를 추가할 수 있어요.</p>}
               {favorites && favorites.status !== "loading" && favorites.status !== "error" ? <p className="place-favorite-status" role="status">{favorites.message}</p> : null}
             </aside>
             <section className="place-picker-results" aria-labelledby={`${titleId}-results`}>

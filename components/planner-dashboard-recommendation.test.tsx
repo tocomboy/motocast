@@ -53,6 +53,7 @@ const savedRow = (revision = 2) => ({
   kind: "restaurant",
   province: null,
   star_slot: null,
+  star_position: null,
   revision,
   created_at: "2026-09-01T00:00:00.000Z",
   updated_at: "2026-09-01T00:00:00.000Z",

@@ -2,7 +2,8 @@ import { parseSelectedPlace, type SelectedPlace } from "@/lib/planner/input";
 import type { PlaceSearchResult } from "@/lib/places/search";
 
 export type PlaceFavorite = {
-  slot: 1 | 2 | 3 | 4 | 5;
+  /** Star position 1..10 (legacy `place_favorites` rows only use 1..5). */
+  slot: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
   place: SelectedPlace;
   createdAt: string;
   displayName?: string;

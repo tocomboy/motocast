@@ -3,11 +3,13 @@ type KakaoLatLng = {
   getLng(): number;
 };
 
+type KakaoLatLngBounds = { extend(point: KakaoLatLng): void };
+
 type KakaoMapsNamespace = {
   event: { addListener(target: unknown, event: string, callback: () => void): void; removeListener(target: unknown, event: string, callback: () => void): void };
   load(callback: () => void): void;
   LatLng: new (latitude: number, longitude: number) => KakaoLatLng;
-  LatLngBounds: new () => { extend(point: KakaoLatLng): void };
+  LatLngBounds: new () => KakaoLatLngBounds;
   Size: new (width: number, height: number) => unknown;
   Point: new (x: number, y: number) => unknown;
   MarkerImage: new (src: string, size: unknown, options?: { offset?: unknown }) => unknown;
@@ -15,15 +17,19 @@ type KakaoMapsNamespace = {
     container: HTMLElement,
     options: { center: KakaoLatLng; level: number },
   ) => {
-    setBounds(bounds: { extend(point: KakaoLatLng): void }): void;
-    getProjection(): { coordsFromContainerPoint(point: unknown): KakaoLatLng };
+    setBounds(bounds: KakaoLatLngBounds, paddingTop?: number, paddingRight?: number, paddingBottom?: number, paddingLeft?: number): void;
+    getProjection(): {
+      coordsFromContainerPoint(point: unknown): KakaoLatLng;
+      containerPointFromCoords(point: KakaoLatLng): { x: number; y: number };
+    };
     getCenter(): KakaoLatLng;
     setCenter(point: KakaoLatLng): void;
     getLevel(): number;
-    setLevel(level: number): void;
+    setLevel(level: number, options?: { anchor?: KakaoLatLng }): void;
     relayout(): void;
+    setDraggable(draggable: boolean): void;
   };
-  Marker: new (options: { map: unknown; position: KakaoLatLng; title: string; image?: unknown }) => { setMap(map: unknown): void };
+  Marker: new (options: { map: unknown; position: KakaoLatLng; title: string; image?: unknown; zIndex?: number }) => { setMap(map: unknown): void };
   Polyline: new (options: {
     map: unknown;
     path: KakaoLatLng[];
