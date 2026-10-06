@@ -78,7 +78,7 @@ RPC 본문 버전과 무관하게 I1·I2가 유지되도록 DB가 강제한다.
 - 로컬 실측(격리 DB, fixture 수십 행): 본문 전체 12ms. `saved_places` 쓰기 트랜잭션이나 auth 쓰기(`auth.sessions`)가 잠금을 쥐고 있으면 각각 약 5.1초 뒤 lock timeout으로 실패하고 아무것도 남지 않는다.
 - hosted 적용 전 확인(사용자 승인 후, 실제 영향은 NOT_RUN):
   1. 대상 프로젝트의 Postgres 버전(`select version()` 또는 대시보드)을 확인하고, 포함된 `supautils`가 위 commit을 포함하는지 Supabase 릴리스 노트로 대조한다. 판단할 수 없거나 미포함이면 영향이 있는 것으로 본다. Preview는 로컬과 같은 17.6.1.166이었으므로 영향이 있을 것으로 예상한다(미확인).
-  2. 필요하면 rollback 전용 probe로 확인한다: `begin; create table public.motocast_lock_probe(id int); alter table public.motocast_lock_probe enable row level security; create policy p on public.motocast_lock_probe for select to authenticated using (true); select count(*) from pg_locks where pid=pg_backend_pid() and mode='AccessExclusiveLock' and relation in (select oid from pg_class where relnamespace='auth'::regnamespace); rollback;` 결과가 0보다 크면 영향이 있다.
+  2. 필요하면 rollback 전용 probe로 확인한다. probe도 잠금을 잡으므로 같은 상한을 먼저 건다: `begin; set local lock_timeout = '5s'; set local statement_timeout = '60s'; create table public.motocast_lock_probe(id int); alter table public.motocast_lock_probe enable row level security; create policy p on public.motocast_lock_probe for select to authenticated using (true); select count(*) from pg_locks where pid=pg_backend_pid() and mode='AccessExclusiveLock' and relation in (select oid from pg_class where relnamespace='auth'::regnamespace); rollback;` 결과가 0보다 크면 영향이 있다. timeout 등 오류가 나면 그 자리에서 `rollback`하고 연결을 닫는다(잠금 대기 중에는 뒤의 `rollback`이 실행되지 않으므로 상한이 없으면 auth 조회가 계속 대기한다 — V2 재검증에서 6초 넘는 대기 재현).
   3. 영향이 있으면 저트래픽 시간에 적용한다. 잠금 대기 상한 5초, 문장 실행 상한 60초. 실패하면 자동 rollback되므로 `pg_stat_activity`에서 차단 세션을 확인하고, 재시도는 원인 확인 뒤 1회만 한다. 로그인 오류 보고나 5초를 넘는 auth 대기가 관측되면 중단하고 보고한다.
 
 ## 3. 주소 없는 지도 지점 (서버 계약, 비용)
@@ -133,7 +133,7 @@ RPC 본문 버전과 무관하게 I1·I2가 유지되도록 DB가 강제한다.
 
 구현자 해석(오케스트레이터 인수):
 - `add_place_favorite`는 지역 지점으로 새 행을 만들 때만 `INVALID_FAVORITE_PLACE`로 거부한다. 별명이 이미 있는 지역 지점에 별표를 다는 것은 허용한다(alias null 저장이 생기지 않음). `save_place`·`save_place_v2`는 중복 확인 전 검증에서 거부한다.
-- `update_saved_place` 오류 순서: `SAVED_PLACE_NOT_FOUND` → `SAVED_PLACE_STALE` → `INVALID_SAVED_PLACE_METADATA`.
+- `update_saved_place` 오류 순서: 먼저 일반 메타데이터 검사(`assert_saved_place_metadata`: 분류·별명 형식, 실패 시 `INVALID_SAVED_PLACE_METADATA`)를 한다. 이를 통과한 뒤의 지역 지점 별명 제거 검사 순서가 `SAVED_PLACE_NOT_FOUND` → `SAVED_PLACE_STALE` → `INVALID_SAVED_PLACE_METADATA`다.
 - 지역 응답 문서는 10건까지만 받는다(3절).
 - 내부 오류 코드: `SAVED_PLACE_STAR_INVARIANT`(commit 시 I1·I2 위반), `SAVED_PLACE_STAR_CONFLICT`(거울 직접 쓰기가 다른 장소의 별표 칸을 가리킬 때. 정상 경로에서는 unique index가 먼저 막아 도달하지 않는 방어용).
 
@@ -145,3 +145,12 @@ V2(후보 b8b9b4d) 판정:
 | 2 최초 적용 auth 잠금 | 수정 필수 | 2.5: timeout 상한, 정책 생성을 마지막으로, hosted 사전 확인 절차 |
 | 제안 3 지역 문서 10건 제한 | 제안 반영 | 3절 명시, 10/11건 경계 테스트 |
 | 제안 4 문서 정리 | 제안 반영 | 상태 줄, 6절 1번 문구, 이 절 |
+
+V2 재검증(후보 f1e35cc) 판정: 기존 4건 해소(④는 아래 제안으로 마무리). 제품 코드 신규 결함 없음. 실행 검사 PASS(하네스 30, SQL 146/26/78/17, map-place 43, `pg_sleep(61)` statement timeout 60.11초 확인), 검증 DB `motocast_saved_places_ten_89f6efe3ae`.
+
+| 지적 | 판정 | 처리 |
+|---|---|---|
+| 1 사전 점검 probe에 timeout 없음(6초 넘는 auth 대기 재현) | 수정 필수 | 2.5 2번 probe에 같은 상한과 오류 시 rollback·연결 종료 추가 |
+| 제안 2 `update_saved_place` 오류 순서 적용 범위 | 제안 반영 | 7절 문구를 일반 메타데이터 검사 이후로 한정 |
+
+두 건 모두 검증자 최소 수정안을 문서에 그대로 반영했고 제품 코드·테스트 변경이 없어 V2를 인수한다(V2 PASS). 남은 확인은 V3와 hosted 적용 절차에서 한다.
