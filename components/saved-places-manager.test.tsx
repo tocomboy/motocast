@@ -568,3 +568,18 @@ it("filters only the list and count with the saved-place search, not the map pin
   expect((map.savedPins as Array<{ id: string }>).map((pin) => pin.id)).toEqual([a.id, b.id]);
   await act(async () => r.unmount());
 });
+
+it("keeps the same map pins when switching list tabs", async () => {
+  const starred = entry(1, 1, { kind: "riding_spot" });
+  const plain = entry(2, null, { kind: "restaurant" });
+  mocks.controls.places = [starred, plain];
+  mocks.controls.favorites = [favorite(starred)];
+  const r = await mount();
+  const pinIds = () => (mocks.canvases.filter((canvas) => canvas.onSelectSavedCluster).at(-1)!.savedPins as Array<{ id: string }>).map((pin) => pin.id);
+  expect(pinIds()).toEqual([starred.id, plain.id]);
+  for (const tab of ["자주 찾는 장소", "식당", "라이딩 스팟"]) {
+    await act(async () => button(r, tab).props.onClick());
+    expect(pinIds()).toEqual([starred.id, plain.id]);
+  }
+  await act(async () => r.unmount());
+});

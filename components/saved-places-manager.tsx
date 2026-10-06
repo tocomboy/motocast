@@ -166,13 +166,10 @@ function SavedPlacesManagerContent({
   const list = filtered
     .filter((p) => (tab === "starred" ? p.starPosition !== null : p.kind === tab))
     .sort((a, b) => (tab === "starred" ? a.starPosition! - b.starPosition! : 0));
+  // Map pins = region + layer toggles (FP01); list tabs and search never change them.
   // Only the visible layers reach the map, so cluster counts match what is shown.
   const pins = inRegion
-    .filter(
-      (p) =>
-        (tab !== "starred" || p.starPosition !== null) &&
-        (p.kind === "restaurant" ? restaurants : spots),
-    )
+    .filter((p) => (p.kind === "restaurant" ? restaurants : spots))
     .map((p) => ({
       id: p.id,
       label: savedPlaceName(p),
