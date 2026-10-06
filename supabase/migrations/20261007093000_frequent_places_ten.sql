@@ -2,9 +2,9 @@ begin;
 
 -- Stars move to their own table so new clients can hold ten while saved_places.star_slot
 -- stays a 1..5 mirror for older clients. The lock waits for in-flight saved-place
--- writers and holds new ones until commit; plain SELECTs are not blocked, so an
--- old-body RPC that already read the table still reaches its UPDATE after commit and
--- is reconciled by the triggers below.
+-- writers and holds new ones until commit. No statement below takes a stronger lock
+-- on saved_places, so plain SELECTs are not blocked and an old-body RPC that already
+-- resolved its body still reaches its UPDATE after commit, reconciled by the triggers.
 lock table public.saved_places in share row exclusive mode;
 
 create unique index if not exists saved_places_owner_id_id_key on public.saved_places(owner_id, id);
@@ -22,10 +22,17 @@ create table if not exists public.place_stars (
 );
 
 alter table public.place_stars enable row level security;
-drop policy if exists "active members read own place stars" on public.place_stars;
-create policy "active members read own place stars" on public.place_stars
-  for select to authenticated
-  using (owner_id = (select auth.uid()) and public.is_active_member());
+-- Created only when absent: DROP POLICY/TRIGGER take ACCESS EXCLUSIVE locks (DROP
+-- POLICY also on auth tables here), which would block reads and sign-ins.
+do $$
+begin
+  if not exists (select 1 from pg_catalog.pg_policy where polrelid = 'public.place_stars'::regclass and polname = 'active members read own place stars') then
+    create policy "active members read own place stars" on public.place_stars
+      for select to authenticated
+      using (owner_id = (select auth.uid()) and public.is_active_member());
+  end if;
+end;
+$$;
 revoke all on table public.place_stars from public, anon, authenticated, service_role;
 grant select on table public.place_stars to authenticated;
 
@@ -117,22 +124,32 @@ end;
 $$;
 
 -- Names order the synchronizing triggers before the checks when constraints are
--- switched to IMMEDIATE; by default the checks are deferred to commit.
-drop trigger if exists place_stars_a_sync_mirror on public.place_stars;
-create trigger place_stars_a_sync_mirror after insert or update or delete on public.place_stars
-  for each row execute function public.place_stars_sync_mirror();
-drop trigger if exists saved_places_a_sync_stars_insert on public.saved_places;
-create trigger saved_places_a_sync_stars_insert after insert on public.saved_places
-  for each row when (new.star_slot is not null) execute function public.saved_places_sync_stars();
-drop trigger if exists saved_places_a_sync_stars_update on public.saved_places;
-create trigger saved_places_a_sync_stars_update after update of star_slot on public.saved_places
-  for each row when (old.star_slot is distinct from new.star_slot) execute function public.saved_places_sync_stars();
-drop trigger if exists place_stars_z_check_invariants on public.place_stars;
-create constraint trigger place_stars_z_check_invariants after insert or update or delete on public.place_stars
-  deferrable initially deferred for each row execute function public.assert_place_stars_consistent();
-drop trigger if exists saved_places_z_check_star_invariants on public.saved_places;
-create constraint trigger saved_places_z_check_star_invariants after insert or update of star_slot, owner_id on public.saved_places
-  deferrable initially deferred for each row execute function public.assert_place_stars_consistent();
+-- switched to IMMEDIATE; by default the checks are deferred to commit. CREATE TRIGGER
+-- needs only the SHARE ROW EXCLUSIVE lock already held; a rerun keeps the existing ones.
+do $$
+begin
+  if not exists (select 1 from pg_catalog.pg_trigger where tgrelid = 'public.place_stars'::regclass and tgname = 'place_stars_a_sync_mirror') then
+    create trigger place_stars_a_sync_mirror after insert or update or delete on public.place_stars
+      for each row execute function public.place_stars_sync_mirror();
+  end if;
+  if not exists (select 1 from pg_catalog.pg_trigger where tgrelid = 'public.saved_places'::regclass and tgname = 'saved_places_a_sync_stars_insert') then
+    create trigger saved_places_a_sync_stars_insert after insert on public.saved_places
+      for each row when (new.star_slot is not null) execute function public.saved_places_sync_stars();
+  end if;
+  if not exists (select 1 from pg_catalog.pg_trigger where tgrelid = 'public.saved_places'::regclass and tgname = 'saved_places_a_sync_stars_update') then
+    create trigger saved_places_a_sync_stars_update after update of star_slot on public.saved_places
+      for each row when (old.star_slot is distinct from new.star_slot) execute function public.saved_places_sync_stars();
+  end if;
+  if not exists (select 1 from pg_catalog.pg_trigger where tgrelid = 'public.place_stars'::regclass and tgname = 'place_stars_z_check_invariants') then
+    create constraint trigger place_stars_z_check_invariants after insert or update or delete on public.place_stars
+      deferrable initially deferred for each row execute function public.assert_place_stars_consistent();
+  end if;
+  if not exists (select 1 from pg_catalog.pg_trigger where tgrelid = 'public.saved_places'::regclass and tgname = 'saved_places_z_check_star_invariants') then
+    create constraint trigger saved_places_z_check_star_invariants after insert or update of star_slot, owner_id on public.saved_places
+      deferrable initially deferred for each row execute function public.assert_place_stars_consistent();
+  end if;
+end;
+$$;
 
 -- Existing stars keep their slot; a rerun (including one after 6..10 stars exist)
 -- inserts nothing because every mirrored star is already present.

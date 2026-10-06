@@ -54,6 +54,7 @@ with protected_tables(table_name) as (
     ('share_preview_grants'),
     ('kakao_oidc_handoffs')
     ,('place_favorites')
+    ,('place_stars')
     ,('play_admission_challenges')
     ,('play_admission_budget')
     ,('weather_budget_policy')

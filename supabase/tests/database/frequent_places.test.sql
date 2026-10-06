@@ -48,7 +48,7 @@ create function pg_temp.snap() returns void language sql as $$
 $$;
 create function pg_temp.delta(k text) returns bigint language sql stable as $$
   select saved.revision-snap.revision from public.saved_places saved join rev_snapshot snap on snap.k=saved.place->>'kakaoPlaceId'
-  where saved.owner_id='97000000-0000-0000-0000-000000000001'
+  where saved.owner_id='97000000-0000-0000-0000-000000000001' and snap.k=$1
 $$;
 -- Privileged fixture writer: replaces A's stars; the sync trigger maintains the mirror.
 create function pg_temp.set_stars(spec text) returns void language plpgsql as $$
@@ -269,11 +269,13 @@ reset role;
 drop trigger test_frequent_forced_failure on public.saved_places;
 drop function public.test_frequent_forced_failure();
 
--- The commit-time check rejects a star whose mirror was skipped.
+-- The commit-time check rejects a star whose mirror was skipped. Replica mode writes
+-- the star without triggers; a no-op owner update then queues the owner check.
 savepoint skipped_mirror;
-alter table public.place_stars disable trigger place_stars_a_sync_mirror;
+set local session_replication_role = replica;
 insert into public.place_stars(owner_id,slot,saved_place_id) values ('97000000-0000-0000-0000-000000000001',5,pg_temp.sid('a12'));
-alter table public.place_stars enable trigger place_stars_a_sync_mirror;
+set local session_replication_role = origin;
+update public.saved_places set owner_id=owner_id where id=pg_temp.sid('a11');
 select pg_temp.expect_error('set constraints all immediate','SAVED_PLACE_STAR_INVARIANT','deferred check rejects a missing mirror');
 rollback to savepoint skipped_mirror;
 insert into tap_results values ((pg_temp.stars()='1:a1,3:a7,4:direct-insert'),'skipped-mirror fixture is rolled back');
@@ -341,7 +343,7 @@ insert into tap_results select star_position=1, 'administrator manages own stars
 select pg_temp.expect_error($q$insert into public.place_stars(owner_id,slot,saved_place_id) select owner_id,2,id from public.saved_places$q$,'permission denied for table place_stars','authenticated direct star insert denied','42501');
 select pg_temp.expect_error($q$update public.place_stars set slot=3$q$,'permission denied for table place_stars','authenticated direct star update denied','42501');
 select pg_temp.expect_error($q$delete from public.place_stars$q$,'permission denied for table place_stars','authenticated direct star delete denied','42501');
-select pg_temp.expect_error($q$delete from public.saved_place_entries$q$,'permission denied for view saved_place_entries','authenticated direct view write denied','42501');
+select pg_temp.expect_error($q$delete from public.saved_place_entries$q$,'cannot delete from view "saved_place_entries"','authenticated direct view write denied (join view is not updatable)','55000');
 reset role;
 set local role anon;
 select pg_temp.expect_error($q$select * from public.place_stars$q$,'permission denied for table place_stars','anonymous star read denied','42501');
@@ -385,6 +387,7 @@ insert into tap_results values
 ((not has_table_privilege('service_role','public.place_stars','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')),'service role has no place_stars privilege'),
 ((not has_table_privilege('authenticated','public.place_stars','INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')),'authenticated has only select on place_stars'),
 ((not has_table_privilege('anon','public.saved_place_entries','SELECT')),'anonymous has no entry select'),
+((not has_table_privilege('authenticated','public.saved_place_entries','INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')),'authenticated has only select on saved_place_entries'),
 ((select condeferrable and condeferred from pg_constraint where conname='place_stars_z_check_invariants' and conrelid='public.place_stars'::regclass),'place_stars invariant check is deferred'),
 ((select condeferrable and condeferred from pg_constraint where conname='saved_places_z_check_star_invariants' and conrelid='public.saved_places'::regclass),'saved_places invariant check is deferred'),
 ((exists(select 1 from pg_constraint where conrelid='public.saved_places'::regclass and conname='saved_places_star_slot_check' and pg_get_constraintdef(oid) like '%star_slot >= 1%star_slot <= 5%')),'legacy 1..5 check is kept'),

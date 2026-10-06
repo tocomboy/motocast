@@ -164,14 +164,15 @@ delete from race_results;
 
 -- 5. The deferred check fails a commit that skipped the mirror.
 select extensions.dblink_exec('fp_admin','begin');
-select extensions.dblink_exec('fp_admin','alter table public.place_stars disable trigger place_stars_a_sync_mirror');
+-- Replica mode writes the star without triggers; a no-op owner update queues the check.
+select extensions.dblink_exec('fp_admin','set local session_replication_role = replica');
 select extensions.dblink_exec('fp_admin',format('insert into public.place_stars(owner_id,slot,saved_place_id) values (%L,1,%L)',pg_temp.owner(7),pg_temp.pid(7,'p1')));
-select extensions.dblink_exec('fp_admin','alter table public.place_stars enable trigger place_stars_a_sync_mirror');
+select extensions.dblink_exec('fp_admin','set local session_replication_role = origin');
+select extensions.dblink_exec('fp_admin',format('update public.saved_places set owner_id=owner_id where id=%L',pg_temp.pid(7,'p2')));
 insert into race_results values ('admin',extensions.dblink_exec('fp_admin','commit',false));
 insert into tap_results values
 ((select result='ERROR' from race_results where connection='admin') and extensions.dblink_error_message('fp_admin') like '%SAVED_PLACE_STAR_INVARIANT%','commit without a mirror fails the deferred I2 check'),
-(not exists(select 1 from public.place_stars where owner_id=pg_temp.owner(7)),'failed commit leaves no star'),
-((select tgenabled='O' from pg_trigger where tgname='place_stars_a_sync_mirror'),'failed commit leaves the sync trigger enabled');
+(not exists(select 1 from public.place_stars where owner_id=pg_temp.owner(7)),'failed commit leaves no star');
 
 select extensions.dblink_disconnect('fp_c1'); select extensions.dblink_disconnect('fp_c2'); select extensions.dblink_disconnect('fp_admin');
 drop procedure public.test_frequent_toggle(uuid,integer);

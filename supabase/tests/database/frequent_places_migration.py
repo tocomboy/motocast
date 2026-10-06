@@ -121,7 +121,7 @@ ROWS = "select md5(coalesce(string_agg(row_to_json(s)::text,'|' order by s.id),'
 LEGACY_VIEW = "select md5(coalesce(string_agg(row_to_json(v)::text,'|' order by v.owner_id,v.slot),'')) from public.place_favorites v where {};"
 DEFAULT_ACL = ("select coalesce(string_agg(format('%s|%s|%s|%s',defaclrole::regrole,defaclnamespace::regnamespace,defaclobjtype,defaclacl),';' "
                "order by defaclrole,defaclnamespace,defaclobjtype),'') from pg_default_acl;")
-SERVICE_FUNCTIONS = ("select string_agg(p.oid::regprocedure::text,',' order by p.oid::regprocedure::text) from pg_proc p "
+SERVICE_FUNCTIONS = ("select string_agg(p.oid::regprocedure::text,';' order by p.oid::regprocedure::text) from pg_proc p "
                      "join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname<>'test_frequent_old_call' "
                      "and has_function_privilege('service_role',p.oid,'EXECUTE');")
 before_rows = sql(ROWS.format(STABLE_OWNERS))
@@ -189,7 +189,7 @@ and not exists(select owner_id,slot,saved_place_id,created_at from public.place_
   except select owner_id,star_slot,id,created_at from public.saved_places where star_slot is not null);""") == 't',
       'backfilled stars equal legacy slots, places and creation times')
 check(sql(DEFAULT_ACL) == before_acl, 'future-object default ACL is unchanged')
-check(sql(SERVICE_FUNCTIONS) == before_service and len(before_service.split(',')) == 14, 'service role still executes the same fourteen functions')
+check(sql(SERVICE_FUNCTIONS) == before_service and len(before_service.split(';')) == 14, 'service role still executes the same fourteen functions')
 check(sql("select coalesce(max(c),0)<=5 from (select count(*) c from public.saved_places where star_slot is not null group by owner_id) s;") == 't',
       'legacy saved_places reads keep at most five stars per owner')
 
