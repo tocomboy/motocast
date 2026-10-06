@@ -48,6 +48,24 @@ function parseResult(value: unknown): PlaceSearchResult {
   };
 }
 
+/** Checks a coordinate-mode response against the selected point. A region-only id
+ * (`:region`) is accepted only when the request opted in with `fallback: "region"`. */
+export function selectedMapPointPlace(
+  response: PlaceSearchResponse,
+  point: { latitude: number; longitude: number },
+  regionFallback: boolean,
+): PlaceSearchResult | null {
+  const latitude = Number(point.latitude.toFixed(7));
+  const longitude = Number(point.longitude.toFixed(7));
+  const id = `map:${latitude.toFixed(7)}:${longitude.toFixed(7)}`;
+  const place = response.places[0];
+  if (!response.isEnd || response.places.length > 1 || (place && (
+    place.latitude !== latitude || place.longitude !== longitude ||
+    (place.kakaoPlaceId !== id && !(regionFallback && place.kakaoPlaceId === `${id}:region`))
+  ))) throw new Error("WRONG_SELECTED_POINT");
+  return place ?? null;
+}
+
 export function parsePlaceSearchResponse(value: unknown): PlaceSearchResponse {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("INVALID_PLACE_SEARCH_RESPONSE");
