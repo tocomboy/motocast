@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parsePlaceSearchResponse, selectedMapPointPlace } from "./search";
+import contract from "../../contracts/android/place-search/fixtures.json";
 
 const place = {
   kakaoPlaceId: "123",
@@ -66,5 +67,14 @@ describe("selectedMapPointPlace", () => {
     const valid = mapPlace("map:37.3388112:127.2699521:region");
     expect(() => selectedMapPointPlace(response(valid, valid), point, true)).toThrow("WRONG_SELECTED_POINT");
     expect(() => selectedMapPointPlace(parsePlaceSearchResponse({ places: [valid], isEnd: false }), point, true)).toThrow("WRONG_SELECTED_POINT");
+  });
+});
+
+describe("shared Android coordinate client checks", () => {
+  type ClientCheck = { id: string; regionFallback: boolean; point: { latitude: number; longitude: number }; place: unknown; accepted: boolean };
+  it.each(contract.coordinateClientChecks as ClientCheck[])("$id", ({ regionFallback, point, place, accepted }) => {
+    const response = parsePlaceSearchResponse({ places: [place], isEnd: true });
+    if (accepted) expect(selectedMapPointPlace(response, point, regionFallback)).toEqual(response.places[0]);
+    else expect(() => selectedMapPointPlace(response, point, regionFallback)).toThrow("WRONG_SELECTED_POINT");
   });
 });

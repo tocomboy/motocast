@@ -2,8 +2,8 @@
   "openapi": "3.1.1",
   "info": {
     "title": "MOTOCAST Android place search contract",
-    "version": "1.1.0",
-    "description": "Backward-compatible keyword search plus coordinate reverse lookup. Keyword unknown fields remain ignored; coordinate mode rejects extra fields. Runtime string limits use UTF-16 units and ECMAScript whitespace normalization. Fixed candidates and live readiness are recorded separately."
+    "version": "1.2.0",
+    "description": "Backward-compatible keyword search plus coordinate reverse lookup with an opt-in region-only fallback (1.2.0). Keyword unknown fields remain ignored; coordinate mode rejects every extra field except the optional fallback. Runtime string limits use UTF-16 units and ECMAScript whitespace normalization. Fixed candidates and live readiness are recorded separately."
   },
   "servers": [
     {
@@ -311,9 +311,13 @@
             "type": "number",
             "minimum": 124.5,
             "maximum": 132
+          },
+          "fallback": {
+            "const": "region",
+            "description": "Optional (1.2.0). Only when coord2address returns no document, the server spends one more unit of the same local_keyword_search daily budget and calls coord2regioncode once. Any other value, including null, is INVALID_PLACE_SEARCH_REQUEST."
           }
         },
-        "description": "Round coordinates to 7 decimal places before provider call and signing. No automatic retry. Response is zero or one address, isEnd=true. Coordinates are never snapped to a different place."
+        "description": "Round coordinates to 7 decimal places before provider call and signing. No automatic retry. Response is zero or one place, isEnd=true. Coordinates are never snapped to a different place. Without fallback (1.1.0 behaviour): one budget unit, one coord2address call; an address yields kakaoPlaceId map:<lat7>:<lng7>, otherwise places=[]. With fallback=\"region\" and no address: a second budget unit is charged before one coord2regioncode call. Exactly one region_type B document is used (B/H in any order); no B document yields places=[]; two or more B documents, more than ten documents or a malformed document is INVALID_PLACE_PROVIDER_RESPONSE (502). A refused second charge, a lost charge response, a timeout, a provider 4xx/5xx or invalid JSON is an error with no retry or refund and is never reported as an empty result. A region place has kakaoPlaceId map:<lat7>:<lng7>:region, address = B address_name, roadAddress = null, name = \"<region_2depth_name> <region_3depth_name> 부근\" (the available parts, or the address when both are empty), category = \"지도에서 선택 · 상세 주소 없음\", phone = null, placeUrl = null, the selected coordinate, and a signature over that identity. Strings are trimmed and control characters are rejected before signing. Client check: a request without fallback accepts only kakaoPlaceId map:<lat7>:<lng7>; a request with fallback accepts exactly map:<lat7>:<lng7> or map:<lat7>:<lng7>:region. Both require the selected rounded coordinate, at most one place and isEnd=true; any other coordinate or suffix is rejected. Saving a :region place requires a non-null alias (INVALID_SAVED_PLACE_METADATA)."
       }
     }
   }

@@ -47,6 +47,29 @@ describe("shared Android coordinate request fixtures", () => {
   });
 });
 
+describe("shared Android coordinate response fixtures", () => {
+  type ResponseCase = { id: string; request: unknown; providerCalls: Array<{ endpoint: string; documents: unknown }>;
+    response?: { places: Array<Record<string, unknown> & { verificationToken: string }> }; error?: { cause: string } };
+  it.each(fixture.coordinateResponses as ResponseCase[])("$id", async (item) => {
+    const request = parseMapPointRequest(item.request);
+    const outcome = () => {
+      let place = normalizeMapPlace(item.providerCalls[0].documents, request);
+      if (!place && request.fallback === "region") place = normalizeRegionPlace(item.providerCalls[1].documents, request);
+      return place;
+    };
+    if (item.error) {
+      expect(outcome).toThrow(item.error.cause);
+      return;
+    }
+    const place = outcome();
+    const expected = item.response!.places;
+    if (!place) { expect(expected).toEqual([]); return; }
+    const { verificationToken, ...unsigned } = expected[0];
+    expect(place).toEqual(unsigned);
+    expect(await signPlace(place, fixture.coordinateSigningSecret)).toBe(verificationToken);
+  });
+});
+
 describe("region-only map point fallback", () => {
   const secret = "local-fixture-only-".repeat(3);
   const regionPoint = { ...point, fallback: "region" as const };

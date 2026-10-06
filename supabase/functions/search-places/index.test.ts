@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { verifyPlace } from "../_shared/place-verification";
+import contract from "../../../contracts/android/place-search/fixtures.json";
 const auth = vi.hoisted(() => ({ requireMember: vi.fn(), consumeBudget: vi.fn() }));
 vi.mock("../_shared/auth.ts", () => auth);
 
@@ -155,5 +156,37 @@ describe("search-places region fallback", () => {
   it.each([{ ...point, fallback: "address" }, { ...point, fallback: null }, { ...opted, query: "x" }])("rejects a malformed opt-in before quota", async (body) => {
     expect((await call(body)).status).toBe(400);
     expect(auth.consumeBudget).not.toHaveBeenCalled(); expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe("search-places shared Android coordinate response fixtures", () => {
+  type ResponseCase = { id: string; request: unknown; providerCalls: Array<{ endpoint: string; documents: unknown }>;
+    budgetCharges: number; response?: unknown; error?: { cause: string; status: number } };
+  let handler: (request: Request) => Promise<Response>;
+  const fetcher = vi.fn();
+  const env = new Map([['KAKAO_REST_API_KEY','fixture-provider-key'], ['PLACE_VERIFICATION_SECRET',contract.coordinateSigningSecret], ['KAKAO_LOCAL_DAILY_LIMIT','200']]);
+  let log: ReturnType<typeof vi.spyOn>;
+  beforeAll(async () => {
+    vi.resetModules();
+    log = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("Deno", { env: { get: (key: string) => env.get(key) }, serve: (fn: typeof handler) => { handler = fn; } });
+    vi.stubGlobal("fetch", fetcher); await import("./index");
+  });
+  beforeEach(() => {
+    vi.clearAllMocks(); auth.requireMember.mockResolvedValue({ user: {id: "fixture-member"} });
+    auth.consumeBudget.mockReset(); auth.consumeBudget.mockResolvedValue(1); fetcher.mockReset();
+  });
+  afterAll(() => { log.mockRestore(); vi.unstubAllGlobals(); });
+
+  it.each(contract.coordinateResponses as ResponseCase[])("$id", async (item) => {
+    for (const call of item.providerCalls) fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ documents: call.documents })));
+    const response = await handler(new Request("https://fixture/functions/v1/search-places", { method: "POST", headers: { origin: "http://localhost:3000", "content-type": "application/json" }, body: JSON.stringify(item.request) }));
+    expect(auth.consumeBudget).toHaveBeenCalledTimes(item.budgetCharges);
+    expect(fetcher.mock.calls.map(([url]) => (url as URL).pathname)).toEqual(item.providerCalls.map((call) => `/v2/local/geo/${call.endpoint}.json`));
+    if (item.error) {
+      expect(response.status).toBe(item.error.status); expect(await response.json()).not.toHaveProperty("places");
+    } else {
+      expect(response.status).toBe(200); expect(await response.json()).toEqual(item.response);
+    }
   });
 });
