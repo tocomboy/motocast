@@ -1,6 +1,6 @@
 # 자주 찾는 장소 10개·지도 지점 등록 구현 계약 (Issue #123)
 
-상태: V1 인수(1차 6건·재확인 2건 수정 필수 반영, 2026-10-07). 구현 대기. 기준 `origin/develop` 8679f63. 웹·Android 함께 적용, 버전 0.13.0.
+상태: V1 인수(1차 6건·재확인 2건 수정 필수 반영, 2026-10-07). DB·서버 구현과 로컬 격리 DB 검증 완료, V2 지적 반영(7절). 화면·Android·hosted 적용은 미완료. 기준 `origin/develop` 8679f63. 웹·Android 함께 적용, 버전 0.13.0.
 화면 시안은 Figma 작업 중이며 노드 대응표는 Issue #123에 기록한다. 이 문서는 DB·서버 계약과 클라이언트가 지켜야 할 경계를 소유한다.
 
 ## 1. 확인한 현재 상태
@@ -70,11 +70,22 @@ RPC 본문 버전과 무관하게 I1·I2가 유지되도록 DB가 강제한다.
 - 기본 복구는 **클라이언트만 이전 버전으로 되돌리고 DB(`place_stars`·trigger·호환 RPC·거울)는 유지**한다. 구버전 클라이언트는 2.3 표대로 동작하므로 6..10 별표는 숨겨질 뿐 유지된다.
 - 이번 범위에서 DB 역이관(`place_stars` 제거·구 RPC 본문 복원)은 하지 않는다. 검사와 실행 사이에 새 6..10 별표가 생길 수 있어 보존을 보장할 수 없기 때문이다(V1 재확인 #1).
 
+### 2.5 migration 잠금과 hosted 적용 (V2 #2)
+- 최초 적용과 재실행은 잠금이 다르다. 두 경우 모두 `saved_places`에는 `SHARE ROW EXCLUSIVE`만 잡아 SELECT를 막지 않는다(`DROP TRIGGER/POLICY`는 `ACCESS EXCLUSIVE`라 쓰지 않고, trigger·정책은 없을 때만 만든다).
+  - 최초 적용: `create policy`가 commit까지 auth 테이블 16개(`auth.users` 포함)에 `ACCESS EXCLUSIVE`를 잡는다. 로컬 이미지 17.6.1.166에서 확인했고 Supabase `supautils`의 허용 목록 잠금 문제와 일치한다(https://github.com/supabase/supautils/commit/42cc7f0c4b2655ee3f70a834e253e6a79c66f1d6). 그동안 로그인·auth 조회가 대기한다. 그래서 정책 생성을 commit 직전 마지막 문장으로 둔다.
+  - 재실행: 정책·trigger가 이미 있으면 만들지 않으므로 auth 테이블을 잠그지 않는다.
+- 상한: migration 첫 문장에서 `lock_timeout = 5s`(일반 RPC는 ms 단위라 5초 넘는 대기는 긴 쓰기·auth 트랜잭션이 진행 중이라는 뜻이고, 대기 중인 배타 잠금 요청은 뒤의 조회·로그인을 모두 줄 세운다), `statement_timeout = 60s`(현재 데이터에서 각 문장은 1초 미만이므로 폭주한 문장이 잠금을 오래 쥐지 못하게 한다)를 둔다. 둘 다 넘으면 전체 rollback된다.
+- 로컬 실측(격리 DB, fixture 수십 행): 본문 전체 12ms. `saved_places` 쓰기 트랜잭션이나 auth 쓰기(`auth.sessions`)가 잠금을 쥐고 있으면 각각 약 5.1초 뒤 lock timeout으로 실패하고 아무것도 남지 않는다.
+- hosted 적용 전 확인(사용자 승인 후, 실제 영향은 NOT_RUN):
+  1. 대상 프로젝트의 Postgres 버전(`select version()` 또는 대시보드)을 확인하고, 포함된 `supautils`가 위 commit을 포함하는지 Supabase 릴리스 노트로 대조한다. 판단할 수 없거나 미포함이면 영향이 있는 것으로 본다. Preview는 로컬과 같은 17.6.1.166이었으므로 영향이 있을 것으로 예상한다(미확인).
+  2. 필요하면 rollback 전용 probe로 확인한다: `begin; create table public.motocast_lock_probe(id int); alter table public.motocast_lock_probe enable row level security; create policy p on public.motocast_lock_probe for select to authenticated using (true); select count(*) from pg_locks where pid=pg_backend_pid() and mode='AccessExclusiveLock' and relation in (select oid from pg_class where relnamespace='auth'::regnamespace); rollback;` 결과가 0보다 크면 영향이 있다.
+  3. 영향이 있으면 저트래픽 시간에 적용한다. 잠금 대기 상한 5초, 문장 실행 상한 60초. 실패하면 자동 rollback되므로 `pg_stat_activity`에서 차단 세션을 확인하고, 재시도는 원인 확인 뒤 1회만 한다. 로그인 오류 보고나 5초를 넘는 auth 대기가 관측되면 중단하고 보고한다.
+
 ## 3. 주소 없는 지도 지점 (서버 계약, 비용)
 
 - 신규 클라이언트만 coordinate 요청에 `fallback: "region"`을 보낸다. 없으면(구버전) 지금과 똑같이 동작한다. 서버 요청 파서는 이 선택 키만 추가로 허용한다.
 - `coord2address` 문서 0건이고 `fallback: "region"`이면 `coord2regioncode`를 **한 번** 더 조회한다. 두 번째 호출 전에도 같은 `local_keyword_search` 일일 예산을 차감한다. 주소 성공 시 1회, 대체 조회 시 최대 2회. 두 번째 차감 거부·응답 유실·timeout·4xx/5xx·잘못된 JSON은 추가 호출이나 환급 없이 오류이며 빈 결과로 위장하지 않는다. 지역 문서도 없으면 빈 결과.
-- 지역 문서는 `region_type = "B"` 1건만 쓴다(B/H 혼합·순서 무관, B 없음이면 빈 결과, B가 여러 개거나 형식 오류면 오류). 응답 좌표는 쓰지 않고 선택 좌표를 그대로 쓴다.
+- 지역 문서는 `region_type = "B"` 1건만 쓴다(B/H 혼합·순서 무관, B 없음이면 빈 결과, B가 여러 개거나 문서가 10건을 넘거나 형식 오류면 오류). 응답 좌표는 쓰지 않고 선택 좌표를 그대로 쓴다.
 - 지역만 찾은 장소: `kakaoPlaceId = map:<lat7>:<lng7>:region`(80자 이하, 서명 대상이라 저장 후에도 식별됨), `address` = B 문서 `address_name`, `roadAddress = null`, `name` = `<region_2depth_name> <region_3depth_name> 부근`(비면 address 기반), `category = "지도에서 선택 · 상세 주소 없음"`. 문자열은 서명 전에 trim·제어문자 검사로 정규화한다.
 - 별명 필수: `kakaoPlaceId`가 `:region`으로 끝나는 장소는 `save_place_v2`·`update_saved_place`에서 alias null을 `INVALID_SAVED_PLACE_METADATA`로 거부한다. 구 `save_place`·`add_place_favorite`는 이런 장소를 받을 일이 없지만(구버전은 요청하지 않음) 같은 규칙으로 거부한다. 신규 클라이언트는 id 접미사로 "상세 주소 없음"을 표시한다.
 - 클라이언트 응답 검사(웹 `map-point-confirmation.tsx`, Android `PlaceSearchContract`): `fallback: "region"`을 보낸 요청에 한해 id가 정확히 `map:<lat7>:<lng7>` 또는 정확히 `map:<lat7>:<lng7>:region`일 때만 통과한다. 선택 좌표 일치·응답 1건 이하·`isEnd` 검사는 유지하고, 다른 좌표·임의 접미사는 거부한다. opt-in이 없는 요청은 기존 검사 그대로다.
@@ -105,7 +116,7 @@ RPC 본문 버전과 무관하게 I1·I2가 유지되도록 DB가 강제한다.
 
 | 지적 | 판정 | 처리 |
 |---|---|---|
-| 1 복구 절차 | 수정 필수 | 2.4 클라이언트 우선 복구, 조건부 역이관 |
+| 1 복구 절차 | 수정 필수 | 2.4 클라이언트 우선 복구, DB 역이관 없음 |
 | 2 전환 경계 | 수정 필수 | 2.1 DB trigger 동기화·deferred 검사·lock 순서 |
 | 3 구 RPC 상태 전이 | 수정 필수 | 2.3 표 |
 | 4 지역 지점 식별 | 수정 필수 | 3절 `:region` id 접미사·서버 별명 필수·`fallback` opt-in |
@@ -117,3 +128,20 @@ RPC 본문 버전과 무관하게 I1·I2가 유지되도록 DB가 강제한다.
 | 재확인 제안: revision 표기 | 제안 반영 | 2.3 표 |
 
 재확인 2건은 검증자가 제시한 최소 수정안을 그대로 반영했으므로 별도 V1 라운드 없이 인수하고, 구현 커밋의 V2에서 함께 확인한다. 구현 시 주의(검증자): constraint trigger는 `AFTER ROW`로 두고 재귀 억제가 최종 I1·I2 검사를 건너뛰지 않게 한다. `SHARE ROW EXCLUSIVE`는 SELECT를 막지 않으므로 "모든 옛 호출 배출"로 해석하지 않는다.
+
+## 7. 구현 해석과 V2 판정 기록 (2026-10-07)
+
+구현자 해석(오케스트레이터 인수):
+- `add_place_favorite`는 지역 지점으로 새 행을 만들 때만 `INVALID_FAVORITE_PLACE`로 거부한다. 별명이 이미 있는 지역 지점에 별표를 다는 것은 허용한다(alias null 저장이 생기지 않음). `save_place`·`save_place_v2`는 중복 확인 전 검증에서 거부한다.
+- `update_saved_place` 오류 순서: `SAVED_PLACE_NOT_FOUND` → `SAVED_PLACE_STALE` → `INVALID_SAVED_PLACE_METADATA`.
+- 지역 응답 문서는 10건까지만 받는다(3절).
+- 내부 오류 코드: `SAVED_PLACE_STAR_INVARIANT`(commit 시 I1·I2 위반), `SAVED_PLACE_STAR_CONFLICT`(거울 직접 쓰기가 다른 장소의 별표 칸을 가리킬 때. 정상 경로에서는 unique index가 먼저 막아 도달하지 않는 방어용).
+
+V2(후보 b8b9b4d) 판정:
+
+| 지적 | 판정 | 처리 |
+|---|---|---|
+| 1 0행 반환 시 단언 누락·하네스 `passed > 0` | 수정 필수 | 행 수와 값을 함께 단언, suite별 고정 계획 수(146/26/78/17)와 하네스 계획 수 |
+| 2 최초 적용 auth 잠금 | 수정 필수 | 2.5: timeout 상한, 정책 생성을 마지막으로, hosted 사전 확인 절차 |
+| 제안 3 지역 문서 10건 제한 | 제안 반영 | 3절 명시, 10/11건 경계 테스트 |
+| 제안 4 문서 정리 | 제안 반영 | 상태 줄, 6절 1번 문구, 이 절 |

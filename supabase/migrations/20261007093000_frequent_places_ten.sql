@@ -1,5 +1,13 @@
 begin;
 
+-- Fail and roll back instead of queueing: a lock wait of more than 5 s means a long
+-- writer or auth transaction is in flight (normal RPCs finish in milliseconds), and a
+-- queued exclusive request would stall every later reader and sign-in behind it. No
+-- statement here should take more than a second on the current data, so 60 s bounds
+-- how long the locks can be held by a runaway statement.
+set local lock_timeout = '5s';
+set local statement_timeout = '60s';
+
 -- Stars move to their own table so new clients can hold ten while saved_places.star_slot
 -- stays a 1..5 mirror for older clients. The lock waits for in-flight saved-place
 -- writers and holds new ones until commit. No statement below takes a stronger lock
@@ -22,17 +30,6 @@ create table if not exists public.place_stars (
 );
 
 alter table public.place_stars enable row level security;
--- Created only when absent: DROP POLICY/TRIGGER take ACCESS EXCLUSIVE locks (DROP
--- POLICY also on auth tables here), which would block reads and sign-ins.
-do $$
-begin
-  if not exists (select 1 from pg_catalog.pg_policy where polrelid = 'public.place_stars'::regclass and polname = 'active members read own place stars') then
-    create policy "active members read own place stars" on public.place_stars
-      for select to authenticated
-      using (owner_id = (select auth.uid()) and public.is_active_member());
-  end if;
-end;
-$$;
 revoke all on table public.place_stars from public, anon, authenticated, service_role;
 grant select on table public.place_stars to authenticated;
 
@@ -393,6 +390,20 @@ begin
     ) owners where not public.place_stars_consistent(owners.owner_id)
   ) then
     raise exception using errcode = 'P0001', message = 'SAVED_PLACE_STAR_INVARIANT';
+  end if;
+end;
+$$;
+
+-- Created last and only when absent. On this Postgres image CREATE POLICY holds ACCESS
+-- EXCLUSIVE locks on the auth tables until commit (supautils allowlist locking), so
+-- nothing but COMMIT follows it; a rerun skips it. DROP POLICY/TRIGGER are never used
+-- because they take ACCESS EXCLUSIVE locks as well.
+do $$
+begin
+  if not exists (select 1 from pg_catalog.pg_policy where polrelid = 'public.place_stars'::regclass and polname = 'active members read own place stars') then
+    create policy "active members read own place stars" on public.place_stars
+      for select to authenticated
+      using (owner_id = (select auth.uid()) and public.is_active_member());
   end if;
 end;
 $$;

@@ -75,6 +75,12 @@ describe("region-only map point fallback", () => {
     });
   });
 
+  it("accepts at most ten region documents", () => {
+    const ten = [legal, ...Array.from({ length: 9 }, () => admin)];
+    expect(normalizeRegionPlace(ten, regionPoint)?.kakaoPlaceId).toBe("map:37.3388112:127.2699521:region");
+    expect(() => normalizeRegionPlace([...ten, admin], regionPoint)).toThrow("INVALID_PLACE_PROVIDER_RESPONSE");
+  });
+
   it("returns no place when the provider has no legal region", () => {
     expect(normalizeRegionPlace([], regionPoint)).toBeNull();
     expect(normalizeRegionPlace([admin], regionPoint)).toBeNull();

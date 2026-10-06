@@ -184,4 +184,8 @@ insert into tap_results values
 ((not exists(select 1 from public.place_stars where owner_id between '96000000-0000-0000-0000-000000000001' and '96000000-0000-0000-0000-000000000009')),'owner deletion cascades stars through the deferred check');
 select (case when ok then 'ok ' else 'not ok ' end)||row_number() over()||' - '||description from tap_results;
 select '1..'||count(*) from tap_results;
-do $$ begin if exists(select 1 from tap_results where not ok) then raise exception 'FREQUENT_PLACES_CONCURRENCY_FAILED'; end if; end $$;
+-- Fixed plan: a skipped assertion fails the suite instead of vanishing.
+do $$ begin
+  if (select count(*) from tap_results)<>26 then raise exception 'FREQUENT_PLACES_CONCURRENCY_PLAN_MISMATCH: % of 26', (select count(*) from tap_results); end if;
+  if exists(select 1 from tap_results where not ok) then raise exception 'FREQUENT_PLACES_CONCURRENCY_FAILED'; end if;
+end $$;

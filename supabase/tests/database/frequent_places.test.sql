@@ -74,18 +74,18 @@ select set_config('request.jwt.claim.sub','97000000-0000-0000-0000-000000000001'
 -- New RPC: set_place_star.
 select pg_temp.set_stars('1:a1,3:a3');
 set local role authenticated; select pg_temp.snap();
-insert into tap_results select star_position=2 and star_slot=2 and revision=2, 'new star takes the lowest free 1..10 position and returns the view row'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_position=2 and star_slot=2 and revision=2),false), 'new star takes the lowest free 1..10 position and returns the view row'
   from public.set_place_star(pg_temp.sid('a2'),pg_temp.rev('a2'),true);
 insert into tap_results values ((pg_temp.stars()='1:a1,2:a2,3:a3' and pg_temp.mirror()='1:a1,2:a2,3:a3' and pg_temp.delta('a2')=1),'new star writes place_stars once and mirrors 1..5');
-insert into tap_results select star_position=2 and revision=2, 'starring a starred place is a no-op'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_position=2 and revision=2),false), 'starring a starred place is a no-op'
   from public.set_place_star(pg_temp.sid('a2'),pg_temp.rev('a2'),true);
-insert into tap_results select star_position is null and star_slot is null and revision=3, 'unstar removes the star and advances revision once'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_position is null and star_slot is null and revision=3),false), 'unstar removes the star and advances revision once'
   from public.set_place_star(pg_temp.sid('a2'),pg_temp.rev('a2'),false);
-insert into tap_results select star_position is null and revision=3, 'unstarring an unstarred place is a no-op'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_position is null and revision=3),false), 'unstarring an unstarred place is a no-op'
   from public.set_place_star(pg_temp.sid('a2'),pg_temp.rev('a2'),false);
 reset role; select pg_temp.set_stars('1:a1,2:a2,3:a3,4:a4,5:a5');
 set local role authenticated;
-insert into tap_results select star_position=6 and star_slot is null, 'sixth star is stored without a legacy mirror'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_position=6 and star_slot is null),false), 'sixth star is stored without a legacy mirror'
   from public.set_place_star(pg_temp.sid('a6'),pg_temp.rev('a6'),true);
 reset role; select pg_temp.set_stars('1:a1,2:a2,3:a3,4:a4,5:a5,6:a6,7:a7,8:a8,9:a9,10:a10');
 set local role authenticated; select pg_temp.snap();
@@ -99,17 +99,15 @@ select pg_temp.expect_error($q$select public.set_place_star(pg_temp.sid('a11'),p
 -- New RPC: save_place_v2.
 reset role; select pg_temp.set_stars('1:a1,2:a2,3:a3,4:a4,5:a5,6:a6,8:a8');
 set local role authenticated;
-insert into tap_results select star_position=7 and star_slot is null and alias='새 별명' and kind='restaurant' and revision=1 and province='경기' and place=pg_temp.place('n1'),
-  'save_place_v2 stores metadata and an initial star in 1..10'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_position=7 and star_slot is null and alias='새 별명' and kind='restaurant' and revision=1 and province='경기' and place=pg_temp.place('n1')),false), 'save_place_v2 stores metadata and an initial star in 1..10'
   from public.save_place_v2(pg_temp.place('n1'),'새 별명','restaurant',true);
-insert into tap_results select star_position=7 and alias='새 별명' and kind='restaurant' and revision=1 and place=pg_temp.place('n1'),
-  'save_place_v2 duplicate returns the existing row unchanged'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_position=7 and alias='새 별명' and kind='restaurant' and revision=1 and place=pg_temp.place('n1')),false), 'save_place_v2 duplicate returns the existing row unchanged'
   from public.save_place_v2(jsonb_set(pg_temp.place('n1'),'{name}','"다른 원본"'),'다른 별명','riding_spot',false);
 reset role; select pg_temp.set_stars('2:a2');
 set local role authenticated;
-insert into tap_results select star_position=1 and star_slot=1, 'save_place_v2 fills the lowest free position'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_position=1 and star_slot=1),false), 'save_place_v2 fills the lowest free position'
   from public.save_place_v2(pg_temp.place('n2'),null,'riding_spot',true);
-insert into tap_results select star_position is null, 'save_place_v2 without a star stores none'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_position is null),false), 'save_place_v2 without a star stores none'
   from public.save_place_v2(pg_temp.place('n3'));
 select pg_temp.expect_error($q$select public.save_place_v2('42'::jsonb)$q$,'INVALID_SAVED_PLACE','save_place_v2 rejects a malformed place');
 select pg_temp.expect_error($q$select public.save_place_v2(pg_temp.place('bad')||'{"extra":true}'::jsonb)$q$,'INVALID_SAVED_PLACE','save_place_v2 rejects extra fields');
@@ -130,10 +128,10 @@ set constraints all immediate; set constraints all deferred;
 -- Legacy set_saved_place_star (2.3 table).
 select pg_temp.set_stars('1:a1,2:a2');
 set local role authenticated; select pg_temp.snap();
-insert into tap_results select star_slot=3, 'legacy star takes the lowest free 1..5 slot'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_slot=3),false), 'legacy star takes the lowest free 1..5 slot'
   from public.set_saved_place_star(pg_temp.sid('a3'),pg_temp.rev('a3'),true);
 insert into tap_results values ((pg_temp.stars()='1:a1,2:a2,3:a3' and pg_temp.delta('a3')=1),'legacy star writes place_stars and advances revision once');
-insert into tap_results select star_slot=2, 'legacy star on a visible star is a no-op'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_slot=2),false), 'legacy star on a visible star is a no-op'
   from public.set_saved_place_star(pg_temp.sid('a2'),pg_temp.rev('a2'),true);
 insert into tap_results values (pg_temp.delta('a2')=0,'legacy no-op keeps revision');
 reset role; select pg_temp.set_stars('1:a1,2:a2,3:a3,4:a4,5:a5,6:a6');
@@ -142,7 +140,7 @@ select pg_temp.expect_error($q$select public.set_saved_place_star(pg_temp.sid('a
 insert into tap_results values ((pg_temp.delta('a7')=0 and pg_temp.stars()='1:a1,2:a2,3:a3,4:a4,5:a5,6:a6'),'legacy star limit changes nothing');
 reset role; select pg_temp.set_stars('1:a1,3:a3,7:a7');
 set local role authenticated; select pg_temp.snap();
-insert into tap_results select star_slot=2, 'legacy star on a hidden star moves it into free 1..5'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_slot=2),false), 'legacy star on a hidden star moves it into free 1..5'
   from public.set_saved_place_star(pg_temp.sid('a7'),pg_temp.rev('a7'),true);
 insert into tap_results values ((pg_temp.stars()='1:a1,2:a7,3:a3' and pg_temp.delta('a7')=1),'hidden star move is atomic and advances revision once');
 reset role; select pg_temp.set_stars('1:a1,2:a2,3:a3,4:a4,5:a5,8:a8');
@@ -151,32 +149,31 @@ select pg_temp.expect_error($q$select public.set_saved_place_star(pg_temp.sid('a
 insert into tap_results values ((pg_temp.delta('a8')=0 and pg_temp.stars()='1:a1,2:a2,3:a3,4:a4,5:a5,8:a8'),'failed legacy move keeps the hidden star');
 reset role; select pg_temp.set_stars('1:a1,4:a4,9:a9');
 set local role authenticated; select pg_temp.snap();
-insert into tap_results select star_slot is null, 'legacy unstar removes a visible star'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_slot is null),false), 'legacy unstar removes a visible star'
   from public.set_saved_place_star(pg_temp.sid('a4'),pg_temp.rev('a4'),false);
 insert into tap_results values ((pg_temp.stars()='1:a1,9:a9' and pg_temp.delta('a4')=1),'legacy unstar advances revision once');
-insert into tap_results select star_slot is null, 'legacy unstar of a hidden star is a no-op'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_slot is null),false), 'legacy unstar of a hidden star is a no-op'
   from public.set_saved_place_star(pg_temp.sid('a9'),pg_temp.rev('a9'),false);
-insert into tap_results select star_slot is null, 'legacy unstar of an unstarred place is a no-op'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_slot is null),false), 'legacy unstar of an unstarred place is a no-op'
   from public.set_saved_place_star(pg_temp.sid('a2'),pg_temp.rev('a2'),false);
 insert into tap_results values ((pg_temp.stars()='1:a1,9:a9' and pg_temp.delta('a9')=0 and pg_temp.delta('a2')=0),'legacy no-op unstar keeps the hidden star and revisions');
 
 -- Legacy save_place.
 reset role; select pg_temp.set_stars('1:a1,2:a2');
 set local role authenticated;
-insert into tap_results select star_slot=3 and revision=1, 'legacy save with star takes 1..5'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_slot=3 and revision=1),false), 'legacy save with star takes 1..5'
   from public.save_place(pg_temp.place('o-new'),null,'riding_spot',true);
 reset role; select pg_temp.set_stars('1:a1,2:a2,3:a3,4:a4,5:a5');
 set local role authenticated;
 select pg_temp.expect_error($q$select public.save_place(pg_temp.place('o-full'),null,'riding_spot',true)$q$,'SAVED_PLACE_STAR_LIMIT','legacy save star is limited to 1..5');
 insert into tap_results values (pg_temp.sid('o-full') is null,'failed legacy save creates no row');
-insert into tap_results select star_slot is null and alias is null and kind='riding_spot' and revision=1 and place=pg_temp.place('o-new'),
-  'legacy duplicate save returns the existing row unchanged'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_slot is null and alias is null and kind='riding_spot' and revision=1 and place=pg_temp.place('o-new')),false), 'legacy duplicate save returns the existing row unchanged'
   from public.save_place(jsonb_set(pg_temp.place('o-new'),'{name}','"다른 원본"'),'x','restaurant',true);
 
 -- Legacy add_place_favorite / remove_place_favorite.
 reset role; select pg_temp.set_stars('2:a2');
 set local role authenticated; select pg_temp.snap();
-insert into tap_results select slot=2 and place=pg_temp.place('a2'), 'legacy add on a 1..3 star returns the existing slot'
+insert into tap_results select count(*)=1 and coalesce(bool_and(slot=2 and place=pg_temp.place('a2')),false), 'legacy add on a 1..3 star returns the existing slot'
   from public.add_place_favorite(pg_temp.place('a2'));
 insert into tap_results values (pg_temp.delta('a2')=0,'legacy add on an existing 1..3 star keeps revision');
 reset role; select pg_temp.set_stars('4:a4');
@@ -185,12 +182,12 @@ select pg_temp.expect_error($q$select public.add_place_favorite(pg_temp.place('a
 insert into tap_results values ((pg_temp.delta('a4')=0 and pg_temp.stars()='4:a4'),'legacy add limit on 4..5 changes nothing');
 reset role; select pg_temp.set_stars('1:a1,6:a6');
 set local role authenticated; select pg_temp.snap();
-insert into tap_results select slot=2, 'legacy add moves a hidden star into free 1..3'
+insert into tap_results select count(*)=1 and coalesce(bool_and(slot=2),false), 'legacy add moves a hidden star into free 1..3'
   from public.add_place_favorite(pg_temp.place('a6'));
 insert into tap_results values ((pg_temp.stars()='1:a1,2:a6' and pg_temp.delta('a6')=1),'legacy add move advances revision once');
 reset role; select pg_temp.set_stars('1:a1,3:a3');
 set local role authenticated; select pg_temp.snap();
-insert into tap_results select slot=2, 'legacy add stars an existing unstarred place in 1..3'
+insert into tap_results select count(*)=1 and coalesce(bool_and(slot=2),false), 'legacy add stars an existing unstarred place in 1..3'
   from public.add_place_favorite(pg_temp.place('a5'));
 insert into tap_results values ((pg_temp.stars()='1:a1,2:a5,3:a3' and pg_temp.delta('a5')=1),'legacy add on an existing place advances revision once');
 reset role; select pg_temp.set_stars('1:a1,2:a2,3:a3,7:a7');
@@ -200,9 +197,9 @@ select pg_temp.expect_error($q$select public.add_place_favorite(pg_temp.place('a
 insert into tap_results values ((pg_temp.stars()='1:a1,2:a2,3:a3,7:a7' and pg_temp.delta('a7')=0 and pg_temp.delta('a8')=0),'legacy add limit keeps hidden star and revisions');
 reset role; select pg_temp.set_stars('1:a1');
 set local role authenticated;
-insert into tap_results select slot=2, 'legacy add creates a new place in free 1..3'
+insert into tap_results select count(*)=1 and coalesce(bool_and(slot=2),false), 'legacy add creates a new place in free 1..3'
   from public.add_place_favorite(pg_temp.place('o-fav'));
-insert into tap_results select alias is null and revision=1 and star_position=2, 'legacy add new row has no alias and one star'
+insert into tap_results select count(*)=1 and coalesce(bool_and(alias is null and revision=1 and star_position=2),false), 'legacy add new row has no alias and one star'
   from public.saved_place_entries where id=pg_temp.sid('o-fav');
 reset role; select pg_temp.set_stars('1:a1,2:a2,3:a3');
 set local role authenticated;
@@ -226,10 +223,10 @@ set local role authenticated;
 insert into tap_results select count(star_slot)=5 and coalesce(bool_and(star_slot between 1 and 5),true) and count(distinct star_slot)=count(star_slot),
   'legacy saved_places select still satisfies the old parser (at most five, 1..5, unique)'
   from public.saved_places;
-insert into tap_results select array_agg(slot order by slot)='{1,2,3}', 'three-slot compatibility view still exposes only 1..3'
+insert into tap_results select coalesce(array_agg(slot order by slot)='{1,2,3}',false), 'three-slot compatibility view still exposes only 1..3'
   from public.place_favorites;
 insert into tap_results select count(*) filter (where star_position is not null)=10
-  and bool_and(star_slot is not distinct from case when star_position<=5 then star_position end)
+  and coalesce(bool_and(star_slot is not distinct from case when star_position<=5 then star_position end),false)
   and count(*)=(select count(*) from public.saved_places),
   'one view read returns every place with a consistent star position and mirror'
   from public.saved_place_entries;
@@ -287,19 +284,18 @@ select pg_temp.expect_error($q$select public.save_place_v2(pg_temp.place('map:37
 select pg_temp.expect_error($q$select public.save_place(pg_temp.place('map:37.0000000:127.0000000:region'))$q$,'INVALID_SAVED_PLACE_METADATA','legacy save_place rejects a region point without alias');
 select pg_temp.expect_error($q$select public.add_place_favorite(pg_temp.place('map:37.0000000:127.0000000:region'))$q$,'INVALID_FAVORITE_PLACE','legacy add rejects a new region point');
 insert into tap_results values (pg_temp.sid('map:37.0000000:127.0000000:region') is null,'rejected region saves create no row');
-insert into tap_results select alias='산 중턱 쉼터' and star_position=1, 'region point with alias is saved'
+insert into tap_results select count(*)=1 and coalesce(bool_and(alias='산 중턱 쉼터' and star_position=1),false), 'region point with alias is saved'
   from public.save_place_v2(pg_temp.place('map:37.0000000:127.0000000:region'),'산 중턱 쉼터','riding_spot',true);
 select pg_temp.snap();
 select pg_temp.expect_error($q$select public.update_saved_place(pg_temp.sid('map:37.0000000:127.0000000:region'),pg_temp.rev('map:37.0000000:127.0000000:region'),null,'riding_spot')$q$,'INVALID_SAVED_PLACE_METADATA','update rejects removing a region alias');
 insert into tap_results values (pg_temp.delta('map:37.0000000:127.0000000:region')=0,'rejected alias removal changes nothing');
 select public.update_saved_place(pg_temp.sid('map:37.0000000:127.0000000:region'),pg_temp.rev('map:37.0000000:127.0000000:region'),'새 쉼터 별명','restaurant');
-insert into tap_results select alias='새 쉼터 별명' and kind='restaurant' and place=pg_temp.place('map:37.0000000:127.0000000:region') and place->>'kakaoPlaceId' like '%:region',
-  'region point re-read keeps its id suffix, original and alias'
+insert into tap_results select count(*)=1 and coalesce(bool_and(alias='새 쉼터 별명' and kind='restaurant' and place=pg_temp.place('map:37.0000000:127.0000000:region') and place->>'kakaoPlaceId' like '%:region'),false), 'region point re-read keeps its id suffix, original and alias'
   from public.saved_place_entries where id=pg_temp.sid('map:37.0000000:127.0000000:region');
-insert into tap_results select star_position is null, 'address map point without alias is still accepted'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_position is null),false), 'address map point without alias is still accepted'
   from public.save_place_v2(pg_temp.place('map:37.1000000:127.1000000'));
 select public.set_place_star(pg_temp.sid('map:37.0000000:127.0000000:region'),pg_temp.rev('map:37.0000000:127.0000000:region'),false);
-insert into tap_results select slot=1, 'legacy add may star an existing aliased region point'
+insert into tap_results select count(*)=1 and coalesce(bool_and(slot=1),false), 'legacy add may star an existing aliased region point'
   from public.add_place_favorite(pg_temp.place('map:37.0000000:127.0000000:region'));
 reset role;
 set constraints all immediate; set constraints all deferred;
@@ -311,9 +307,9 @@ insert into saved_ids select place->>'kakaoPlaceId', id from public.saved_places
 select set_config('request.jwt.claim.sub','97000000-0000-0000-0000-000000000002',true);
 set local role authenticated;
 select pg_temp.expect_error($q$select public.save_place_v2(pg_temp.place('lim-1001'))$q$,'SAVED_PLACE_LIMIT','save_place_v2 rejects the one thousand and first place');
-insert into tap_results select revision=1 and star_position is null, 'save_place_v2 duplicate succeeds unchanged at the limit'
+insert into tap_results select count(*)=1 and coalesce(bool_and(revision=1 and star_position is null),false), 'save_place_v2 duplicate succeeds unchanged at the limit'
   from public.save_place_v2(pg_temp.place('lim-1'),'retry','restaurant',true);
-insert into tap_results select star_position=1, 'starring an existing place works at the saved-place limit'
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_position=1),false), 'starring an existing place works at the saved-place limit'
   from public.set_place_star((select id from public.saved_places where place->>'kakaoPlaceId'='lim-1'),1,true);
 -- Rider B cannot see or change rider A.
 insert into tap_results values
@@ -339,7 +335,7 @@ reset role;
 select set_config('request.jwt.claim.sub','97000000-0000-0000-0000-000000000005',true);
 set local role authenticated;
 insert into tap_results values ((select count(*)=0 from public.place_stars) and (select count(*)=0 from public.saved_place_entries),'administrator cannot read other accounts');
-insert into tap_results select star_position=1, 'administrator manages own stars' from public.save_place_v2(pg_temp.place('admin'),null,'riding_spot',true);
+insert into tap_results select count(*)=1 and coalesce(bool_and(star_position=1),false), 'administrator manages own stars' from public.save_place_v2(pg_temp.place('admin'),null,'riding_spot',true);
 select pg_temp.expect_error($q$insert into public.place_stars(owner_id,slot,saved_place_id) select owner_id,2,id from public.saved_places$q$,'permission denied for table place_stars','authenticated direct star insert denied','42501');
 select pg_temp.expect_error($q$update public.place_stars set slot=3$q$,'permission denied for table place_stars','authenticated direct star update denied','42501');
 select pg_temp.expect_error($q$delete from public.place_stars$q$,'permission denied for table place_stars','authenticated direct star delete denied','42501');
@@ -396,5 +392,9 @@ insert into tap_results values
 set constraints all immediate;
 select (case when ok then 'ok ' else 'not ok ' end)||row_number() over()||' - '||description from tap_results;
 select '1..'||count(*) from tap_results;
-do $$ begin if exists(select 1 from tap_results where not ok) then raise exception 'FREQUENT_PLACES_TEST_FAILED'; end if; end $$;
+-- Fixed plan: a skipped or row-less assertion fails the suite instead of vanishing.
+do $$ begin
+  if (select count(*) from tap_results)<>146 then raise exception 'FREQUENT_PLACES_PLAN_MISMATCH: % of 146', (select count(*) from tap_results); end if;
+  if exists(select 1 from tap_results where not ok) then raise exception 'FREQUENT_PLACES_TEST_FAILED'; end if;
+end $$;
 rollback;

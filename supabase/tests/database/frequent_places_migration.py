@@ -11,6 +11,7 @@ rollback-only and two-connection suites plus the existing saved-place suites.
 """
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -133,6 +134,43 @@ transition_revisions = sql("select string_agg(place->>'kakaoPlaceId'||'='||revis
                            "from public.saved_places where place->>'kakaoPlaceId' in ('t1-new','t2-star');")
 assert transition_revisions == 't1-new=1,t2-star=5', transition_revisions
 
+
+# Lock bounds: the migration starts with these settings and fails within lock_timeout
+# when a writer holds saved_places or an auth table, leaving nothing behind.
+first_statements = [line for line in target_text.splitlines() if line and not line.startswith('--')][:3]
+check(first_statements == ['begin;', "set local lock_timeout = '5s';", "set local statement_timeout = '60s';"],
+      'migration sets lock_timeout 5s and statement_timeout 60s before any lock')
+
+
+def blocked_migration(blocker_sql, relation):
+    blocker = subprocess.Popen(PSQL + [DATABASE], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    blocker.stdin.write(("set application_name='frequent-blocker'; begin; " + blocker_sql + "; select pg_sleep(20); rollback;").encode())
+    blocker.stdin.close()
+    for _ in range(500):
+        if sql(f"select count(*) from pg_locks l join pg_stat_activity a on a.pid=l.pid where a.application_name='frequent-blocker' "
+               f"and a.datname=current_database() and l.relation='{relation}'::regclass and l.granted;") != '0':
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError('blocker did not take its lock')
+    started = time.monotonic()
+    error = run(DATABASE, b'set role postgres;\n' + TARGET.read_bytes(), ok=False, timeout=60)
+    elapsed = time.monotonic() - started
+    sql("select pg_cancel_backend(pid) from pg_stat_activity where application_name='frequent-blocker' and datname=current_database();")
+    blocker.wait(timeout=60)
+    return error, elapsed
+
+
+NOT_APPLIED = ("select to_regclass('public.place_stars') is null and to_regprocedure('public.save_place_v2(jsonb,text,text,boolean)') is null "
+               "and not exists(select 1 from pg_locks l join pg_stat_activity a on a.pid=l.pid where a.datname=current_database() "
+               "and a.pid<>pg_backend_pid() and l.relation in ('public.saved_places'::regclass,'auth.users'::regclass));")
+error, elapsed = blocked_migration('update public.saved_places set alias=alias where false', 'public.saved_places')
+check('lock timeout' in error and 4 <= elapsed <= 20, f'an in-flight saved_places writer makes the migration fail after {elapsed:.1f}s')
+check(sql(NOT_APPLIED) == 't', 'lock-timeout failure leaves nothing applied and no lock held')
+error, elapsed = blocked_migration('lock table auth.sessions in row exclusive mode', 'auth.sessions')
+check('lock timeout' in error and 4 <= elapsed <= 20, f'an in-flight auth write makes the final policy step fail after {elapsed:.1f}s')
+check(sql(NOT_APPLIED) == 't', 'auth-lock failure rolls back every earlier migration step')
+
 body = target_text.rstrip()[:-len('commit;')]
 connect = ("select extensions.dblink_connect('{0}',format('host=127.0.0.1 port=5432 dbname=%I user=supabase_admin "
            "password=postgres application_name=frequent-{0}',current_database()));")
@@ -143,7 +181,9 @@ transition = '\n'.join([
     "select extensions.dblink_exec('old1','set \"request.jwt.claim.sub\"=''95000000-0000-0000-0000-000000000005''');",
     "select extensions.dblink_exec('old2','set \"request.jwt.claim.sub\"=''95000000-0000-0000-0000-000000000006''');",
     "select extensions.dblink_exec('mig','set role postgres');",
+    "create temp table apply_clock as select clock_timestamp() as started;",
     'select extensions.dblink_exec(\'mig\',$mig$' + body + '$mig$);',
+    "select 'RESULT:apply_ms='||round(extract(epoch from clock_timestamp()-started)*1000) from apply_clock;",
     # The migration is now uncommitted and holds its lock; both calls resolve the
     # old function bodies and block on their saved_places UPDATE.
     "select extensions.dblink_send_query('old1',format('select public.test_frequent_old_call(%L)',"
@@ -158,6 +198,7 @@ transition = '\n'.join([
   raise exception 'OLD_CALLS_DID_NOT_WAIT_ON_MIGRATION_LOCK';
 end $$;""",
     "select 'RESULT:waited=true';",
+    "select 'RESULT:timeouts='||t from extensions.dblink('mig','select current_setting(''lock_timeout'')||''/''||current_setting(''statement_timeout'')') as x(t text);",
     "select extensions.dblink_exec('mig','commit');",
     "select 'RESULT:old1='||result from extensions.dblink_get_result('old1') as t(result text);",
     "select result from extensions.dblink_get_result('old1') as t(result text);",
@@ -168,6 +209,8 @@ end $$;""",
 results = dict(line[len('RESULT:'):].split('=', 1) for line in sql(transition).splitlines() if line.startswith('RESULT:'))
 sql('drop function public.test_frequent_old_call(text);')
 check(results.get('waited') == 'true', 'two old-body calls waited on the migration lock')
+print('migration body (uncommitted) took ' + results.get('apply_ms', '?') + ' ms', flush=True)
+check(results.get('timeouts') == '5s/1min', 'the migration transaction runs with its lock and statement timeouts')
 check(results.get('old1') == 'OK' and results.get('old2') == 'OK', 'waiting old-body calls completed after the migration commit')
 STARS = ("select coalesce(string_agg(star.slot||':'||(saved.place->>'kakaoPlaceId'),',' order by star.slot),'') from public.place_stars star "
          "join public.saved_places saved on saved.id=star.saved_place_id where star.owner_id='{}';")
@@ -232,8 +275,10 @@ commit;""")
 check(sql(CONSISTENT) == 't', 'conflict fixture is removed and every owner is consistent again')
 
 suites = {}
-for name in ['frequent_places.test.sql', 'frequent_places_concurrency.test.sql', 'saved_places.test.sql',
-             'saved_places_concurrency.test.sql']:
+# Fixed plans: a suite that silently drops an assertion fails here.
+PLANS = {'frequent_places.test.sql': 146, 'frequent_places_concurrency.test.sql': 26, 'saved_places.test.sql': 78,
+         'saved_places_concurrency.test.sql': 17}
+for name, planned in PLANS.items():
     result = subprocess.run(PSQL + [DATABASE], input=(TESTS / name).read_bytes(), capture_output=True, timeout=600)
     lines = [line for line in result.stdout.decode('utf-8', 'replace').splitlines() if line.startswith(('ok ', 'not ok '))]
     passed = sum(line.startswith('ok ') for line in lines)
@@ -244,9 +289,11 @@ for name in ['frequent_places.test.sql', 'frequent_places_concurrency.test.sql',
             print(f'  {name}: {line}', flush=True)
     if result.returncode != 0:
         print(f'  {name} ERROR: ' + result.stderr.decode('utf-8', 'replace')[-1600:], flush=True)
-    check(result.returncode == 0 and failed == 0 and passed > 0, f'{name}: {passed} PASS / {failed} FAIL / exit {result.returncode}')
+    check(result.returncode == 0 and failed == 0 and passed == planned, f'{name}: {passed} PASS / {failed} FAIL of {planned} planned / exit {result.returncode}')
 check(sql(CONSISTENT) == 't', 'every owner is consistent after all suites')
 
+HARNESS_PLAN = 30
+check(len(checks) + 1 == HARNESS_PLAN, f'harness ran its fixed plan of {HARNESS_PLAN} checks')
 failed = sum(not ok for ok, _ in checks)
 print(f'RESULT: harness {len(checks) - failed} PASS / {failed} FAIL; suites ' +
       ', '.join(f'{name} {p}/{f}' for name, (p, f) in suites.items()) + f'; database retained: {DATABASE}', flush=True)
