@@ -5,6 +5,7 @@ import { parsePlaceSearchResponse, selectedMapPointPlace, type PlaceSearchResult
 import { isRegionOnlyPlace } from "@/lib/places/saved";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { KakaoMapCanvas } from "@/components/kakao-map-canvas";
+import { LineIcon } from "@/components/line-icon";
 
 type Point = { latitude: number; longitude: number };
 
@@ -22,10 +23,12 @@ export async function resolveMapPoint(point: Point, regionFallback: boolean): Pr
 export type MapPlacePickerHandle = { open: (point: Point) => void };
 type Selection = { status: "loading" | "empty" | "error" } | { status: "ready"; place: PlaceSearchResult };
 
-export function MapPointConfirmation({ pickerRef, onSelect, purpose = "waypoint" }: {
+export function MapPointConfirmation({ pickerRef, onSelect, purpose = "waypoint", onPreview }: {
   pickerRef: Ref<MapPlacePickerHandle>;
   onSelect: (place: PlaceSearchResult) => void;
   purpose?: "waypoint" | "saved-place";
+  /** Saved places (FP28) show the pressed point on the page map instead of a preview map. */
+  onPreview?: (point: Point | null) => void;
 }) {
   const titleId = useId();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -52,6 +55,7 @@ export function MapPointConfirmation({ pickerRef, onSelect, purpose = "waypoint"
     focus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     pending.current = point;
     setPreview(point);
+    onPreview?.(point);
     dialog.current?.showModal();
     void resolve(point);
   } }));
@@ -60,6 +64,7 @@ export function MapPointConfirmation({ pickerRef, onSelect, purpose = "waypoint"
     sequence.current += 1;
     pending.current = null;
     setPreview(null);
+    onPreview?.(null);
     setSelection({ status: "loading" });
     dialog.current?.close();
     focus.current?.focus();
@@ -74,11 +79,13 @@ export function MapPointConfirmation({ pickerRef, onSelect, purpose = "waypoint"
 
   const status = selection.status;
   const region = selection.status === "ready" && isRegionOnlyPlace(selection.place);
-  return <dialog ref={dialog} className="map-confirmation-dialog" aria-labelledby={titleId}
+  const savedPlace = purpose === "saved-place";
+  return <dialog ref={dialog} className={`map-confirmation-dialog${savedPlace ? " is-saved-place" : ""}`} aria-labelledby={titleId}
     onCancel={(event) => { event.preventDefault(); close(); }}
-    onClose={() => { sequence.current += 1; pending.current = null; setPreview(null); }}>
-    <h2 id={titleId}>{status === "ready" ? purpose === "saved-place" ? "이 위치를 내 장소로 선택할까요?" : "이 지점을 경유지로 추가할까요?" : status === "loading" ? "선택한 위치를 확인하고 있어요" : status === "empty" ? purpose === "saved-place" ? "이 지점은 주소와 지역을 찾지 못했어요" : "이 지점의 주소를 찾지 못했어요" : "선택한 위치를 확인하지 못했어요"}</h2>
-    {preview ? <KakaoMapCanvas points={[{ ...preview, label: "선택한 위치" }]} showLegend={false} selectionPreview /> : null}
+    onClose={() => { sequence.current += 1; pending.current = null; setPreview(null); onPreview?.(null); }}>
+    <div className="map-confirmation-heading"><h2 id={titleId}>{status === "ready" ? purpose === "saved-place" ? "이 위치를 내 장소로 선택할까요?" : "이 지점을 경유지로 추가할까요?" : status === "loading" ? "선택한 위치를 확인하고 있어요" : status === "empty" ? purpose === "saved-place" ? "이 지점은 주소와 지역을 찾지 못했어요" : "이 지점의 주소를 찾지 못했어요" : "선택한 위치를 확인하지 못했어요"}</h2>
+    {savedPlace ? <button type="button" className="map-confirmation-close" aria-label="위치 선택 닫기" onClick={close}><LineIcon name="close" /></button> : null}</div>
+    {preview && !savedPlace ? <KakaoMapCanvas points={[{ ...preview, label: "선택한 위치" }]} showLegend={false} selectionPreview /> : null}
     <div className="map-confirmation-body" aria-live="polite">
       {selection.status === "ready" ? <>{purpose === "saved-place" ? <div className="map-confirmation-place"><span className="map-confirmation-eyebrow">길게 누른 위치{region ? <span className="detail-address-chip">상세 주소 없음</span> : null}</span><strong>{selection.place.name}</strong><span>{selection.place.roadAddress ?? selection.place.address}</span></div> : <p>{selection.place.roadAddress ?? selection.place.address}</p>}<p>{purpose === "saved-place" ? region ? "다음 화면에서 별명을 꼭 정해야 저장할 수 있어요. 아직 저장되지 않았어요." : "다음 화면에서 별명과 분류를 정하고 저장해요. 아직 장소나 일정에 반영되지 않았습니다." : "이 위치를 마지막 경유지로 추가합니다."}</p></>
         : <p>{status === "loading" ? purpose === "saved-place" ? "주소를 확인한 뒤 내 장소로 저장할 수 있어요. 아직 장소나 일정에 반영되지 않았습니다." : "주소를 확인한 뒤 경유지로 추가할 수 있어요. 아직 코스에는 반영되지 않았습니다."

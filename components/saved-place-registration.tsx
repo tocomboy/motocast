@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { LineIcon, StarMark } from "@/components/line-icon";
+import { LineIcon } from "@/components/line-icon";
 import { KakaoMapCanvas, type MapCenterHandle } from "./kakao-map-canvas";
 import { resolveMapPoint } from "./map-point-confirmation";
 import { SavedDialog } from "./saved-dialog";
@@ -36,9 +36,10 @@ const kindLabel = (kind: SavedPlaceKind) => (kind === "restaurant" ? "식당" : 
 const address = (place: PlaceSearchResult) => place.roadAddress ?? place.address;
 
 /**
- * Saved-place registration (Figma 372:11029–11289, 373:11122–11512): search with a
- * result map, a centered map point picker, then alias/kind/star. The search step never
- * lists frequent places, and its map shows only coordinates already in the results.
+ * Saved-place registration (Figma FP10–15 372:11029–11289, FP20–27 373:11122–11512,
+ * PC FPW02–03): search with a result map, a centered map point picker, then
+ * alias/kind/star. The search step never lists frequent places, and its map shows only
+ * coordinates already in the results.
  */
 export function SavedPlaceRegistration({
   initialPlace,
@@ -66,7 +67,7 @@ export function SavedPlaceRegistration({
   const title = step === "search" ? "장소 등록" : step === "map" ? "지도에서 지점 고르기" : existing ? "별명·분류 수정" : "내 장소로 저장";
   const back = existing ? undefined : step === "search" ? undefined : () => setStep("search");
   return (
-    <SavedDialog title={title} accessibleTitle={step === "search" ? "장소 등록" : title} onClose={onClose} onBack={back} fullScreen wide={step !== "form"}>
+    <SavedDialog title={title} accessibleTitle={title} onClose={onClose} onBack={back} fullScreen wide={step !== "form"}>
       {step === "search" ? (
         <SearchStep
           query={query}
@@ -80,7 +81,6 @@ export function SavedPlaceRegistration({
       ) : step === "map" ? (
         <MapStep
           startView={pickerView}
-          onRestart={setPickerView}
           onChoose={(chosen) => { setPlace(chosen); setPickerView({ latitude: chosen.latitude, longitude: chosen.longitude }); setStep("form"); }}
         />
       ) : place ? (
@@ -100,6 +100,7 @@ function SearchStep({ query, setQuery, search, setSearch, onClose, onPickOnMap, 
   onChoose: (place: PlaceSearchResult) => void;
 }) {
   const inputId = useId();
+  const list = useRef<HTMLUListElement>(null);
   const sequence = useRef(0);
   const mounted = useRef(false);
   useEffect(() => {
@@ -132,28 +133,42 @@ function SearchStep({ query, setQuery, search, setSearch, onClose, onPickOnMap, 
     }
   }
 
-  const selectedIndex = search.status === "results" ? search.places.findIndex((p) => p.kakaoPlaceId === search.selectedId) : -1;
-  const selected = search.status === "results" ? search.places[selectedIndex] : undefined;
-  const mapButton = <button type="button" className={styles.outlineButton} onClick={() => { sequence.current += 1; onPickOnMap(); }}>지도에서 지점 고르기</button>;
+  const results = search.status === "results";
+  const selectedIndex = results ? search.places.findIndex((p) => p.kakaoPlaceId === search.selectedId) : -1;
+  const selected = results ? search.places[selectedIndex] : undefined;
+  const pickOnMap = () => { sequence.current += 1; onPickOnMap(); };
+  const mapButton = <button type="button" className={styles.secondaryButton} onClick={pickOnMap}>지도에서 지점 고르기</button>;
   return (
     <>
-      <div className={`${styles.waypointBody} ${styles.registerBody}`}>
-        <div className={styles.registerSearch}>
+      <div className={`${styles.waypointBody} ${styles.registerBody}${results ? ` ${styles.registerResults}` : ""}`}>
+        {/* Enter or the keyboard search key runs the search; the button is part of FP10/11/14. */}
+        <form
+          className={styles.registerSearch}
+          role="search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            // Close the on-screen keyboard so the results (FP12) are visible.
+            if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+            void run();
+          }}
+        >
           <label className={styles.fieldLabel} htmlFor={inputId}>장소명 또는 주소 검색</label>
           <input
             id={inputId}
+            className={styles.textField}
             value={query}
             maxLength={100}
+            enterKeyHint="search"
+            autoComplete="off"
             placeholder="예: 서종 막국수, 양평군 서종면"
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void run(); } }}
           />
           {search.status === "error" ? null : (
-            <button type="button" className="primary-button" disabled={!searchable || search.status === "loading"} onClick={() => void run()}>
+            <button type="submit" className={`primary-button ${styles.searchSubmit}`} disabled={!searchable || search.status === "loading"}>
               {search.status === "loading" ? "검색 중…" : "검색"}
             </button>
           )}
-        </div>
+        </form>
         {search.status === "idle" ? (
           <>
             <p className={styles.helper}>검색어를 2자 이상 입력하면 검색할 수 있어요.</p>
@@ -179,59 +194,70 @@ function SearchStep({ query, setQuery, search, setSearch, onClose, onPickOnMap, 
             {mapButton}
           </>
         ) : (
-          <div className={styles.resultLayout}>
-            <h3 className={styles.resultHeading}>검색 결과 <b>{search.places.length}</b>곳<span> · 지도는 받은 결과만 표시</span></h3>
-            <div className={styles.resultMap}>
-              <KakaoMapCanvas
-                points={[]}
-                allowEmptyMap
-                showLegend={false}
-                numberedPins={search.places.map((p, index) => ({ id: p.kakaoPlaceId, number: index + 1, label: p.name, latitude: p.latitude, longitude: p.longitude }))}
-                selectedNumberedPinId={search.selectedId}
-                onSelectNumberedPin={(id) => setSearch({ ...search, selectedId: id })}
-              />
+          <>
+            <h3 className={styles.resultHeading}>검색 결과 <b>{search.places.length}</b><span>곳<span className={styles.mobileOnly}> · 지도는 받은 결과만 표시</span></span></h3>
+            <div className={styles.resultMapColumn}>
+              <div className={styles.resultMap}>
+                <KakaoMapCanvas
+                  points={[]}
+                  allowEmptyMap
+                  showLegend={false}
+                  allowFullscreen={false}
+                  numberedPins={search.places.map((p, index) => ({ id: p.kakaoPlaceId, number: index + 1, label: p.name, latitude: p.latitude, longitude: p.longitude }))}
+                  selectedNumberedPinId={search.selectedId}
+                  onSelectNumberedPin={(id) => {
+                    setSearch({ ...search, selectedId: id });
+                    // A pin picked on the map brings its result card into view (FPS01).
+                    Array.from(list.current?.children ?? []).find((item) => item.getAttribute("data-result") === id)?.scrollIntoView({ block: "nearest" });
+                  }}
+                />
+              </div>
+              <p className={`${styles.helper} ${styles.desktopOnly}`}>지도는 받은 결과 좌표만 보여 줘요. 지도를 움직여도 다시 검색하지 않아요.</p>
             </div>
-            <ul className={styles.resultList} aria-label="검색 결과">
+            <ul ref={list} className={styles.resultList} aria-label="검색 결과">
               {search.places.map((p, index) => {
                 const active = p.kakaoPlaceId === search.selectedId;
                 return (
-                  <li key={p.kakaoPlaceId}>
+                  <li key={p.kakaoPlaceId} data-result={p.kakaoPlaceId}>
                     <button type="button" aria-pressed={active} onClick={() => setSearch({ ...search, selectedId: p.kakaoPlaceId })}>
                       <span className={styles.resultNumber} aria-hidden="true">{index + 1}</span>
                       <span className={styles.resultText}>
                         <strong><span className={styles.srOnly}>{index + 1}번 </span>{p.name}</strong>
-                        <span>{[p.category, address(p)].filter(Boolean).join(" · ")}</span>
-                        {active ? <span className={styles.chip}>지도에 표시 중</span> : null}
+                        <span>{p.category ? <span className={styles.resultCategory}>{p.category} · </span> : null}{address(p)}</span>
+                        {/* FP12 puts the chip under the address; FPW02 puts it at the row end. */}
+                        {active ? <span className={`${styles.chip} ${styles.mobileOnly}`}>지도에 표시 중</span> : null}
                       </span>
+                      {active ? <span className={`${styles.chip} ${styles.desktopOnly}`} aria-hidden="true">지도에 표시 중</span> : null}
                     </button>
                   </li>
                 );
               })}
             </ul>
-            {mapButton}
-          </div>
+          </>
         )}
       </div>
-      <div className={styles.waypointFooter}>
+      <div className={`${styles.waypointFooter}${results ? ` ${styles.resultFooter}` : ""}`}>
         {selected ? (
           <>
+            <button type="button" className={`${styles.secondaryButton} ${styles.desktopOnly}`} onClick={pickOnMap}>지도에서 지점 고르기</button>
+            <span className={styles.footerSpacer} aria-hidden="true" />
+            <button type="button" className={`${styles.secondaryButton} ${styles.desktopOnly}`} onClick={onClose}>취소</button>
             <button type="button" className="primary-button" onClick={() => onChoose(selected)}>
               <span className={styles.wideLabel}>{selectedIndex + 1}번 {selected.name} 선택</span>
               <span className={styles.narrowLabel}>선택한 장소로 진행</span>
             </button>
-            <p className={styles.footerHint}>다음 화면에서 별명과 분류를 정해요.</p>
+            <p className={`${styles.footerHint} ${styles.mobileOnly}`}>다음 화면에서 별명과 분류를 정해요.</p>
           </>
         ) : (
-          <button type="button" onClick={onClose}>취소</button>
+          <button type="button" className={styles.secondaryButton} onClick={onClose}>취소</button>
         )}
       </div>
     </>
   );
 }
 
-function MapStep({ startView, onRestart, onChoose }: {
+function MapStep({ startView, onChoose }: {
   startView: Point;
-  onRestart: (view: Point) => void;
   onChoose: (place: PlaceSearchResult) => void;
 }) {
   const handle = useRef<MapCenterHandle>(null);
@@ -257,84 +283,86 @@ function MapStep({ startView, onRestart, onChoose }: {
     if (center) void resolve(center);
   }
   function restart() {
+    // The map stayed on the picked point, so picking again continues from there.
     sequence.current += 1;
-    if (lookup.status !== "picking") onRestart(lookup.point);
     setLookup({ status: "picking" });
   }
 
+  const picking = lookup.status === "picking";
   const region = lookup.status === "ready" && isRegionOnlyPlace(lookup.place);
-  return (
+  // FP21/FP25 dim the target while the address is checked or failed; FP23 uses a shorter map.
+  const dimmed = lookup.status === "loading" || lookup.status === "error";
+  const actions = picking ? (
+    <button type="button" className="primary-button" onClick={pick}>이 지점 선택</button>
+  ) : lookup.status === "loading" ? (
     <>
+      <button type="button" className="primary-button" disabled>이 장소 선택</button>
+      <p className={styles.footerHint}>주소를 확인한 뒤 선택할 수 있어요.</p>
+    </>
+  ) : lookup.status === "ready" ? (
+    <>
+      <button type="button" className="primary-button" onClick={() => onChoose(lookup.place)}>{region ? "별명 정하고 저장" : "이 장소 선택"}</button>
+      <button type="button" className={styles.secondaryButton} onClick={restart}>다시 고르기</button>
+    </>
+  ) : lookup.status === "empty" ? (
+    <button type="button" className="primary-button" onClick={restart}>다른 지점 고르기</button>
+  ) : (
+    <>
+      <button type="button" className="primary-button" onClick={() => void resolve(lookup.point)}>다시 시도</button>
+      <button type="button" className={styles.secondaryButton} onClick={restart}>다른 지점 고르기</button>
+    </>
+  );
+  return (
+    <div className={`${styles.pickerStep}${picking ? "" : ` ${styles.pickerChecked}`}${dimmed ? ` ${styles.pickerDim}` : ""}${region ? ` ${styles.pickerRegion}` : ""}`}>
       <div className={`${styles.waypointBody} ${styles.pickerBody}`}>
-        {lookup.status === "picking" ? (
+        {/* FP20 shows the hint only while picking; FPW03 keeps it above the map. */}
+        <p className={`${styles.helper} ${styles.pickerHint}${picking ? "" : ` ${styles.desktopOnly}`}`}>
+          <span className={styles.mobileOnly}>지도를 움직여 가운데 표시를 등록할 지점에 맞추세요.</span>
+          <span className={styles.desktopOnly}>지도를 끌어 가운데 표시를 등록할 지점에 맞추세요. 확대·축소는 지도 오른쪽 위 +/− 또는 마우스 휠로 해요.</span>
+        </p>
+        {/* One map for every state: after "이 지점 선택" it stays on the point and stops dragging. */}
+        <div className={styles.pickerMap}>
+          <KakaoMapCanvas points={[]} allowEmptyMap showLegend={false} centerPicker centerLocked={!picking} centerHandle={handle} initialView={{ ...startView, level: PICKER_LEVEL }} />
+        </div>
+        {picking ? (
           <>
-            <p className={styles.helper}>지도를 움직여 가운데 표시를 등록할 지점에 맞추세요.</p>
-            <div className={styles.pickerMap}>
-              <KakaoMapCanvas points={[]} allowEmptyMap showLegend={false} centerPicker centerHandle={handle} initialView={{ ...startView, level: PICKER_LEVEL }} />
-            </div>
-            <p className={styles.helper}>두 손가락이나 오른쪽 위 +/− 버튼으로 확대·축소할 수 있어요. 지도를 움직이는 동안에는 주소를 조회하지 않아요.</p>
+            <p className={`${styles.helper} ${styles.mobileOnly}`}>두 손가락으로 확대·축소할 수 있어요. 지도를 움직이는 동안에는 주소를 조회하지 않아요.</p>
             {unavailable ? <p role="alert" className={styles.fieldError}>지도를 아직 불러오지 못했어요. 지도가 보이면 다시 선택하거나 장소를 검색해 주세요.</p> : null}
           </>
         ) : (
-          <div className={styles.pickerResult}>
-            <div className={styles.pickerPreview}>
-              <KakaoMapCanvas points={[{ ...lookup.point, label: "선택한 위치" }]} showLegend={false} selectionPreview />
-            </div>
-            <div className={styles.pickerPanel} aria-live="polite">
-              {lookup.status === "loading" ? (
-                <>
-                  <div className={styles.placeSummary} role="status">
-                    <span className={styles.placeKind}>선택한 위치</span>
-                    <strong>주소를 확인하고 있어요</strong>
-                    <span className={styles.progress} aria-hidden="true"><span /></span>
-                    <span>확인하는 동안 지도는 움직이지 않아요.</span>
-                  </div>
-                  <button type="button" className={styles.textButton} onClick={restart}>조회 취소</button>
-                </>
-              ) : lookup.status === "ready" ? (
-                <>
-                  <div className={styles.placeSummary}>
-                    <span className={styles.placeKind}>{region ? <>선택한 위치<span className={styles.chip}>상세 주소 없음</span></> : "선택한 위치 · 주소 확인됨"}</span>
-                    <strong>{lookup.place.name}</strong>
-                    <span>{region ? `${lookup.place.address} (지역만 확인)` : address(lookup.place)}</span>
-                    {region ? <span>좌표 <b className={styles.coordinate}>{lookup.place.latitude.toFixed(4)}, {lookup.place.longitude.toFixed(4)}</b></span> : null}
-                  </div>
-                  {region
-                    ? <p className={styles.notice}>도로 위처럼 상세 주소가 없는 지점이에요. 고른 위치 그대로 저장되고, 다음 화면에서 별명을 꼭 정해야 해요.</p>
-                    : <p className={styles.helper}>다음 화면에서 별명과 분류를 정하고 저장해요. 아직 저장되지 않았어요.</p>}
-                </>
-              ) : lookup.status === "empty" ? (
-                <div className={styles.noticeCard} role="status"><strong>이 지점은 주소와 지역을 찾지 못했어요</strong><p>강·호수 한가운데처럼 주소 정보가 없는 곳은 등록할 수 없어요. 지도를 조금 움직여 가까운 땅 위 지점을 골라 주세요.</p></div>
-              ) : (
-                <div className={styles.errorCard} role="alert"><strong>선택한 위치를 확인하지 못했어요</strong><p>연결이 불안정하거나 주소 서비스가 응답하지 않았어요. 아직 아무것도 저장되지 않았어요.</p></div>
-              )}
-            </div>
+          <div className={styles.pickerPanel} aria-live="polite">
+            {lookup.status === "loading" ? (
+              <>
+                <div className={styles.placeSummary} role="status">
+                  <span className={styles.placeKind}>선택한 위치</span>
+                  <strong>주소를 확인하고 있어요</strong>
+                  <span className={styles.progress} aria-hidden="true"><span /></span>
+                  <span>확인하는 동안 지도는 움직이지 않아요.</span>
+                </div>
+                <button type="button" className={styles.textButton} onClick={restart}>조회 취소</button>
+              </>
+            ) : lookup.status === "ready" ? (
+              <>
+                <div className={styles.placeSummary}>
+                  <span className={styles.placeKind}>{region ? <>선택한 위치<span className={styles.chip}>상세 주소 없음</span></> : "선택한 위치 · 주소 확인됨"}</span>
+                  <strong>{lookup.place.name}</strong>
+                  <span>{region ? `${lookup.place.address} (지역만 확인)` : address(lookup.place)}</span>
+                  {region ? <span className={styles.coordinateLine}>좌표 <b className={styles.coordinate}>{lookup.place.latitude.toFixed(4)}, {lookup.place.longitude.toFixed(4)}</b></span> : null}
+                </div>
+                {region
+                  ? <p className={styles.notice}>도로 위처럼 상세 주소가 없는 지점이에요. 고른 위치 그대로 저장되고, 다음 <span className={styles.mobileOnly}>화면</span><span className={styles.desktopOnly}>단계</span>에서 별명을 꼭 정해야 해요.</p>
+                  : <p className={styles.helper}>다음 화면에서 별명과 분류를 정하고 저장해요. 아직 저장되지 않았어요.</p>}
+              </>
+            ) : lookup.status === "empty" ? (
+              <div className={styles.noticeCard} role="status"><strong>이 지점은 주소와 지역을 찾지 못했어요</strong><p>강·호수 한가운데처럼 주소 정보가 없는 곳은 등록할 수 없어요. 지도를 조금 움직여 가까운 땅 위 지점을 골라 주세요.</p></div>
+            ) : lookup.status === "error" ? (
+              <div className={styles.errorCard} role="alert"><strong>선택한 위치를 확인하지 못했어요</strong><p>연결이 불안정하거나 주소 서비스가 응답하지 않았어요. 아직 아무것도 저장되지 않았어요.</p></div>
+            ) : null}
           </div>
         )}
       </div>
-      <div className={`${styles.waypointFooter} ${styles.confirmFooter}`}>
-        {lookup.status === "picking" ? (
-          <button type="button" className="primary-button" onClick={pick}>이 지점 선택</button>
-        ) : lookup.status === "loading" ? (
-          <>
-            <button type="button" className="primary-button" disabled>이 장소 선택</button>
-            <p className={styles.footerHint}>주소를 확인한 뒤 선택할 수 있어요.</p>
-          </>
-        ) : lookup.status === "ready" ? (
-          <>
-            <button type="button" className="primary-button" onClick={() => onChoose(lookup.place)}>{region ? "별명 정하고 저장" : "이 장소 선택"}</button>
-            <button type="button" className={styles.outlineButton} onClick={restart}>다시 고르기</button>
-          </>
-        ) : lookup.status === "empty" ? (
-          <button type="button" className="primary-button" onClick={restart}>다른 지점 고르기</button>
-        ) : (
-          <>
-            <button type="button" className="primary-button" onClick={() => void resolve(lookup.point)}>다시 시도</button>
-            <button type="button" className={styles.outlineButton} onClick={restart}>다른 지점 고르기</button>
-          </>
-        )}
-      </div>
-    </>
+      <div className={`${styles.waypointFooter} ${styles.confirmFooter}`}>{actions}</div>
+    </div>
   );
 }
 
@@ -365,7 +393,7 @@ function FormStep({ place, existing, stars, blocked, onSave }: {
   }
   return (
     <>
-      <div className={styles.waypointBody}>
+      <div className={`${styles.waypointBody} ${styles.formBody}`}>
         <div className={styles.placeSummary}>
           <span className={styles.placeKind}>
             {existing ? `${kindLabel(existing.kind)} · ${existing.province ?? "지역 미확인"}` : "선택한 위치"}
@@ -374,27 +402,32 @@ function FormStep({ place, existing, stars, blocked, onSave }: {
           <strong>{place.name}</strong>
           <span>{address(place)}</span>
         </div>
-        <fieldset className={styles.roleField}><legend>분류</legend><div className={`${styles.roleButtons} ${styles.twoChoices}`}>
-          <button type="button" aria-pressed={kind === "riding_spot"} onClick={() => setKind("riding_spot")}>{kind === "riding_spot" ? <LineIcon name="check" /> : null}라이딩 스팟</button>
-          <button type="button" aria-pressed={kind === "restaurant"} onClick={() => setKind("restaurant")}>{kind === "restaurant" ? <LineIcon name="check" /> : null}식당</button>
-        </div></fieldset>
-        <label className={styles.fieldLabel} htmlFor={aliasId}>{region ? "별명 (필수)" : "별명 (선택)"}</label>
-        <input
-          ref={aliasInput}
-          id={aliasId}
-          className={aliasMissing ? styles.invalidInput : undefined}
-          value={alias}
-          maxLength={160}
-          placeholder={region ? "예: 서종 강변 쉼터" : "비워 두면 원래 장소명으로 표시해요"}
-          aria-invalid={aliasMissing || undefined}
-          aria-describedby={`${aliasId}-hint`}
-          onChange={(e) => { setAlias([...e.target.value].slice(0, ALIAS_LIMIT).join("")); setAliasMissing(false); }}
-        />
-        <p id={`${aliasId}-hint`} className={aliasMissing ? styles.fieldError : styles.helper} role={aliasMissing ? "alert" : undefined}>
-          {aliasMissing
-            ? "별명을 입력해 주세요. 상세 주소가 없는 지점은 별명이 있어야 저장할 수 있어요."
-            : `${length} / ${ALIAS_LIMIT} · 목록과 지도에 이 이름으로 보여요.`}
-        </p>
+        <div role="group" aria-labelledby={`${aliasId}-kind`} className={styles.choiceGroup}>
+          <p id={`${aliasId}-kind`} className={styles.choiceLabel}>분류</p>
+          <div className={styles.choiceButtons}>
+            <button type="button" aria-pressed={kind === "riding_spot"} onClick={() => setKind("riding_spot")}>{kind === "riding_spot" ? <LineIcon name="check" /> : null}라이딩 스팟</button>
+            <button type="button" aria-pressed={kind === "restaurant"} onClick={() => setKind("restaurant")}>{kind === "restaurant" ? <LineIcon name="check" /> : null}식당</button>
+          </div>
+        </div>
+        <div className={styles.textFieldGroup}>
+          <label className={styles.fieldLabel} htmlFor={aliasId}>{region ? "별명 (필수)" : "별명 (선택)"}</label>
+          <input
+            ref={aliasInput}
+            id={aliasId}
+            className={`${styles.textField}${aliasMissing ? ` ${styles.invalidInput}` : ""}`}
+            value={alias}
+            maxLength={160}
+            placeholder={region ? "예: 서종 강변 쉼터" : "비워 두면 원래 장소명으로 표시해요"}
+            aria-invalid={aliasMissing || undefined}
+            aria-describedby={`${aliasId}-hint`}
+            onChange={(e) => { setAlias([...e.target.value].slice(0, ALIAS_LIMIT).join("")); setAliasMissing(false); }}
+          />
+          <p id={`${aliasId}-hint`} className={aliasMissing ? styles.fieldError : styles.helper} role={aliasMissing ? "alert" : undefined}>
+            {aliasMissing
+              ? "별명을 입력해 주세요. 상세 주소가 없는 지점은 별명이 있어야 저장할 수 있어요."
+              : `${length} / ${ALIAS_LIMIT} · 목록과 지도에 이 이름으로 보여요.`}
+          </p>
+        </div>
         {!existing ? (
           <>
             <button
@@ -404,16 +437,16 @@ function FormStep({ place, existing, stars, blocked, onSave }: {
               disabled={full}
               onClick={() => setStarred((value) => !value)}
             >
-              <StarMark filled={starred && !full} />
-              {full ? `자주 찾는 장소에 추가 · ${stars} / ${FREQUENT_PLACE_LIMIT} 가득 참` : `자주 찾는 장소에 추가 · ${stars} / ${FREQUENT_PLACE_LIMIT}`}
+              {`${starred && !full ? "★" : "☆"} 자주 찾는 장소에 추가 · ${stars} / ${FREQUENT_PLACE_LIMIT}${full ? " 가득 참" : ""}`}
             </button>
             {full ? <p className={styles.helper}>자주 찾는 장소 {FREQUENT_PLACE_LIMIT}곳이 모두 찼어요. 이 장소는 별표 없이 저장되고, 나중에 다른 별표를 빼고 추가할 수 있어요.</p> : null}
           </>
         ) : null}
       </div>
       <div className={styles.waypointFooter}>
+        {/* Product rule UI-001: the save still asks for a centered confirmation. */}
         <button type="button" className="primary-button" disabled={blocked} onClick={submit}>
-          {existing ? "수정 내용 확인" : "저장 내용 확인"}
+          {existing ? "수정 내용 확인" : "장소 저장"}
         </button>
         <p className={styles.footerHint}>닫기·취소 시 입력 내용은 저장되지 않아요.</p>
       </div>

@@ -40,6 +40,17 @@ type Receipt =
       kind: SavedPlaceKind;
       starPosition?: SavedPlaceEntry["starPosition"];
     };
+/**
+ * Outcome of one confirmed write (Figma memo 392:10916, decision "option A"):
+ * - ok: committed (or the re-read list already shows it). `duplicate` means the place was saved before.
+ * - rejected: the server refused with a known code; the input stays and the user may confirm again.
+ * - star_limit: an 11th star; the list was re-read (FP03).
+ * - unknown: the result is unknown (lost response, timeout, malformed reply, list mismatch). The list was
+ *   re-read and does not show the change, so the confirm button is enabled again. Nothing is resent.
+ */
+export type SavedPlaceWrite =
+  | { ok: true; id?: string; duplicate?: boolean }
+  | { ok: false; reason: "rejected" | "star_limit" | "unknown" | "blocked"; title: string; message: string };
 type SavedPlacesControls = {
   accountEpoch: number;
   places: SavedPlaceEntry[];
@@ -56,14 +67,14 @@ type SavedPlacesControls = {
     alias: string,
     kind: SavedPlaceKind,
     starred: boolean,
-  ) => Promise<boolean>;
+  ) => Promise<SavedPlaceWrite>;
   edit: (
     place: SavedPlace,
     alias: string,
     kind: SavedPlaceKind,
-  ) => Promise<boolean>;
-  star: (place: SavedPlace, starred: boolean) => Promise<boolean>;
-  deletePlace: (place: SavedPlace) => Promise<boolean>;
+  ) => Promise<SavedPlaceWrite>;
+  star: (place: SavedPlace, starred: boolean) => Promise<SavedPlaceWrite>;
+  deletePlace: (place: SavedPlace) => Promise<SavedPlaceWrite>;
   add: (place: PlaceSearchResult) => Promise<boolean>;
   remove: (place: PlaceFavorite) => Promise<boolean>;
 };
@@ -184,32 +195,55 @@ export function SavedPlacesProvider({
       args: Record<string, unknown>,
       success: string,
       result: "entry" | "place" | "delete",
-    ) => {
+      applied: (list: SavedPlaceEntry[]) => boolean,
+      unknownMessage: string,
+    ): Promise<SavedPlaceWrite> => {
       const client = getBrowserSupabase();
       if (!enabled || !client || operation.current || status !== "ready")
-        return false;
+        return { ok: false, reason: "blocked", title: "지금은 변경할 수 없어요", message: "목록을 확인하는 중이에요. 잠시 뒤 다시 시도해 주세요." };
       const id = Symbol();
       operation.current = id;
       const epoch = session.current;
+      const before = new Set(places.map((p) => p.id));
       generation.current++;
       setBusy(true);
       const current = () =>
         mounted.current &&
         epoch === session.current &&
         operation.current === id;
+      const gone: SavedPlaceWrite = { ok: false, reason: "blocked", title: "계정이 바뀌었어요", message: "최신 목록을 다시 확인해 주세요." };
+      const succeed = (message: string, extra: { id?: string; duplicate?: boolean } = {}): SavedPlaceWrite => {
+        setMessage(message);
+        setFailureTitle("");
+        return { ok: true, ...extra };
+      };
+      // A result we cannot read is checked against a fresh list; nothing is sent again.
+      const verify = async (): Promise<SavedPlaceWrite> => {
+        const list = await load(id);
+        if (!current()) return gone;
+        if (list && applied(list)) return succeed(success);
+        setMessage("");
+        setFailureTitle("");
+        return {
+          ok: false,
+          reason: "unknown",
+          title: "변경을 확인하지 못했어요",
+          message: list ? unknownMessage : "변경 결과와 최신 목록을 확인하지 못했어요. 다시 시도하면 최신 목록으로 한 번 요청해요.",
+        };
+      };
       try {
         const { data, error } = await client.rpc(name, args);
-        if (!current()) return false;
+        if (!current()) return gone;
         if (error) {
-          const [title, reason] = writeFailure(error.message);
+          const failure = writeFailure(error.message);
+          if (!failure) return await verify();
           const checked = await load(id);
-          if (current()) {
-            setMessage(
-              `${reason}${checked ? " 목록을 새로 불러왔어요." : " 최신 목록도 확인하지 못했어요."}`,
-            );
-            setFailureTitle(title);
-          }
-          return false;
+          if (!current()) return gone;
+          const message = `${failure.message}${checked ? " 목록을 새로 불러왔어요." : " 최신 목록도 확인하지 못했어요."}`;
+          // The page shows the FP03 card for an 11th star; other refusals stay in the popup.
+          setMessage(failure.reason === "star_limit" ? message : "");
+          setFailureTitle(failure.reason === "star_limit" ? failure.title : "");
+          return { ok: false, reason: failure.reason, title: failure.title, message };
         }
         const single = Array.isArray(data) && data.length === 1 ? data[0] : null;
         let receipt: Receipt;
@@ -221,37 +255,18 @@ export function SavedPlacesProvider({
           const row = parseSavedPlace(single);
           receipt = { id: row.id, revision: row.revision, alias: row.alias, kind: row.kind };
         }
-        // A list that does not show the committed write yet is read once more;
-        // a second disagreement is an error, never a local repair or a resend.
+        // A list that does not show the committed write yet is read once more.
         for (let attempt = 0; attempt < 2; attempt++) {
           const list = await load(id);
-          if (!current() || !list) return false;
-          if (listShows(list, receipt)) {
-            setMessage(success);
-            setFailureTitle("");
-            return true;
-          }
+          if (!current()) return gone;
+          if (!list) break;
+          if (listShows(list, receipt))
+            return succeed(success, { id: receipt.id, duplicate: result === "entry" && before.has(receipt.id) });
         }
-        setPlaces([]);
-        setStatus("error");
-        setFailureTitle("");
-        setMessage(
-          "변경 결과가 최신 목록과 달라요. 목록을 다시 확인해 주세요. 자동으로 다시 보내지 않았습니다.",
-        );
-        return false;
+        return await verify();
       } catch {
-        if (current()) {
-          const checked = await load(id);
-          if (current()) {
-            setMessage(
-              checked
-                ? "변경 결과가 불확실해 최신 목록을 다시 확인했어요. 자동으로 재시도하지 않았습니다."
-                : "변경 결과와 최신 목록을 확인하지 못했어요.",
-            );
-            setFailureTitle("변경을 확인하지 못했어요");
-          }
-        }
-        return false;
+        if (!current()) return gone;
+        return await verify();
       } finally {
         if (operation.current === id) {
           operation.current = null;
@@ -259,7 +274,7 @@ export function SavedPlacesProvider({
         }
       }
     },
-    [enabled, load, status],
+    [enabled, load, status, places],
   );
 
   const star = useCallback(
@@ -275,6 +290,10 @@ export function SavedPlacesProvider({
           ? "자주 찾는 장소에 추가했어요."
           : "자주 찾는 장소에서 뺐어요. 저장한 장소는 그대로 남아 있어요.",
         "entry",
+        (list) => list.some((row) => row.id === place.id && (row.starPosition !== null) === starred),
+        starred
+          ? "추가됐는지 확인했는데 반영되지 않았어요. 다시 시도하면 최신 목록으로 한 번 요청해요."
+          : "별표를 뺐는지 확인했는데 반영되지 않았어요. 다시 시도하면 최신 목록으로 한 번 요청해요.",
       ),
     [mutate],
   );
@@ -296,8 +315,10 @@ export function SavedPlacesProvider({
           place_kind: kind,
           starred,
         },
-        "저장한 장소를 확인했어요. 이미 저장한 장소의 정보는 유지됩니다.",
+        "장소를 저장했어요.",
         "entry",
+        (list) => list.some((row) => row.place.kakaoPlaceId === place.kakaoPlaceId),
+        "저장됐는지 확인했는데 반영되지 않았어요. 입력 내용은 그대로예요.",
       ),
     [mutate],
   );
@@ -341,6 +362,8 @@ export function SavedPlacesProvider({
           },
           "장소 정보를 수정했어요.",
           "place",
+          (list) => list.some((row) => row.id === p.id && row.alias === (alias.trim() || null) && row.kind === kind),
+          "수정됐는지 확인했는데 반영되지 않았어요. 입력 내용은 그대로예요.",
         ),
       deletePlace: (p) =>
         mutate(
@@ -348,14 +371,16 @@ export function SavedPlacesProvider({
           { saved_place_id: p.id, expected_revision: p.revision },
           "선택한 장소를 삭제했어요. 기존 코스와 공유 결과는 유지됩니다.",
           "delete",
+          (list) => !list.some((row) => row.id === p.id),
+          "삭제됐는지 확인했는데 반영되지 않았어요. 다시 시도하면 최신 목록으로 한 번 요청해요.",
         ),
       add: (p) => {
         const existing = places.find(
           (row) => row.place.kakaoPlaceId === p.kakaoPlaceId,
         );
-        return existing
+        return (existing
           ? star(existing, true)
-          : save(p, "", "riding_spot", true);
+          : save(p, "", "riding_spot", true)).then((write) => write.ok);
       },
       remove: (p) => {
         const existing = places.find(
@@ -363,7 +388,7 @@ export function SavedPlacesProvider({
             row.place.kakaoPlaceId === p.place.kakaoPlaceId &&
             row.starPosition === p.slot,
         );
-        return existing ? star(existing, false) : Promise.resolve(false);
+        return existing ? star(existing, false).then((write) => write.ok) : Promise.resolve(false);
       },
     }),
     [
@@ -383,22 +408,27 @@ export function SavedPlacesProvider({
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
-function writeFailure(code: string): [title: string, reason: string] {
+/** Known server refusals; anything else (network, timeout, unexpected reply) has an unknown result. */
+function writeFailure(code: string): { reason: "rejected" | "star_limit"; title: string; message: string } | null {
   if (code.includes("STAR_LIMIT") || code.includes("FAVORITE_LIMIT"))
-    return [
-      "자주 찾는 장소에 추가하지 못했어요",
-      `이미 ${FREQUENT_PLACE_LIMIT}곳이 별표돼 있어요. 다른 기기에서 먼저 추가했을 수 있어요.`,
-    ];
-  if (code.includes("LIMIT"))
-    return ["장소를 저장하지 못했어요", "저장 장소는 합계 1,000개까지예요. 기존 장소를 정리해 주세요."];
+    return {
+      reason: "star_limit",
+      title: "자주 찾는 장소에 추가하지 못했어요",
+      message: `이미 ${FREQUENT_PLACE_LIMIT}곳이 별표돼 있어요. 다른 기기에서 먼저 추가했을 수 있어요.`,
+    };
+  if (code.includes("SAVED_PLACE_LIMIT"))
+    return { reason: "rejected", title: "장소를 저장하지 못했어요", message: "저장 장소는 합계 1,000개까지예요. 기존 장소를 정리해 주세요." };
   if (code.includes("INVALID_SAVED_PLACE_METADATA"))
-    return [
-      "장소를 저장하지 못했어요",
-      "별명을 입력해 주세요. 상세 주소가 없는 지점은 별명이 있어야 저장할 수 있어요.",
-    ];
-  if (code.includes("STALE") || code.includes("NOT_FOUND"))
-    return ["변경하지 못했어요", "다른 곳에서 목록이 바뀌었어요. 최신 장소를 다시 선택해 주세요."];
-  return ["변경을 확인하지 못했어요", "변경 결과를 확인하지 못했어요. 최신 목록을 확인한 뒤 다시 선택해 주세요."];
+    return {
+      reason: "rejected",
+      title: "장소를 저장하지 못했어요",
+      message: "별명을 입력해 주세요. 상세 주소가 없는 지점은 별명이 있어야 저장할 수 있어요.",
+    };
+  if (code.includes("SAVED_PLACE_STALE") || code.includes("SAVED_PLACE_NOT_FOUND"))
+    return { reason: "rejected", title: "변경하지 못했어요", message: "다른 곳에서 목록이 바뀌었어요. 최신 정보로 다시 확인해 주세요." };
+  if (/\b[A-Z][A-Z_]{3,}\b/.test(code) && /INVALID|DENIED|FORBIDDEN|MEMBER/.test(code))
+    return { reason: "rejected", title: "변경하지 못했어요", message: "요청이 거부됐어요. 입력 내용을 확인한 뒤 다시 시도해 주세요." };
+  return null;
 }
 
 function listShows(list: SavedPlaceEntry[], receipt: Receipt) {

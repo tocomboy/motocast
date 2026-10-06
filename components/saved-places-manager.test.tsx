@@ -110,8 +110,8 @@ beforeEach(() => {
     message: "",
     failureTitle: "",
     captureSnapshot: () => () => true,
-    star: vi.fn(async () => true),
-    deletePlace: vi.fn(async () => true),
+    star: vi.fn(async () => ({ ok: true })),
+    deletePlace: vi.fn(async () => ({ ok: true })),
   };
   props.onAddWaypoint.mockClear();
   mocks.pickerUnmount.mockClear();
@@ -131,11 +131,11 @@ it("pin/list selection and confirmation cancellation send no write or waypoint r
   await act(async () => button(r, "취소").props.onClick());
   expect(mocks.controls.star).not.toHaveBeenCalled();
   await act(async () => button(r, "장소 삭제").props.onClick());
-  await act(async () =>
-    r.root
-      .findByProps({ "aria-label": "이 장소를 삭제할까요? 닫기" })
-      .props.onClick(),
-  );
+  // FP37: the popup has no X; cancel, Escape and the backdrop only close it.
+  expect(text(r.root)).toContain("되돌릴 수 없어요");
+  const popup = () => r.root.findAll((node) => node.type === "dialog" && text(node).includes("이 장소를 삭제할까요?"));
+  await act(async () => popup()[0].props.onCancel({ preventDefault: vi.fn(), stopPropagation: vi.fn() }));
+  expect(popup()).toHaveLength(0);
   expect(mocks.controls.deletePlace).not.toHaveBeenCalled();
   await act(async () => r.unmount());
 });
@@ -184,14 +184,14 @@ it("meals forward the fixed 45 minutes without a dwell input and rest rejects an
 it("opens the saved place detail only after a confirmed save and fresh list", async () => {
   mocks.controls.places = [];
   mocks.controls.favorites = [];
-  mocks.controls.save = vi.fn(async () => { mocks.controls.places = [saved]; return true; });
+  mocks.controls.save = vi.fn(async () => { mocks.controls.places = [saved]; return { ok: true, id: saved.id, duplicate: false }; });
   mocks.invoke.mockResolvedValue({ data: { places: [saved.place], isEnd: true }, error: null });
   const r = await mount();
   await act(async () => r.root.findByProps({ "aria-label": "＋ 장소 등록" }).props.onClick());
   await act(async () => r.root.findByProps({ placeholder: "예: 서종 막국수, 양평군 서종면" }).props.onChange({ target: { value: "원래 장소" } }));
-  await act(async () => button(r, "검색").props.onClick());
+  await act(async () => r.root.findByProps({ role: "search" }).props.onSubmit({ preventDefault: vi.fn() }));
   await act(async () => button(r, "1번 원래 장소 선택선택한 장소로 진행").props.onClick());
-  await act(async () => button(r, "저장 내용 확인").props.onClick());
+  await act(async () => button(r, "장소 저장").props.onClick());
   expect(mocks.controls.save).not.toHaveBeenCalled();
   await act(async () => button(r, "확인하고 저장").props.onClick());
   expect(mocks.controls.save).toHaveBeenCalledTimes(1);
@@ -228,13 +228,18 @@ it("names the frequent places, shows 10 / 10, and disables adding an 11th star",
   mocks.controls.favorites = stars.map(favorite);
   const r = await mount();
   await act(async () => button(r, "자주 찾는 장소").props.onClick());
-  expect(text(r.root)).toContain("자주 찾는 장소 10 / 10");
+  expect(text(r.root)).toContain("자주 찾는 장소10 / 10");
   expect(text(r.root)).not.toContain("자주 찾는 곳");
   expect(r.root.findAllByProps({ "aria-label": "자주 찾는 장소에서 빼기" }).filter((n) => n.type === "button")).toHaveLength(10);
   await act(async () => button(r, "식당").props.onClick());
   const add = r.root.findAllByProps({ "aria-label": "자주 찾는 장소에 추가" }).filter((n) => n.type === "button");
   expect(add).toHaveLength(1);
-  expect(add[0].props.disabled).toBe(true);
+  // FP36: the empty star in a full list explains the limit without sending anything.
+  await act(async () => add[0].props.onClick());
+  expect(text(r.root)).toContain("자주 찾는 장소 10곳이 모두 찼어요");
+  expect(text(r.root)).toContain("아무것도 바뀌지 않았어요.");
+  await act(async () => button(r, "닫기").props.onClick());
+  expect(text(r.root)).not.toContain("자주 찾는 장소 10곳이 모두 찼어요");
   await act(async () => r.root.findByProps({ "aria-label": "새 쉼터 상세 보기" }).props.onClick());
   const detail = r.root.findAllByProps({ "aria-label": "자주 찾는 장소에 추가" }).filter((n) => n.type === "button").at(-1)!;
   expect(detail.props.disabled).toBe(true);
@@ -266,7 +271,7 @@ it("registration search lists no frequent places and moves the result map with t
   expect(text(registration())).not.toContain("장소 검색 팝업");
   expect(button(r, "검색").props.disabled).toBe(true);
   await act(async () => r.root.findByProps({ placeholder: "예: 서종 막국수, 양평군 서종면" }).props.onChange({ target: { value: "막국수" } }));
-  await act(async () => button(r, "검색").props.onClick());
+  await act(async () => r.root.findByProps({ role: "search" }).props.onSubmit({ preventDefault: vi.fn() }));
   expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("search-places", { body: { query: "막국수", page: 1, size: 10 } });
   const resultMap = () => mocks.canvases.filter((canvas) => Array.isArray(canvas.numberedPins) && (canvas.numberedPins as unknown[]).length).at(-1)!;
   expect(resultMap().numberedPins).toEqual([1, 2, 3].map((n) => expect.objectContaining({ id: `s${n}`, number: n })));
@@ -285,9 +290,9 @@ it("shows empty and failed registration searches without faking results", async 
   const r = await mount();
   await act(async () => r.root.findByProps({ "aria-label": "＋ 장소 등록" }).props.onClick());
   await act(async () => r.root.findByProps({ placeholder: "예: 서종 막국수, 양평군 서종면" }).props.onChange({ target: { value: "없는 집" } }));
-  await act(async () => button(r, "검색").props.onClick());
+  await act(async () => r.root.findByProps({ role: "search" }).props.onSubmit({ preventDefault: vi.fn() }));
   expect(text(r.root)).toContain("‘없는 집’ 검색 결과가 없어요");
-  await act(async () => button(r, "검색").props.onClick());
+  await act(async () => r.root.findByProps({ role: "search" }).props.onSubmit({ preventDefault: vi.fn() }));
   expect(text(r.root)).toContain("장소를 검색하지 못했어요");
   expect(button(r, "다시 검색")).toBeDefined();
   expect(r.root.findByProps({ placeholder: "예: 서종 막국수, 양평군 서종면" }).props.value).toBe("없는 집");
@@ -296,7 +301,7 @@ it("shows empty and failed registration searches without faking results", async 
 
 it("picks a map point inside registration with the region opt-in and requires an alias", async () => {
   mocks.invoke.mockResolvedValue({ data: { places: [regionPlace], isEnd: true }, error: null });
-  mocks.controls.save = vi.fn(async () => true);
+  mocks.controls.save = vi.fn(async () => ({ ok: true, duplicate: false }));
   const r = await mount();
   await act(async () => r.root.findByProps({ "aria-label": "＋ 장소 등록" }).props.onClick());
   await act(async () => button(r, "지도에서 지점 고르기").props.onClick());
@@ -307,11 +312,11 @@ it("picks a map point inside registration with the region opt-in and requires an
   expect(text(r.root)).toContain("37.5000, 127.1000");
   await act(async () => button(r, "별명 정하고 저장").props.onClick());
   expect(text(dialogNamed(r, "내 장소로 저장"))).toContain("별명 (필수)");
-  await act(async () => button(r, "저장 내용 확인").props.onClick());
+  await act(async () => button(r, "장소 저장").props.onClick());
   expect(text(r.root)).toContain("별명을 입력해 주세요. 상세 주소가 없는 지점은 별명이 있어야 저장할 수 있어요.");
   expect(button(r, "확인하고 저장")).toBeUndefined();
   await act(async () => r.root.findByProps({ placeholder: "예: 서종 강변 쉼터" }).props.onChange({ target: { value: "서종 강변 쉼터" } }));
-  await act(async () => button(r, "저장 내용 확인").props.onClick());
+  await act(async () => button(r, "장소 저장").props.onClick());
   await act(async () => button(r, "확인하고 저장").props.onClick());
   expect(mocks.controls.save).toHaveBeenCalledExactlyOnceWith(regionPlace, "서종 강변 쉼터", "riding_spot", false);
   await act(async () => r.unmount());
@@ -325,7 +330,7 @@ it("long-pressed region points open the alias-required form and keep the star to
   await act(async () => mocks.mapSelect?.(regionPlace));
   const form = dialogNamed(r, "내 장소로 저장");
   expect(text(form)).toContain("상세 주소 없음");
-  const toggle = form.findAll((n) => n.type === "button" && text(n).startsWith("자주 찾는 장소에 추가"))[0];
+  const toggle = form.findAll((n) => n.type === "button" && text(n).startsWith("☆ 자주 찾는 장소에 추가"))[0];
   expect(toggle.props.disabled).toBe(true);
   expect(text(toggle)).toContain("10 / 10 가득 참");
   await act(async () => r.unmount());
@@ -352,11 +357,112 @@ it("returns from the map picker to the same search query without a new request",
   const r = await mount();
   await act(async () => r.root.findByProps({ "aria-label": "＋ 장소 등록" }).props.onClick());
   await act(async () => r.root.findByProps({ placeholder: "예: 서종 막국수, 양평군 서종면" }).props.onChange({ target: { value: "막국수" } }));
-  await act(async () => button(r, "검색").props.onClick());
+  await act(async () => r.root.findByProps({ role: "search" }).props.onSubmit({ preventDefault: vi.fn() }));
   await act(async () => button(r, "지도에서 지점 고르기").props.onClick());
   await act(async () => r.root.findByProps({ "aria-label": "지도에서 지점 고르기 뒤로" }).props.onClick());
   expect(r.root.findByProps({ placeholder: "예: 서종 막국수, 양평군 서종면" }).props.value).toBe("막국수");
   expect(button(r, "1번 막국수 1 선택선택한 장소로 진행")).toBeDefined();
   expect(mocks.invoke).toHaveBeenCalledTimes(1);
+  await act(async () => r.unmount());
+});
+
+it("shows a tapped pin as a preview card under the map and opens the detail only from the card", async () => {
+  const r = await mount();
+  const map = mocks.canvases.find((canvas) => canvas.onSelectSavedCluster)!;
+  await act(async () => (map.onSelectSavedPin as (id: string) => void)(saved.id));
+  expect(r.root.findAllByType("dialog")).toHaveLength(0);
+  expect(mocks.canvases.at(-2)?.selectedSavedPinId ?? mocks.canvases.at(-1)?.selectedSavedPinId).toBe(saved.id);
+  const previews = r.root.findAllByProps({ "aria-label": "내 별명 상세 보기" });
+  expect(previews).toHaveLength(2);
+  await act(async () => previews[0].props.onClick());
+  const detail = dialogNamed(r, "장소 상세");
+  expect(detail).toBeDefined();
+  // FP02: actions are body buttons in this order, with no fixed footer.
+  expect(detail.findAllByType("button").map(text).filter((label) => ["경유지에 추가", "별명·분류 수정", "장소 삭제"].includes(label))).toEqual(["경유지에 추가", "별명·분류 수정", "장소 삭제"]);
+  await act(async () => r.unmount());
+});
+
+it("keeps one picker map on the chosen point and locks dragging while the address is checked", async () => {
+  let resolve!: (value: unknown) => void;
+  mocks.invoke.mockReturnValue(new Promise((done) => { resolve = done; }));
+  const r = await mount();
+  await act(async () => r.root.findByProps({ "aria-label": "＋ 장소 등록" }).props.onClick());
+  await act(async () => button(r, "지도에서 지점 고르기").props.onClick());
+  await act(async () => button(r, "이 지점 선택").props.onClick());
+  const picker = mocks.canvases.filter((canvas) => canvas.centerPicker).at(-1)!;
+  expect(picker.centerLocked).toBe(true);
+  expect(mocks.canvases.some((canvas) => canvas.selectionPreview)).toBe(false);
+  expect(text(r.root)).toContain("주소를 확인하고 있어요");
+  await act(async () => button(r, "조회 취소").props.onClick());
+  expect(mocks.canvases.filter((canvas) => canvas.centerPicker).at(-1)!.centerLocked).toBe(false);
+  await act(async () => resolve({ data: { places: [regionPlace], isEnd: true }, error: null }));
+  expect(button(r, "별명 정하고 저장")).toBeUndefined();
+  await act(async () => r.unmount());
+});
+
+async function openRegionSave(r: ReactTestRenderer) {
+  await act(async () => mocks.mapSelect?.(regionPlace));
+  await act(async () => r.root.findByProps({ placeholder: "예: 서종 강변 쉼터" }).props.onChange({ target: { value: "서종 강변 쉼터" } }));
+  await act(async () => button(r, "☆ 자주 찾는 장소에 추가 · 1 / 10").props.onClick());
+  await act(async () => button(r, "장소 저장").props.onClick());
+}
+
+it("shows the FP29 save popup, a busy confirm, and closes only after the save lands", async () => {
+  let finish!: (value: unknown) => void;
+  mocks.controls.save = vi.fn(() => new Promise((done) => { finish = done; }));
+  const r = await mount();
+  await openRegionSave(r);
+  const popup = text(r.root.findAll((node) => node.type === "dialog" && text(node).includes("이 장소를 저장할까요?"))[0]);
+  for (const part of ["원래 이름 · 양평군 서종면 부근", "별명서종 강변 쉼터", "분류라이딩 스팟", "주소상세 주소 없음 · 경기도 양평군 서종면 문호리", "자주 찾는 장소추가1 → 2 / 10", "원래 위치는 그대로 저장돼요."]) expect(popup).toContain(part);
+  await act(async () => button(r, "확인하고 저장").props.onClick());
+  expect(button(r, "저장하는 중…").props.disabled).toBe(true);
+  expect(r.root.findAllByType("button").filter((b) => text(b) === "취소").at(-1)!.props.disabled).toBe(true);
+  await act(async () => finish({ ok: true, id: saved.id, duplicate: false }));
+  expect(mocks.controls.save).toHaveBeenCalledExactlyOnceWith(regionPlace, "서종 강변 쉼터", "riding_spot", true);
+  expect(text(r.root)).not.toContain("이 장소를 저장할까요?");
+  await act(async () => r.unmount());
+});
+
+it("keeps the popup after an unknown result and sends again only when the rider confirms", async () => {
+  mocks.controls.save = vi.fn()
+    .mockResolvedValueOnce({ ok: false, reason: "unknown", title: "변경을 확인하지 못했어요", message: "저장됐는지 확인했는데 반영되지 않았어요. 입력 내용은 그대로예요." })
+    .mockResolvedValueOnce({ ok: true, id: saved.id, duplicate: false });
+  const r = await mount();
+  await openRegionSave(r);
+  await act(async () => button(r, "확인하고 저장").props.onClick());
+  expect(text(r.root)).toContain("저장됐는지 확인했는데 반영되지 않았어요. 입력 내용은 그대로예요.");
+  expect(mocks.controls.save).toHaveBeenCalledTimes(1);
+  await act(async () => button(r, "다시 시도").props.onClick());
+  expect(mocks.controls.save).toHaveBeenCalledTimes(2);
+  expect(text(r.root)).not.toContain("이 장소를 저장할까요?");
+  await act(async () => r.unmount());
+});
+
+it("offers the existing place for a duplicate save and re-confirms without a star after an 11th-star refusal", async () => {
+  mocks.controls.save = vi.fn()
+    .mockResolvedValueOnce({ ok: false, reason: "star_limit", title: "자주 찾는 장소에 추가하지 못했어요", message: "" })
+    .mockResolvedValueOnce({ ok: true, id: saved.id, duplicate: true });
+  const r = await mount();
+  await openRegionSave(r);
+  await act(async () => button(r, "확인하고 저장").props.onClick());
+  expect(text(r.root)).toContain("별표 없이 저장할지 다시 확인해 주세요.");
+  expect(text(r.root)).toContain("추가 안 함");
+  await act(async () => button(r, "확인하고 저장").props.onClick());
+  expect(mocks.controls.save).toHaveBeenLastCalledWith(regionPlace, "서종 강변 쉼터", "riding_spot", false);
+  expect(text(r.root)).toContain("이미 저장한 장소예요");
+  await act(async () => button(r, "기존 장소 열기").props.onClick());
+  expect(r.root.findAll((node) => node.type === "dialog" && node.props["aria-label"] === "장소 상세")).toHaveLength(1);
+  await act(async () => r.unmount());
+});
+
+it("confirms a delete with the red button and the star count it removes (FP37)", async () => {
+  const r = await mount();
+  await act(async () => r.root.findByProps({ "aria-label": "내 별명 상세 보기" }).props.onClick());
+  await act(async () => button(r, "장소 삭제").props.onClick());
+  const popup = r.root.findAll((node) => node.type === "dialog" && text(node).includes("이 장소를 삭제할까요?"))[0];
+  expect(text(popup)).toContain("자주 찾는 장소에서도 빠져요1 → 0 / 10");
+  expect(text(popup)).toContain("원래 이름 · 원래 장소");
+  await act(async () => popup.findAllByType("button").find((b) => text(b) === "장소 삭제")!.props.onClick());
+  expect(mocks.controls.deletePlace).toHaveBeenCalledTimes(1);
   await act(async () => r.unmount());
 });

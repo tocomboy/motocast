@@ -80,6 +80,7 @@ function installMaps({ throwOnLoad = false, synchronousLoad = false }: { throwOn
   let level = 8;
   const setCenter = vi.fn((point: typeof coordinate) => { center = point; });
   const setLevel = vi.fn((value: number) => { level = value; });
+  const setDraggable = vi.fn();
   const relayout = vi.fn(() => {
     center = { getLat: () => 0, getLng: () => 0 };
     level = 1;
@@ -102,6 +103,7 @@ function installMaps({ throwOnLoad = false, synchronousLoad = false }: { throwOn
     this.getLevel = () => level;
     this.setLevel = setLevel;
     this.relayout = relayout;
+    this.setDraggable = setDraggable;
   });
   const Marker = vi.fn(function MarkerInstance(this: InstanceType<KakaoMapsNamespace["Marker"]>) {
     activeMarkers.add(this);
@@ -139,7 +141,7 @@ function installMaps({ throwOnLoad = false, synchronousLoad = false }: { throwOn
     event: { addListener: vi.fn(), removeListener: vi.fn() },
   };
   (window as Window).kakao = { maps: maps as unknown as KakaoMapsNamespace };
-  return { loadCallbacks, MapConstructor, Marker, MarkerImage, Polyline, Point, extend, setBounds, projection, setCenter, setLevel, relayout, mapLayers, activeMarkers, activePolylines, event: maps.event };
+  return { setDraggable, loadCallbacks, MapConstructor, Marker, MarkerImage, Polyline, Point, extend, setBounds, projection, setCenter, setLevel, relayout, mapLayers, activeMarkers, activePolylines, event: maps.event };
 }
 
 it("updates 100 saved pins and twenty toggle cycles on one map without moving the camera or removing draft points",async()=>{

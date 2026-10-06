@@ -307,82 +307,245 @@
 .dialog [role="alert"] { color: var(--mc-danger-text); }
 @media (max-width: 767px) { .dialog:not(.fullScreen) { width: 100%; max-width: none; margin: auto 0 0; border-radius: 24px 24px 0 0; max-height: calc(100dvh - 24px); } .dialog:not(.fullScreen)::before { content: ""; display: block; width: 40px; height: 4px; margin: -12px auto 20px; background: var(--mc-border-default); border-radius: 2px; } .actions { grid-template-columns: minmax(0, 1fr); } .fullScreen { width: 100%; padding: 0; border-radius: 0; } }
 
-/* Issue #123: frequent places 10, star buttons, registration search, map point picker (Figma 371–375). */
-.countNumber { font-family: var(--mc-font-number); font-weight: 700; margin-left: 4px; }
-.placeCard { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); }
-.list .placeCard > button:first-child { padding-right: 64px; min-height: 104px; }
-.list .starIconButton, .starIconButton { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); width: 48px; min-width: 48px; height: 48px; min-height: 48px; padding: 0; display: grid; place-items: center; border: 0; background: transparent; border-radius: 12px; }
-.starToggle { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; font-weight: 700; border: 1.5px solid var(--mc-text-primary) !important; }
-.starToggle:disabled { border-color: var(--mc-border-default) !important; }
-.starToggle[aria-pressed="true"] { background: var(--mc-signal-tint); }
-.waypointBody > .starToggle { margin-top: 16px; }
-.detailSummary { position: relative; padding-right: 56px; margin-bottom: 16px; background: var(--mc-surface-card); }
-.summaryStar { position: absolute; top: 50%; right: 16px; transform: translateY(-50%); }
-.textButton { border: 0 !important; background: transparent !important; color: var(--mc-text-secondary) !important; font-weight: 700; width: 100%; }
-.outlineButton { width: 100%; font-weight: 700; border: 1.5px solid var(--mc-text-primary) !important; }
-.chip { display: inline-flex; align-items: center; margin-left: 8px; padding: 2px 10px; border-radius: 999px; background: var(--mc-signal-tint); border: 1px solid var(--mc-signal-tint-border); color: var(--mc-signal-text); font-size: .8125rem; font-weight: 700; }
-.resultText .chip { margin: 4px 0 0; background: var(--mc-signal-fill); border-color: var(--mc-signal-fill); color: var(--mc-signal-on); align-self: flex-start; }
-.infoCard, .noticeCard, .errorCard { border-radius: 16px; padding: 16px 20px; display: grid; gap: 6px; }
+
+/* Issue #123 (Figma FP01–FP33, FPW01–03): values below come from get_design_context.
+   Selectors start with .page/.dialog so they win over the base button and input rules. */
+.mobileOnly { display: revert; }
+.desktopOnly { display: none !important; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.page .iconButton, .dialog header button { width: 48px; min-width: 48px; height: 48px; padding: 0; display: grid; place-items: center; flex-shrink: 0; background: var(--mc-surface-card); border: 1px solid var(--mc-border-default); border-radius: 14px; }
+.page h1, .dialog h2 { flex: 1; min-width: 0; margin: 0; font-size: 1.5rem; font-weight: 900; line-height: 1.35; letter-spacing: -0.02em; }
+.page .heading { display: flex; align-items: center; gap: 12px; margin: 0; }
+.helper, .page .helper, .dialog .helper { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-secondary); }
+.notice, .page .notice, .dialog .notice { margin: 0; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--mc-signal-tint-border); background: var(--mc-signal-tint); color: var(--mc-text-primary); font-size: 0.8125rem; line-height: 1.5; }
+
+/* Saved places page (FP01 mobile). */
+.page { display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; width: 100%; padding: 24px 20px 0; }
+.page .columns, .page .mapColumn, .page .listColumn { display: contents; }
+.regionLarge, .regionCompact { position: relative; display: block; }
+.regionLarge > span, .regionCompact > span { display: flex; align-items: center; gap: 8px; background: var(--mc-surface-card); border: 1.5px solid var(--mc-border-strong); border-radius: 14px; color: var(--mc-text-primary); }
+.regionLarge > span { height: 56px; padding: 0 16px; }
+.regionLarge b { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; }
+.regionLarge small { flex: 1; min-width: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-secondary); }
+.regionCompact > span { height: 48px; padding: 0 12px; gap: 6px; }
+.regionCompact b { font-size: 0.8125rem; font-weight: 500; letter-spacing: .04em; }
+.page .regionLarge select, .page .regionCompact select { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; opacity: 0; cursor: pointer; }
+.regionLarge:has(select:focus-visible) > span, .regionCompact:has(select:focus-visible) > span { outline: 2px solid var(--mc-text-primary); outline-offset: 2px; }
+.page .layers { display: flex; gap: 8px; margin: 0; }
+.page .layerToggle { position: relative; flex: 1; min-width: 0; height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; border-radius: 14px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); font-size: 0.8125rem; font-weight: 500; letter-spacing: .04em; line-height: 1.4; white-space: nowrap; color: var(--mc-text-primary); }
+.page .layerToggle:has(input:checked) { background: var(--mc-signal-tint); border: 1.5px solid var(--mc-border-strong); color: var(--mc-text-primary); font-weight: 500; }
+.page .layerToggle input[type="checkbox"] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.page .layerToggle:has(input:focus-visible) { outline: 2px solid var(--mc-text-primary); outline-offset: 2px; }
+.page .map { height: 188px; border: 0; border-radius: 16px; background: var(--mc-map-land); }
+.page .map :global(.map-canvas), .page .map :global(.map-viewport) { min-height: 0; height: 100%; }
+.page .tabs { display: flex; gap: 8px; margin: 0; }
+.page .tabs button { flex: 1; min-width: 0; height: 48px; min-height: 48px; padding: 0 10px; border-radius: 14px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); font-size: 0.8125rem; font-weight: 500; letter-spacing: .04em; line-height: 1.4; }
+.page .tabs button[aria-pressed="true"] { background: var(--mc-signal-tint); border: 1.5px solid var(--mc-border-strong); font-weight: 500; }
+.page .filters { display: flex; gap: 8px; }
+.page .searchField { flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: center; gap: 8px; height: 48px; padding: 0 14px; border: 1px solid var(--mc-border-card); border-radius: 14px; background: var(--mc-surface-card); }
+.page .searchField input:not([type="checkbox"]) { flex: 1; min-width: 0; min-height: 0; height: 100%; border: 0; padding: 0; background: transparent; font-size: 0.8125rem; }
+.page .searchField:has(input:focus-visible) { outline: 2px solid var(--mc-text-primary); outline-offset: 2px; }
+.page .searchField input:focus-visible { outline: none; }
+.page .listCount { display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin: 0; color: var(--mc-text-primary); white-space: nowrap; }
+.page .listCount strong { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; }
+.countNumber, .page .countNumber { margin: 0; font-family: var(--mc-font-number); font-size: 1rem; font-weight: 700; line-height: 1.2; }
+.page .listCount > span { margin-left: auto; font-size: 0.8125rem; color: var(--mc-text-secondary); }
+.page .list, .dialog .list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; max-height: none; overflow: visible; }
+.page .placeCard, .dialog .placeCard, .page .previewCard { display: flex; align-items: center; gap: 4px; padding: 16px 4px 16px 18px; border-radius: 16px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); }
+.page .previewCard { border: 2px solid var(--mc-border-strong); padding-right: 16px; }
+.page .placeCard > button:first-child, .dialog .placeCard > button:first-child, .page .previewCard > button:first-child { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 0; border: 0; border-radius: 0; background: transparent; text-align: left; }
+.placeCard .placeKind, .previewCard .placeKind, .detailSummary .placeKind { display: block; width: auto; font-size: 0.8125rem; font-weight: 500; letter-spacing: .04em; line-height: 1.4; color: var(--mc-signal-text); }
+.page .placeCard strong, .dialog .placeCard strong, .previewCard strong, .detailSummary strong { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; color: var(--mc-text-primary); }
+.page .placeCard > button > span:not(.placeKind), .dialog .placeCard > button > span:not(.placeKind), .previewCard > button > span:not(.placeKind) { font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-secondary); }
+.page .starIconButton, .dialog .starIconButton { position: static; transform: none; flex: 0 0 48px; width: 48px; min-width: 48px; height: 48px; min-height: 48px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 12px; background: transparent; }
+.page .starIconButton:disabled, .dialog .starIconButton:disabled { opacity: .4; }
+.page .registerFooter { position: sticky; bottom: 0; z-index: 2; margin: 0 -20px; padding: 14px 20px max(24px, env(safe-area-inset-bottom)); background: var(--mc-surface-card); border-top: 1px solid var(--mc-border-card); }
+.page .registerFooter button { width: 100%; max-width: none; }
+.page .mapHelp { margin: 0; }
+
+/* Shared v2 buttons and fields. */
+.page .secondaryButton, .dialog .secondaryButton, .page .starToggle, .dialog .starToggle, .page .dangerButton, .dialog .dangerButton { width: 100%; height: 56px; min-height: 56px; padding: 0 24px; border-radius: 14px; background: var(--mc-surface-card); border: 1.5px solid var(--mc-border-strong); color: var(--mc-text-primary); font-size: 1rem; font-weight: 700; line-height: 1.4; }
+.page .dangerButton, .dialog .dangerButton { border-color: var(--mc-danger-text); color: var(--mc-danger-text); }
+.page .starToggle:disabled, .dialog .starToggle:disabled { opacity: .4; }
+.page .starToggle[aria-pressed="true"], .dialog .starToggle[aria-pressed="true"] { background: var(--mc-signal-tint); }
+.page .textButton, .dialog .textButton { width: 100%; height: 48px; min-height: 48px; border: 0; background: transparent; color: var(--mc-text-secondary); font-size: 1rem; font-weight: 700; }
+.dialog :global(.primary-button), .page :global(.primary-button) { height: 56px; min-height: 56px; padding: 0 24px; border-radius: 14px; font-size: 1rem; }
+.fieldLabel, .dialog .fieldLabel { display: block; font-size: 0.8125rem; font-weight: 700; letter-spacing: .04em; line-height: 1.4; color: var(--mc-text-secondary); }
+.dialog input.textField { width: 100%; height: 56px; min-height: 56px; padding: 0 16px; border-radius: 14px; border: 1px solid var(--mc-border-default); background: var(--mc-surface-card); font-size: 1.0625rem; line-height: 1.5; }
+.dialog input.textField:focus-visible { outline: none; border: 2px solid var(--mc-text-primary); padding: 0 15px; }
+.dialog input.invalidInput, .dialog input.invalidInput:focus-visible { border: 2px solid var(--mc-danger-text); padding: 0 15px; }
+.fieldError, .dialog .fieldError { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--mc-danger-text); }
+.chip { display: inline-flex; align-items: center; align-self: flex-start; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--mc-signal-tint-border); color: var(--mc-signal-text); font-size: 0.8125rem; font-weight: 700; letter-spacing: .04em; line-height: 1.4; white-space: nowrap; }
+.page .placeKind > .chip, .dialog .placeKind > .chip { font-size: 0.8125rem; }
+.resultList .chip { background: var(--mc-signal-fill); border-color: var(--mc-signal-fill); color: var(--mc-signal-on); }
+.infoCard, .noticeCard, .errorCard { display: grid; gap: 6px; padding: 16px 18px; border-radius: 16px; }
 .infoCard { background: var(--mc-surface-card); border: 1px solid var(--mc-border-card); }
 .noticeCard { background: var(--mc-signal-tint); border: 1px solid var(--mc-signal-tint-border); }
 .errorCard { background: var(--mc-surface-card); border: 1.5px solid var(--mc-danger-text); }
+.infoCard strong, .noticeCard strong, .errorCard strong { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; }
 .errorCard strong { color: var(--mc-danger-text); }
-.infoCard p, .noticeCard p, .errorCard p { margin: 0; font-size: .875rem; color: var(--mc-text-primary); }
+.infoCard p, .noticeCard p, .errorCard p { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-primary); }
 .dialog .errorCard[role="alert"] { color: var(--mc-text-primary); }
-.fieldLabel { font-size: .875rem; font-weight: 700; color: var(--mc-text-secondary); }
-.fieldError { color: var(--mc-danger-text); font-size: .875rem; margin: 6px 0 0; }
-.dialog .invalidInput { border: 1.5px solid var(--mc-danger-text); }
-.footerHint { margin: 8px 0 0; font-size: .875rem; color: var(--mc-text-secondary); }
-.registerBody, .pickerBody { display: grid; gap: 12px; align-content: start; }
-.registerSearch { display: grid; gap: 12px; }
-.registerSearch input { width: 100%; }
-.resultLayout { display: grid; gap: 12px; }
-.resultHeading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; margin: 0 !important; font-size: 1.125rem !important; }
-.resultHeading b { font-family: var(--mc-font-number); }
-.resultHeading span { font-size: .8125rem; font-weight: 400; color: var(--mc-text-secondary); }
+
+/* Full-screen v2 screens (FP02, FP10–27): ground background, header inside the scroll area, card footer. */
+.dialog.fullScreen { background: var(--mc-surface-ground); }
+.fullScreen header { gap: 12px; padding: 24px 20px 0; margin: 0; }
+.fullScreen .waypointBody { display: flex; flex-direction: column; gap: 12px; padding: 12px 20px 24px; }
+.fullScreen .waypointBody > * { flex-shrink: 0; margin: 0; }
+.fullScreen .waypointFooter { display: flex; flex-direction: column; gap: 8px; padding: 14px 20px max(24px, env(safe-area-inset-bottom)); background: var(--mc-surface-card); border-top: 1px solid var(--mc-border-card); }
+.footerHint, .dialog .footerHint { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-secondary); }
+.footerSpacer { display: none; }
+.placeSummary, .dialog .placeSummary { display: flex; flex-direction: column; gap: 6px; padding: 16px 16px 16px 18px; border-radius: 16px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); }
+.dialog .placeSummary .placeKind { display: flex; align-items: center; gap: 8px; min-height: 0; font-size: 0.8125rem; font-weight: 500; letter-spacing: .04em; line-height: 1.4; color: var(--mc-signal-text); }
+.dialog .placeSummary strong { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; }
+.dialog .placeSummary > span:not(.placeKind) { font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-secondary); }
+.dialog .detailSummary { display: grid; grid-template-columns: minmax(0, 1fr) 48px; column-gap: 4px; row-gap: 4px; padding-right: 4px; align-items: center; }
+.dialog .detailSummary > :not(.starIconButton) { grid-column: 1; }
+.dialog .detailSummary > .starIconButton { grid-column: 2; grid-row: 1 / span 3; }
+.dialog .detailMap { height: 150px; margin: 0; border: 0; border-radius: 16px; background: var(--mc-map-land); }
+
+/* Registration search (FP10–15). */
+.registerSearch { display: grid; gap: 6px 0; }
+.registerSearch > button { margin-top: 6px; }
+.searchLoading { display: flex; flex-direction: column; gap: 12px; }
+.dialog .resultHeading { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 1.0625rem; font-weight: 700; line-height: 1.4; }
+.resultHeading b { font-family: var(--mc-font-number); font-size: 1rem; line-height: 1.2; }
+.resultHeading > span { flex: 1; min-width: 0; font-size: 0.8125rem; font-weight: 400; line-height: 1.5; color: var(--mc-text-secondary); }
+.resultMapColumn { display: flex; flex-direction: column; gap: 12px; }
 .resultMap { position: relative; height: 200px; min-height: 200px; overflow: hidden; border-radius: 16px; background: var(--mc-map-land); }
 .resultMap :global(.map-canvas), .resultMap :global(.map-viewport) { min-height: 0; height: 100%; }
-.resultList { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.resultList button { width: 100%; display: flex; align-items: center; gap: 16px; text-align: left; padding: 16px 20px; border-radius: 16px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); }
-.resultList button[aria-pressed="true"] { border: 2px solid var(--mc-text-primary); }
-.resultNumber { flex: 0 0 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; border: 2px solid var(--mc-text-primary); font-family: var(--mc-font-number); font-weight: 700; }
+.resultList { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.dialog .resultList button { width: 100%; min-height: 0; display: flex; align-items: center; gap: 12px; padding: 16px 16px 16px 18px; border-radius: 16px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); text-align: left; }
+.dialog .resultList button[aria-pressed="true"] { border: 2px solid var(--mc-border-strong); padding: 15px 15px 15px 17px; }
+.resultNumber { flex: 0 0 28px; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 14px; border: 1.5px solid var(--mc-text-primary); background: var(--mc-surface-card); font-family: var(--mc-font-number); font-size: 1rem; font-weight: 700; line-height: 1.2; }
 .resultList button[aria-pressed="true"] .resultNumber { background: var(--mc-signal-fill); }
-.resultText { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.resultText strong { font-size: 1.125rem; }
-.resultText > span { font-size: .875rem; color: var(--mc-text-secondary); overflow-wrap: anywhere; }
-.searchLoading { display: grid; gap: 12px; }
-.skeletonCard { display: grid; gap: 10px; padding: 18px 20px; border-radius: 16px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); }
-.skeletonCard span { display: block; height: 14px; width: 60%; border-radius: 7px; background: var(--mc-border-default); }
+.resultText { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.resultText strong { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; }
+.resultText > span:not(.chip) { font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-secondary); overflow-wrap: anywhere; }
+.registerResults .searchSubmit { display: none; }
+.skeletonCard { display: grid; gap: 10px; padding: 18px; border-radius: 16px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); }
+.skeletonCard span { display: block; width: 60%; height: 16px; border-radius: 8px; background: var(--mc-border-default); }
 .skeletonCard span + span { width: 80%; height: 10px; }
+.wideLabel { display: inline; }
 .narrowLabel { display: none; }
-.pickerMap { position: relative; height: min(470px, 56dvh); min-height: 200px; overflow: hidden; border-radius: 16px; }
+
+/* Map point picker (FP20–25). */
+.pickerStep { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.pickerMap { position: relative; height: 470px; min-height: 200px; overflow: hidden; border-radius: 16px; background: var(--mc-map-land); }
+.pickerChecked .pickerMap { height: 300px; }
 .pickerMap :global(.map-canvas), .pickerMap :global(.map-viewport) { min-height: 0; height: 100%; }
-.pickerResult { display: grid; gap: 12px; }
-.pickerPreview { position: relative; height: 300px; min-height: 200px; overflow: hidden; border-radius: 16px; }
-.pickerPreview :global(.map-selection-preview), .pickerPreview :global(.map-canvas) { height: 100%; min-height: 0; }
-.pickerPanel { display: grid; gap: 12px; align-content: start; }
+.pickerPanel { display: flex; flex-direction: column; gap: 12px; }
 .progress { display: block; height: 6px; border-radius: 3px; background: var(--mc-border-default); overflow: hidden; }
 .progress span { display: block; width: 40%; height: 100%; background: var(--mc-signal-fill); }
-.coordinate { font-family: var(--mc-font-number); color: var(--mc-text-primary); }
-.backButton { flex: 0 0 48px; min-width: 48px; display: grid; place-items: center; padding: 0 !important; }
-.dialog header h2 { flex: 1; min-width: 0; }
-@media (min-width: 768px) {
-  .wideDialog.fullScreen { width: min(840px, calc(100vw - 64px)); height: auto; max-height: calc(100dvh - 64px); border-radius: 24px; border: 1px solid var(--mc-border-card); }
-  .registerSearch { grid-template-columns: minmax(0, 1fr) 120px; }
-  .registerSearch > label { grid-column: 1 / -1; }
-  .registerSearch > :global(.primary-button) { min-height: 48px; }
-  .wideDialog .waypointFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; }
-  .wideDialog .waypointFooter button { width: auto; min-width: 120px; padding-inline: 20px; }
-  .wideDialog .waypointFooter .footerHint { margin: 0; flex-basis: 100%; text-align: right; }
-  .resultLayout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
-  .resultLayout > .resultHeading, .resultLayout > .resultList, .resultLayout > .outlineButton { grid-column: 1; }
-  .resultLayout > .resultMap { grid-column: 2; grid-row: 1 / span 4; height: 370px; position: sticky; top: 0; }
-  .pickerResult { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
-  .pickerPreview { height: 370px; }
-}
+.coordinateLine { display: flex; align-items: center; gap: 6px; }
+.coordinate { font-family: var(--mc-font-number); font-size: 1rem; font-weight: 700; color: var(--mc-text-primary); }
+
+/* Alias form (FP26–27). */
+.choiceGroup { display: flex; flex-direction: column; gap: 12px; }
+.choiceLabel { margin: 0; font-size: 0.8125rem; font-weight: 500; letter-spacing: .04em; line-height: 1.4; color: var(--mc-text-primary); }
+.choiceButtons { display: flex; gap: 8px; }
+.dialog .choiceButtons button { flex: 1; min-width: 0; height: 48px; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; border-radius: 14px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); font-size: 0.8125rem; font-weight: 500; letter-spacing: .04em; }
+.dialog .choiceButtons button[aria-pressed="true"] { background: var(--mc-signal-tint); border: 1.5px solid var(--mc-border-strong); }
+.textFieldGroup { display: flex; flex-direction: column; gap: 6px; }
+
 @media (max-width: 360px) {
   .wideLabel { display: none; }
   .narrowLabel { display: inline; }
   .resultMap { height: 160px; min-height: 160px; }
-  .resultText > span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
+
+/* PC (FPW01–03). */
+@media (min-width: 768px) {
+  .mobileOnly { display: none !important; }
+  .desktopOnly { display: revert !important; }
+  .page .iconButton.desktopOnly { display: grid !important; }
+  .page { display: flex; flex-direction: column; gap: 24px; width: auto; max-width: none; margin: 0; padding: 40px max(32px, calc((100% - 1200px) / 2)); }
+  .page .heading { gap: 16px; }
+  .page .heading :global(.primary-button) { width: auto; flex-shrink: 0; }
+  .page .columns { display: flex; gap: 24px; align-items: stretch; height: max(560px, calc(100dvh - 72px - 80px - 48px - 24px)); }
+  .page .mapColumn { display: flex; flex-direction: column; gap: 16px; flex: 1; min-width: 0; padding: 24px; border-radius: 20px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); overflow: auto; }
+  .page .listColumn { display: flex; flex-direction: column; gap: 12px; flex: 0 0 min(456px, 46%); padding: 24px; border-radius: 20px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); overflow: auto; }
+  .page .layers { align-self: flex-start; }
+  .page .layerToggle { flex: 0 0 auto; }
+  .page .map { flex: 1; min-height: 320px; height: auto; }
+  .page .registerFooter { display: none; }
+  .page .desktopDetail { margin: 0; }
+  .page .desktopActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .page .desktopActions .starToggle { grid-column: 1 / -1; }
+  .dialog.wideDialog.fullScreen { width: min(960px, calc(100vw - 64px)); height: fit-content; max-height: calc(100dvh - 64px); padding: 24px; display: flex; flex-direction: column; gap: 16px; background: var(--mc-surface-card); border: 0; border-radius: 24px; }
+  .wideDialog.fullScreen header { padding: 0; }
+  .wideDialog .waypointBody { flex: 0 0 auto; padding: 0; overflow: visible; }
+  .wideDialog .waypointFooter { padding: 0; border: 0; background: transparent; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; }
+  .wideDialog .waypointFooter button { width: auto; }
+  .registerSearch { grid-template-columns: minmax(0, 1fr) auto; align-items: end; column-gap: 8px; }
+  .registerSearch > label { grid-column: 1 / -1; }
+  .registerSearch > button { margin: 0; }
+  .registerResults .searchSubmit { display: inline-flex; align-items: center; }
+  .registerResults { display: grid; grid-template-columns: 400px minmax(0, 1fr); column-gap: 24px; row-gap: 12px; align-content: start; }
+  .registerResults > :not(.resultMapColumn) { grid-column: 1; }
+  .registerResults > .resultMapColumn { grid-column: 2; grid-row: 1 / span 3; }
+  .registerResults .resultMap { height: 520px; min-height: 520px; }
+  .dialog .resultList button { padding: 12px 16px 12px 18px; }
+  .dialog .resultList button[aria-pressed="true"] { padding: 11px 15px 11px 17px; }
+  .resultFooter .footerSpacer { display: block; flex: 1; }
+  .pickerStep { gap: 16px; }
+  .pickerChecked { display: grid; grid-template-columns: 560px minmax(0, 1fr); grid-template-rows: auto auto auto 1fr; column-gap: 24px; row-gap: 12px; align-items: start; }
+  .pickerChecked .pickerBody { display: contents; }
+  .pickerChecked .pickerHint { grid-column: 1 / -1; grid-row: 1; }
+  .pickerChecked .pickerMap { grid-column: 1; grid-row: 2 / span 3; height: 520px; }
+  .pickerChecked .pickerPanel { grid-column: 2; grid-row: 2; }
+  .pickerChecked .waypointFooter { grid-column: 2; grid-row: 3; flex-direction: column; align-items: stretch; }
+  .pickerChecked .waypointFooter button { width: 100%; }
+  .pickerMap { height: 520px; }
+}
+
+/* Comparison fixes (side-by-side with Figma FP01–FPW03). */
+.dialog .placeSummary .placeKind, .page .previewCard .placeKind { justify-content: flex-start; flex-wrap: wrap; }
+.page .starIconButton:disabled, .dialog .starIconButton:disabled { opacity: 1; }
+.dialog :global(.map-zoom-controls) button { width: 48px; height: 48px; min-height: 48px; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 1.5rem; font-weight: 900; line-height: 1.35; }
+.pickerDim :global(.map-center-marker) { opacity: .8; }
+.fullScreen .registerResults { overflow: hidden; }
+.fullScreen .registerResults > .resultList { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+@media (max-width: 767px) {
+  .pickerRegion .pickerMap { height: 260px; }
+}
+@media (max-width: 360px) {
+  .resultHeading .mobileOnly, .resultText .chip, .resultFooter .footerHint, .resultCategory { display: none !important; }
+  .pickerMap, .pickerChecked .pickerMap, .pickerRegion .pickerMap { height: 200px; }
+  .pickerMap :global(.map-zoom-controls), .coordinateLine { display: none !important; }
+}
+@media (min-width: 768px) {
+  .page { align-items: stretch; }
+  .wideDialog .registerResults { display: grid; grid-template-columns: 400px minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); column-gap: 24px; row-gap: 12px; align-content: start; overflow: visible; }
+  .wideDialog .registerResults > :not(.resultMapColumn) { grid-column: 1; }
+  .wideDialog .registerResults > .resultMapColumn { grid-column: 2; grid-row: 1 / span 3; }
+  .wideDialog .registerResults > .resultList { max-height: 412px; overflow-y: auto; }
+  .wideDialog .pickerStep { flex: none; align-content: start; }
+  .page .listColumn .placeCard > button:first-child { gap: 2px; }
+  .wideDialog .pickerStep:not(.pickerChecked) .pickerMap { height: 520px; }
+}
+
+/* Centered confirmation popup (Figma FP29, FP29b, FP34–FP37): 336 wide, 24 padding, radius 20. */
+.popup { box-sizing: border-box; width: min(336px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); margin: auto; padding: 24px; overflow-y: auto; border: 0; border-radius: 20px; background: var(--mc-surface-card); color: var(--mc-text-primary); }
+.popup[open] { display: flex; flex-direction: column; gap: 12px; }
+.popup::backdrop { background: var(--mc-scrim); }
+.popup h2 { margin: 0; font-size: 1.0625rem; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.popupCard { display: flex; flex-direction: column; gap: 6px; padding: 16px 16px 16px 18px; border-radius: 16px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); }
+.popupCard .placeKind { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: .8125rem; font-weight: 500; letter-spacing: .04em; line-height: 1.4; color: var(--mc-signal-text); }
+.popupCard .placeKind > .chip { font-size: .8125rem; }
+.popupCard strong { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.popupCard > span:last-child { font-size: .8125rem; line-height: 1.5; color: var(--mc-text-secondary); overflow-wrap: anywhere; }
+.popupRows { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.popupRows > div { display: flex; align-items: center; gap: 8px; font-size: .8125rem; }
+.popupRows dt { flex: 0 0 100px; line-height: 1.5; color: var(--mc-text-secondary); }
+.popupRows dd { flex: 1; min-width: 0; margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-weight: 500; letter-spacing: .04em; line-height: 1.4; overflow-wrap: anywhere; }
+.popupCount { display: flex; align-items: center; gap: 8px; margin: 0; font-size: .8125rem; color: var(--mc-text-secondary); }
+.popupCount b, .popupRows b { color: var(--mc-text-primary); }
+.popupActions { display: flex; flex-direction: column; gap: 8px; }
+.popup .popupActions button { width: 100%; height: 56px; min-height: 56px; padding: 0 24px; border-radius: 14px; font: inherit; font-size: 1rem; font-weight: 700; cursor: pointer; }
+.popup .popupActions :global(.primary-button) { background: var(--mc-signal-fill); color: var(--mc-signal-on); border: 0; }
+.popup .secondaryButton { background: var(--mc-surface-card); border: 1.5px solid var(--mc-border-strong); color: var(--mc-text-primary); }
+.popup .destructiveButton { background: var(--mc-danger-fill); border: 0; color: var(--mc-danger-on); }
+.popup .popupActions button:disabled { opacity: .45; cursor: default; }
+.popup .errorCard { padding: 14px 16px; }
+.popup .helper, .popup .fieldError { margin: 0; font-size: .8125rem; line-height: 1.5; }

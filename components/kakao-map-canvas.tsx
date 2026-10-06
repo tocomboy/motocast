@@ -3,7 +3,7 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type Ref } from "react";
 import { designTokens } from "@/packages/shared-ui/src/design-tokens";
 import { LineIcon } from "@/components/line-icon";
-import { clusterPinImage, numberedPinImage, savedPinImage, type PinImage } from "@/components/map-pin-images";
+import { CENTER_TARGET, clusterPinImage, numberedPinImage, savedPinImage, type PinImage } from "@/components/map-pin-images";
 import { bindMapLongPress } from "@/lib/places/map-long-press";
 import {
   CLUSTER_FIT_PADDING,
@@ -37,8 +37,8 @@ const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; c
 
 function markerImage(maps: KakaoMapsNamespace, points: MapPoint[], selectionPreview = false) {
   if (selectionPreview) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48" viewBox="0 0 40 48"><path d="M20 2C10.06 2 2 10.06 2 20C2 32 20 46 20 46C20 46 38 32 38 20C38 10.06 29.94 2 20 2Z" fill="${designTokens["signal-fill"]}" stroke="${designTokens["text-primary"]}" stroke-width="2"/><path d="M20 12V28M12 20H28" stroke="${designTokens["text-primary"]}" stroke-width="2" stroke-linecap="round"/></svg>`;
-    return new maps.MarkerImage(`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, new maps.Size(40, 48), { offset: new maps.Point(20, 46) });
+    // The same v2/Map/CenterTarget the picker shows; its tip is the selected point.
+    return new maps.MarkerImage(CENTER_TARGET.src, new maps.Size(CENTER_TARGET.width, CENTER_TARGET.height), { offset: new maps.Point(CENTER_TARGET.offsetX, CENTER_TARGET.offsetY) });
   }
   const markerKinds = Array.from(new Map(points.map((point) => {
     const role = point.role ?? "waypoint";
@@ -97,8 +97,12 @@ export function KakaoMapCanvas({
   selectedNumberedPinId = null,
   onSelectNumberedPin,
   centerPicker = false,
+  centerLocked = false,
   centerHandle,
   initialView,
+  allowFullscreen = true,
+  markerPoint = null,
+  onClustersChange,
 }: {
   points: MapPoint[];
   path?: PathPoint[];
@@ -121,8 +125,16 @@ export function KakaoMapCanvas({
   onSelectNumberedPin?: (id: string) => void;
   /** Fixed center marker with zoom buttons; read the point through `centerHandle`. */
   centerPicker?: boolean;
+  /** Keeps the picked point under the target while its address is checked. */
+  centerLocked?: boolean;
   centerHandle?: Ref<MapCenterHandle>;
   initialView?: PathPoint & { level: number };
+  /** Small maps in details and registration have no fullscreen control (FP02, FP12). */
+  allowFullscreen?: boolean;
+  /** A long-pressed point shown with the center target while its sheet is open (FP28). */
+  markerPoint?: PathPoint | null;
+  /** Whether any saved-pin cluster is drawn, for the cluster hint under the map (FP30). */
+  onClustersChange?: (visible: boolean) => void;
 }) {
   const titleId = useId();
   const surfaceRef = useRef<HTMLDialogElement>(null);
@@ -138,6 +150,8 @@ export function KakaoMapCanvas({
   useEffect(() => { savedSelectRef.current = onSelectSavedPin; }, [onSelectSavedPin]);
   const savedClusterRef = useRef(onSelectSavedCluster);
   useEffect(() => { savedClusterRef.current = onSelectSavedCluster; }, [onSelectSavedCluster]);
+  const clustersRef = useRef(onClustersChange);
+  useEffect(() => { clustersRef.current = onClustersChange; }, [onClustersChange]);
   const numberedSelectRef = useRef(onSelectNumberedPin);
   useEffect(() => { numberedSelectRef.current = onSelectNumberedPin; }, [onSelectNumberedPin]);
   const fittedNumberedRef = useRef<string | null>(null);
@@ -436,7 +450,9 @@ export function KakaoMapCanvas({
         return { id: pin.id, x: point.x, y: point.y, latitude: pin.latitude, longitude: pin.longitude, starred: Boolean(pin.starred) };
       });
       const selected = selectedSavedPinId && byId.has(selectedSavedPinId) ? new Set([selectedSavedPinId]) : undefined;
-      for (const group of clusterPins(inputs, map.getLevel(), selected)) {
+      const groups = clusterPins(inputs, map.getLevel(), selected);
+      clustersRef.current?.(groups.some((group) => group.kind === "cluster"));
+      for (const group of groups) {
         let marker: { setMap(map: unknown): void };
         let select: () => void;
         if (group.kind === "pin") {
@@ -542,6 +558,37 @@ export function KakaoMapCanvas({
     };
   }, [isReady, numberedKey, selectedNumberedPinId, geometryKey]);
 
+  useEffect(() => {
+    if (!isReady || !centerPicker || !mapRef.current) return;
+    try {
+      mapRef.current.setDraggable(!centerLocked);
+    } catch {
+      queueMicrotask(() => setMapState({ status: "error", geometryKey }));
+    }
+  }, [isReady, centerPicker, centerLocked, geometryKey]);
+
+  const markerKey = markerPoint ? `${markerPoint.latitude}:${markerPoint.longitude}` : "";
+  useEffect(() => {
+    if (!isReady || !markerKey) return;
+    const maps = window.kakao?.maps;
+    const map = mapRef.current;
+    if (!maps || !map) return;
+    const [latitude, longitude] = markerKey.split(":").map(Number);
+    let marker: { setMap(map: unknown): void } | null = null;
+    try {
+      marker = new maps.Marker({
+        map,
+        position: new maps.LatLng(latitude, longitude),
+        title: "선택한 위치",
+        image: new maps.MarkerImage(CENTER_TARGET.src, new maps.Size(CENTER_TARGET.width, CENTER_TARGET.height), { offset: new maps.Point(CENTER_TARGET.offsetX, CENTER_TARGET.offsetY) }),
+        zIndex: 4,
+      });
+    } catch { queueMicrotask(() => setMapState({ status: "error", geometryKey })); }
+    return () => {
+      try { marker?.setMap(null); } catch { overlayCleanupFailedRef.current = true; console.error("선택한 위치 표시를 정리하지 못했습니다."); }
+    };
+  }, [isReady, markerKey, geometryKey]);
+
   function zoom(step: 1 | -1) {
     const map = mapRef.current;
     if (!map) return;
@@ -573,12 +620,12 @@ export function KakaoMapCanvas({
         <div className="map-viewport">
           <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert={!isReady} />
           <MapStatus state={state} actualRoute={Boolean(path?.length)} savedPlaces={allowEmptyMap} />
-          <button type="button" ref={expandRef} className="map-fullscreen-trigger" hidden={fullscreen || centerPicker} onClick={() => setFullscreen(true)}>전체화면</button>
+          <button type="button" ref={expandRef} className="map-fullscreen-trigger" hidden={fullscreen || centerPicker || !allowFullscreen} onClick={() => setFullscreen(true)}>전체화면</button>
           {centerPicker && isReady ? <>
             <span className="map-center-marker" aria-hidden="true" />
             <div className="map-zoom-controls">
-              <button type="button" aria-label="지도 확대" onClick={() => zoom(-1)}><LineIcon name="plus" /></button>
-              <button type="button" aria-label="지도 축소" onClick={() => zoom(1)}><LineIcon name="minus" /></button>
+              <button type="button" aria-label="지도 확대" onClick={() => zoom(-1)}><span aria-hidden="true">+</span></button>
+              <button type="button" aria-label="지도 축소" onClick={() => zoom(1)}><span aria-hidden="true">−</span></button>
             </div>
           </> : null}
           {isReady && showLegend ? <MapMarkerLegend points={points} /> : null}

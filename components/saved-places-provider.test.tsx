@@ -1,7 +1,7 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { useEffect } from "react";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { SavedPlacesProvider, useSavedPlaces } from "./saved-places-provider";
+import { SavedPlacesProvider, useSavedPlaces, type SavedPlaceWrite } from "./saved-places-provider";
 import { parseSavedPlace } from "@/lib/places/saved";
 
 const mocks = vi.hoisted(() => ({
@@ -107,7 +107,7 @@ it("keeps the signed empty road address when registering a place", async () => {
         "riding_spot",
         true,
       ),
-    ).toBe(true);
+    ).toMatchObject({ ok: true, duplicate: false });
   });
   expect(mocks.tables.every((table) => table === "saved_place_entries")).toBe(true);
   expect(mocks.rpc).toHaveBeenCalledWith("save_place_v2", {
@@ -140,7 +140,7 @@ it("reads stars beyond the legacy five, preserves signed original data, and reco
   });
   expect(controls.favorites[1]).toMatchObject({ slot: 10, displayName: "팔당역" });
   await act(async () => {
-    expect(await controls.star(controls.places[0], false)).toBe(true);
+    expect(await controls.star(controls.places[0], false)).toMatchObject({ ok: true });
   });
   expect(mocks.rpc).toHaveBeenCalledWith("set_place_star", {
     saved_place_id: row.id,
@@ -153,7 +153,7 @@ it("reads stars beyond the legacy five, preserves signed original data, and reco
   expect(controls.message).toContain("자주 찾는 장소에서 뺐어요");
   await act(async () => renderer.unmount());
 });
-it("blocks parallel writes and never retries an ambiguous receipt; fresh readback preserves committed data", async () => {
+it("blocks parallel writes and treats a lost receipt as saved only when the fresh list shows it, without resending", async () => {
   const write = deferred<{ data: unknown; error: unknown }>();
   mocks.reads.push(
     Promise.resolve({ data: [], error: null }),
@@ -162,19 +162,20 @@ it("blocks parallel writes and never retries an ambiguous receipt; fresh readbac
   mocks.rpc.mockReturnValue(write.promise);
   const renderer = await mount();
   const place = parseSavedPlace(row).place;
-  let first!: Promise<boolean>;
+  let first!: Promise<SavedPlaceWrite>;
   await act(async () => {
     first = controls.save(place, "출발 거점", "riding_spot", true);
-    expect(await controls.save(place, "", "restaurant", false)).toBe(false);
+    expect(await controls.save(place, "", "restaurant", false)).toMatchObject({ ok: false, reason: "blocked" });
   });
   await act(async () => {
     write.resolve({ data: null, error: { message: "connection lost" } });
-    expect(await first).toBe(false);
+    // The re-read list already contains the place, so the save counts as done.
+    expect(await first).toEqual({ ok: true });
   });
   expect(mocks.rpc).toHaveBeenCalledTimes(1);
   expect(controls.places).toHaveLength(1);
   expect(controls.busy).toBe(false);
-  expect(controls.message).toContain("확인하지 못했어요");
+  expect(controls.message).toBe("장소를 저장했어요.");
   await act(async () => renderer.unmount());
 });
 it("invalidates confirmation snapshots and ignores a former owner's late mutation", async () => {
@@ -194,7 +195,7 @@ it("invalidates confirmation snapshots and ignores a former owner's late mutatio
   expect(valid()).toBe(true);
   const write = deferred<{ data: unknown; error: unknown }>();
   mocks.rpc.mockReturnValue(write.promise);
-  let result!: Promise<boolean>;
+  let result!: Promise<SavedPlaceWrite>;
   await act(async () => {
     result = controls.deletePlace(controls.places[0]);
   });
@@ -202,7 +203,7 @@ it("invalidates confirmation snapshots and ignores a former owner's late mutatio
   await act(async () => mocks.listener?.("SIGNED_OUT", null));
   await act(async () => {
     write.resolve({ data: null, error: null });
-    expect(await result).toBe(false);
+    expect(await result).toMatchObject({ ok: false, reason: "blocked" });
   });
   expect(controls.places).toEqual([]);
   expect(controls.status).toBe("error");
@@ -229,7 +230,7 @@ it("fails closed after a malformed list or failed write reconciliation", async (
     Promise.resolve({ data: null, error: { message: "offline" } }),
   );
   await act(async () => {
-    expect(await controls.star(controls.places[0], false)).toBe(false);
+    expect(await controls.star(controls.places[0], false)).toMatchObject({ ok: false, reason: "rejected" });
   });
   expect(controls.status).toBe("error");
   expect(controls.places).toEqual([]);
@@ -245,7 +246,7 @@ it("explains an 11th star rejected by the server and shows the re-read list with
   mocks.rpc.mockResolvedValue({ data: null, error: { message: "SAVED_PLACE_STAR_LIMIT" } });
   const renderer = await mount();
   await act(async () => {
-    expect(await controls.star(controls.places[0], true)).toBe(false);
+    expect(await controls.star(controls.places[0], true)).toMatchObject({ ok: false, reason: "star_limit" });
   });
   expect(mocks.rpc).toHaveBeenCalledTimes(1);
   expect(controls.status).toBe("ready");
@@ -259,10 +260,13 @@ it("explains the server alias requirement for a region-only map point", async ()
   mocks.reads.push(Promise.resolve({ data: [], error: null }), Promise.resolve({ data: [], error: null }));
   mocks.rpc.mockResolvedValue({ data: null, error: { message: "INVALID_SAVED_PLACE_METADATA" } });
   const renderer = await mount();
+  let write!: SavedPlaceWrite;
   await act(async () => {
-    expect(await controls.save(parseSavedPlace(row).place, "", "riding_spot", false)).toBe(false);
+    write = await controls.save(parseSavedPlace(row).place, "", "riding_spot", false);
   });
-  expect(controls.message).toContain("상세 주소가 없는 지점은 별명이 있어야 저장할 수 있어요.");
+  expect(write).toMatchObject({ ok: false, reason: "rejected" });
+  expect(!write.ok && write.message).toContain("상세 주소가 없는 지점은 별명이 있어야 저장할 수 있어요.");
+  expect(mocks.rpc).toHaveBeenCalledTimes(1);
   await act(async () => renderer.unmount());
 });
 
@@ -276,7 +280,7 @@ it("re-reads once when the list lags the write receipt and then accepts the matc
   mocks.rpc.mockResolvedValue({ data: [starred], error: null });
   const renderer = await mount();
   await act(async () => {
-    expect(await controls.star(controls.places[0], true)).toBe(true);
+    expect(await controls.star(controls.places[0], true)).toMatchObject({ ok: true });
   });
   expect(mocks.rpc).toHaveBeenCalledTimes(1);
   expect(mocks.tables).toHaveLength(3);
@@ -284,27 +288,43 @@ it("re-reads once when the list lags the write receipt and then accepts the matc
   await act(async () => renderer.unmount());
 });
 
-it("shows an error with retry when the list still disagrees after one re-read", async () => {
+it("reports an unknown result when the list still disagrees after re-reading, keeps the list and never resends", async () => {
   const stale = { ...row, star_slot: null, star_position: null };
   mocks.reads.push(
+    Promise.resolve({ data: [stale], error: null }),
     Promise.resolve({ data: [stale], error: null }),
     Promise.resolve({ data: [stale], error: null }),
     Promise.resolve({ data: [stale], error: null }),
   );
   mocks.rpc.mockResolvedValue({ data: [{ ...stale, star_position: 7, revision: 2 }], error: null });
   const renderer = await mount();
+  let write!: SavedPlaceWrite;
   await act(async () => {
-    expect(await controls.star(controls.places[0], true)).toBe(false);
+    write = await controls.star(controls.places[0], true);
   });
+  expect(write).toMatchObject({ ok: false, reason: "unknown" });
+  expect(!write.ok && write.message).toContain("반영되지 않았어요");
   expect(mocks.rpc).toHaveBeenCalledTimes(1);
-  expect(mocks.tables).toHaveLength(3);
-  expect(controls.status).toBe("error");
-  expect(controls.places).toEqual([]);
-  expect(controls.message).toContain("변경 결과가 최신 목록과 달라요");
-  mocks.reads.push(Promise.resolve({ data: [{ ...stale, star_position: 7, revision: 2 }], error: null }));
-  await act(async () => controls.retry());
+  expect(mocks.tables).toHaveLength(4);
   expect(controls.status).toBe("ready");
-  expect(controls.favorites).toHaveLength(1);
+  expect(controls.places).toHaveLength(1);
+  // The user's next confirm sends exactly one request with the re-read revision.
+  mocks.reads.push(Promise.resolve({ data: [{ ...stale, star_position: 7, revision: 2 }], error: null }));
+  await act(async () => {
+    expect(await controls.star(controls.places[0], true)).toMatchObject({ ok: true });
+  });
+  expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  expect(mocks.rpc).toHaveBeenLastCalledWith("set_place_star", { saved_place_id: row.id, expected_revision: 1, starred: true });
+  await act(async () => renderer.unmount());
+});
+
+it("reports a duplicate save when the server returns a place that was already saved", async () => {
+  mocks.reads.push(Promise.resolve({ data: [row], error: null }), Promise.resolve({ data: [row], error: null }));
+  mocks.rpc.mockResolvedValue({ data: [row], error: null });
+  const renderer = await mount();
+  await act(async () => {
+    expect(await controls.save(parseSavedPlace(row).place, "", "riding_spot", false)).toEqual({ ok: true, id: row.id, duplicate: true });
+  });
   await act(async () => renderer.unmount());
 });
 

@@ -27,6 +27,7 @@ type KakaoMapsNamespace = {
     getLevel(): number;
     setLevel(level: number, options?: { anchor?: KakaoLatLng }): void;
     relayout(): void;
+    setDraggable(draggable: boolean): void;
   };
   Marker: new (options: { map: unknown; position: KakaoLatLng; title: string; image?: unknown; zIndex?: number }) => { setMap(map: unknown): void };
   Polyline: new (options: {

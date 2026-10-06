@@ -10,7 +10,7 @@ test("saved places tabs, region, four map layers and registration cancel work at
     const manager = page.getByRole("region", { name: "즐겨찾기", exact: true });
     await expect(manager).toContainText("전체 0/1,000");
     await manager.getByRole("button", { name: "자주 찾는 장소", exact: true }).click();
-    await expect(manager).toContainText("자주 찾는 장소 0 / 10");
+    await expect(manager.locator("p").filter({ hasText: "0 / 10" })).toContainText("자주 찾는 장소0 / 10");
     await expect(
       manager.getByRole("combobox", { name: "시·도" }).getByRole("option"),
     ).toHaveCount(19);
@@ -29,12 +29,13 @@ test("saved places tabs, region, four map layers and registration cancel work at
     await spots.uncheck();
     await restaurants.uncheck();
     await expect(manager).toContainText(
-      "현재 일정의 지점과 지도는 유지됩니다.",
+      "현재 일정의 지점과 지도는 유지돼요.",
     );
     await spots.check();
     await restaurants.check();
-    const add = manager.getByRole("button", {
-      name: "＋ 장소 등록",
+    // FP01 keeps the register button in the bottom bar; FPW01 puts it next to the title.
+    const add = (width >= 768 ? manager.locator("header") : manager).getByRole("button", {
+      name: width >= 768 ? "장소 등록하기" : "＋ 장소 등록",
       exact: true,
     });
     await add.click();
@@ -91,7 +92,9 @@ test("saved places tabs, region, four map layers and registration cancel work at
         fullPage: true,
       });
     }
-    await manager.getByRole("button", { name: "뒤로", exact: true }).click();
+    await manager
+      .getByRole("button", { name: width >= 768 ? "뒤로" : "즐겨찾기 닫기", exact: true })
+      .click();
     await expect(
       page.getByRole("heading", { name: "오늘은 어디로 달려볼까요?" }),
     ).toBeVisible();
