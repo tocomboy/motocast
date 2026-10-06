@@ -306,3 +306,83 @@
 .notice { border-color: var(--mc-signal-tint-border); color: var(--mc-text-primary); }
 .dialog [role="alert"] { color: var(--mc-danger-text); }
 @media (max-width: 767px) { .dialog:not(.fullScreen) { width: 100%; max-width: none; margin: auto 0 0; border-radius: 24px 24px 0 0; max-height: calc(100dvh - 24px); } .dialog:not(.fullScreen)::before { content: ""; display: block; width: 40px; height: 4px; margin: -12px auto 20px; background: var(--mc-border-default); border-radius: 2px; } .actions { grid-template-columns: minmax(0, 1fr); } .fullScreen { width: 100%; padding: 0; border-radius: 0; } }
+
+/* Issue #123: frequent places 10, star buttons, registration search, map point picker (Figma 371–375). */
+.countNumber { font-family: var(--mc-font-number); font-weight: 700; margin-left: 4px; }
+.placeCard { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); }
+.list .placeCard > button:first-child { padding-right: 64px; min-height: 104px; }
+.list .starIconButton, .starIconButton { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); width: 48px; min-width: 48px; height: 48px; min-height: 48px; padding: 0; display: grid; place-items: center; border: 0; background: transparent; border-radius: 12px; }
+.starToggle { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; font-weight: 700; border: 1.5px solid var(--mc-text-primary) !important; }
+.starToggle:disabled { border-color: var(--mc-border-default) !important; }
+.starToggle[aria-pressed="true"] { background: var(--mc-signal-tint); }
+.waypointBody > .starToggle { margin-top: 16px; }
+.detailSummary { position: relative; padding-right: 56px; margin-bottom: 16px; background: var(--mc-surface-card); }
+.summaryStar { position: absolute; top: 50%; right: 16px; transform: translateY(-50%); }
+.textButton { border: 0 !important; background: transparent !important; color: var(--mc-text-secondary) !important; font-weight: 700; width: 100%; }
+.outlineButton { width: 100%; font-weight: 700; border: 1.5px solid var(--mc-text-primary) !important; }
+.chip { display: inline-flex; align-items: center; margin-left: 8px; padding: 2px 10px; border-radius: 999px; background: var(--mc-signal-tint); border: 1px solid var(--mc-signal-tint-border); color: var(--mc-signal-text); font-size: .8125rem; font-weight: 700; }
+.resultText .chip { margin: 4px 0 0; background: var(--mc-signal-fill); border-color: var(--mc-signal-fill); color: var(--mc-signal-on); align-self: flex-start; }
+.infoCard, .noticeCard, .errorCard { border-radius: 16px; padding: 16px 20px; display: grid; gap: 6px; }
+.infoCard { background: var(--mc-surface-card); border: 1px solid var(--mc-border-card); }
+.noticeCard { background: var(--mc-signal-tint); border: 1px solid var(--mc-signal-tint-border); }
+.errorCard { background: var(--mc-surface-card); border: 1.5px solid var(--mc-danger-text); }
+.errorCard strong { color: var(--mc-danger-text); }
+.infoCard p, .noticeCard p, .errorCard p { margin: 0; font-size: .875rem; color: var(--mc-text-primary); }
+.dialog .errorCard[role="alert"] { color: var(--mc-text-primary); }
+.fieldLabel { font-size: .875rem; font-weight: 700; color: var(--mc-text-secondary); }
+.fieldError { color: var(--mc-danger-text); font-size: .875rem; margin: 6px 0 0; }
+.dialog .invalidInput { border: 1.5px solid var(--mc-danger-text); }
+.footerHint { margin: 8px 0 0; font-size: .875rem; color: var(--mc-text-secondary); }
+.registerBody, .pickerBody { display: grid; gap: 12px; align-content: start; }
+.registerSearch { display: grid; gap: 12px; }
+.registerSearch input { width: 100%; }
+.resultLayout { display: grid; gap: 12px; }
+.resultHeading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; margin: 0 !important; font-size: 1.125rem !important; }
+.resultHeading b { font-family: var(--mc-font-number); }
+.resultHeading span { font-size: .8125rem; font-weight: 400; color: var(--mc-text-secondary); }
+.resultMap { position: relative; height: 200px; min-height: 200px; overflow: hidden; border-radius: 16px; background: var(--mc-map-land); }
+.resultMap :global(.map-canvas), .resultMap :global(.map-viewport) { min-height: 0; height: 100%; }
+.resultList { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.resultList button { width: 100%; display: flex; align-items: center; gap: 16px; text-align: left; padding: 16px 20px; border-radius: 16px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); }
+.resultList button[aria-pressed="true"] { border: 2px solid var(--mc-text-primary); }
+.resultNumber { flex: 0 0 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; border: 2px solid var(--mc-text-primary); font-family: var(--mc-font-number); font-weight: 700; }
+.resultList button[aria-pressed="true"] .resultNumber { background: var(--mc-signal-fill); }
+.resultText { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.resultText strong { font-size: 1.125rem; }
+.resultText > span { font-size: .875rem; color: var(--mc-text-secondary); overflow-wrap: anywhere; }
+.searchLoading { display: grid; gap: 12px; }
+.skeletonCard { display: grid; gap: 10px; padding: 18px 20px; border-radius: 16px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); }
+.skeletonCard span { display: block; height: 14px; width: 60%; border-radius: 7px; background: var(--mc-border-default); }
+.skeletonCard span + span { width: 80%; height: 10px; }
+.narrowLabel { display: none; }
+.pickerMap { position: relative; height: min(470px, 56dvh); min-height: 200px; overflow: hidden; border-radius: 16px; }
+.pickerMap :global(.map-canvas), .pickerMap :global(.map-viewport) { min-height: 0; height: 100%; }
+.pickerResult { display: grid; gap: 12px; }
+.pickerPreview { position: relative; height: 300px; min-height: 200px; overflow: hidden; border-radius: 16px; }
+.pickerPreview :global(.map-selection-preview), .pickerPreview :global(.map-canvas) { height: 100%; min-height: 0; }
+.pickerPanel { display: grid; gap: 12px; align-content: start; }
+.progress { display: block; height: 6px; border-radius: 3px; background: var(--mc-border-default); overflow: hidden; }
+.progress span { display: block; width: 40%; height: 100%; background: var(--mc-signal-fill); }
+.coordinate { font-family: var(--mc-font-number); color: var(--mc-text-primary); }
+.backButton { flex: 0 0 48px; min-width: 48px; display: grid; place-items: center; padding: 0 !important; }
+.dialog header h2 { flex: 1; min-width: 0; }
+@media (min-width: 768px) {
+  .wideDialog.fullScreen { width: min(840px, calc(100vw - 64px)); height: auto; max-height: calc(100dvh - 64px); border-radius: 24px; border: 1px solid var(--mc-border-card); }
+  .registerSearch { grid-template-columns: minmax(0, 1fr) 120px; }
+  .registerSearch > label { grid-column: 1 / -1; }
+  .registerSearch > :global(.primary-button) { min-height: 48px; }
+  .wideDialog .waypointFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; }
+  .wideDialog .waypointFooter button { width: auto; min-width: 120px; padding-inline: 20px; }
+  .wideDialog .waypointFooter .footerHint { margin: 0; flex-basis: 100%; text-align: right; }
+  .resultLayout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  .resultLayout > .resultHeading, .resultLayout > .resultList, .resultLayout > .outlineButton { grid-column: 1; }
+  .resultLayout > .resultMap { grid-column: 2; grid-row: 1 / span 4; height: 370px; position: sticky; top: 0; }
+  .pickerResult { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  .pickerPreview { height: 370px; }
+}
+@media (max-width: 360px) {
+  .wideLabel { display: none; }
+  .narrowLabel { display: inline; }
+  .resultMap { height: 160px; min-height: 160px; }
+  .resultText > span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}

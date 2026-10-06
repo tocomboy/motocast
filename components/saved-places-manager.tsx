@@ -1,25 +1,27 @@
 "use client";
 
-import { LineIcon } from "@/components/line-icon";
+import { LineIcon, StarMark } from "@/components/line-icon";
 import {
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import { KakaoMapCanvas, type MapPoint } from "./kakao-map-canvas";
 import {
   MapPointConfirmation,
   type MapPlacePickerHandle,
 } from "./map-point-confirmation";
-import { PlaceSearchField } from "./place-search-field";
+import { SavedDialog } from "./saved-dialog";
+import { SavedPlaceRegistration } from "./saved-place-registration";
 import { useSavedPlaces } from "./saved-places-provider";
 import {
+  FREQUENT_PLACE_LIMIT,
+  isRegionOnlyPlace,
   PROVINCES,
   savedPlaceName,
   type SavedPlace,
+  type SavedPlaceEntry,
   type SavedPlaceKind,
 } from "@/lib/places/saved";
 import type { PlaceSearchResult } from "@/lib/places/search";
@@ -45,6 +47,16 @@ type Pending = {
   fullScreen?: boolean;
   placeSummary?: { kind: string; originalName: string; address: string; starred: boolean };
 };
+
+const kindLabel = (kind: SavedPlaceKind) => (kind === "restaurant" ? "식당" : "라이딩 스팟");
+/** Address line; a region-only map point says it has no detail address. */
+const placeLine = (p: SavedPlace) =>
+  isRegionOnlyPlace(p.place)
+    ? `${p.place.name} · 상세 주소 없음`
+    : p.alias
+      ? `${p.place.name} · ${p.place.roadAddress ?? p.place.address}`
+      : p.place.roadAddress ?? p.place.address;
+const starLabel = (starred: boolean) => (starred ? "자주 찾는 장소에서 빼기" : "자주 찾는 장소에 추가");
 
 export function SavedPlacesManager(props: SavedPlacesManagerProps) {
   const { accountEpoch } = useSavedPlaces();
@@ -82,10 +94,11 @@ function SavedPlacesManagerContent({
   const [savedSelection, setSavedSelection] = useState<string | null>(null);
   const [form, setForm] = useState<{
     place: PlaceSearchResult | null;
-    existing?: SavedPlace;
+    existing?: SavedPlaceEntry;
   } | null>(null);
+  const [clusterIds, setClusterIds] = useState<string[] | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
-  const [adding, setAdding] = useState<SavedPlace | null>(null);
+  const [adding, setAdding] = useState<SavedPlaceEntry | null>(null);
   const [mapAttempt, setMapAttempt] = useState(0);
   const [wide, setWide] = useState(false);
   useEffect(() => {
@@ -116,41 +129,51 @@ function SavedPlacesManagerContent({
       ),
     [saved.places, province, query],
   );
-  const list = filtered.filter((p) =>
-    tab === "starred" ? p.starSlot !== null : p.kind === tab,
-  );
+  const starredCount = saved.favorites.length;
+  const full = starredCount >= FREQUENT_PLACE_LIMIT;
+  const list = filtered
+    .filter((p) => (tab === "starred" ? p.starPosition !== null : p.kind === tab))
+    .sort((a, b) => (tab === "starred" ? a.starPosition! - b.starPosition! : 0));
+  // Only the visible layers reach the map, so cluster counts match what is shown.
   const pins = filtered
     .filter(
       (p) =>
-        (tab !== "starred" || p.starSlot !== null) &&
+        (tab !== "starred" || p.starPosition !== null) &&
         (p.kind === "restaurant" ? restaurants : spots),
     )
     .map((p) => ({
       id: p.id,
       label: savedPlaceName(p),
       kind: p.kind,
+      starred: p.starPosition !== null,
       latitude: p.place.latitude,
       longitude: p.place.longitude,
     }));
+  const clusterPlaces = clusterIds ? saved.places.filter((p) => clusterIds.includes(p.id)) : [];
+  const failure = saved.failureTitle && saved.status === "ready" ? (
+    <div className={styles.errorCard} role="alert"><strong>{saved.failureTitle}</strong><p>{saved.message}</p></div>
+  ) : null;
+  const startView = selected?.place ?? routePoints[0] ?? saved.places[0]?.place ?? { latitude: 37.5665, longitude: 126.978 };
+  function manageStars() { selectPlace(null); setTab("starred"); setProvince(""); setQuery(""); }
 
-  function confirm(p: SavedPlace, action: "star" | "delete") {
-    const starred = p.starSlot === null;
+  function confirm(p: SavedPlaceEntry, action: "star" | "delete") {
+    const starred = p.starPosition === null;
     setPending({
       title:
         action === "delete"
           ? "이 장소를 삭제할까요?"
           : starred
-            ? "자주 찾는 곳에 추가할까요?"
-            : "자주 찾는 곳에서 뺄까요?",
+            ? "자주 찾는 장소에 추가할까요?"
+            : "자주 찾는 장소에서 뺄까요?",
       name: savedPlaceName(p),
       description:
         action === "delete"
-          ? "내 저장 장소와 자주 찾는 곳에서 삭제해요. 이미 저장한 일정·코스·공유 결과는 유지됩니다."
+          ? "내 저장 장소와 자주 찾는 장소에서 삭제해요. 이미 저장한 일정·코스·공유 결과는 유지됩니다."
           : starred
-            ? "최대 5개까지 별표를 지정할 수 있어요."
-            : "별표만 해제해요. 라이딩 스팟이나 식당 목록에는 그대로 남아 있어요.",
+            ? `라이딩 스팟과 식당을 합쳐 최대 ${FREQUENT_PLACE_LIMIT}곳까지 별표할 수 있어요.`
+            : "별표만 빼요. 라이딩 스팟이나 식당 목록에는 그대로 남아 있어요.",
       action:
-        action === "delete" ? "장소 삭제" : starred ? "별표 지정" : "별표 해제",
+        action === "delete" ? "장소 삭제" : starred ? "별표 지정" : "별표 빼기",
       destructive: action === "delete",
       valid: saved.captureSnapshot(),
       run: () =>
@@ -223,6 +246,8 @@ function SavedPlacesManagerContent({
               savedPins={pins}
               savedViewportKey={province}
               onSelectSavedPin={selectPlace}
+              selectedSavedPinId={selected?.id ?? null}
+              onSelectSavedCluster={setClusterIds}
               showLegend={false}
               onSelectCoordinate={
                 !blocked && saved.places.length < 1000
@@ -234,7 +259,7 @@ function SavedPlacesManagerContent({
             />
           </div>
           <details className={styles.mapHelp}><summary>지도 도움말·다시 불러오기</summary><p className={styles.helper}>
-            S 원형은 라이딩 스팟, 식 사각형은 식당이에요. 핀을 누르면 상세가 열려요. 지도를 길게 눌러 장소를 등록하거나, 전체화면에서 중심 지점을 선택하세요.
+            S 원형은 라이딩 스팟, 식 사각형은 식당이고 노란 별 배지는 자주 찾는 장소예요. 숫자 원은 그 자리에 묶인 장소 수예요. 누르면 확대돼요. 핀을 누르면 상세가 열려요. 지도를 길게 눌러 장소를 등록하거나, 전체화면에서 중심 지점을 선택하세요.
           </p>
           <button
             type="button"
@@ -256,26 +281,28 @@ function SavedPlacesManagerContent({
           </details>
           {!spots && !restaurants ? <p role="status">저장 장소 핀을 모두 숨겼어요. 현재 일정의 지점과 지도는 유지됩니다.</p> : null}
           {selected && wide ? <section className={styles.desktopDetail} aria-label="장소 상세">
-            <span className={styles.placeKind}>{selected.kind === "restaurant" ? "식당" : "라이딩 스팟"}</span>
+            <span className={styles.placeKind}>{kindLabel(selected.kind)} · {selected.province ?? "지역 미확인"}{selected.starPosition !== null ? " · 자주 찾는 장소" : ""}</span>
             <h2>{savedPlaceName(selected)}</h2>
-            <p>{selected.place.name} · {selected.province ?? "지역 미확인"} · {selected.place.roadAddress ?? selected.place.address}</p>
+            <p>{placeLine(selected)}</p>
+            {failure}
             <div className={styles.desktopActions}>
-              <button type="button" disabled={blocked || (selected.starSlot === null && saved.favorites.length >= 5)} aria-label={selected.starSlot === null ? "☆ 자주 찾는 곳에 추가" : "★ 별표 해제"} onClick={() => confirm(selected, "star")}><LineIcon name="star" />{selected.starSlot !== null ? "별표 해제" : "자주 찾는 곳에 추가"}</button>
+              <StarButton place={selected} full={full} count={starredCount} disabled={blocked} onClick={() => confirm(selected, "star")} />
               <button type="button" disabled={blocked} onClick={() => setForm({place:selected.place, existing:selected})}>별명·분류 수정</button>
               <button type="button" className="danger-text" disabled={blocked} onClick={() => confirm(selected, "delete")}>장소 삭제</button>
               <button type="button" className="primary-button" disabled={blocked || disabled} onClick={() => setAdding(selected)}>경유지에 추가</button>
             </div>
-            {selected.starSlot === null && saved.favorites.length >= 5 ? <p>자주 찾는 곳 5개가 모두 찼어요. <button type="button" onClick={() => { selectPlace(null); setTab("starred"); setProvince(""); setQuery(""); }}>자주 찾는 곳 관리</button></p> : null}
+            {selected.starPosition === null && full ? <p>자주 찾는 장소 {FREQUENT_PLACE_LIMIT}곳이 모두 찼어요. 다른 장소의 별표를 빼면 추가할 수 있어요. <button type="button" onClick={manageStars}>자주 찾는 장소 관리</button></p> : null}
           </section> : null}
         </div>
         <section
           className={styles.listColumn}
-          aria-label={`${tab === "starred" ? "자주 찾는 곳" : tab === "restaurant" ? "식당" : "라이딩 스팟"} 목록`}
+          aria-label={`${tab === "starred" ? "자주 찾는 장소" : kindLabel(tab)} 목록`}
         >
           <nav className={styles.tabs} aria-label="저장 장소 목록">
-            {([["starred", "자주 찾는 곳"], ["riding_spot", "라이딩 스팟"], ["restaurant", "식당"]] as const).map(([key, label]) => <button type="button" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}
+            {([["starred", "자주 찾는 장소"], ["riding_spot", "라이딩 스팟"], ["restaurant", "식당"]] as const).map(([key, label]) => <button type="button" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}
           </nav>
-          <p className={styles.listCount}>{tab === "starred" ? `자주 찾는 곳 ${list.length}/5` : `${tab === "restaurant" ? "식당" : "라이딩 스팟"} ${list.length}곳`}<span>전체 {saved.places.length.toLocaleString()}/1,000</span></p>
+          <p className={styles.listCount}>{tab === "starred" ? <strong>자주 찾는 장소 <b className={styles.countNumber}>{starredCount} / {FREQUENT_PLACE_LIMIT}</b></strong> : `${kindLabel(tab)} ${list.length}곳`}<span>전체 {saved.places.length.toLocaleString()}/1,000</span></p>
+          {tab === "starred" ? <p className={styles.helper}>라이딩 스팟과 식당을 합쳐 최대 {FREQUENT_PLACE_LIMIT}곳까지 별표할 수 있어요.</p> : null}
           {saved.status === "loading" ? (
             <div className={styles.stateCard} role="status"><strong>장소를 불러오고 있어요</strong><p>저장한 장소를 불러오는 중이에요. 잠시만 기다려 주세요.</p></div>
           ) : saved.status === "error" ? (
@@ -291,24 +318,31 @@ function SavedPlacesManagerContent({
           ) : (
             <ul className={styles.list}>
               {list.map((p) => (
-                <li key={p.id}>
+                <li key={p.id} className={styles.placeCard}>
                   <button
                     type="button"
                     onClick={() => selectPlace(p.id)}
                     aria-label={`${savedPlaceName(p)} 상세 보기`}
                   >
-                    <span className={styles.placeKind}>{p.kind === "restaurant" ? "식당" : "라이딩 스팟"}<span aria-label={p.starSlot !== null ? "자주 찾는 곳" : "별표 없음"}><LineIcon name="star" /></span></span>
+                    <span className={styles.placeKind}>{kindLabel(p.kind)} · {p.province ?? "지역 미확인"}</span>
                     <strong>{savedPlaceName(p)}</strong>
-                    <span>원래 장소명 · {p.place.name}</span>
-                    <span>
-                      {p.province ?? "지역 미확인"} ·{" "}
-                      {p.place.roadAddress ?? p.place.address}
-                    </span>
+                    <span>{placeLine(p)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.starIconButton}
+                    aria-label={starLabel(p.starPosition !== null)}
+                    aria-pressed={p.starPosition !== null}
+                    disabled={blocked || (p.starPosition === null && full)}
+                    onClick={() => confirm(p, "star")}
+                  >
+                    <StarMark filled={p.starPosition !== null} />
                   </button>
                 </li>
               ))}
             </ul>
           )}
+          {tab === "starred" && list.length ? <p className={styles.notice}>별표를 빼도 라이딩 스팟·식당 목록에는 그대로 남아 있어요.</p> : null}
           {saved.places.length >= 1000 ? (
             <p role="status">
               저장 한도에 도달했어요. 기존 장소를 정리한 뒤 등록해 주세요.
@@ -319,35 +353,44 @@ function SavedPlacesManagerContent({
       <footer className={styles.registerFooter}>
         <button ref={addButton} aria-label="＋ 장소 등록" className="primary-button" type="button" disabled={blocked || saved.places.length >= 1000} onClick={() => setForm({ place: null })}><LineIcon name="plus" /> 장소 등록</button>
       </footer>
-      {saved.message && saved.status === "ready" ? (
+      {saved.message && saved.status === "ready" && !saved.failureTitle ? (
         <p role="status" aria-live="polite">
           {saved.message}
         </p>
+      ) : !selected ? failure : null}
+      {clusterIds ? (
+        <SavedDialog title={`이 위치의 장소 ${clusterPlaces.length}곳`} onClose={() => setClusterIds(null)}>
+          <ul className={styles.list}>
+            {clusterPlaces.map((p) => (
+              <li key={p.id} className={styles.placeCard}>
+                <button type="button" aria-label={`${savedPlaceName(p)} 상세 보기`} onClick={() => { setClusterIds(null); selectPlace(p.id); }}>
+                  <span className={styles.placeKind}>{kindLabel(p.kind)} · {p.province ?? "지역 미확인"}{p.starPosition !== null ? " · 자주 찾는 장소" : ""}</span>
+                  <strong>{savedPlaceName(p)}</strong>
+                  <span>{placeLine(p)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className={styles.helper}>최대로 확대해도 겹치는 장소예요. 하나를 고르면 상세를 열어요.</p>
+        </SavedDialog>
       ) : null}
       {selected && !wide ? (
-        <SavedDialog title="즐겨찾기" accessibleTitle="장소 상세" onClose={() => selectPlace(null)} fullScreen>
+        <SavedDialog title="장소 상세" onBack={() => selectPlace(null)} onClose={() => selectPlace(null)} fullScreen>
           <div className={styles.waypointBody}>
-          <div className={styles.detailMap}><KakaoMapCanvas points={[]} allowEmptyMap savedPins={[{ id: selected.id, label: savedPlaceName(selected), kind: selected.kind, latitude: selected.place.latitude, longitude: selected.place.longitude }]} showLegend={false} /></div>
-          <div className={styles.placeSummary}>
-            <span className={styles.placeKind}>{selected.kind === "restaurant" ? "식당" : "라이딩 스팟"}<span><LineIcon name="star" /></span></span>
+          <div className={`${styles.placeSummary} ${styles.detailSummary}`}>
+            <span className={styles.placeKind}>{kindLabel(selected.kind)} · {selected.province ?? "지역 미확인"}</span>
             <strong>{savedPlaceName(selected)}</strong>
-            <span>원래 장소명 · {selected.place.name}</span>
-            <span>{selected.province ?? "지역 미확인"} · {selected.place.roadAddress ?? selected.place.address}</span>
+            <span>{placeLine(selected)}</span>
+            <span className={styles.summaryStar} role="img" aria-label={selected.starPosition !== null ? "자주 찾는 장소" : "별표 없음"}><StarMark filled={selected.starPosition !== null} /></span>
           </div>
-          <button
-            type="button"
-            disabled={
-              blocked ||
-              (selected.starSlot === null && saved.favorites.length >= 5)
-            }
-            aria-label={selected.starSlot === null ? "☆ 자주 찾는 곳에 추가" : "★ 별표 해제"} onClick={() => confirm(selected, "star")}
-          >
-            <LineIcon name="star" />{selected.starSlot === null ? "자주 찾는 곳에 추가" : "별표 해제"}
-          </button>
-          {selected.starSlot === null && saved.favorites.length >= 5 ? (
-            <div className={styles.stateCard}><p>
-              자주 찾는 곳 5개가 모두 찼어요. 다른 별표를 먼저 해제해 주세요.
-            </p><button type="button" onClick={() => { selectPlace(null); setTab("starred"); setProvince(""); setQuery(""); }}>자주 찾는 곳 관리</button></div>
+          <div className={styles.detailMap}><KakaoMapCanvas points={[]} allowEmptyMap savedPins={[{ id: selected.id, label: savedPlaceName(selected), kind: selected.kind, starred: selected.starPosition !== null, latitude: selected.place.latitude, longitude: selected.place.longitude }]} selectedSavedPinId={selected.id} showLegend={false} /></div>
+          {failure}
+          <StarButton place={selected} full={full} count={starredCount} disabled={blocked} onClick={() => confirm(selected, "star")} />
+          {selected.starPosition === null && full ? (
+            <>
+              <p className={styles.helper}>자주 찾는 장소 {FREQUENT_PLACE_LIMIT}곳이 모두 찼어요. 다른 장소의 별표를 빼면 추가할 수 있어요.</p>
+              <button type="button" className={styles.textButton} onClick={manageStars}>자주 찾는 장소 관리</button>
+            </>
           ) : null}
           <div className={styles.actions}><button
             type="button"
@@ -395,11 +438,12 @@ function SavedPlacesManagerContent({
         onSelect={(place) => setForm({ place })}
       />
       {form ? (
-        <SavedPlaceForm
-          initial={form.place}
+        <SavedPlaceRegistration
+          initialPlace={form.place}
           existing={form.existing}
-          stars={saved.favorites.length}
+          stars={starredCount}
           blocked={blocked}
+          startView={startView}
           onClose={() => {
             setForm(null);
             addButton.current?.focus();
@@ -411,8 +455,8 @@ function SavedPlacesManagerContent({
                 ? "장소 정보를 수정할까요?"
                 : "이 장소를 저장할까요?",
               name: alias.trim() || place.name,
-              description: `${kind === "restaurant" ? "식당" : "라이딩 스팟"}으로 ${existing ? "수정" : "저장"}해요. ${existing ? "기존 별표 설정은 유지돼요." : starred ? "자주 찾는 곳에 별표를 표시해요." : "별표 없이 저장해요."}`,
-              placeSummary: { kind: kind === "restaurant" ? "식당" : "라이딩 스팟", originalName: place.name, address: place.roadAddress ?? place.address, starred: existing ? existing.starSlot !== null : starred },
+              description: `${kindLabel(kind)}으로 ${existing ? "수정" : "저장"}해요. ${existing ? "기존 별표 설정은 유지돼요." : starred ? "자주 찾는 장소에 별표를 표시해요." : "별표 없이 저장해요."}`,
+              placeSummary: { kind: kindLabel(kind), originalName: place.name, address: isRegionOnlyPlace(place) ? `${place.address} · 상세 주소 없음` : place.roadAddress ?? place.address, starred: existing ? existing.starPosition !== null : starred },
               action: existing ? "확인하고 수정" : "확인하고 저장",
               fullScreen: true,
               valid: saved.captureSnapshot(),
@@ -441,154 +485,26 @@ function SavedPlacesManagerContent({
   );
 }
 
-function SavedDialog({
-  title,
-  onClose,
-  children,
-  locked = false,
-  fullScreen = false,
-  accessibleTitle = title,
-}: {
-  title: string;
-  onClose: () => void;
-  children: ReactNode;
-  locked?: boolean;
-  fullScreen?: boolean;
-  accessibleTitle?: string;
+function StarButton({ place, full, count, disabled, onClick }: {
+  place: SavedPlaceEntry;
+  full: boolean;
+  count: number;
+  disabled: boolean;
+  onClick: () => void;
 }) {
-  const id = useId();
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const focus = document.activeElement;
-    ref.current?.showModal();
-    return () => {
-      if (focus instanceof HTMLElement && focus.isConnected) focus.focus();
-    };
-  }, []);
+  const starred = place.starPosition !== null;
   return (
-    <dialog
-      ref={ref}
-      className={`${styles.dialog}${fullScreen ? ` ${styles.fullScreen}` : ""}`}
-      aria-labelledby={fullScreen ? undefined : id}
-      aria-label={fullScreen ? accessibleTitle : undefined}
-      onCancel={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!locked) onClose();
-      }}
-      onKeyDown={(e) => e.stopPropagation()}
+    <button
+      type="button"
+      className={styles.starToggle}
+      aria-label={starLabel(starred)}
+      aria-pressed={starred}
+      disabled={disabled || (!starred && full)}
+      onClick={onClick}
     >
-      <header>
-        <h2 id={id}>{title}</h2>
-        <button
-          type="button"
-          aria-label={`${accessibleTitle} 닫기`}
-          disabled={locked}
-          onClick={onClose}
-        >
-          <LineIcon name="close" />
-        </button>
-      </header>
-      {children}
-    </dialog>
-  );
-}
-
-function SavedPlaceForm({
-  initial,
-  existing,
-  stars,
-  blocked,
-  onClose,
-  onSave,
-}: {
-  initial: PlaceSearchResult | null;
-  existing?: SavedPlace;
-  stars: number;
-  blocked: boolean;
-  onClose: () => void;
-  onSave: (
-    p: PlaceSearchResult,
-    a: string,
-    k: SavedPlaceKind,
-    s: boolean,
-  ) => void;
-}) {
-  const [place, setPlace] = useState(initial);
-  const favorites = useSavedPlaces();
-  const [alias, setAlias] = useState(existing?.alias ?? "");
-  const [kind, setKind] = useState<SavedPlaceKind>(
-    existing?.kind ?? "riding_spot",
-  );
-  const [starred, setStarred] = useState(false);
-  return (
-    <SavedDialog
-      title="즐겨찾기"
-      accessibleTitle={existing ? "별명·분류 수정" : "장소 등록"}
-      onClose={onClose}
-      fullScreen
-    >
-      <div className={styles.waypointBody}>
-      <h3>{existing ? "별명·분류 수정" : "내 장소로 저장"}</h3>
-      {!existing ? (
-        <PlaceSearchField
-          label="저장할 장소"
-          placeholder="장소명 또는 주소 검색"
-          selected={place}
-          favorites={favorites}
-          onSelect={setPlace}
-          selectionActionLabel="이 장소 선택"
-        />
-      ) : null}
-      {place ? (
-        <div className={styles.placeSummary}>
-          <span className={styles.placeKind}>선택한 장소</span>
-          <strong>{place.name}</strong>
-          <span>{place.roadAddress ?? place.address}</span>
-          <span>지역 · {existing ? existing.province ?? "지역 미확인" : "선택한 주소 기준으로 저장 후 표시"}</span>
-        </div>
-      ) : (
-        <p>
-          검색 결과에서 장소를 선택하세요. 지도 등록은 이 창을 닫고 지도를 길게
-          눌러 시작해요.
-        </p>
-      )}
-      <fieldset className={styles.roleField}><legend>분류</legend><div className={`${styles.roleButtons} ${styles.twoChoices}`}>
-        <button type="button" aria-pressed={kind === "riding_spot"} onClick={() => setKind("riding_spot")}>라이딩 스팟</button>
-        <button type="button" aria-pressed={kind === "restaurant"} onClick={() => setKind("restaurant")}>식당</button>
-      </div></fieldset>
-      <label>
-        별명 (선택, 최대 80자)
-        <input
-          value={alias}
-          maxLength={160}
-          onChange={(e) => setAlias([...e.target.value].slice(0, 80).join(""))}
-        />
-      </label>
-      <p>별명을 비워 두면 원래 장소명으로 표시해요.</p>
-      {!existing ? (
-        <label>
-          <input
-            type="checkbox"
-            checked={starred}
-            disabled={stars >= 5}
-            onChange={(e) => setStarred(e.target.checked)}
-          />
-          자주 찾는 곳에 추가 ({stars}/5)
-        </label>
-      ) : null}
-      </div>
-      <div className={styles.waypointFooter}>
-      <button
-        type="button"
-        className="primary-button"
-        disabled={!place || blocked || (starred && stars >= 5)}
-        onClick={() => place && onSave(place, alias, kind, starred)}
-      >
-        {existing ? "수정 내용 확인" : "저장 내용 확인"}
-      </button>
-      </div>
-    </SavedDialog>
+      <StarMark filled={starred} />
+      {starred ? "자주 찾는 장소에서 빼기" : `자주 찾는 장소에 추가 · ${count} / ${FREQUENT_PLACE_LIMIT}${full ? " 가득 참" : ""}`}
+    </button>
   );
 }
 
@@ -599,7 +515,7 @@ function SavedWaypointForm({
   onClose,
   onAdd,
 }: {
-  place: SavedPlace;
+  place: SavedPlaceEntry;
   initial?: { role: WaypointRole; dwellMinutes: number };
   disabled: boolean;
   onClose: () => void;
@@ -613,7 +529,7 @@ function SavedWaypointForm({
       <div className={styles.waypointBody}>
       <h3>어떻게 들를까요?</h3>
       <div className={styles.placeSummary}>
-        <span className={styles.placeKind}>{place.kind === "restaurant" ? "식당" : "라이딩 스팟"}{place.starSlot !== null ? <span aria-label="자주 찾는 곳"><LineIcon name="star" /></span> : null}</span>
+        <span className={styles.placeKind}>{kindLabel(place.kind)}{place.starPosition !== null ? <span aria-label="자주 찾는 장소"><StarMark filled /></span> : null}</span>
         <strong>{savedPlaceName(place)}</strong>
         <span>{place.place.name} · {place.province ?? "지역 미확인"}</span>
       </div>
@@ -710,7 +626,7 @@ function SavedConfirmation({
       <div className={pending.fullScreen ? styles.waypointBody : undefined}>
       {pending.fullScreen ? <h3>{pending.title}</h3> : null}
       <div className={styles.placeSummary}>
-        {pending.placeSummary ? <span className={styles.placeKind}>{pending.placeSummary.kind}<span aria-label={pending.placeSummary.starred ? "별표 있음" : "별표 없음"}><LineIcon name="star" /></span></span> : null}
+        {pending.placeSummary ? <span className={styles.placeKind}>{pending.placeSummary.kind}<span aria-label={pending.placeSummary.starred ? "별표 있음" : "별표 없음"}><StarMark filled={pending.placeSummary.starred} /></span></span> : null}
         <strong>{pending.name}</strong>
         {pending.placeSummary ? <span>원래 장소명 {pending.placeSummary.originalName} · {pending.placeSummary.address}</span> : <p>{pending.description}</p>}
       </div>

@@ -12,6 +12,7 @@
   --mc-signal-text: #8A5A00;
   --mc-signal-tint: #FFF3D1;
   --mc-signal-tint-border: #F1D48A;
+  --mc-star-fill: #FFB800;
   --mc-rain-high: #1F4FA3;
   --mc-rain-on-high: #F4F6F9;
   --mc-rain-low: #DCE6F2;
@@ -4931,6 +4932,11 @@ body:has(dialog:modal) {
 .login-membership-notice p { margin-bottom: 0; }
 .map-confirmation-body p { margin: 0 0 16px; overflow-wrap: anywhere; }
 .map-confirmation-actions { display: grid; gap: 12px; }
+.map-confirmation-place { display: grid; gap: 8px; border: 1px solid var(--mc-border-card); border-radius: 16px; padding: 16px 20px; margin: 0 0 16px; color: var(--mc-text-primary); }
+.map-confirmation-place strong { font-size: 18px; overflow-wrap: anywhere; }
+.map-confirmation-place > span:last-child { color: var(--mc-text-secondary); font-size: 14px; overflow-wrap: anywhere; }
+.map-confirmation-eyebrow { color: var(--mc-signal-text); font-size: 14px; font-weight: 700; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.detail-address-chip { display: inline-flex; padding: 2px 10px; border-radius: 999px; background: var(--mc-signal-tint); border: 1px solid var(--mc-signal-tint-border); color: var(--mc-signal-text); font-size: 13px; font-weight: 700; }
 .map-confirmation-actions button {
   background: var(--mc-surface-card); border: 1px solid var(--mc-border-default);
   border-radius: 10px; color: var(--mc-text-primary); font: inherit; font-weight: 700;
@@ -4955,6 +4961,11 @@ body:has(dialog:modal) {
   padding: 10px 16px; position: absolute; right: 12px; top: 12px; z-index: 7;
 }
 .map-fullscreen-header[hidden], .map-fullscreen-trigger[hidden] { display: none; }
+/* Map point picker (Figma 373:11122): fixed center marker while the map moves underneath. */
+.map-center-marker { position: absolute; left: 50%; top: 50%; z-index: 7; width: 36px; height: 44px; transform: translate(-50%, -100%); pointer-events: none; background: no-repeat center / contain url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='44' viewBox='0 0 36 44'%3E%3Cpath d='M18 2C9.2 2 2 9.2 2 18c0 11 16 24 16 24s16-13 16-24C34 9.2 26.8 2 18 2z' fill='%2320252A'/%3E%3Ccircle cx='18' cy='17' r='6' fill='%23FFB800'/%3E%3C/svg%3E"); }
+.map-zoom-controls { position: absolute; right: 12px; top: 12px; z-index: 7; display: grid; background: var(--mc-surface-card); border: 1px solid var(--mc-border-card); border-radius: 12px; overflow: hidden; }
+.map-zoom-controls button { width: 48px; height: 48px; display: grid; place-items: center; border: 0; background: transparent; color: var(--mc-text-primary); cursor: pointer; }
+.map-zoom-controls button + button { border-top: 1px solid var(--mc-border-card); }
 .map-surface.is-fullscreen {
   display: flex; flex-direction: column; height: 100dvh; position: fixed; width: 100vw;
 }

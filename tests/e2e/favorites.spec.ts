@@ -9,8 +9,8 @@ test("saved places tabs, region, four map layers and registration cancel work at
     await page.getByRole("button", { name: "즐겨찾기", exact: true }).click();
     const manager = page.getByRole("region", { name: "즐겨찾기", exact: true });
     await expect(manager).toContainText("전체 0/1,000");
-    await manager.getByRole("button", { name: "자주 찾는 곳", exact: true }).click();
-    await expect(manager).toContainText("자주 찾는 곳 0/5");
+    await manager.getByRole("button", { name: "자주 찾는 장소", exact: true }).click();
+    await expect(manager).toContainText("자주 찾는 장소 0 / 10");
     await expect(
       manager.getByRole("combobox", { name: "시·도" }).getByRole("option"),
     ).toHaveCount(19);
@@ -40,19 +40,34 @@ test("saved places tabs, region, four map layers and registration cancel work at
     await add.click();
     const dialog = page.getByRole("dialog", { name: "장소 등록", exact: true });
     await expect(dialog).toBeVisible();
+    // The registration search step never lists frequent places (Issue #123).
+    await expect(dialog).not.toContainText("자주 찾는 장소");
     await expect(
-      dialog.getByRole("button", { name: "저장 내용 확인" }),
+      dialog.getByRole("button", { name: "검색", exact: true }),
     ).toBeDisabled();
+    await dialog.getByLabel("장소명 또는 주소 검색").fill("막국수");
+    await expect(
+      dialog.getByRole("button", { name: "검색", exact: true }),
+    ).toBeEnabled();
     await dialog
-      .getByRole("button", { name: "저장할 장소, 장소명 또는 주소 검색" })
+      .getByRole("button", { name: "지도에서 지점 고르기", exact: true })
       .click();
-    const search = page.getByRole("dialog", {
-      name: "저장할 장소 선택",
+    const picker = page.getByRole("dialog", {
+      name: "지도에서 지점 고르기",
       exact: true,
     });
-    await expect(search).toBeVisible();
-    await search.getByRole("button", { name: "저장할 장소 검색 닫기" }).click();
+    await expect(picker).toBeVisible();
+    await expect(
+      picker.getByRole("button", { name: "이 지점 선택", exact: true }),
+    ).toBeVisible();
+    expect(
+      await picker.evaluate((el) => el.scrollWidth <= el.clientWidth),
+    ).toBe(true);
+    await picker
+      .getByRole("button", { name: "지도에서 지점 고르기 뒤로", exact: true })
+      .click();
     await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("장소명 또는 주소 검색")).toHaveValue("막국수");
     expect(
       await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth),
     ).toBe(true);

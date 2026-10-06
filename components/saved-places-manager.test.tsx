@@ -1,27 +1,43 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { parseSavedPlace, savedAsFavorite } from "@/lib/places/saved";
+import { parseSavedPlaceEntry, type SavedPlaceEntry } from "@/lib/places/saved";
+import type { PlaceFavorite } from "@/lib/places/favorites";
+import type { PlaceSearchResult } from "@/lib/places/search";
 import { SavedPlacesManager } from "./saved-places-manager";
 
 const mocks = vi.hoisted(() => ({
   controls: {} as Record<string, unknown>,
   pickerUnmount: vi.fn(),
+  canvases: [] as Array<Record<string, unknown>>,
+  mapSelect: null as null | ((place: unknown) => void),
+  invoke: vi.fn(),
 }));
 vi.mock("./saved-places-provider", () => ({
   useSavedPlaces: () => mocks.controls,
 }));
-vi.mock("./kakao-map-canvas", () => ({ KakaoMapCanvas: () => null }));
-vi.mock("./place-search-field", () => ({ PlaceSearchField: ({ onSelect }: { onSelect: (place: unknown) => void }) => <button onClick={() => onSelect(saved.place)}>시험 장소 선택</button> }));
+vi.mock("@/lib/supabase/browser", () => ({ getBrowserSupabase: () => ({ functions: { invoke: mocks.invoke } }) }));
+vi.mock("./kakao-map-canvas", () => ({
+  KakaoMapCanvas: (props: Record<string, unknown>) => {
+    mocks.canvases.push(props);
+    const handle = props.centerHandle as { current: unknown } | undefined;
+    if (handle) handle.current = { getCenter: () => ({ latitude: 37.5, longitude: 127.1 }) };
+    return null;
+  },
+}));
+vi.mock("./place-search-field", () => ({ PlaceSearchField: () => <span>장소 검색 팝업</span> }));
 vi.mock("./map-point-confirmation", async () => {
+  const actual = await vi.importActual<typeof import("./map-point-confirmation")>("./map-point-confirmation");
   const { useEffect } = await import("react");
   return {
-    MapPointConfirmation: () => {
+    resolveMapPoint: actual.resolveMapPoint,
+    MapPointConfirmation: ({ onSelect }: { onSelect: (place: unknown) => void }) => {
+      mocks.mapSelect = onSelect;
       useEffect(() => () => mocks.pickerUnmount(), []);
       return null;
     },
   };
 });
-const saved = parseSavedPlace({
+const saved = parseSavedPlaceEntry({
   id: "00000000-0000-4000-8000-000000000001",
   place: {
     kakaoPlaceId: "1",
@@ -36,10 +52,30 @@ const saved = parseSavedPlace({
   kind: "riding_spot",
   province: "경기",
   star_slot: 1,
+  star_position: 1,
   revision: 1,
   created_at: "2026-10-02T00:00:00Z",
   updated_at: "2026-10-02T00:00:00Z",
 });
+const favorite = (row: SavedPlaceEntry): PlaceFavorite => ({ slot: row.starPosition!, place: row.place, createdAt: row.createdAt, displayName: row.alias ?? row.place.name });
+const entry = (index: number, star: number | null, extra: Record<string, unknown> = {}) => parseSavedPlaceEntry({
+  id: `00000000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`,
+  place: { kakaoPlaceId: `k${index}`, verificationToken: "a".repeat(43), name: `장소 ${index}`, address: "경기 양평군", roadAddress: null, latitude: 37.5 + index / 100, longitude: 127.2 },
+  alias: null,
+  kind: "restaurant",
+  province: "경기",
+  star_slot: star !== null && star <= 5 ? star : null,
+  star_position: star,
+  revision: 1,
+  created_at: "2026-10-02T00:00:00Z",
+  updated_at: "2026-10-02T00:00:00Z",
+  ...extra,
+});
+const searchResult = (index: number): PlaceSearchResult => ({ kakaoPlaceId: `s${index}`, verificationToken: "b".repeat(43), name: `막국수 ${index}`, address: `경기 양평군 ${index}`, roadAddress: null, latitude: 37.5 + index / 1000, longitude: 127.3, category: "음식점", phone: null, placeUrl: null });
+const regionPlace: PlaceSearchResult = { kakaoPlaceId: "map:37.5000000:127.1000000:region", verificationToken: "c".repeat(43), name: "양평군 서종면 부근", address: "경기도 양평군 서종면 문호리", roadAddress: null, latitude: 37.5, longitude: 127.1, category: "지도에서 선택 · 상세 주소 없음", phone: null, placeUrl: null };
+function dialogNamed(r: ReactTestRenderer, label: string) {
+  return r.root.findAll((node) => node.type === "dialog" && node.props["aria-label"] === label)[0];
+}
 const props = {
   onBack: vi.fn(),
   onAddWaypoint: vi.fn(() => null),
@@ -68,16 +104,20 @@ beforeEach(() => {
   mocks.controls = {
     accountEpoch: 1,
     places: [saved],
-    favorites: [savedAsFavorite(saved)],
+    favorites: [favorite(saved)],
     status: "ready",
     busy: false,
     message: "",
+    failureTitle: "",
     captureSnapshot: () => () => true,
     star: vi.fn(async () => true),
     deletePlace: vi.fn(async () => true),
   };
   props.onAddWaypoint.mockClear();
   mocks.pickerUnmount.mockClear();
+  mocks.canvases = [];
+  mocks.mapSelect = null;
+  mocks.invoke.mockReset();
 });
 afterEach(() => vi.unstubAllGlobals());
 it("pin/list selection and confirmation cancellation send no write or waypoint requests", async () => {
@@ -86,7 +126,7 @@ it("pin/list selection and confirmation cancellation send no write or waypoint r
     r.root.findByProps({ "aria-label": "내 별명 상세 보기" }).props.onClick(),
   );
   expect(props.onAddWaypoint).not.toHaveBeenCalled();
-  await act(async () => r.root.findAllByProps({ "aria-label": "★ 별표 해제" })[0].props.onClick());
+  await act(async () => r.root.findAllByProps({ "aria-label": "자주 찾는 장소에서 빼기" })[0].props.onClick());
   expect(mocks.controls.star).not.toHaveBeenCalled();
   await act(async () => button(r, "취소").props.onClick());
   expect(mocks.controls.star).not.toHaveBeenCalled();
@@ -145,9 +185,12 @@ it("opens the saved place detail only after a confirmed save and fresh list", as
   mocks.controls.places = [];
   mocks.controls.favorites = [];
   mocks.controls.save = vi.fn(async () => { mocks.controls.places = [saved]; return true; });
+  mocks.invoke.mockResolvedValue({ data: { places: [saved.place], isEnd: true }, error: null });
   const r = await mount();
   await act(async () => r.root.findByProps({ "aria-label": "＋ 장소 등록" }).props.onClick());
-  await act(async () => button(r, "시험 장소 선택").props.onClick());
+  await act(async () => r.root.findByProps({ placeholder: "예: 서종 막국수, 양평군 서종면" }).props.onChange({ target: { value: "원래 장소" } }));
+  await act(async () => button(r, "검색").props.onClick());
+  await act(async () => button(r, "1번 원래 장소 선택선택한 장소로 진행").props.onClick());
   await act(async () => button(r, "저장 내용 확인").props.onClick());
   expect(mocks.controls.save).not.toHaveBeenCalled();
   await act(async () => button(r, "확인하고 저장").props.onClick());
@@ -175,5 +218,145 @@ it("account change discards all former-owner dialogs and coordinate/search selec
   expect(text(r.root)).not.toContain("내 별명");
   expect(mocks.pickerUnmount).toHaveBeenCalledTimes(1);
   expect(props.onAddWaypoint).not.toHaveBeenCalled();
+  await act(async () => r.unmount());
+});
+
+it("names the frequent places, shows 10 / 10, and disables adding an 11th star", async () => {
+  const stars = Array.from({ length: 10 }, (_, index) => entry(index, index + 1));
+  const plain = entry(10, null, { alias: "새 쉼터" });
+  mocks.controls.places = [...stars, plain];
+  mocks.controls.favorites = stars.map(favorite);
+  const r = await mount();
+  await act(async () => button(r, "자주 찾는 장소").props.onClick());
+  expect(text(r.root)).toContain("자주 찾는 장소 10 / 10");
+  expect(text(r.root)).not.toContain("자주 찾는 곳");
+  expect(r.root.findAllByProps({ "aria-label": "자주 찾는 장소에서 빼기" }).filter((n) => n.type === "button")).toHaveLength(10);
+  await act(async () => button(r, "식당").props.onClick());
+  const add = r.root.findAllByProps({ "aria-label": "자주 찾는 장소에 추가" }).filter((n) => n.type === "button");
+  expect(add).toHaveLength(1);
+  expect(add[0].props.disabled).toBe(true);
+  await act(async () => r.root.findByProps({ "aria-label": "새 쉼터 상세 보기" }).props.onClick());
+  const detail = r.root.findAllByProps({ "aria-label": "자주 찾는 장소에 추가" }).filter((n) => n.type === "button").at(-1)!;
+  expect(detail.props.disabled).toBe(true);
+  expect(text(detail)).toContain("10 / 10 가득 참");
+  expect(text(r.root)).toContain("자주 찾는 장소 10곳이 모두 찼어요.");
+  expect(mocks.controls.star).not.toHaveBeenCalled();
+  await act(async () => r.unmount());
+});
+
+it("shows the server's 11th-star rejection as an error in the detail", async () => {
+  const plain = entry(1, null, { alias: "새 쉼터", kind: "riding_spot" });
+  mocks.controls.places = [plain];
+  mocks.controls.favorites = [];
+  mocks.controls.failureTitle = "자주 찾는 장소에 추가하지 못했어요";
+  mocks.controls.message = "이미 10곳이 별표돼 있어요. 다른 기기에서 먼저 추가했을 수 있어요. 목록을 새로 불러왔어요.";
+  const r = await mount();
+  await act(async () => r.root.findByProps({ "aria-label": "새 쉼터 상세 보기" }).props.onClick());
+  const alerts = r.root.findAllByProps({ role: "alert" }).map(text);
+  expect(alerts).toContain("자주 찾는 장소에 추가하지 못했어요이미 10곳이 별표돼 있어요. 다른 기기에서 먼저 추가했을 수 있어요. 목록을 새로 불러왔어요.");
+  await act(async () => r.unmount());
+});
+
+it("registration search lists no frequent places and moves the result map with the selection", async () => {
+  mocks.invoke.mockResolvedValue({ data: { places: [searchResult(1), searchResult(2), searchResult(3)], isEnd: true }, error: null });
+  const r = await mount();
+  await act(async () => r.root.findByProps({ "aria-label": "＋ 장소 등록" }).props.onClick());
+  const registration = () => dialogNamed(r, "장소 등록");
+  expect(text(registration())).not.toContain("자주 찾는 장소");
+  expect(text(registration())).not.toContain("장소 검색 팝업");
+  expect(button(r, "검색").props.disabled).toBe(true);
+  await act(async () => r.root.findByProps({ placeholder: "예: 서종 막국수, 양평군 서종면" }).props.onChange({ target: { value: "막국수" } }));
+  await act(async () => button(r, "검색").props.onClick());
+  expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("search-places", { body: { query: "막국수", page: 1, size: 10 } });
+  const resultMap = () => mocks.canvases.filter((canvas) => Array.isArray(canvas.numberedPins) && (canvas.numberedPins as unknown[]).length).at(-1)!;
+  expect(resultMap().numberedPins).toEqual([1, 2, 3].map((n) => expect.objectContaining({ id: `s${n}`, number: n })));
+  expect(resultMap().selectedNumberedPinId).toBe("s1");
+  expect(text(registration())).not.toContain("자주 찾는 장소");
+  await act(async () => r.root.findAll((n) => n.type === "button" && n.props["aria-pressed"] === false && text(n).includes("막국수 3"))[0].props.onClick());
+  expect(resultMap().selectedNumberedPinId).toBe("s3");
+  await act(async () => (resultMap().onSelectNumberedPin as (id: string) => void)("s2"));
+  expect(button(r, "2번 막국수 2 선택선택한 장소로 진행")).toBeDefined();
+  expect(mocks.invoke).toHaveBeenCalledTimes(1);
+  await act(async () => r.unmount());
+});
+
+it("shows empty and failed registration searches without faking results", async () => {
+  mocks.invoke.mockResolvedValueOnce({ data: { places: [], isEnd: true }, error: null }).mockResolvedValueOnce({ data: null, error: new Error("offline") });
+  const r = await mount();
+  await act(async () => r.root.findByProps({ "aria-label": "＋ 장소 등록" }).props.onClick());
+  await act(async () => r.root.findByProps({ placeholder: "예: 서종 막국수, 양평군 서종면" }).props.onChange({ target: { value: "없는 집" } }));
+  await act(async () => button(r, "검색").props.onClick());
+  expect(text(r.root)).toContain("‘없는 집’ 검색 결과가 없어요");
+  await act(async () => button(r, "검색").props.onClick());
+  expect(text(r.root)).toContain("장소를 검색하지 못했어요");
+  expect(button(r, "다시 검색")).toBeDefined();
+  expect(r.root.findByProps({ placeholder: "예: 서종 막국수, 양평군 서종면" }).props.value).toBe("없는 집");
+  await act(async () => r.unmount());
+});
+
+it("picks a map point inside registration with the region opt-in and requires an alias", async () => {
+  mocks.invoke.mockResolvedValue({ data: { places: [regionPlace], isEnd: true }, error: null });
+  mocks.controls.save = vi.fn(async () => true);
+  const r = await mount();
+  await act(async () => r.root.findByProps({ "aria-label": "＋ 장소 등록" }).props.onClick());
+  await act(async () => button(r, "지도에서 지점 고르기").props.onClick());
+  expect(mocks.canvases.at(-1)).toMatchObject({ centerPicker: true });
+  await act(async () => button(r, "이 지점 선택").props.onClick());
+  expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("search-places", { body: { mode: "coordinate", latitude: 37.5, longitude: 127.1, fallback: "region" } });
+  expect(text(r.root)).toContain("상세 주소 없음");
+  expect(text(r.root)).toContain("37.5000, 127.1000");
+  await act(async () => button(r, "별명 정하고 저장").props.onClick());
+  expect(text(dialogNamed(r, "내 장소로 저장"))).toContain("별명 (필수)");
+  await act(async () => button(r, "저장 내용 확인").props.onClick());
+  expect(text(r.root)).toContain("별명을 입력해 주세요. 상세 주소가 없는 지점은 별명이 있어야 저장할 수 있어요.");
+  expect(button(r, "확인하고 저장")).toBeUndefined();
+  await act(async () => r.root.findByProps({ placeholder: "예: 서종 강변 쉼터" }).props.onChange({ target: { value: "서종 강변 쉼터" } }));
+  await act(async () => button(r, "저장 내용 확인").props.onClick());
+  await act(async () => button(r, "확인하고 저장").props.onClick());
+  expect(mocks.controls.save).toHaveBeenCalledExactlyOnceWith(regionPlace, "서종 강변 쉼터", "riding_spot", false);
+  await act(async () => r.unmount());
+});
+
+it("long-pressed region points open the alias-required form and keep the star toggle within 10", async () => {
+  const stars = Array.from({ length: 10 }, (_, index) => entry(index, index + 1));
+  mocks.controls.places = stars;
+  mocks.controls.favorites = stars.map(favorite);
+  const r = await mount();
+  await act(async () => mocks.mapSelect?.(regionPlace));
+  const form = dialogNamed(r, "내 장소로 저장");
+  expect(text(form)).toContain("상세 주소 없음");
+  const toggle = form.findAll((n) => n.type === "button" && text(n).startsWith("자주 찾는 장소에 추가"))[0];
+  expect(toggle.props.disabled).toBe(true);
+  expect(text(toggle)).toContain("10 / 10 가득 참");
+  await act(async () => r.unmount());
+});
+
+it("lists same-coordinate cluster places in a sheet and opens the chosen detail", async () => {
+  const a = entry(1, 1, { alias: "팔당 라이딩 카페" });
+  const b = entry(2, null, { alias: "팔당 카페 식당" });
+  mocks.controls.places = [a, b];
+  mocks.controls.favorites = [favorite(a)];
+  const r = await mount();
+  const map = mocks.canvases.find((canvas) => canvas.onSelectSavedCluster)!;
+  expect(map.savedPins).toEqual([expect.objectContaining({ id: a.id, starred: true }), expect.objectContaining({ id: b.id, starred: false })]);
+  await act(async () => (map.onSelectSavedCluster as (ids: string[]) => void)([a.id, b.id]));
+  expect(text(r.root)).toContain("이 위치의 장소 2곳");
+  await act(async () => r.root.findAllByProps({ "aria-label": "팔당 카페 식당 상세 보기" }).at(-1)!.props.onClick());
+  expect(text(r.root)).not.toContain("이 위치의 장소 2곳");
+  expect(mocks.canvases.some((canvas) => canvas.selectedSavedPinId === b.id)).toBe(true);
+  await act(async () => r.unmount());
+});
+
+it("returns from the map picker to the same search query without a new request", async () => {
+  mocks.invoke.mockResolvedValue({ data: { places: [searchResult(1)], isEnd: true }, error: null });
+  const r = await mount();
+  await act(async () => r.root.findByProps({ "aria-label": "＋ 장소 등록" }).props.onClick());
+  await act(async () => r.root.findByProps({ placeholder: "예: 서종 막국수, 양평군 서종면" }).props.onChange({ target: { value: "막국수" } }));
+  await act(async () => button(r, "검색").props.onClick());
+  await act(async () => button(r, "지도에서 지점 고르기").props.onClick());
+  await act(async () => r.root.findByProps({ "aria-label": "지도에서 지점 고르기 뒤로" }).props.onClick());
+  expect(r.root.findByProps({ placeholder: "예: 서종 막국수, 양평군 서종면" }).props.value).toBe("막국수");
+  expect(button(r, "1번 막국수 1 선택선택한 장소로 진행")).toBeDefined();
+  expect(mocks.invoke).toHaveBeenCalledTimes(1);
   await act(async () => r.unmount());
 });

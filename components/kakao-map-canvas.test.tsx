@@ -84,7 +84,11 @@ function installMaps({ throwOnLoad = false, synchronousLoad = false }: { throwOn
     center = { getLat: () => 0, getLng: () => 0 };
     level = 1;
   });
-  const projection = { coordsFromContainerPoint: vi.fn(() => coordinate) };
+  // 0.001° maps to 100px so the fixture spacing stays above every cluster radius.
+  const projection = {
+    coordsFromContainerPoint: vi.fn(() => coordinate),
+    containerPointFromCoords: vi.fn((point: KakaoLatLng) => ({ x: (point.getLng() - 127) * 100_000, y: (37.6 - point.getLat()) * 100_000 })),
+  };
   const mapLayers = new Map<HTMLElement, unknown[]>();
   const activeMarkers = new Set<InstanceType<KakaoMapsNamespace["Marker"]>>();
   const activePolylines = new Set<InstanceType<KakaoMapsNamespace["Polyline"]>>();
@@ -168,6 +172,97 @@ it("hides saved-pin cleanup failures and disables stale click callbacks while st
   await act(async()=>r.update(<KakaoMapCanvas points={[]} savedPins={[]} onSelectSavedPin={select} allowEmptyMap/>));
   expect(marker.setMap).toHaveBeenCalledWith(null);expect(mapCanvas(r).props["aria-hidden"]).toBe(true);expect(mapCanvas(r).props.inert).toBe(true);
   click();expect(select).not.toHaveBeenCalled();await act(async()=>r.unmount());
+});
+
+function markerTitled(maps: ReturnType<typeof installMaps>, title: string) {
+  const index = maps.Marker.mock.calls.map((call) => (call as unknown[] as [{ title: string }])[0].title).lastIndexOf(title);
+  const marker = maps.Marker.mock.instances[index];
+  const call = maps.event.addListener.mock.calls.filter((entry) => entry[0] === marker && entry[1] === "click").at(-1);
+  return call?.[2] as () => void;
+}
+const savedPin = (id: string, latitude: number, extra: { starred?: boolean; longitude?: number } = {}) =>
+  ({ id, label: `장소 ${id}`, kind: "riding_spot" as const, latitude, longitude: extra.longitude ?? 127.1, starred: extra.starred });
+
+it("clusters nearby visible pins with a star badge, keeps the selected pin single, and zooms a cluster at least two levels", async () => {
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser(); const maps = installMaps();
+  // Level 8 → radius 56px; 0.0002° = 20px in the fixture projection.
+  const pins = [savedPin("a", 37.5), savedPin("b", 37.5002), savedPin("c", 37.5004, { starred: true }), savedPin("d", 37.55)];
+  let r!: ReactTestRenderer;
+  await act(async () => { r = create(<KakaoMapCanvas points={[]} savedPins={pins} allowEmptyMap />, rendererOptions); }); await flush(maps.loadCallbacks);
+  expect(maps.activeMarkers.size).toBe(2);
+  expect(maps.Marker.mock.calls.map((call) => (call as unknown[] as [{ title: string }])[0].title)).toEqual(["저장 장소 3곳 묶음 · 자주 찾는 장소 포함", "라이딩 스팟 · 장소 d"]);
+  const fits = maps.setBounds.mock.calls.length;
+  await act(async () => markerTitled(maps, "저장 장소 3곳 묶음 · 자주 찾는 장소 포함")());
+  expect(maps.setBounds.mock.calls.length).toBe(fits + 1);
+  expect(maps.setBounds.mock.calls.at(-1)?.slice(1)).toEqual([48, 48, 48, 48]);
+  expect(maps.setLevel).toHaveBeenLastCalledWith(6, expect.objectContaining({ anchor: expect.anything() }));
+  await act(async () => r.update(<KakaoMapCanvas points={[]} savedPins={pins} selectedSavedPinId="b" allowEmptyMap />));
+  expect(maps.activeMarkers.size).toBe(3);
+  expect(maps.Marker.mock.calls.slice(-3).map((call) => [(call as unknown[] as [{ title: string }])[0].title, (call as unknown[] as [{ zIndex: number }])[0].zIndex])).toEqual([
+    ["저장 장소 2곳 묶음 · 자주 찾는 장소 포함", 2], ["라이딩 스팟 · 장소 b", 3], ["라이딩 스팟 · 장소 d", 1],
+  ]);
+  await act(async () => r.unmount());
+  expect(maps.activeMarkers.size).toBe(0);
+  expect(maps.event.removeListener.mock.calls.length).toBe(maps.event.addListener.mock.calls.length);
+});
+
+it("lists same-coordinate pins instead of zooming and never zooms the camera for them", async () => {
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser(); const maps = installMaps(); const list = vi.fn();
+  let r!: ReactTestRenderer;
+  await act(async () => { r = create(<KakaoMapCanvas points={[]} savedPins={[savedPin("b", 37.5), savedPin("a", 37.5)]} onSelectSavedCluster={list} allowEmptyMap />, rendererOptions); }); await flush(maps.loadCallbacks);
+  const fits = maps.setBounds.mock.calls.length; const zooms = maps.setLevel.mock.calls.length;
+  await act(async () => markerTitled(maps, "저장 장소 2곳 묶음")());
+  expect(list).toHaveBeenCalledExactlyOnceWith(["a", "b"]);
+  expect(maps.setBounds.mock.calls.length).toBe(fits); expect(maps.setLevel.mock.calls.length).toBe(zooms);
+  await act(async () => r.unmount());
+});
+
+it("recalculates clusters 150ms after the camera settles without new requests", async () => {
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser(); const maps = installMaps();
+  // 60px apart: single at level 8 (56px), one cluster at level 10 (72px).
+  const pins = [savedPin("a", 37.5), savedPin("b", 37.5006)];
+  let r!: ReactTestRenderer;
+  await act(async () => { r = create(<KakaoMapCanvas points={[]} savedPins={pins} allowEmptyMap />, rendererOptions); }); await flush(maps.loadCallbacks);
+  expect(maps.activeMarkers.size).toBe(2);
+  vi.useFakeTimers();
+  maps.setLevel(10);
+  const idle = maps.event.addListener.mock.calls.find((call) => call[1] === "idle")?.[2] as () => void;
+  await act(async () => { idle(); vi.advanceTimersByTime(149); });
+  expect(maps.activeMarkers.size).toBe(2);
+  await act(async () => { vi.advanceTimersByTime(1); });
+  expect(maps.activeMarkers.size).toBe(1);
+  expect(maps.MapConstructor).toHaveBeenCalledTimes(1);
+  await act(async () => r.unmount());
+  expect(maps.activeMarkers.size).toBe(0);
+});
+
+it("fits numbered search pins once, recenters on a new selection, and never clusters them", async () => {
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser(); const maps = installMaps(); const choose = vi.fn();
+  const results = [1, 2, 3].map((number) => ({ id: `r${number}`, number, label: `결과 ${number}`, latitude: 37.5, longitude: 127.1 + number / 1_000_000 }));
+  let r!: ReactTestRenderer;
+  await act(async () => { r = create(<KakaoMapCanvas points={[]} numberedPins={results} selectedNumberedPinId="r1" onSelectNumberedPin={choose} allowEmptyMap />, rendererOptions); }); await flush(maps.loadCallbacks);
+  expect(maps.activeMarkers.size).toBe(3);
+  expect(maps.setBounds).toHaveBeenCalledTimes(1);
+  await act(async () => markerTitled(maps, "3번 · 결과 3")());
+  expect(choose).toHaveBeenCalledExactlyOnceWith("r3");
+  await act(async () => r.update(<KakaoMapCanvas points={[]} numberedPins={results} selectedNumberedPinId="r3" onSelectNumberedPin={choose} allowEmptyMap />));
+  expect(maps.setBounds).toHaveBeenCalledTimes(1);
+  expect(maps.setCenter.mock.calls.at(-1)?.[0].getLng()).toBeCloseTo(127.100003, 9);
+  expect(maps.Marker.mock.calls.slice(-3).map((call) => (call as unknown[] as [{ zIndex: number }])[0].zIndex)).toEqual([1, 1, 3]);
+  await act(async () => r.unmount());
+  expect(maps.activeMarkers.size).toBe(0);
+});
+
+it("reads the fixed center through the picker handle and zooms with buttons", async () => {
+  vi.stubEnv("NEXT_PUBLIC_KAKAO_MAP_JS_KEY", "fixture-key"); stubBrowser(); const maps = installMaps();
+  const handle = { current: null as null | { getCenter(): { latitude: number; longitude: number } | null } };
+  let r!: ReactTestRenderer;
+  await act(async () => { r = create(<KakaoMapCanvas points={[]} allowEmptyMap centerPicker centerHandle={handle} initialView={{ latitude: 37.4, longitude: 127.3, level: 5 }} />, rendererOptions); }); await flush(maps.loadCallbacks);
+  expect(handle.current?.getCenter()).toEqual({ latitude: 37.5, longitude: 127.1 });
+  await act(async () => r.root.findByProps({ "aria-label": "지도 확대" }).props.onClick());
+  expect(maps.setLevel).toHaveBeenLastCalledWith(7);
+  expect(r.root.findAllByProps({ className: "map-center-marker" })).toHaveLength(1);
+  await act(async () => r.unmount());
 });
 
 it("shows the exact temporary selected point and disposes it without a route or edit controls", async () => {

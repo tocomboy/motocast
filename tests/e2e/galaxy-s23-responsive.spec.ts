@@ -201,7 +201,7 @@ test.describe("Galaxy S23+ CSS viewport emulation", () => {
       await waypointSettings.getByRole("button", { name: "즐겨찾기에서 선택", exact: true }).click();
       const savedPicker = page.getByRole("dialog", { name: "경유지 즐겨찾기 선택", exact: true });
       await expect(savedPicker).toBeVisible();
-      for (const label of ["자주 찾는 곳", "라이딩 스팟", "식당"]) await expect(savedPicker.getByRole("button", { name: label, exact: true })).toBeVisible();
+      for (const label of ["자주 찾는 장소", "라이딩 스팟", "식당"]) await expect(savedPicker.getByRole("button", { name: label, exact: true })).toBeVisible();
       expect(await savedPicker.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
       await page.keyboard.press("Escape");
       await expect(waypointSettings).toBeVisible();

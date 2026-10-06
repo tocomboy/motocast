@@ -82,3 +82,23 @@ it("keeps an addressless point out of the course", async () => {
   await act(async () => button("지도에서 다시 선택").props.onClick());
   expect(onSelect).not.toHaveBeenCalled();
 });
+
+it("opts in to a region-only point for saved places and asks for an alias", async () => {
+  const regionPlace = { ...place, kakaoPlaceId: "map:37.5000000:127.1000000:region", name: "양평군 서종면 부근", address: "경기도 양평군 서종면 문호리", category: "지도에서 선택 · 상세 주소 없음" };
+  api.invoke.mockResolvedValue({ data: { places: [regionPlace], isEnd: true }, error: null });
+  const reference = createRef<MapPlacePickerHandle>(); const onSelect = vi.fn();
+  await act(async () => { renderer = create(<MapPointConfirmation pickerRef={reference} onSelect={onSelect} purpose="saved-place" />); });
+  await act(async () => reference.current!.open(point));
+  expect(api.invoke).toHaveBeenCalledExactlyOnceWith("search-places", { body: { mode: "coordinate", ...point, fallback: "region" } });
+  expect(JSON.stringify(renderer.toJSON())).toContain("상세 주소 없음");
+  await act(async () => button("별명 정하고 저장").props.onClick());
+  expect(onSelect).toHaveBeenCalledExactlyOnceWith(regionPlace);
+});
+
+it("rejects a region-only response for a waypoint request that did not opt in", async () => {
+  api.invoke.mockResolvedValue({ data: { places: [{ ...place, kakaoPlaceId: `${place.kakaoPlaceId}:region` }], isEnd: true }, error: null });
+  const { onSelect } = await mount();
+  expect(api.invoke.mock.calls[0][1].body).not.toHaveProperty("fallback");
+  expect(button("다시 시도")).toBeDefined();
+  expect(onSelect).not.toHaveBeenCalled();
+});

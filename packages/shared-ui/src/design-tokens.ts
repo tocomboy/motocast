@@ -13,6 +13,8 @@ export const designTokens = {
   "signal-text": "#8A5A00",
   "signal-tint": "#FFF3D1",
   "signal-tint-border": "#F1D48A",
+  /** Frequent-place star: always drawn with a 1.5 ink outline (contrast vs. card is 1.73:1). */
+  "star-fill": "#FFB800",
   "rain-high": "#1F4FA3",
   "rain-on-high": "#F4F6F9",
   "rain-low": "#DCE6F2",

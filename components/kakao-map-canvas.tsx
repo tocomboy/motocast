@@ -1,14 +1,28 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type Ref } from "react";
 import { designTokens } from "@/packages/shared-ui/src/design-tokens";
 import { LineIcon } from "@/components/line-icon";
+import { clusterPinImage, numberedPinImage, savedPinImage, type PinImage } from "@/components/map-pin-images";
 import { bindMapLongPress } from "@/lib/places/map-long-press";
+import {
+  CLUSTER_FIT_PADDING,
+  CLUSTER_RECALCULATE_DELAY_MS,
+  clusterPins,
+  clusterZoomLevel,
+  MIN_MAP_LEVEL,
+} from "@/lib/places/clustering";
 
 export type MapMarkerRole = "origin" | "destination" | "meal" | "lunch" | "dinner" | "rest" | "waypoint";
 export type MapPoint = { label: string; latitude: number; longitude: number; role?: MapMarkerRole; nonTraversed?: boolean };
 type PathPoint = { latitude: number; longitude: number };
-export type SavedMapPin = PathPoint & { id: string; label: string; kind: "riding_spot" | "restaurant" };
+export type SavedMapPin = PathPoint & { id: string; label: string; kind: "riding_spot" | "restaurant"; starred?: boolean };
+/** Registration search result pin; never clustered. */
+export type NumberedMapPin = PathPoint & { id: string; number: number; label: string };
+export type MapCenterHandle = { getCenter(): PathPoint | null };
+const MAX_MAP_LEVEL = 14;
+const markerImageFrom = (maps: KakaoMapsNamespace, image: PinImage) =>
+  new maps.MarkerImage(`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(image.svg)}`, new maps.Size(image.width, image.height), { offset: new maps.Point(image.offsetX, image.offsetY) });
 type MapDisplayState = "empty" | "loading" | "ready" | "demo" | "error";
 const KAKAO_MAP_LOAD_TIMEOUT_MS = 10_000;
 const markerAppearance: Record<MapMarkerRole, { label: string; symbol: string; color: string }> = {
@@ -77,6 +91,14 @@ export function KakaoMapCanvas({
   allowEmptyMap = false,
   coordinateActionLabel,
   coordinateActionInFullscreenOnly = false,
+  selectedSavedPinId = null,
+  onSelectSavedCluster,
+  numberedPins = [],
+  selectedNumberedPinId = null,
+  onSelectNumberedPin,
+  centerPicker = false,
+  centerHandle,
+  initialView,
 }: {
   points: MapPoint[];
   path?: PathPoint[];
@@ -90,6 +112,17 @@ export function KakaoMapCanvas({
   allowEmptyMap?: boolean;
   coordinateActionLabel?: string;
   coordinateActionInFullscreenOnly?: boolean;
+  /** Drawn as the larger yellow pin and never clustered. */
+  selectedSavedPinId?: string | null;
+  /** Called for a cluster whose pins share one coordinate (zooming cannot split it). */
+  onSelectSavedCluster?: (ids: string[]) => void;
+  numberedPins?: NumberedMapPin[];
+  selectedNumberedPinId?: string | null;
+  onSelectNumberedPin?: (id: string) => void;
+  /** Fixed center marker with zoom buttons; read the point through `centerHandle`. */
+  centerPicker?: boolean;
+  centerHandle?: Ref<MapCenterHandle>;
+  initialView?: PathPoint & { level: number };
 }) {
   const titleId = useId();
   const surfaceRef = useRef<HTMLDialogElement>(null);
@@ -103,11 +136,25 @@ export function KakaoMapCanvas({
   const selectRef = useRef(onSelectCoordinate);
   const savedSelectRef = useRef(onSelectSavedPin);
   useEffect(() => { savedSelectRef.current = onSelectSavedPin; }, [onSelectSavedPin]);
+  const savedClusterRef = useRef(onSelectSavedCluster);
+  useEffect(() => { savedClusterRef.current = onSelectSavedCluster; }, [onSelectSavedCluster]);
+  const numberedSelectRef = useRef(onSelectNumberedPin);
+  useEffect(() => { numberedSelectRef.current = onSelectNumberedPin; }, [onSelectNumberedPin]);
+  const fittedNumberedRef = useRef<string | null>(null);
+  const centeredNumberedRef = useRef<string | null>(null);
+  useImperativeHandle(centerHandle, () => ({
+    getCenter() {
+      const center = mapRef.current?.getCenter();
+      return center ? { latitude: center.getLat(), longitude: center.getLng() } : null;
+    },
+  }), []);
   const fittedSavedRef = useRef<string | null>(null);
   useEffect(() => { selectRef.current = onSelectCoordinate; }, [onSelectCoordinate]);
   const appKey = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY;
   const hasGeometry = allowEmptyMap || points.length > 0 || Boolean(path?.length);
   const savedKey = JSON.stringify(savedPins);
+  const numberedKey = JSON.stringify(numberedPins);
+  const initialViewKey = JSON.stringify(initialView ?? null);
   const geometryKey = JSON.stringify({ points, path: path ?? [] });
   const [mapState, setMapState] = useState<{ status: "loading" | "ready" | "error"; geometryKey: string }>({
     status: "loading",
@@ -187,6 +234,7 @@ export function KakaoMapCanvas({
   useEffect(() => {
     if (!hasGeometry || !appKey) return;
     const geometry = JSON.parse(geometryKey) as { points: MapPoint[]; path: PathPoint[] };
+    const startView = JSON.parse(initialViewKey) as (PathPoint & { level: number }) | null;
 
     let active = true;
     let script: HTMLScriptElement | null = null;
@@ -245,7 +293,10 @@ export function KakaoMapCanvas({
             const groupedMarkers = markerGroups(geometry.points);
             const markerPath = groupedMarkers.map((group) => new loadedMaps.LatLng(group.latitude, group.longitude));
             const routePath = geometry.path.map((point) => new loadedMaps.LatLng(point.latitude, point.longitude));
-            const map = mapRef.current ?? new loadedMaps.Map(containerRef.current, { center: markerPath[0] ?? routePath[0] ?? new loadedMaps.LatLng(37.5665, 126.978), level: 8 });
+            const map = mapRef.current ?? new loadedMaps.Map(containerRef.current, {
+              center: markerPath[0] ?? routePath[0] ?? (startView ? new loadedMaps.LatLng(startView.latitude, startView.longitude) : new loadedMaps.LatLng(37.5665, 126.978)),
+              level: startView?.level ?? 8,
+            });
             mapRef.current = map;
             const bounds = new loadedMaps.LatLngBounds();
             routePath.forEach((position) => bounds.extend(position));
@@ -335,7 +386,8 @@ export function KakaoMapCanvas({
       if (script && onError) script.removeEventListener("error", onError);
       clearOverlays();
     };
-  }, [appKey, geometryKey, hasGeometry, selectionPreview]);
+    // The start view only seeds a new map; an existing map keeps its camera.
+  }, [appKey, geometryKey, hasGeometry, selectionPreview, initialViewKey]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -343,36 +395,162 @@ export function KakaoMapCanvas({
     const map = mapRef.current;
     if (!isReady || !maps || !map) return;
     const pins = JSON.parse(savedKey) as SavedMapPin[];
+    const byId = new Map(pins.map((pin) => [pin.id, pin]));
+    let active = true;
+    let timer: number | undefined;
+    let idleBound = false;
+    const owned: Array<{ marker: { setMap(map: unknown): void }; select: () => void }> = [];
+    const detach = () => {
+      for (const { marker, select } of owned.splice(0)) {
+        for (const remove of [() => maps.event.removeListener(marker, "click", select), () => marker.setMap(null)]) {
+          try { remove(); } catch { overlayCleanupFailedRef.current = true; console.error("저장 장소 핀을 정리하지 못했습니다."); }
+        }
+      }
+    };
+    const fail = () => queueMicrotask(() => { if (active) setMapState({ status: "error", geometryKey }); });
+    const openCluster = (ids: string[], sameCoordinates: boolean, latitude: number, longitude: number) => {
+      if (!active || overlayCleanupFailedRef.current) return;
+      const anchor = new maps.LatLng(latitude, longitude);
+      if (sameCoordinates) {
+        // Zooming never separates pins on one coordinate, so list them instead.
+        if (savedClusterRef.current) savedClusterRef.current(ids);
+        else map.setLevel(MIN_MAP_LEVEL, { anchor });
+        return;
+      }
+      const level = map.getLevel();
+      const bounds = new maps.LatLngBounds();
+      for (const id of ids) {
+        const pin = byId.get(id);
+        if (pin) bounds.extend(new maps.LatLng(pin.latitude, pin.longitude));
+      }
+      map.setBounds(bounds, CLUSTER_FIT_PADDING, CLUSTER_FIT_PADDING, CLUSTER_FIT_PADDING, CLUSTER_FIT_PADDING);
+      const target = clusterZoomLevel(level, map.getLevel());
+      if (map.getLevel() !== target) map.setLevel(target, { anchor });
+    };
+    const render = () => {
+      detach();
+      if (overlayCleanupFailedRef.current) throw new Error("OVERLAY_CLEANUP_FAILED");
+      const projection = map.getProjection();
+      const inputs = pins.map((pin) => {
+        const point = projection.containerPointFromCoords(new maps.LatLng(pin.latitude, pin.longitude));
+        return { id: pin.id, x: point.x, y: point.y, latitude: pin.latitude, longitude: pin.longitude, starred: Boolean(pin.starred) };
+      });
+      const selected = selectedSavedPinId && byId.has(selectedSavedPinId) ? new Set([selectedSavedPinId]) : undefined;
+      for (const group of clusterPins(inputs, map.getLevel(), selected)) {
+        let marker: { setMap(map: unknown): void };
+        let select: () => void;
+        if (group.kind === "pin") {
+          const pin = byId.get(group.pin.id)!;
+          const isSelected = pin.id === selectedSavedPinId;
+          marker = new maps.Marker({
+            map,
+            position: new maps.LatLng(pin.latitude, pin.longitude),
+            title: `${pin.kind === "restaurant" ? "식당" : "라이딩 스팟"} · ${pin.label}${pin.starred ? " · 자주 찾는 장소" : ""}`,
+            image: markerImageFrom(maps, savedPinImage({ kind: pin.kind, starred: Boolean(pin.starred), selected: isSelected })),
+            zIndex: isSelected ? 3 : 1,
+          });
+          select = () => { if (active && !overlayCleanupFailedRef.current) savedSelectRef.current?.(pin.id); };
+        } else {
+          marker = new maps.Marker({
+            map,
+            position: new maps.LatLng(group.latitude, group.longitude),
+            title: `저장 장소 ${group.count}곳 묶음${group.starred ? " · 자주 찾는 장소 포함" : ""}`,
+            image: markerImageFrom(maps, clusterPinImage(group)),
+            zIndex: 2,
+          });
+          select = () => openCluster(group.ids, group.sameCoordinates, group.latitude, group.longitude);
+        }
+        owned.push({ marker, select });
+        maps.event.addListener(marker, "click", select);
+      }
+    };
+    // Recalculate only after the camera settles; positions come from pins already loaded.
+    const onIdle = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (!active) return;
+        try { render(); } catch { fail(); }
+      }, CLUSTER_RECALCULATE_DELAY_MS);
+    };
+    try {
+      // Explicit region selection may adjust the camera; toggles and aliases never do.
+      if (pins.length && fittedSavedRef.current !== savedViewportKey) {
+        const bounds = new maps.LatLngBounds();
+        for (const pin of pins) bounds.extend(new maps.LatLng(pin.latitude, pin.longitude));
+        map.setBounds(bounds);
+        fittedSavedRef.current = savedViewportKey;
+      }
+      render();
+      if (pins.length) { maps.event.addListener(map, "idle", onIdle); idleBound = true; }
+    } catch { fail(); }
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      detach();
+      if (idleBound) {
+        try { maps.event.removeListener(map, "idle", onIdle); } catch { overlayCleanupFailedRef.current = true; console.error("저장 장소 핀을 정리하지 못했습니다."); }
+      }
+      if (overlayCleanupFailedRef.current) setMapState({ status: "error", geometryKey });
+    };
+  }, [isReady, savedKey, savedViewportKey, geometryKey, selectedSavedPinId]);
+
+  useEffect(() => {
+    if (!isReady) return;
+    const maps = window.kakao?.maps;
+    const map = mapRef.current;
+    if (!maps || !map) return;
+    const pins = JSON.parse(numberedKey) as NumberedMapPin[];
+    if (!pins.length) return;
     let active = true;
     const owned: Array<{ marker: { setMap(map: unknown): void }; select: () => void }> = [];
     try {
       if (overlayCleanupFailedRef.current) throw new Error("OVERLAY_CLEANUP_FAILED");
-      const bounds = new maps.LatLngBounds();
       for (const pin of pins) {
-        const position = new maps.LatLng(pin.latitude, pin.longitude);
-        bounds.extend(position);
-        const restaurant = pin.kind === "restaurant";
-        const symbol = restaurant ? "식" : "S";
-        const color = designTokens["text-primary"];
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48"><rect x="2" y="2" width="36" height="38" rx="${restaurant ? 8 : 18}" fill="${color}" stroke="${designTokens["surface-card"]}" stroke-width="2"/><path d="M14 39L20 47L26 39" fill="${color}"/><text x="20" y="27" text-anchor="middle" font-family="sans-serif" font-size="14" fill="${designTokens["surface-card"]}">${symbol}</text></svg>`;
-        const marker = new maps.Marker({ map, position, title: `${restaurant ? "식당" : "라이딩 스팟"} · ${pin.label}`, image: new maps.MarkerImage(`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, new maps.Size(40, 48), { offset: new maps.Point(20, 47) }) });
-        const select = () => { if (active && !overlayCleanupFailedRef.current) savedSelectRef.current?.(pin.id); };
+        const isSelected = pin.id === selectedNumberedPinId;
+        const marker = new maps.Marker({
+          map,
+          position: new maps.LatLng(pin.latitude, pin.longitude),
+          title: `${pin.number}번 · ${pin.label}`,
+          image: markerImageFrom(maps, numberedPinImage({ number: pin.number, selected: isSelected })),
+          zIndex: isSelected ? 3 : 1,
+        });
+        const select = () => { if (active && !overlayCleanupFailedRef.current) numberedSelectRef.current?.(pin.id); };
         owned.push({ marker, select });
         maps.event.addListener(marker, "click", select);
       }
-      // Explicit region selection may adjust the camera; toggles and aliases never do.
-      if (pins.length && fittedSavedRef.current !== savedViewportKey) { map.setBounds(bounds); fittedSavedRef.current = savedViewportKey; }
+      // A new result set is fitted once; a later selection only recenters on that result.
+      if (fittedNumberedRef.current !== numberedKey) {
+        const bounds = new maps.LatLngBounds();
+        for (const pin of pins) bounds.extend(new maps.LatLng(pin.latitude, pin.longitude));
+        map.setBounds(bounds, CLUSTER_FIT_PADDING, CLUSTER_FIT_PADDING, CLUSTER_FIT_PADDING, CLUSTER_FIT_PADDING);
+        fittedNumberedRef.current = numberedKey;
+        centeredNumberedRef.current = selectedNumberedPinId;
+      } else if (centeredNumberedRef.current !== selectedNumberedPinId) {
+        const selected = pins.find((pin) => pin.id === selectedNumberedPinId);
+        if (selected) map.setCenter(new maps.LatLng(selected.latitude, selected.longitude));
+        centeredNumberedRef.current = selectedNumberedPinId;
+      }
     } catch { queueMicrotask(() => { if (active) setMapState({ status: "error", geometryKey }); }); }
     return () => {
       active = false;
       for (const { marker, select } of owned) {
         for (const remove of [() => maps.event.removeListener(marker, "click", select), () => marker.setMap(null)]) {
-          try { remove(); } catch { overlayCleanupFailedRef.current = true; console.error("저장 장소 핀을 정리하지 못했습니다."); }
+          try { remove(); } catch { overlayCleanupFailedRef.current = true; console.error("검색 결과 핀을 정리하지 못했습니다."); }
         }
       }
       if (overlayCleanupFailedRef.current) setMapState({ status: "error", geometryKey });
     };
-  }, [isReady, savedKey, savedViewportKey, geometryKey]);
+  }, [isReady, numberedKey, selectedNumberedPinId, geometryKey]);
+
+  function zoom(step: 1 | -1) {
+    const map = mapRef.current;
+    if (!map) return;
+    try {
+      map.setLevel(Math.min(MAX_MAP_LEVEL, Math.max(MIN_MAP_LEVEL, map.getLevel() + step)));
+    } catch {
+      setMapState({ status: "error", geometryKey });
+    }
+  }
 
   if (selectionPreview) return <div className="map-shell map-selection-preview" aria-label="선택한 위치 미리보기">
     <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert />
@@ -395,7 +573,14 @@ export function KakaoMapCanvas({
         <div className="map-viewport">
           <div ref={containerRef} className={`map-canvas ${isReady ? "is-ready" : ""}`} aria-hidden={!isReady} inert={!isReady} />
           <MapStatus state={state} actualRoute={Boolean(path?.length)} savedPlaces={allowEmptyMap} />
-          <button type="button" ref={expandRef} className="map-fullscreen-trigger" hidden={fullscreen} onClick={() => setFullscreen(true)}>전체화면</button>
+          <button type="button" ref={expandRef} className="map-fullscreen-trigger" hidden={fullscreen || centerPicker} onClick={() => setFullscreen(true)}>전체화면</button>
+          {centerPicker && isReady ? <>
+            <span className="map-center-marker" aria-hidden="true" />
+            <div className="map-zoom-controls">
+              <button type="button" aria-label="지도 확대" onClick={() => zoom(-1)}><LineIcon name="plus" /></button>
+              <button type="button" aria-label="지도 축소" onClick={() => zoom(1)}><LineIcon name="minus" /></button>
+            </div>
+          </> : null}
           {isReady && showLegend ? <MapMarkerLegend points={points} /> : null}
           {!isReady && state !== "empty" && !allowEmptyMap ? <SchematicRoute state={state} points={points} actualRoute={Boolean(path?.length)} /> : null}
         </div>
