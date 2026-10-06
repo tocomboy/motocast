@@ -41,12 +41,23 @@ import styles from "./saved-places-manager.module.css";
 type Pending = {
   key: number;
   title: string;
-  card: { eyebrow: string; region: boolean; name: string; line: string };
+  card: { eyebrow?: string; region?: boolean; name?: string; line: string; line2?: string };
   rows?: Array<{ label: string; value: string; count?: string }>;
+  /** FP38: only the changed values, as before → after. */
+  changes?: Array<{ label: string; before: string; after: string }>;
   count?: { label: string; value: string };
   note?: string;
   /** Confirm action that sends one request; absent for information-only popups. */
-  confirm?: { label: string; busyLabel: string; danger?: boolean; run: () => Promise<SavedPlaceWrite> };
+  confirm?: {
+    label: string;
+    busyLabel: string;
+    danger?: boolean;
+    /** FP39a title while an unknown result is checked, e.g. "저장됐는지 확인하고 있어요". */
+    checking: string;
+    /** FP39b text when the re-read list does not show the change. */
+    notApplied: { title: string; message: string };
+    run: () => Promise<SavedPlaceWrite>;
+  };
   /** Information-only popups (FP36, duplicate save) replace confirm/cancel with these buttons. */
   buttons?: Array<{ label: string; primary?: boolean; onClick: () => void }>;
   error?: { title: string; message: string };
@@ -204,6 +215,8 @@ function SavedPlacesManagerContent({
           label: "장소 삭제",
           busyLabel: "삭제하는 중…",
           danger: true,
+          checking: "삭제됐는지 확인하고 있어요",
+          notApplied: { title: "삭제되지 않았어요", message: "목록을 다시 확인했지만 장소가 그대로 있어요. 다시 삭제하려면 \"장소 삭제\"를 눌러 주세요." },
           run: async () => {
             const current = latest(p.id);
             if (!current) return { ok: true };
@@ -223,6 +236,10 @@ function SavedPlacesManagerContent({
       confirm: {
         label: starred ? "추가" : "별표 빼기",
         busyLabel: starred ? "추가하는 중…" : "빼는 중…",
+        checking: starred ? "추가됐는지 확인하고 있어요" : "별표를 뺐는지 확인하고 있어요",
+        notApplied: starred
+          ? { title: "추가되지 않았어요", message: "목록을 다시 확인했지만 별표가 없어요. 다시 추가하려면 \"추가\"를 눌러 주세요." }
+          : { title: "별표가 그대로예요", message: "목록을 다시 확인했지만 별표가 남아 있어요. 다시 빼려면 \"별표 빼기\"를 눌러 주세요." },
         run: async () => {
           const current = latest(p.id);
           if (!current) return notFound;
@@ -247,14 +264,25 @@ function SavedPlacesManagerContent({
         ? { label: "자주 찾는 장소", value: "추가", count: `${starredCount} → ${starredCount + 1} / ${FREQUENT_PLACE_LIMIT}` }
         : { label: "자주 찾는 장소", value: full ? `추가 안 함 · ${starredCount} / ${FREQUENT_PLACE_LIMIT} 가득 참` : "추가 안 함" }]),
     ];
+    const changes = existing ? [
+      ...((existing.alias ?? "") !== name ? [{ label: "별명", before: existing.alias ?? `${place.name} (없음)`, after: name || `${place.name} (없음)` }] : []),
+      ...(existing.kind !== kind ? [{ label: "분류", before: kindLabel(existing.kind), after: kindLabel(kind) }] : []),
+    ] : undefined;
     open({
-      title: existing ? "장소 정보를 수정할까요?" : "이 장소를 저장할까요?",
-      card: { eyebrow: kindLabel(kind), region, name: name || place.name, line: name ? `원래 이름 · ${place.name}` : place.roadAddress ?? place.address },
-      rows,
-      note: retryNote ?? (existing ? "원래 장소명과 위치는 유지돼요." : !starred && full ? "자주 찾는 장소가 가득 차 별표 없이 저장해요." : "원래 위치는 그대로 저장돼요."),
+      title: existing ? "별명과 분류를 수정할까요?" : "이 장소를 저장할까요?",
+      card: existing
+        ? { line: `원래 이름 · ${place.name}`, line2: region ? `상세 주소 없음 · ${place.address}` : place.roadAddress ?? place.address }
+        : { eyebrow: kindLabel(kind), region, name: name || place.name, line: name ? `원래 이름 · ${place.name}` : place.roadAddress ?? place.address },
+      rows: existing ? undefined : rows,
+      changes,
+      note: retryNote ?? (existing ? "바뀐 값만 보여요. 원래 이름·위치와 자주 찾는 장소 별표는 그대로예요." : !starred && full ? "자주 찾는 장소가 가득 차 별표 없이 저장해요." : "원래 위치는 그대로 저장돼요."),
       confirm: {
         label: existing ? "확인하고 수정" : "확인하고 저장",
         busyLabel: existing ? "수정하는 중…" : "저장하는 중…",
+        checking: existing ? "수정됐는지 확인하고 있어요" : "저장됐는지 확인하고 있어요",
+        notApplied: existing
+          ? { title: "수정되지 않았어요", message: "목록을 다시 확인했지만 바뀐 내용이 없어요. 입력 내용은 그대로예요. 다시 수정하려면 \"확인하고 수정\"을 눌러 주세요." }
+          : { title: "저장되지 않았어요", message: "목록을 다시 확인했지만 이 장소가 없어요. 입력 내용은 그대로예요. 다시 저장하려면 \"확인하고 저장\"을 눌러 주세요." },
         run: async () => {
           if (existing) {
             const current = latest(existing.id);
@@ -499,7 +527,7 @@ function SavedPlacesManagerContent({
         <SavedDialog title="장소 상세" onBack={() => selectPlace(null)} onClose={() => selectPlace(null)} fullScreen>
           <div className={`${styles.waypointBody} ${styles.detailBody}`}>
           <div className={`${styles.placeSummary} ${styles.detailSummary}`}>
-            <span className={styles.placeKind}>{kindLabel(selected.kind)} · {selected.province ?? "지역 미확인"}</span>
+            <span className={styles.placeKind}>{kindLabel(selected.kind)} · {selected.province ?? "지역 미확인"}{selected.starPosition !== null ? " · 자주 찾는 장소" : ""}</span>
             <strong>{savedPlaceName(selected)}</strong>
             <span>{placeLine(selected)}</span>
             <StarIconButton place={selected} disabled={blocked} onClick={() => confirm(selected, "star")} />
@@ -561,6 +589,7 @@ function SavedPlacesManagerContent({
           key={pending.key}
           pending={pending}
           busy={saved.busy}
+          verifying={saved.verifying}
           capture={saved.captureSnapshot}
           onClose={() => setPending(null)}
         />
@@ -577,21 +606,32 @@ function StarButton({ place, full, count, disabled, onClick }: {
   onClick: () => void;
 }) {
   const starred = place.starPosition !== null;
+  if (starred)
+    // FP02b: an active status button; pressing it asks before removing the star (FP35).
+    return (
+      <>
+        <button type="button" className={styles.starSaved} aria-label="자주 찾는 장소에 저장됨, 눌러서 빼기" disabled={disabled} onClick={onClick}>
+          <StarMark filled />
+          <span>자주 찾는 장소에 저장됨</span>
+          <b className={styles.countNumber}>· {count} / {FREQUENT_PLACE_LIMIT}</b>
+        </button>
+        <p className={styles.helper}>누르면 자주 찾는 장소에서 뺄지 다시 확인해요.</p>
+      </>
+    );
   return (
     <button
       type="button"
       className={styles.starToggle}
-      aria-label={starLabel(starred)}
-      aria-pressed={starred}
-      disabled={disabled || (!starred && full)}
+      aria-label={starLabel(false)}
+      aria-pressed={false}
+      disabled={disabled || full}
       onClick={onClick}
     >
-      {starred ? "★ 자주 찾는 장소에서 빼기" : `☆ 자주 찾는 장소에 추가 · ${count} / ${FREQUENT_PLACE_LIMIT}${full ? " 가득 참" : ""}`}
+      {`☆ 자주 찾는 장소에 추가 · ${count} / ${FREQUENT_PLACE_LIMIT}${full ? " 가득 참" : ""}`}
     </button>
   );
 }
 
-/** 48×48 star in a place card (v2/Icon/star or star-filled). */
 /** In a full list an empty star opens the FP36 explanation instead of being disabled. */
 function StarIconButton({ place, disabled, onClick }: {
   place: SavedPlaceEntry;
@@ -693,11 +733,13 @@ function SavedWaypointForm({
 function ConfirmPopup({
   pending,
   busy,
+  verifying,
   capture,
   onClose,
 }: {
   pending: Pending;
   busy: boolean;
+  verifying: boolean;
   capture: () => () => boolean;
   onClose: () => void;
 }) {
@@ -707,7 +749,7 @@ function ConfirmPopup({
   const mounted = useRef(false);
   const [snapshot, setSnapshot] = useState(() => capture());
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState(pending.error ?? null);
+  const [error, setError] = useState<{ title: string; message: string; retry?: boolean } | null>(pending.error ?? null);
   useEffect(() => {
     mounted.current = true;
     const focus = document.activeElement;
@@ -730,8 +772,9 @@ function ConfirmPopup({
       if (!mounted.current) return;
       if (write.ok) onClose();
       else if (write.reason !== "blocked" || write.message) {
-        // The list was re-read; the next confirm sends one request with the newest revision.
-        setError({ title: write.title, message: write.message });
+        // FP39b: the list was re-read without the change, so the same confirm sends one new
+        // request with the newest revision. FP39c: a clear refusal can be retried right away.
+        setError(write.reason === "unknown" && write.checked ? action.notApplied : { title: write.title, message: write.message, retry: write.reason !== "unknown" });
         setSnapshot(() => capture());
       }
     } catch {
@@ -752,10 +795,17 @@ function ConfirmPopup({
     >
       <h2 id={titleId}>{pending.title}</h2>
       <div className={styles.popupCard}>
-        <span className={styles.placeKind}>{pending.card.eyebrow}{pending.card.region ? <span className={styles.chip}>상세 주소 없음</span> : null}</span>
-        <strong>{pending.card.name}</strong>
+        {pending.card.eyebrow ? <span className={styles.placeKind}>{pending.card.eyebrow}{pending.card.region ? <span className={styles.chip}>상세 주소 없음</span> : null}</span> : null}
+        {pending.card.name ? <strong>{pending.card.name}</strong> : null}
         <span>{pending.card.line}</span>
+        {pending.card.line2 ? <span>{pending.card.line2}</span> : null}
       </div>
+      {pending.changes?.map((change) => (
+        <div key={change.label} className={styles.popupChange}>
+          <span>{change.label}</span>
+          <p><del>{change.before}</del><span aria-hidden="true"> → </span><span className={styles.srOnly}>에서 </span><b>{change.after}</b></p>
+        </div>
+      ))}
       {pending.rows ? (
         <dl className={styles.popupRows}>
           {pending.rows.map((row) => (
@@ -764,9 +814,16 @@ function ConfirmPopup({
         </dl>
       ) : null}
       {pending.count ? <p className={styles.popupCount}><span>{pending.count.label}</span><b className={styles.countNumber}>{pending.count.value}</b></p> : null}
-      {pending.note ? <p className={styles.helper}>{pending.note}</p> : null}
+      {/* FP39a–c replace the note with the checking or failure card. */}
+      {pending.note && !error && !(running && verifying) ? <p className={styles.helper}>{pending.note}</p> : null}
       {!valid && !running && pending.confirm ? <p role="alert" className={styles.fieldError}>목록이나 계정이 바뀌었어요. 닫고 최신 장소를 다시 선택해 주세요.</p> : null}
-      {error ? <div className={styles.errorCard} role="alert"><strong>{error.title}</strong><p>{error.message}</p></div> : null}
+      {running && verifying && pending.confirm ? (
+        <div className={styles.popupChecking} role="status">
+          <strong>{pending.confirm.checking}</strong>
+          <p>응답을 받지 못해 목록을 다시 읽는 중이에요. 같은 요청을 다시 보내지 않아요.</p>
+          <span className={styles.progress} aria-hidden="true"><span /></span>
+        </div>
+      ) : error ? <div className={styles.errorCard} role="alert"><strong>{error.title}</strong><p>{error.message}</p></div> : null}
       <div className={styles.popupActions}>
         {pending.confirm ? (
           <>
@@ -776,7 +833,7 @@ function ConfirmPopup({
               disabled={busy || running || !valid}
               onClick={() => void confirm()}
             >
-              {running ? pending.confirm.busyLabel : error ? "다시 시도" : pending.confirm.label}
+              {running ? (verifying ? "확인 중…" : pending.confirm.busyLabel) : error?.retry ? "다시 시도" : pending.confirm.label}
             </button>
             <button type="button" className={styles.secondaryButton} disabled={running} onClick={close}>취소</button>
           </>

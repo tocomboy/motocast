@@ -178,7 +178,8 @@ function SearchStep({ query, setQuery, search, setSearch, onClose, onPickOnMap, 
           </>
         ) : search.status === "loading" ? (
           <div className={styles.searchLoading} role="status">
-            <div className={styles.resultMap} aria-hidden="true" />
+            {/* v2/Illustration/map-placeholder (394:10941) at 60% while searching (FP11). */}
+            <div className={styles.mapPlaceholder} aria-hidden="true" />
             <p className={styles.helper}>카카오 장소를 검색하고 있어요.</p>
             {[0, 1, 2].map((n) => <div key={n} className={styles.skeletonCard} aria-hidden="true"><span /><span /></div>)}
           </div>
@@ -382,6 +383,8 @@ function FormStep({ place, existing, stars, blocked, onSave }: {
   const region = isRegionOnlyPlace(place);
   const full = stars >= FREQUENT_PLACE_LIMIT;
   const length = [...alias].length;
+  // FP38: an edit with nothing changed has nothing to confirm.
+  const unchanged = Boolean(existing) && (existing?.alias ?? "") === alias.trim() && existing?.kind === kind;
   function submit() {
     if (region && !alias.trim()) {
       // The server rejects a region-only place without an alias; say so before sending.
@@ -445,7 +448,7 @@ function FormStep({ place, existing, stars, blocked, onSave }: {
       </div>
       <div className={styles.waypointFooter}>
         {/* Product rule UI-001: the save still asks for a centered confirmation. */}
-        <button type="button" className="primary-button" disabled={blocked} onClick={submit}>
+        <button type="button" className="primary-button" disabled={blocked || unchanged} onClick={submit}>
           {existing ? "수정 내용 확인" : "장소 저장"}
         </button>
         <p className={styles.footerHint}>닫기·취소 시 입력 내용은 저장되지 않아요.</p>

@@ -549,3 +549,21 @@
 .popup .popupActions button:disabled { opacity: .45; cursor: default; }
 .popup .errorCard { padding: 14px 16px; }
 .popup .helper, .popup .fieldError { margin: 0; font-size: .8125rem; line-height: 1.5; }
+
+/* FP02b, FP38, FP39a–c and the FP11 map placeholder. */
+.page .starSaved, .dialog .starSaved { width: 100%; height: 56px; min-height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 18px; border-radius: 14px; border: 1.5px solid var(--mc-border-strong); background: var(--mc-signal-tint); color: var(--mc-text-primary); font-size: .8125rem; font-weight: 500; letter-spacing: .04em; text-align: left; }
+.starSaved .countNumber { font-size: 1rem; }
+.popupChange { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 12px; background: var(--mc-surface-ground); font-size: .8125rem; }
+.popupChange > span { color: var(--mc-text-secondary); line-height: 1.5; }
+.popupChange p { margin: 0; line-height: 1.4; }
+.popupChange del { color: var(--mc-text-secondary); }
+.popupChange b { font-weight: 700; }
+.popupChecking { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--mc-signal-tint-border); background: var(--mc-signal-tint); }
+.popupChecking strong { font-size: .8125rem; font-weight: 500; line-height: 1.4; }
+.popupChecking p { margin: 0; font-size: .8125rem; line-height: 1.5; }
+.popup .errorCard strong { font-size: .8125rem; font-weight: 500; line-height: 1.4; }
+.popup .errorCard p { font-size: .8125rem; }
+.popupCard > span:not(.placeKind) { font-size: .8125rem; line-height: 1.5; color: var(--mc-text-secondary); overflow-wrap: anywhere; }
+.mapPlaceholder { height: 200px; min-height: 200px; border-radius: 16px; background: no-repeat center / 100% 100% url("/map/map-placeholder.svg"); opacity: .6; }
+@media (max-width: 360px) { .mapPlaceholder { height: 160px; min-height: 160px; } }
+@media (min-width: 768px) { .page .desktopActions .starSaved, .page .desktopActions > .helper { grid-column: 1 / -1; } }

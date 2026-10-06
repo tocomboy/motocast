@@ -423,18 +423,55 @@ it("shows the FP29 save popup, a busy confirm, and closes only after the save la
   await act(async () => r.unmount());
 });
 
-it("keeps the popup after an unknown result and sends again only when the rider confirms", async () => {
+it("shows FP39a while checking, FP39b when the change is missing, and sends again only when the rider confirms", async () => {
+  let first!: (value: unknown) => void;
   mocks.controls.save = vi.fn()
-    .mockResolvedValueOnce({ ok: false, reason: "unknown", title: "변경을 확인하지 못했어요", message: "저장됐는지 확인했는데 반영되지 않았어요. 입력 내용은 그대로예요." })
+    .mockImplementationOnce(() => new Promise((done) => { first = done; }))
     .mockResolvedValueOnce({ ok: true, id: saved.id, duplicate: false });
   const r = await mount();
   await openRegionSave(r);
   await act(async () => button(r, "확인하고 저장").props.onClick());
-  expect(text(r.root)).toContain("저장됐는지 확인했는데 반영되지 않았어요. 입력 내용은 그대로예요.");
+  mocks.controls = { ...mocks.controls, verifying: true };
+  await act(async () => r.update(<SavedPlacesManager {...props} />));
+  expect(text(r.root)).toContain("저장됐는지 확인하고 있어요");
+  expect(button(r, "확인 중…").props.disabled).toBe(true);
+  expect(r.root.findAllByType("button").filter((b) => text(b) === "취소").at(-1)!.props.disabled).toBe(true);
+  mocks.controls = { ...mocks.controls, verifying: false };
+  await act(async () => { r.update(<SavedPlacesManager {...props} />); first({ ok: false, reason: "unknown", checked: true, title: "변경을 확인하지 못했어요", message: "" }); });
+  expect(text(r.root)).toContain("저장되지 않았어요");
+  expect(text(r.root)).toContain("목록을 다시 확인했지만 이 장소가 없어요.");
   expect(mocks.controls.save).toHaveBeenCalledTimes(1);
-  await act(async () => button(r, "다시 시도").props.onClick());
+  await act(async () => button(r, "확인하고 저장").props.onClick());
   expect(mocks.controls.save).toHaveBeenCalledTimes(2);
   expect(text(r.root)).not.toContain("이 장소를 저장할까요?");
+  await act(async () => r.unmount());
+});
+
+it("keeps the input after a clear refusal and offers an immediate retry (FP39c)", async () => {
+  mocks.controls.save = vi.fn().mockResolvedValueOnce({ ok: false, reason: "rejected", title: "장소를 저장하지 못했어요", message: "요청이 거부됐어요." });
+  const r = await mount();
+  await openRegionSave(r);
+  await act(async () => button(r, "확인하고 저장").props.onClick());
+  expect(text(r.root)).toContain("장소를 저장하지 못했어요");
+  expect(button(r, "다시 시도").props.disabled).toBe(false);
+  await act(async () => r.unmount());
+});
+
+it("confirms an edit with only the changed values and blocks an unchanged edit (FP38)", async () => {
+  mocks.controls.edit = vi.fn(async () => ({ ok: true }));
+  const r = await mount();
+  await act(async () => r.root.findByProps({ "aria-label": "내 별명 상세 보기" }).props.onClick());
+  // FP02b: the starred detail shows an active saved-state button that asks before removing.
+  expect(r.root.findAllByProps({ "aria-label": "자주 찾는 장소에 저장됨, 눌러서 빼기" }).filter((n) => n.type === "button")).toHaveLength(1);
+  await act(async () => button(r, "별명·분류 수정").props.onClick());
+  expect(button(r, "수정 내용 확인").props.disabled).toBe(true);
+  await act(async () => r.root.findAllByType("button").filter((b) => text(b) === "식당").at(-1)!.props.onClick());
+  await act(async () => button(r, "수정 내용 확인").props.onClick());
+  const popup = text(r.root.findAll((node) => node.type === "dialog" && text(node).includes("별명과 분류를 수정할까요?"))[0]);
+  expect(popup).toContain("분류라이딩 스팟 → 에서 식당");
+  expect(popup).not.toContain("별명내 별명");
+  await act(async () => button(r, "확인하고 수정").props.onClick());
+  expect(mocks.controls.edit).toHaveBeenCalledExactlyOnceWith(saved, "내 별명", "restaurant");
   await act(async () => r.unmount());
 });
 

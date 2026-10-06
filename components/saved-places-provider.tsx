@@ -50,7 +50,7 @@ type Receipt =
  */
 export type SavedPlaceWrite =
   | { ok: true; id?: string; duplicate?: boolean }
-  | { ok: false; reason: "rejected" | "star_limit" | "unknown" | "blocked"; title: string; message: string };
+  | { ok: false; reason: "rejected" | "star_limit" | "unknown" | "blocked"; title: string; message: string; checked?: boolean };
 type SavedPlacesControls = {
   accountEpoch: number;
   places: SavedPlaceEntry[];
@@ -60,6 +60,8 @@ type SavedPlacesControls = {
   message: string;
   /** Non-empty when the last write failed; `message` then explains why. */
   failureTitle: string;
+  /** True while an unknown write result is checked against a fresh list (FP39a). */
+  verifying: boolean;
   retry: () => void;
   captureSnapshot: () => () => boolean;
   save: (
@@ -95,6 +97,7 @@ export function SavedPlacesProvider({
     enabled ? "" : "데모 모드에서는 저장 장소를 저장하지 않습니다.",
   );
   const [failureTitle, setFailureTitle] = useState("");
+  const [verifying, setVerifying] = useState(false);
   const mounted = useRef(false);
   const generation = useRef(0);
   const session = useRef(0);
@@ -219,7 +222,8 @@ export function SavedPlacesProvider({
       };
       // A result we cannot read is checked against a fresh list; nothing is sent again.
       const verify = async (): Promise<SavedPlaceWrite> => {
-        const list = await load(id);
+        setVerifying(true);
+        const list = await load(id).finally(() => { if (mounted.current) setVerifying(false); });
         if (!current()) return gone;
         if (list && applied(list)) return succeed(success);
         setMessage("");
@@ -227,6 +231,7 @@ export function SavedPlacesProvider({
         return {
           ok: false,
           reason: "unknown",
+          checked: Boolean(list),
           title: "변경을 확인하지 못했어요",
           message: list ? unknownMessage : "변경 결과와 최신 목록을 확인하지 못했어요. 다시 시도하면 최신 목록으로 한 번 요청해요.",
         };
@@ -338,6 +343,7 @@ export function SavedPlacesProvider({
       busy,
       message,
       failureTitle,
+      verifying,
       retry: () => {
         void load();
       },
@@ -398,6 +404,7 @@ export function SavedPlacesProvider({
       busy,
       message,
       failureTitle,
+      verifying,
       load,
       captureSnapshot,
       save,
