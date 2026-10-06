@@ -554,3 +554,17 @@ it("opens the PC detail in the list panel and returns to the list (FPW04/FPW05)"
   expect(r.root.findAllByProps({ "aria-label": "내 별명 상세 보기" }).length).toBeGreaterThan(0);
   await act(async () => r.unmount());
 });
+
+it("filters only the list and count with the saved-place search, not the map pins", async () => {
+  const a = entry(1, null, { alias: "팔당 카페", kind: "riding_spot" });
+  const b = entry(2, null, { alias: "양수리 쉼터", kind: "riding_spot" });
+  mocks.controls.places = [a, b];
+  mocks.controls.favorites = [];
+  const r = await mount();
+  await act(async () => r.root.findByProps({ placeholder: "별명, 장소명, 주소" }).props.onChange({ target: { value: "팔당" } }));
+  expect(r.root.findAllByProps({ "aria-label": "양수리 쉼터 상세 보기" })).toHaveLength(0);
+  expect(text(r.root)).toContain("라이딩 스팟1곳 · 저장 장소 전체2 / 1,000");
+  const map = mocks.canvases.filter((canvas) => canvas.onSelectSavedCluster).at(-1)!;
+  expect((map.savedPins as Array<{ id: string }>).map((pin) => pin.id)).toEqual([a.id, b.id]);
+  await act(async () => r.unmount());
+});

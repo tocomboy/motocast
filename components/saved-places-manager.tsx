@@ -140,20 +140,26 @@ function SavedPlacesManagerContent({
   const preview = selected ? undefined : saved.places.find((p) => p.id === previewId);
   function selectPlace(id: string | null) { setSavedSelection(null); setSelectedId(id); }
   const blocked = saved.busy || saved.status !== "ready";
-  const filtered = useMemo(
+  const inRegion = useMemo(
     () =>
       saved.places.filter(
         (p) =>
-          (!province ||
-            (province === "unknown"
-              ? p.province === null
-              : p.province === province)) &&
-          (!query.trim() ||
-            `${savedPlaceName(p)} ${p.place.name} ${p.place.address}`
-              .toLocaleLowerCase()
-              .includes(query.trim().toLocaleLowerCase())),
+          !province ||
+          (province === "unknown" ? p.province === null : p.province === province),
       ),
-    [saved.places, province, query],
+    [saved.places, province],
+  );
+  // The saved-place search narrows only the list and its count; map pins follow region and layers.
+  const filtered = useMemo(
+    () =>
+      inRegion.filter(
+        (p) =>
+          !query.trim() ||
+          `${savedPlaceName(p)} ${p.place.name} ${p.place.address}`
+            .toLocaleLowerCase()
+            .includes(query.trim().toLocaleLowerCase()),
+      ),
+    [inRegion, query],
   );
   const starredCount = saved.favorites.length;
   const full = starredCount >= FREQUENT_PLACE_LIMIT;
@@ -161,7 +167,7 @@ function SavedPlacesManagerContent({
     .filter((p) => (tab === "starred" ? p.starPosition !== null : p.kind === tab))
     .sort((a, b) => (tab === "starred" ? a.starPosition! - b.starPosition! : 0));
   // Only the visible layers reach the map, so cluster counts match what is shown.
-  const pins = filtered
+  const pins = inRegion
     .filter(
       (p) =>
         (tab !== "starred" || p.starPosition !== null) &&
