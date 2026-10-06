@@ -4,10 +4,21 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 const currentVersion = (JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as { version: string }).version;
+const releasesSource = readFileSync(path.join(process.cwd(), "lib/releases.ts"), "utf8");
 const expectedVersions = Array.from(
-  readFileSync(path.join(process.cwd(), "lib/releases.ts"), "utf8").matchAll(/version: "(\d+\.\d+\.\d+)"/g),
+  releasesSource.matchAll(/version: "(\d+\.\d+\.\d+)"/g),
   (match) => match[1],
 );
+// The announcement shows the current release's notes; read its first bullet so a version bump
+// does not leave this test pinned to an older release.
+function firstBullet(source: string, version: string) {
+  const release = source.indexOf(`version: "${version}"`);
+  const bullets = release < 0 ? -1 : source.indexOf("bullets: [", release);
+  const literal = bullets < 0 ? null : /"(?:[^"\\]|\\.)*"/.exec(source.slice(bullets));
+  if (!literal) throw new Error(`lib/releases.ts has no bullets for ${version}`);
+  return JSON.parse(literal[0]) as string;
+}
+const currentFirstBullet = firstBullet(releasesSource, currentVersion);
 
 test.describe("public update notes", () => {
   test("shows one current-version announcement per server identity decision", async ({ page }) => {
@@ -31,7 +42,7 @@ test.describe("public update notes", () => {
     const dialog = page.getByRole("dialog", { name: "새로운 소식을 확인해 보세요" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`현재 v${currentVersion}`)).toBeVisible();
-    await expect(dialog.getByText("경로를 계산한 뒤 '음식점 추천 받기'로 들를 식당 1곳 또는 2곳을 추천받아요.")).toBeVisible();
+    await expect(dialog.getByText(currentFirstBullet)).toBeVisible();
     const layout = await dialog.evaluate((element) => ({
       dialogHasNoHorizontalOverflow: element.scrollWidth <= element.clientWidth,
       documentHasNoHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
