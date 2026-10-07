@@ -109,6 +109,7 @@ beforeEach(() => {
     busy: false,
     message: "",
     failureTitle: "",
+    current: () => ({ status: mocks.controls.status, places: mocks.controls.places }),
     captureSnapshot: () => () => true,
     star: vi.fn(async () => ({ ok: true })),
     deletePlace: vi.fn(async () => ({ ok: true })),
@@ -131,9 +132,14 @@ it("pin/list selection and confirmation cancellation send no write or waypoint r
   await act(async () => button(r, "취소").props.onClick());
   expect(mocks.controls.star).not.toHaveBeenCalled();
   await act(async () => button(r, "장소 삭제").props.onClick());
-  // FP37: the popup has no X; cancel, Escape and the backdrop only close it.
+  // UI-001: the popup shows a close X; X, cancel, Escape and the backdrop only close it.
   expect(text(r.root)).toContain("되돌릴 수 없어요");
   const popup = () => r.root.findAll((node) => node.type === "dialog" && text(node).includes("이 장소를 삭제할까요?"));
+  const closeX = popup()[0].findByProps({ "aria-label": "닫기" });
+  expect(closeX.props.disabled).toBe(false);
+  await act(async () => closeX.props.onClick());
+  expect(popup()).toHaveLength(0);
+  await act(async () => button(r, "장소 삭제").props.onClick());
   await act(async () => popup()[0].props.onCancel({ preventDefault: vi.fn(), stopPropagation: vi.fn() }));
   expect(popup()).toHaveLength(0);
   expect(mocks.controls.deletePlace).not.toHaveBeenCalled();

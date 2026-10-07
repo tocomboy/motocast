@@ -15,7 +15,7 @@ import {
 } from "./map-point-confirmation";
 import { SavedDialog } from "./saved-dialog";
 import { SavedPlaceRegistration } from "./saved-place-registration";
-import { useSavedPlaces, type SavedPlaceWrite } from "./saved-places-provider";
+import { useSavedPlaces, type SavedPlaceRecheck, type SavedPlaceWrite } from "./saved-places-provider";
 import {
   FREQUENT_PLACE_LIMIT,
   isRegionOnlyPlace,
@@ -57,6 +57,8 @@ type Pending = {
     /** FP39b text when the re-read list does not show the change. */
     notApplied: { title: string; message: string };
     run: () => Promise<SavedPlaceWrite>;
+    /** Effects of a confirmed change, also used when a read-only recheck finds it applied. */
+    onApplied?: () => void;
   };
   /** Information-only popups (FP36, duplicate save) replace confirm/cancel with these buttons. */
   buttons?: Array<{ label: string; primary?: boolean; onClick: () => void }>;
@@ -121,8 +123,9 @@ function SavedPlacesManagerContent({
   const [pending, setPending] = useState<Pending | null>(null);
   const popupKey = useRef(0);
   // Retries use the newest revision from the re-read list, never the one captured at open.
-  const placesRef = useRef(saved.places);
-  useEffect(() => { placesRef.current = saved.places; }, [saved.places]);
+  // Runs read the provider's state at the moment they run: a list that failed to load is empty
+  // but proves nothing, and a re-read list is used before the next render.
+  const statusRef = { get current() { return saved.current().status; } };
   const [adding, setAdding] = useState<SavedPlaceEntry | null>(null);
   const [mapAttempt, setMapAttempt] = useState(0);
   const [wide, setWide] = useState(false);
@@ -185,7 +188,7 @@ function SavedPlacesManagerContent({
   const startView = selected?.place ?? routePoints[0] ?? saved.places[0]?.place ?? { latitude: 37.5665, longitude: 126.978 };
   function manageStars() { selectPlace(null); setTab("starred"); setProvince(""); setQuery(""); }
 
-  const latest = (id: string) => placesRef.current.find((row) => row.id === id);
+  const latest = (id: string) => saved.current().places.find((row) => row.id === id);
   const placeCard = (p: SavedPlaceEntry, withProvince = true) => ({
     eyebrow: withProvince ? `${kindLabel(p.kind)} · ${p.province ?? "지역 미확인"}` : kindLabel(p.kind),
     region: false,
@@ -193,6 +196,9 @@ function SavedPlacesManagerContent({
     line: p.alias ? `원래 이름 · ${p.place.name}` : placeLine(p),
   });
   const notFound: SavedPlaceWrite = { ok: false, reason: "rejected", title: "장소를 찾지 못했어요", message: "다른 곳에서 삭제됐을 수 있어요. 최신 목록을 확인해 주세요." };
+  const unreadable: SavedPlaceWrite = { ok: false, reason: "blocked", title: "목록을 확인하지 못했어요", message: "목록을 다시 불러온 뒤에 시도할 수 있어요." };
+  /** Popup replaced by another one; the old popup shows nothing. */
+  const replaced: SavedPlaceWrite = { ok: false, reason: "blocked", title: "", message: "" };
   function open(next: Omit<Pending, "key">) { setPending({ ...next, key: ++popupKey.current }); }
 
   function confirm(p: SavedPlaceEntry, action: "star" | "delete") {
@@ -223,12 +229,15 @@ function SavedPlacesManagerContent({
           checking: "삭제됐는지 확인하고 있어요",
           notApplied: { title: "삭제되지 않았어요", message: "목록을 다시 확인했지만 장소가 그대로 있어요. 다시 삭제하려면 \"장소 삭제\"를 눌러 주세요." },
           run: async () => {
+            if (statusRef.current !== "ready") return unreadable;
             const current = latest(p.id);
+            // Absent from a list that did load: already deleted.
             if (!current) return { ok: true };
             const write = await saved.deletePlace(current);
             if (write.ok) selectPlace(null);
             return write;
           },
+          onApplied: () => selectPlace(null),
         },
       });
       return;
@@ -246,6 +255,7 @@ function SavedPlacesManagerContent({
           ? { title: "추가되지 않았어요", message: "목록을 다시 확인했지만 별표가 없어요. 다시 추가하려면 \"추가\"를 눌러 주세요." }
           : { title: "별표가 그대로예요", message: "목록을 다시 확인했지만 별표가 남아 있어요. 다시 빼려면 \"별표 빼기\"를 눌러 주세요." },
         run: async () => {
+          if (statusRef.current !== "ready") return unreadable;
           const current = latest(p.id);
           if (!current) return notFound;
           if ((current.starPosition !== null) === starred) return { ok: true };
@@ -258,44 +268,90 @@ function SavedPlacesManagerContent({
     });
   }
 
+  /** FP38. `edits` holds only the fields the rider changed; the others always follow the newest row. */
+  function confirmEdit(base: SavedPlaceEntry, edits: { alias?: string; kind?: SavedPlaceKind }, retryNote?: string) {
+    const alias = edits.alias ?? base.alias ?? "";
+    const kind = edits.kind ?? base.kind;
+    const place = base.place;
+    const region = isRegionOnlyPlace(place);
+    const changes = [
+      ...((base.alias ?? "") !== alias ? [{ label: "별명", before: base.alias ?? `${place.name} (없음)`, after: alias || `${place.name} (없음)` }] : []),
+      ...(base.kind !== kind ? [{ label: "분류", before: kindLabel(base.kind), after: kindLabel(kind) }] : []),
+    ];
+    const card = { line: `원래 이름 · ${place.name}`, line2: region ? `상세 주소 없음 · ${place.address}` : place.roadAddress ?? place.address };
+    if (!changes.length) {
+      // Another device already made the same change; nothing is left to send.
+      open({
+        title: "이미 같은 값이에요",
+        card,
+        note: "다른 곳에서 같은 내용으로 바뀌었어요. 바뀐 것은 없어요.",
+        buttons: [{ label: "닫기", primary: true, onClick: () => { setPending(null); setForm(null); } }],
+      });
+      return;
+    }
+    const reopen = (fresh: SavedPlaceEntry) => confirmEdit(fresh, edits, "다른 곳에서 바뀐 내용을 반영했어요. 바뀐 값만 다시 확인해 주세요.");
+    open({
+      title: "별명과 분류를 수정할까요?",
+      card,
+      changes,
+      note: retryNote ?? "바뀐 값만 보여요. 원래 이름·위치와 자주 찾는 장소 별표는 그대로예요.",
+      confirm: {
+        label: "확인하고 수정",
+        busyLabel: "수정하는 중…",
+        checking: "수정됐는지 확인하고 있어요",
+        notApplied: { title: "수정되지 않았어요", message: "목록을 다시 확인했지만 바뀐 내용이 없어요. 입력 내용은 그대로예요. 다시 수정하려면 \"확인하고 수정\"을 눌러 주세요." },
+        run: async () => {
+          if (statusRef.current !== "ready") return unreadable;
+          const current = latest(base.id);
+          if (!current) return notFound;
+          // A newer row changes what "before" means: show the recalculated change first.
+          if (current.revision !== base.revision) { reopen(current); return replaced; }
+          const write = await saved.edit(current, alias, kind);
+          if (write.ok) setForm(null);
+          else if (write.stale) {
+            const fresh = latest(base.id);
+            if (!fresh) return notFound;
+            reopen(fresh);
+            return replaced;
+          }
+          return write;
+        },
+        onApplied: () => setForm(null),
+      },
+    });
+  }
+
   function confirmSave(place: PlaceSearchResult, alias: string, kind: SavedPlaceKind, starred: boolean, existing?: SavedPlaceEntry, retryNote?: string) {
+    if (existing) {
+      const name = alias.trim();
+      confirmEdit(existing, {
+        ...((existing.alias ?? "") !== name ? { alias: name } : {}),
+        ...(existing.kind !== kind ? { kind } : {}),
+      }, retryNote);
+      return;
+    }
     const region = isRegionOnlyPlace(place);
     const name = alias.trim();
     const rows = [
       { label: "별명", value: name || "없음 · 원래 이름으로 표시" },
       { label: "분류", value: kindLabel(kind) },
       ...(region ? [{ label: "주소", value: `상세 주소 없음 · ${place.address}` }] : []),
-      ...(existing ? [] : [starred
+      starred
         ? { label: "자주 찾는 장소", value: "추가", count: `${starredCount} → ${starredCount + 1} / ${FREQUENT_PLACE_LIMIT}` }
-        : { label: "자주 찾는 장소", value: full ? `추가 안 함 · ${starredCount} / ${FREQUENT_PLACE_LIMIT} 가득 참` : "추가 안 함" }]),
+        : { label: "자주 찾는 장소", value: full ? `추가 안 함 · ${starredCount} / ${FREQUENT_PLACE_LIMIT} 가득 참` : "추가 안 함" },
     ];
-    const changes = existing ? [
-      ...((existing.alias ?? "") !== name ? [{ label: "별명", before: existing.alias ?? `${place.name} (없음)`, after: name || `${place.name} (없음)` }] : []),
-      ...(existing.kind !== kind ? [{ label: "분류", before: kindLabel(existing.kind), after: kindLabel(kind) }] : []),
-    ] : undefined;
     open({
-      title: existing ? "별명과 분류를 수정할까요?" : "이 장소를 저장할까요?",
-      card: existing
-        ? { line: `원래 이름 · ${place.name}`, line2: region ? `상세 주소 없음 · ${place.address}` : place.roadAddress ?? place.address }
-        : { eyebrow: kindLabel(kind), region, name: name || place.name, line: name ? `원래 이름 · ${place.name}` : place.roadAddress ?? place.address },
-      rows: existing ? undefined : rows,
-      changes,
-      note: retryNote ?? (existing ? "바뀐 값만 보여요. 원래 이름·위치와 자주 찾는 장소 별표는 그대로예요." : !starred && full ? "자주 찾는 장소가 가득 차 별표 없이 저장해요." : "원래 위치는 그대로 저장돼요."),
+      title: "이 장소를 저장할까요?",
+      card: { eyebrow: kindLabel(kind), region, name: name || place.name, line: name ? `원래 이름 · ${place.name}` : place.roadAddress ?? place.address },
+      rows,
+      note: retryNote ?? (!starred && full ? "자주 찾는 장소가 가득 차 별표 없이 저장해요." : "원래 위치는 그대로 저장돼요."),
       confirm: {
-        label: existing ? "확인하고 수정" : "확인하고 저장",
-        busyLabel: existing ? "수정하는 중…" : "저장하는 중…",
-        checking: existing ? "수정됐는지 확인하고 있어요" : "저장됐는지 확인하고 있어요",
-        notApplied: existing
-          ? { title: "수정되지 않았어요", message: "목록을 다시 확인했지만 바뀐 내용이 없어요. 입력 내용은 그대로예요. 다시 수정하려면 \"확인하고 수정\"을 눌러 주세요." }
-          : { title: "저장되지 않았어요", message: "목록을 다시 확인했지만 이 장소가 없어요. 입력 내용은 그대로예요. 다시 저장하려면 \"확인하고 저장\"을 눌러 주세요." },
+        label: "확인하고 저장",
+        busyLabel: "저장하는 중…",
+        checking: "저장됐는지 확인하고 있어요",
+        notApplied: { title: "저장되지 않았어요", message: "목록을 다시 확인했지만 이 장소가 없어요. 입력 내용은 그대로예요. 다시 저장하려면 \"확인하고 저장\"을 눌러 주세요." },
         run: async () => {
-          if (existing) {
-            const current = latest(existing.id);
-            if (!current) return notFound;
-            const write = await saved.edit(current, alias, kind);
-            if (write.ok) setForm(null);
-            return write;
-          }
+          if (statusRef.current !== "ready") return unreadable;
           const write = await saved.save(place, alias, kind, starred);
           if (write.ok && write.duplicate) {
             // The server returns the place saved before without changing it.
@@ -308,7 +364,7 @@ function SavedPlacesManagerContent({
                 { label: "닫기", onClick: () => setPending(null) },
               ],
             });
-            return { ok: false, reason: "blocked", title: "", message: "" };
+            return replaced;
           }
           if (write.ok) {
             setForm(null);
@@ -316,10 +372,11 @@ function SavedPlacesManagerContent({
           } else if (write.reason === "star_limit") {
             // Another device filled the stars first: confirm saving without a star (FP29b).
             confirmSave(place, alias, kind, false, undefined, "자주 찾는 장소가 가득 차 별표 없이 저장할지 다시 확인해 주세요. 목록을 새로 불러왔어요.");
-            return { ok: false, reason: "blocked", title: "", message: "" };
+            return replaced;
           }
           return write;
         },
+        onApplied: () => { setForm(null); setSavedSelection(place.kakaoPlaceId); },
       },
     });
   }
@@ -616,6 +673,7 @@ function SavedPlacesManagerContent({
           pending={pending}
           busy={saved.busy}
           verifying={saved.verifying}
+          recheck={saved.recheck}
           capture={saved.captureSnapshot}
           onClose={() => setPending(null)}
         />
@@ -760,12 +818,14 @@ function ConfirmPopup({
   pending,
   busy,
   verifying,
+  recheck,
   capture,
   onClose,
 }: {
   pending: Pending;
   busy: boolean;
   verifying: boolean;
+  recheck: (applied: (list: SavedPlaceEntry[]) => boolean) => Promise<SavedPlaceRecheck>;
   capture: () => () => boolean;
   onClose: () => void;
 }) {
@@ -776,6 +836,9 @@ function ConfirmPopup({
   const [snapshot, setSnapshot] = useState(() => capture());
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<{ title: string; message: string; retry?: boolean } | null>(pending.error ?? null);
+  // Unknown without a readable list, or a receipt the list does not show yet: only reading is allowed.
+  const [readOnly, setReadOnly] = useState<{ check: (list: SavedPlaceEntry[]) => boolean; mismatch: boolean } | null>(null);
+  const [rechecking, setRechecking] = useState(false);
   useEffect(() => {
     mounted.current = true;
     const focus = document.activeElement;
@@ -797,10 +860,13 @@ function ConfirmPopup({
       const write = await action.run();
       if (!mounted.current) return;
       if (write.ok) onClose();
-      else if (write.reason !== "blocked" || write.message) {
+      else if ((write.reason === "unknown" && !write.checked) || write.reason === "mismatch") {
+        setError({ title: write.title, message: write.message });
+        setReadOnly(write.recheck ? { check: write.recheck, mismatch: write.reason === "mismatch" } : null);
+      } else if (write.reason !== "blocked" || write.message) {
         // FP39b: the list was re-read without the change, so the same confirm sends one new
         // request with the newest revision. FP39c: a clear refusal can be retried right away.
-        setError(write.reason === "unknown" && write.checked ? action.notApplied : { title: write.title, message: write.message, retry: write.reason !== "unknown" });
+        setError(write.reason === "unknown" ? action.notApplied : { title: write.title, message: write.message, retry: true });
         setSnapshot(() => capture());
       }
     } catch {
@@ -808,6 +874,33 @@ function ConfirmPopup({
     } finally {
       started.current = false;
       if (mounted.current) setRunning(false);
+    }
+  }
+  async function readAgain() {
+    const action = pending.confirm;
+    if (!action || !readOnly || started.current || busy) return;
+    started.current = true;
+    setRunning(true);
+    setRechecking(true);
+    try {
+      const result = await recheck(readOnly.check);
+      if (!mounted.current) return;
+      if (result === "applied") {
+        action.onApplied?.();
+        onClose();
+      } else if (result === "missing" && !readOnly.mismatch) {
+        // The list now proves the change is missing, so one new request may be confirmed.
+        setReadOnly(null);
+        setError(action.notApplied);
+        setSnapshot(() => capture());
+      } else {
+        setError(result === "missing"
+          ? { title: "목록에서 변경을 확인하지 못했어요", message: "변경 요청은 접수됐지만 최신 목록에 아직 보이지 않아요. 같은 요청은 다시 보내지 않아요. 잠시 뒤 목록을 다시 확인해 주세요." }
+          : { title: "목록을 확인하지 못했어요", message: "변경됐는지 아직 몰라요. 목록을 다시 확인한 뒤에 다시 시도할 수 있어요." });
+      }
+    } finally {
+      started.current = false;
+      if (mounted.current) { setRunning(false); setRechecking(false); }
     }
   }
   return (
@@ -819,7 +912,11 @@ function ConfirmPopup({
       onClick={(e) => { if (e.target === e.currentTarget) close(); }}
       onKeyDown={(e) => e.stopPropagation()}
     >
-      <h2 id={titleId}>{pending.title}</h2>
+      <div className={styles.popupHeader}>
+        <h2 id={titleId}>{pending.title}</h2>
+        {/* UI-001: popups show a close X; it only closes, and is locked while a request runs. */}
+        <button type="button" className={styles.popupClose} aria-label="닫기" disabled={running} onClick={close}><LineIcon name="close" /></button>
+      </div>
       <div className={styles.popupCard}>
         {pending.card.eyebrow ? <span className={styles.placeKind}>{pending.card.eyebrow}{pending.card.region ? <span className={styles.chip}>상세 주소 없음</span> : null}</span> : null}
         {pending.card.name ? <strong>{pending.card.name}</strong> : null}
@@ -841,26 +938,32 @@ function ConfirmPopup({
       ) : null}
       {pending.count ? <p className={styles.popupCount}><span>{pending.count.label}</span><b className={styles.countNumber}>{pending.count.value}</b></p> : null}
       {/* FP39a–c replace the note with the checking or failure card. */}
-      {pending.note && !error && !(running && verifying) ? <p className={styles.helper}>{pending.note}</p> : null}
+      {pending.note && !error && !(running && (verifying || rechecking)) ? <p className={styles.helper}>{pending.note}</p> : null}
       {!valid && !running && pending.confirm ? <p role="alert" className={styles.fieldError}>목록이나 계정이 바뀌었어요. 닫고 최신 장소를 다시 선택해 주세요.</p> : null}
-      {running && verifying && pending.confirm ? (
+      {running && (verifying || rechecking) && pending.confirm ? (
         <div className={styles.popupChecking} role="status">
           <strong>{pending.confirm.checking}</strong>
-          <p>응답을 받지 못해 목록을 다시 읽는 중이에요. 같은 요청을 다시 보내지 않아요.</p>
+          <p>{rechecking ? "목록을 다시 읽는 중이에요. 같은 요청을 다시 보내지 않아요." : "응답을 받지 못해 목록을 다시 읽는 중이에요. 같은 요청을 다시 보내지 않아요."}</p>
           <span className={styles.progress} aria-hidden="true"><span /></span>
         </div>
       ) : error ? <div className={styles.errorCard} role="alert"><strong>{error.title}</strong><p>{error.message}</p></div> : null}
       <div className={styles.popupActions}>
         {pending.confirm ? (
           <>
-            <button
-              type="button"
-              className={pending.confirm.danger ? styles.destructiveButton : "primary-button"}
-              disabled={busy || running || !valid}
-              onClick={() => void confirm()}
-            >
-              {running ? (verifying ? "확인 중…" : pending.confirm.busyLabel) : error?.retry ? "다시 시도" : pending.confirm.label}
-            </button>
+            {readOnly ? (
+              <button type="button" className="primary-button" disabled={busy || running} onClick={() => void readAgain()}>
+                {running ? "확인 중…" : "목록 다시 확인"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={pending.confirm.danger ? styles.destructiveButton : "primary-button"}
+                disabled={busy || running || !valid}
+                onClick={() => void confirm()}
+              >
+                {running ? (verifying ? "확인 중…" : pending.confirm.busyLabel) : error?.retry ? "다시 시도" : pending.confirm.label}
+              </button>
+            )}
             <button type="button" className={styles.secondaryButton} disabled={running} onClick={close}>취소</button>
           </>
         ) : (pending.buttons ?? []).map((button) => (

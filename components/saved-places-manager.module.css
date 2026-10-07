@@ -587,3 +587,9 @@
 .page .pcDetail .detailSummary strong { font-size: 1.0625rem; font-weight: 700; }
 .page .pcDetail .detailSummary > span:not(.placeKind):not(.starIconButton) { font-size: .8125rem; color: var(--mc-text-secondary); }
 .page .pcDetail .starSaved { justify-content: center; }
+
+/* UI-001: confirmation popups keep a close X beside the title (same as v2 dialogs). */
+.popupHeader { display: flex; align-items: flex-start; gap: 12px; }
+.popupHeader h2 { flex: 1; min-width: 0; padding-top: 12px; }
+.popup .popupClose { flex: 0 0 48px; width: 48px; height: 48px; min-height: 48px; display: grid; place-items: center; padding: 0; border: 1px solid var(--mc-border-default); border-radius: 14px; background: var(--mc-surface-card); color: var(--mc-text-primary); cursor: pointer; }
+.popup .popupClose:disabled { opacity: .45; cursor: default; }

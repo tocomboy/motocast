@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
+import { withClientTimeout } from "@/lib/planner/client-timeout";
 import {
   favoritePlacePayload,
   type PlaceFavorite,
@@ -50,7 +51,29 @@ type Receipt =
  */
 export type SavedPlaceWrite =
   | { ok: true; id?: string; duplicate?: boolean }
-  | { ok: false; reason: "rejected" | "star_limit" | "unknown" | "blocked"; title: string; message: string; checked?: boolean };
+  | {
+      ok: false;
+      /**
+       * - unknown: no readable result. `checked` says whether a fresh list was read; only then may the
+       *   rider confirm one new request. Without it, `recheck` (read only) must succeed first.
+       * - mismatch: the server returned a receipt but the list still disagrees after the fixed re-reads.
+       *   The write is committed, so only `recheck` is allowed, never a resend.
+       */
+      reason: "rejected" | "star_limit" | "unknown" | "mismatch" | "blocked";
+      title: string;
+      message: string;
+      checked?: boolean;
+      stale?: boolean;
+      recheck?: (list: SavedPlaceEntry[]) => boolean;
+    };
+/** Outcome of a read-only recheck of an earlier write. */
+export type SavedPlaceRecheck = "applied" | "missing" | "unreadable";
+
+/** Client time limits. Supabase's `authenticated` role ends statements after 8s
+ * (statement_timeout), so a write still pending after 15s (8s plus network and auth refresh margin)
+ * is treated as an unknown result and checked by reading the list. A list read gets 10s. */
+export const SAVED_PLACE_WRITE_TIMEOUT_MS = 15_000;
+export const SAVED_PLACE_READ_TIMEOUT_MS = 10_000;
 type SavedPlacesControls = {
   accountEpoch: number;
   places: SavedPlaceEntry[];
@@ -62,6 +85,10 @@ type SavedPlacesControls = {
   failureTitle: string;
   /** True while an unknown write result is checked against a fresh list (FP39a). */
   verifying: boolean;
+  /** The latest loaded list and its state, as known right now (not as of the last render). */
+  current: () => { status: State; places: SavedPlaceEntry[] };
+  /** Read-only check of an earlier write against a fresh list; never sends a write. */
+  recheck: (applied: (list: SavedPlaceEntry[]) => boolean) => Promise<SavedPlaceRecheck>;
   retry: () => void;
   captureSnapshot: () => () => boolean;
   save: (
@@ -103,6 +130,13 @@ export function SavedPlacesProvider({
   const session = useRef(0);
   const user = useRef<string | null | undefined>(undefined);
   const operation = useRef<symbol | null>(null);
+  // Writes decide on the current state, not on the render that created the callback.
+  const statusRef = useRef<State>(status);
+  const placesRef = useRef<SavedPlaceEntry[]>(places);
+  useEffect(() => { statusRef.current = status; }, [status]);
+  useEffect(() => { placesRef.current = places; }, [places]);
+  // Only the operation that started checking may end the FP39a state.
+  const verifyingOwner = useRef<symbol | null>(null);
 
   const load = useCallback(
     async (owner?: symbol): Promise<SavedPlaceEntry[] | null> => {
@@ -115,13 +149,16 @@ export function SavedPlacesProvider({
         const client = getBrowserSupabase();
         if (!client) throw new Error("UNAVAILABLE");
         // One view select is one snapshot of places, stars and revisions.
-        const { data, error } = await client
-          .from("saved_place_entries")
-          .select(
-            "id,place,alias,kind,province,star_slot,star_position,revision,created_at,updated_at",
-          )
-          .order("created_at")
-          .limit(1001);
+        const { data, error } = await withClientTimeout<{ data: unknown; error: unknown }>(
+          client
+            .from("saved_place_entries")
+            .select(
+              "id,place,alias,kind,province,star_slot,star_position,revision,created_at,updated_at",
+            )
+            .order("created_at")
+            .limit(1001),
+          SAVED_PLACE_READ_TIMEOUT_MS,
+        );
         if (
           !mounted.current ||
           read !== generation.current ||
@@ -130,6 +167,8 @@ export function SavedPlacesProvider({
           return null;
         if (error) throw new Error("READ_FAILED");
         const entries = parseSavedPlaceEntries(data);
+        placesRef.current = entries;
+        statusRef.current = "ready";
         setPlaces(entries);
         setStatus("ready");
         setMessage("");
@@ -141,6 +180,9 @@ export function SavedPlacesProvider({
           read === generation.current &&
           epoch === session.current
         ) {
+          // A late reply of this read must not overwrite the error state.
+          generation.current++;
+          statusRef.current = "error";
           setPlaces([]);
           setStatus("error");
           setMessage(
@@ -168,9 +210,11 @@ export function SavedPlacesProvider({
               session.current++;
               generation.current++;
               operation.current = null;
+              verifyingOwner.current = null;
               setAccountEpoch(session.current);
               setPlaces([]);
               setBusy(false);
+              setVerifying(false);
               if (id) {
                 window.setTimeout(() => {
                   if (mounted.current) void load();
@@ -202,12 +246,12 @@ export function SavedPlacesProvider({
       unknownMessage: string,
     ): Promise<SavedPlaceWrite> => {
       const client = getBrowserSupabase();
-      if (!enabled || !client || operation.current || status !== "ready")
-        return { ok: false, reason: "blocked", title: "지금은 변경할 수 없어요", message: "목록을 확인하는 중이에요. 잠시 뒤 다시 시도해 주세요." };
+      if (!enabled || !client || operation.current || statusRef.current !== "ready")
+        return { ok: false, reason: "blocked", title: "지금은 변경할 수 없어요", message: "목록을 확인한 뒤 다시 시도해 주세요." };
       const id = Symbol();
       operation.current = id;
       const epoch = session.current;
-      const before = new Set(places.map((p) => p.id));
+      const before = new Set(placesRef.current.map((p) => p.id));
       generation.current++;
       setBusy(true);
       const current = () =>
@@ -220,25 +264,38 @@ export function SavedPlacesProvider({
         setFailureTitle("");
         return { ok: true, ...extra };
       };
-      // A result we cannot read is checked against a fresh list; nothing is sent again.
+      // No readable result: compare a fresh list with what the write should have changed.
       const verify = async (): Promise<SavedPlaceWrite> => {
+        verifyingOwner.current = id;
         setVerifying(true);
-        const list = await load(id).finally(() => { if (mounted.current) setVerifying(false); });
+        let list: SavedPlaceEntry[] | null;
+        try {
+          list = await load(id);
+        } finally {
+          if (verifyingOwner.current === id) {
+            verifyingOwner.current = null;
+            if (mounted.current && epoch === session.current) setVerifying(false);
+          }
+        }
         if (!current()) return gone;
         if (list && applied(list)) return succeed(success);
         setMessage("");
         setFailureTitle("");
-        return {
-          ok: false,
-          reason: "unknown",
-          checked: Boolean(list),
-          title: "변경을 확인하지 못했어요",
-          message: list ? unknownMessage : "변경 결과와 최신 목록을 확인하지 못했어요. 다시 시도하면 최신 목록으로 한 번 요청해요.",
-        };
+        return list
+          ? { ok: false, reason: "unknown", checked: true, title: "변경을 확인하지 못했어요", message: unknownMessage, recheck: applied }
+          : { ok: false, reason: "unknown", checked: false, title: "목록을 확인하지 못했어요", message: "변경됐는지 아직 몰라요. 목록을 다시 확인한 뒤에 다시 시도할 수 있어요.", recheck: applied };
       };
+      let response: { data: unknown; error: { message: string } | null };
       try {
-        const { data, error } = await client.rpc(name, args);
+        response = await withClientTimeout<{ data: unknown; error: { message: string } | null }>(client.rpc(name, args), SAVED_PLACE_WRITE_TIMEOUT_MS);
+      } catch {
+        // Lost or timed-out reply: the result is unknown, and a late reply is ignored.
         if (!current()) return gone;
+        try { return await verify(); } finally { finish(); }
+      }
+      try {
+        if (!current()) return gone;
+        const { data, error } = response;
         if (error) {
           const failure = writeFailure(error.message);
           if (!failure) return await verify();
@@ -248,30 +305,68 @@ export function SavedPlacesProvider({
           // The page shows the FP03 card for an 11th star; other refusals stay in the popup.
           setMessage(failure.reason === "star_limit" ? message : "");
           setFailureTitle(failure.reason === "star_limit" ? failure.title : "");
-          return { ok: false, reason: failure.reason, title: failure.title, message };
+          return { ok: false, reason: failure.reason, stale: failure.stale, title: failure.title, message };
         }
-        const single = Array.isArray(data) && data.length === 1 ? data[0] : null;
         let receipt: Receipt;
-        if (result === "delete") {
-          receipt = { id: String(args.saved_place_id), deleted: true };
-        } else if (result === "entry") {
-          receipt = { ...parseSavedPlaceEntry(single), deleted: false };
-        } else {
-          const row = parseSavedPlace(single);
-          receipt = { id: row.id, revision: row.revision, alias: row.alias, kind: row.kind };
+        try {
+          const single = Array.isArray(data) && data.length === 1 ? data[0] : null;
+          if (result === "delete") {
+            receipt = { id: String(args.saved_place_id), deleted: true };
+          } else if (result === "entry") {
+            receipt = { ...parseSavedPlaceEntry(single), deleted: false };
+          } else {
+            const row = parseSavedPlace(single);
+            receipt = { id: row.id, revision: row.revision, alias: row.alias, kind: row.kind };
+          }
+        } catch {
+          // A malformed reply is not a receipt; only the field check is possible.
+          return await verify();
         }
-        // A list that does not show the committed write yet is read once more.
+        // With a receipt, the list must show it with an equal or newer revision within two reads.
+        const shows = (list: SavedPlaceEntry[]) => listShows(list, receipt);
+        let readable = false;
         for (let attempt = 0; attempt < 2; attempt++) {
           const list = await load(id);
           if (!current()) return gone;
-          if (!list) break;
-          if (listShows(list, receipt))
+          if (!list) continue;
+          readable = true;
+          if (shows(list))
             return succeed(success, { id: receipt.id, duplicate: result === "entry" && before.has(receipt.id) });
         }
-        return await verify();
-      } catch {
-        if (!current()) return gone;
-        return await verify();
+        setMessage("");
+        setFailureTitle("");
+        return {
+          ok: false,
+          reason: "mismatch",
+          checked: readable,
+          title: "목록에서 변경을 확인하지 못했어요",
+          message: "변경 요청은 접수됐지만 최신 목록에 아직 보이지 않아요. 같은 요청은 다시 보내지 않아요. 목록을 다시 확인해 주세요.",
+          recheck: shows,
+        };
+      } finally {
+        finish();
+      }
+      function finish() {
+        if (operation.current === id) {
+          operation.current = null;
+          if (mounted.current && epoch === session.current) setBusy(false);
+        }
+      }
+    },
+    [enabled, load],
+  );
+
+  const recheck = useCallback(
+    async (applied: (list: SavedPlaceEntry[]) => boolean): Promise<SavedPlaceRecheck> => {
+      if (!enabled || operation.current) return "unreadable";
+      const id = Symbol();
+      operation.current = id;
+      const epoch = session.current;
+      setBusy(true);
+      try {
+        const list = await load(id);
+        if (!mounted.current || epoch !== session.current || operation.current !== id || !list) return "unreadable";
+        return applied(list) ? "applied" : "missing";
       } finally {
         if (operation.current === id) {
           operation.current = null;
@@ -279,7 +374,7 @@ export function SavedPlacesProvider({
         }
       }
     },
-    [enabled, load, status, places],
+    [enabled, load],
   );
 
   const star = useCallback(
@@ -344,6 +439,8 @@ export function SavedPlacesProvider({
       message,
       failureTitle,
       verifying,
+      recheck,
+      current: () => ({ status: statusRef.current, places: placesRef.current }),
       retry: () => {
         void load();
       },
@@ -405,6 +502,7 @@ export function SavedPlacesProvider({
       message,
       failureTitle,
       verifying,
+      recheck,
       load,
       captureSnapshot,
       save,
@@ -416,7 +514,7 @@ export function SavedPlacesProvider({
 }
 
 /** Known server refusals; anything else (network, timeout, unexpected reply) has an unknown result. */
-function writeFailure(code: string): { reason: "rejected" | "star_limit"; title: string; message: string } | null {
+function writeFailure(code: string): { reason: "rejected" | "star_limit"; title: string; message: string; stale?: boolean } | null {
   if (code.includes("STAR_LIMIT") || code.includes("FAVORITE_LIMIT"))
     return {
       reason: "star_limit",
@@ -432,7 +530,7 @@ function writeFailure(code: string): { reason: "rejected" | "star_limit"; title:
       message: "별명을 입력해 주세요. 상세 주소가 없는 지점은 별명이 있어야 저장할 수 있어요.",
     };
   if (code.includes("SAVED_PLACE_STALE") || code.includes("SAVED_PLACE_NOT_FOUND"))
-    return { reason: "rejected", title: "변경하지 못했어요", message: "다른 곳에서 목록이 바뀌었어요. 최신 정보로 다시 확인해 주세요." };
+    return { reason: "rejected", stale: true, title: "변경하지 못했어요", message: "다른 곳에서 목록이 바뀌었어요. 최신 정보로 다시 확인해 주세요." };
   if (/\b[A-Z][A-Z_]{3,}\b/.test(code) && /INVALID|DENIED|FORBIDDEN|MEMBER/.test(code))
     return { reason: "rejected", title: "변경하지 못했어요", message: "요청이 거부됐어요. 입력 내용을 확인한 뒤 다시 시도해 주세요." };
   return null;

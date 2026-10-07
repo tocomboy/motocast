@@ -288,10 +288,9 @@ it("re-reads once when the list lags the write receipt and then accepts the matc
   await act(async () => renderer.unmount());
 });
 
-it("reports an unknown result when the list still disagrees after re-reading, keeps the list and never resends", async () => {
+it("keeps comparing revisions when a receipt never shows up and offers only a read-only recheck", async () => {
   const stale = { ...row, star_slot: null, star_position: null };
   mocks.reads.push(
-    Promise.resolve({ data: [stale], error: null }),
     Promise.resolve({ data: [stale], error: null }),
     Promise.resolve({ data: [stale], error: null }),
     Promise.resolve({ data: [stale], error: null }),
@@ -302,19 +301,47 @@ it("reports an unknown result when the list still disagrees after re-reading, ke
   await act(async () => {
     write = await controls.star(controls.places[0], true);
   });
-  expect(write).toMatchObject({ ok: false, reason: "unknown" });
-  expect(!write.ok && write.message).toContain("반영되지 않았어요");
+  // Two reads that still show revision 1 are a mismatch, not a field-only success.
+  expect(write).toMatchObject({ ok: false, reason: "mismatch", checked: true });
   expect(mocks.rpc).toHaveBeenCalledTimes(1);
-  expect(mocks.tables).toHaveLength(4);
+  expect(mocks.tables).toHaveLength(3);
   expect(controls.status).toBe("ready");
   expect(controls.places).toHaveLength(1);
-  // The user's next confirm sends exactly one request with the re-read revision.
+  // A lower-revision list with the right fields is still not the receipt.
+  mocks.reads.push(Promise.resolve({ data: [{ ...stale, star_slot: 5, star_position: 5, revision: 1 }], error: null }));
+  const recheck = !write.ok ? write.recheck! : () => false;
+  await act(async () => { expect(await controls.recheck(recheck)).toBe("missing"); });
   mocks.reads.push(Promise.resolve({ data: [{ ...stale, star_position: 7, revision: 2 }], error: null }));
-  await act(async () => {
-    expect(await controls.star(controls.places[0], true)).toMatchObject({ ok: true });
-  });
-  expect(mocks.rpc).toHaveBeenCalledTimes(2);
-  expect(mocks.rpc).toHaveBeenLastCalledWith("set_place_star", { saved_place_id: row.id, expected_revision: 1, starred: true });
+  await act(async () => { expect(await controls.recheck(recheck)).toBe("applied"); });
+  expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+});
+
+it("does not let a former account's late read end the current account's checking state", async () => {
+  const first = deferred<{ data: unknown; error: unknown }>();
+  const second = deferred<{ data: unknown; error: unknown }>();
+  mocks.reads.push(Promise.resolve({ data: [row], error: null }));
+  const renderer = await mount();
+  mocks.reads.push(Promise.resolve({ data: [row], error: null }));
+  await act(async () => { mocks.listener?.("INITIAL_SESSION", { user: { id: "owner-a" } }); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: "Failed to fetch" } });
+  mocks.reads.push(first.promise);
+  let a!: Promise<SavedPlaceWrite>;
+  await act(async () => { a = controls.star(controls.places[0], false); });
+  expect(controls.verifying).toBe(true);
+  mocks.reads.push(Promise.resolve({ data: [row], error: null }));
+  await act(async () => { mocks.listener?.("SIGNED_IN", { user: { id: "owner-b" } }); });
+  expect(controls.verifying).toBe(false);
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: "Failed to fetch" } });
+  mocks.reads.push(second.promise);
+  let b!: Promise<SavedPlaceWrite>;
+  await act(async () => { b = controls.star(controls.places[0], false); });
+  expect(controls.verifying).toBe(true);
+  await act(async () => { first.resolve({ data: [row], error: null }); await a; });
+  expect(controls.verifying).toBe(true);
+  await act(async () => { second.resolve({ data: [{ ...row, star_slot: null, star_position: null, revision: 2 }], error: null }); await b; });
+  expect(controls.verifying).toBe(false);
   await act(async () => renderer.unmount());
 });
 
