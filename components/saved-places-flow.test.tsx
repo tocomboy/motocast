@@ -137,6 +137,10 @@ it("V3-1: an unclear save becomes re-confirmable only after a readable list show
   await act(async () => buttons(r, "확인하고 저장")[0].props.onClick());
   await settle();
   expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  // The confirmed save closes the popup and opens the saved place.
+  expect(popup(r)).toBeUndefined();
+  expect(r.root.findAll((node) => node.type === "dialog" && node.props["aria-label"] === "장소 상세")).toHaveLength(1);
+  expect(r.root.findAllByProps({ "aria-label": "강변 상세 보기" }).length).toBeGreaterThan(0);
   await act(async () => r.unmount());
 });
 
@@ -189,6 +193,32 @@ it("V3-3: a write and its re-read that never answer end within the time limits w
   await settle();
   expect(mocks.rpc).toHaveBeenCalledTimes(1);
   expect(popupButton(r, "목록 다시 확인")).toBeDefined();
+  await act(async () => r.unmount());
+});
+
+it("V3-3: a re-read that times out ignores its late reply", async () => {
+  mocks.reads.push(ok([row()]));
+  const r = await mount();
+  await openDetail(r);
+  await act(async () => buttons(r, "장소 삭제").at(-1)!.props.onClick());
+  mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: "TypeError: Failed to fetch" } });
+  let lateRead!: (value: Reply) => void;
+  mocks.reads.push(new Promise<Reply>((resolve) => { lateRead = resolve; }));
+  await act(async () => popup(r)!.findAllByType("button").find((b) => text(b) === "장소 삭제")!.props.onClick());
+  await settle();
+  expect(text(popup(r)!)).toContain("삭제됐는지 확인하고 있어요");
+  await act(async () => { vi.advanceTimersByTime(SAVED_PLACE_READ_TIMEOUT_MS); });
+  await settle();
+  const before = text(r.root);
+  expect(text(popup(r)!)).toContain("목록을 확인하지 못했어요");
+  // An empty list arriving after the timeout would look like "deleted"; it must change nothing.
+  await act(async () => { lateRead({ data: [], error: null }); });
+  await settle();
+  expect(text(r.root)).toBe(before);
+  expect(popup(r)).toBeDefined();
+  expect(popupButton(r, "목록 다시 확인")).toBeDefined();
+  expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  expect(mocks.readCount).toBe(2);
   await act(async () => r.unmount());
 });
 

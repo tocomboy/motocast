@@ -69,9 +69,11 @@ export type SavedPlaceWrite =
 /** Outcome of a read-only recheck of an earlier write. */
 export type SavedPlaceRecheck = "applied" | "missing" | "unreadable";
 
-/** Client time limits. Supabase's `authenticated` role ends statements after 8s
- * (statement_timeout), so a write still pending after 15s (8s plus network and auth refresh margin)
- * is treated as an unknown result and checked by reading the list. A list read gets 10s. */
+/** Client wait policy, not a server guarantee. A write is awaited for 15s and a list read for
+ * 10s; after that the client stops waiting. The server-side statement timeout for these calls is
+ * not confirmed in this repository, and a client timeout neither cancels nor ends the server write:
+ * the write may still commit later. That is why a timed-out write is an unknown result that is
+ * only checked by reading the list, never resent automatically. */
 export const SAVED_PLACE_WRITE_TIMEOUT_MS = 15_000;
 export const SAVED_PLACE_READ_TIMEOUT_MS = 10_000;
 type SavedPlacesControls = {
