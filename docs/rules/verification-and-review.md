@@ -1,6 +1,6 @@
 # MOTOCAST verification and review rules
 
-This document holds only MOTOCAST-specific verification: commands, required scenarios, review axes and deployment gates. Generic rules are owned by the personal global guidance and its [role policy](https://github.com/tocomboy/dev-environment/blob/main/docs/routing-policy.md) and are not copied here: roles and delegation, Codex checkpoints (V3 required, V1/V2 optional), the pre-V3 implementer bar, re-verification scope, verifier execution modes and effort, and [finding triage](https://github.com/tocomboy/dev-environment/blob/main/docs/routing-policy.md#finding-triage). When this document and the role policy overlap, the role policy wins unless a rule here is explicitly a stricter MOTOCAST addition.
+This document holds only MOTOCAST-specific verification: commands, required scenarios, review axes and deployment gates. Generic rules are owned by the personal global guidance and its [role policy](https://github.com/tocomboy/dev-environment/blob/main/docs/routing-policy.md) and are not copied here: roles and delegation, Codex checkpoints (V3 required, V1/V2 optional), the pre-V3 implementer bar, re-verification scope, verifier execution modes and effort, and [finding triage](https://github.com/tocomboy/dev-environment/blob/main/docs/routing-policy.md#finding-triage). Every rule here is a project addition that keeps those rules intact. MOTOCAST has no registered [project exception](https://github.com/tocomboy/dev-environment/blob/main/docs/project-exceptions.md); a rule here that contradicts the role policy is stale wording, and the role policy applies.
 
 ## 1. Evidence and result taxonomy
 
@@ -117,9 +117,7 @@ Acceptance and Codex verification target the fixed candidate commit SHA, not a m
 - The commit contains no user-owned `.gitignore` or unrelated changes unless explicitly included and reviewed.
 - The orchestrator checks the Decision IDs of `docs/product/MOTOCAST_SOT.md`, invariants, file scope, acceptance criteria and reusable verification evidence directly.
 
-## 5. Codex checkpoint timing and review axes
-
-Checkpoints follow the role policy. MOTOCAST addition: the V3 report for the fixed candidate is recorded before a `develop` integration or `develop -> main` merge and before the hosted Preview or Production mutation that depends on it; until then the work record states `V3 pending`.
+## 5. Review axes
 
 The orchestrator performs these review axes on the exact changed set:
 
@@ -134,7 +132,7 @@ The orchestrator performs these review axes on the exact changed set:
 
 Findings are triaged by the role policy's [finding triage](https://github.com/tocomboy/dev-environment/blob/main/docs/routing-policy.md#finding-triage); severity does not by itself block a merge. MOTOCAST additions:
 
-- A finding names the violated Decision ID or invariant and its user, security, data or operations impact.
+- Each finding carries an impact Severity (`BLOCKER`, `HIGH`, `MEDIUM` or `LOW`) for ordering only, and names the violated Decision ID or invariant and its user, security, data or operations impact.
 - The threat model in a verification request cites the user's recorded risk acceptances in the Issue, PR or `docs/product/MOTOCAST_SOT.md`.
 - Merge and Production deployment also require the gates in sections 7-9, whatever the finding classes.
 - If the same root cause survives two correction rounds, reconsider the design, narrow the scope, or interview the user instead of expanding tests indefinitely.
