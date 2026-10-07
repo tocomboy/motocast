@@ -98,6 +98,49 @@ export function parseSavedPlaces(rows: unknown): SavedPlace[] {
   return result;
 }
 
+export const FREQUENT_PLACE_LIMIT = 10;
+export type StarPosition = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+/** A `saved_place_entries` row: the saved place plus its 1..10 star position. */
+export type SavedPlaceEntry = SavedPlace & { starPosition: StarPosition | null };
+
+export function parseSavedPlaceEntry(value: unknown): SavedPlaceEntry {
+  const saved = parseSavedPlace(value);
+  const position = (value as Record<string, unknown>).star_position;
+  if (
+    (position !== null &&
+      (!Number.isInteger(position) ||
+        Number(position) < 1 ||
+        Number(position) > FREQUENT_PLACE_LIMIT)) ||
+    // star_slot is the 1..5 mirror older clients read; it must agree with the star.
+    saved.starSlot !==
+      (position !== null && Number(position) <= 5 ? position : null)
+  )
+    throw new Error("INVALID_SAVED_PLACE");
+  return { ...saved, starPosition: position as StarPosition | null };
+}
+
+/** One view select is one snapshot, so a list that breaks the star rules is an
+ * error rather than something to repair locally. */
+export function parseSavedPlaceEntries(rows: unknown): SavedPlaceEntry[] {
+  if (!Array.isArray(rows) || rows.length > 1000)
+    throw new Error("INVALID_SAVED_PLACES");
+  const result = rows.map(parseSavedPlaceEntry);
+  const stars = result.filter((row) => row.starPosition !== null);
+  if (
+    new Set(result.map((row) => row.id)).size !== result.length ||
+    new Set(result.map((row) => row.place.kakaoPlaceId)).size !==
+      result.length ||
+    stars.length > FREQUENT_PLACE_LIMIT ||
+    new Set(stars.map((row) => row.starPosition)).size !== stars.length
+  )
+    throw new Error("INVALID_SAVED_PLACES");
+  return result;
+}
+
+/** Map points without any address carry this id suffix and always an alias. */
+export const isRegionOnlyPlace = (place: { kakaoPlaceId: string }) =>
+  /^map:-?\d+\.\d{7}:-?\d+\.\d{7}:region$/.test(place.kakaoPlaceId);
+
 export const savedPlaceName = (row: SavedPlace) => row.alias ?? row.place.name;
 export function savedAsFavorite(row: SavedPlace): PlaceFavorite {
   if (row.starSlot === null) throw new Error("NOT_STARRED");

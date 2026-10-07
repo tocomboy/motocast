@@ -1,6 +1,6 @@
 {
-  "contractVersion": "1.1.0",
-  "sourceCommit": "55949c0562a04c05c5da86e6313a8e577fb0032b",
+  "contractVersion": "1.2.0",
+  "sourceCommit": "8679f63fe472c21ac014c99d83fa2b43ab0fe298",
   "requests": [
     {
       "id": "defaults-and-whitespace",
@@ -336,6 +336,665 @@
         "latitude": 37.3
       },
       "error": "INVALID_PLACE_SEARCH_REQUEST"
+    },
+    {
+      "id": "region-opt-in",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": "region"
+      },
+      "expected": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": "region"
+      }
+    },
+    {
+      "id": "region-opt-in-rounding",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 37.338811234,
+        "longitude": 127.269952145,
+        "fallback": "region"
+      },
+      "expected": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": "region"
+      }
+    },
+    {
+      "id": "fallback-other-value",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": "address"
+      },
+      "error": "INVALID_PLACE_SEARCH_REQUEST"
+    },
+    {
+      "id": "fallback-uppercase",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": "REGION"
+      },
+      "error": "INVALID_PLACE_SEARCH_REQUEST"
+    },
+    {
+      "id": "fallback-null",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": null
+      },
+      "error": "INVALID_PLACE_SEARCH_REQUEST"
+    },
+    {
+      "id": "fallback-boolean",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": true
+      },
+      "error": "INVALID_PLACE_SEARCH_REQUEST"
+    },
+    {
+      "id": "opt-in-extra-query",
+      "input": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": "region",
+        "query": "test"
+      },
+      "error": "INVALID_PLACE_SEARCH_REQUEST"
+    }
+  ],
+  "coordinateSigningSecret": "fixture-signing-secret-for-unit-tests-only",
+  "coordinateSigningSecretMeaning": "Fixture-only HMAC secret for the verificationToken values in coordinateResponses; never a deployed secret.",
+  "coordinateResponses": [
+    {
+      "id": "address-without-opt-in",
+      "request": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521
+      },
+      "providerCalls": [
+        {
+          "endpoint": "coord2address",
+          "documents": [
+            {
+              "address": {
+                "address_name": "공개 시험 산 84-1",
+                "mountain_yn": "Y"
+              },
+              "road_address": null
+            }
+          ]
+        }
+      ],
+      "budgetCharges": 1,
+      "response": {
+        "places": [
+          {
+            "kakaoPlaceId": "map:37.3388112:127.2699521",
+            "name": "공개 시험 산 84-1",
+            "category": "지도에서 선택",
+            "address": "공개 시험 산 84-1",
+            "roadAddress": null,
+            "phone": null,
+            "placeUrl": null,
+            "latitude": 37.3388112,
+            "longitude": 127.2699521,
+            "verificationToken": "yV0KqqMd4-A1gLvDXw9PajEsYAJ8AkxAyR_Ham93vAg"
+          }
+        ],
+        "isEnd": true
+      }
+    },
+    {
+      "id": "address-with-opt-in",
+      "request": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": "region"
+      },
+      "providerCalls": [
+        {
+          "endpoint": "coord2address",
+          "documents": [
+            {
+              "address": {
+                "address_name": "공개 시험 산 84-1",
+                "mountain_yn": "Y"
+              },
+              "road_address": null
+            }
+          ]
+        }
+      ],
+      "budgetCharges": 1,
+      "response": {
+        "places": [
+          {
+            "kakaoPlaceId": "map:37.3388112:127.2699521",
+            "name": "공개 시험 산 84-1",
+            "category": "지도에서 선택",
+            "address": "공개 시험 산 84-1",
+            "roadAddress": null,
+            "phone": null,
+            "placeUrl": null,
+            "latitude": 37.3388112,
+            "longitude": 127.2699521,
+            "verificationToken": "yV0KqqMd4-A1gLvDXw9PajEsYAJ8AkxAyR_Ham93vAg"
+          }
+        ],
+        "isEnd": true
+      }
+    },
+    {
+      "id": "no-address-without-opt-in",
+      "request": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521
+      },
+      "providerCalls": [
+        {
+          "endpoint": "coord2address",
+          "documents": []
+        }
+      ],
+      "budgetCharges": 1,
+      "response": {
+        "places": [],
+        "isEnd": true
+      }
+    },
+    {
+      "id": "region-fallback",
+      "request": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": "region"
+      },
+      "providerCalls": [
+        {
+          "endpoint": "coord2address",
+          "documents": []
+        },
+        {
+          "endpoint": "coord2regioncode",
+          "documents": [
+            {
+              "region_type": "H",
+              "code": "4281035000",
+              "address_name": "강원특별자치도 인제군 기린면",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            },
+            {
+              "region_type": "B",
+              "code": "4281025030",
+              "address_name": "강원특별자치도 인제군 기린면 방동리",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면 방동리",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            }
+          ]
+        }
+      ],
+      "budgetCharges": 2,
+      "response": {
+        "places": [
+          {
+            "kakaoPlaceId": "map:37.3388112:127.2699521:region",
+            "name": "인제군 기린면 방동리 부근",
+            "category": "지도에서 선택 · 상세 주소 없음",
+            "address": "강원특별자치도 인제군 기린면 방동리",
+            "roadAddress": null,
+            "phone": null,
+            "placeUrl": null,
+            "latitude": 37.3388112,
+            "longitude": 127.2699521,
+            "verificationToken": "n20O7UaWIdH98R1G9r5jPulkOrSJ8KtOleHv4pf0ybs"
+          }
+        ],
+        "isEnd": true
+      }
+    },
+    {
+      "id": "region-none",
+      "request": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": "region"
+      },
+      "providerCalls": [
+        {
+          "endpoint": "coord2address",
+          "documents": []
+        },
+        {
+          "endpoint": "coord2regioncode",
+          "documents": [
+            {
+              "region_type": "H",
+              "code": "4281035000",
+              "address_name": "강원특별자치도 인제군 기린면",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            }
+          ]
+        }
+      ],
+      "budgetCharges": 2,
+      "response": {
+        "places": [],
+        "isEnd": true
+      }
+    },
+    {
+      "id": "region-two-legal",
+      "request": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": "region"
+      },
+      "providerCalls": [
+        {
+          "endpoint": "coord2address",
+          "documents": []
+        },
+        {
+          "endpoint": "coord2regioncode",
+          "documents": [
+            {
+              "region_type": "B",
+              "code": "4281025030",
+              "address_name": "강원특별자치도 인제군 기린면 방동리",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면 방동리",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            },
+            {
+              "region_type": "B",
+              "code": "4281025030",
+              "address_name": "강원특별자치도 인제군 기린면 방동리",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면 방동리",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            }
+          ]
+        }
+      ],
+      "budgetCharges": 2,
+      "error": {
+        "cause": "INVALID_PLACE_PROVIDER_RESPONSE",
+        "status": 502
+      }
+    },
+    {
+      "id": "region-over-ten-documents",
+      "request": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": "region"
+      },
+      "providerCalls": [
+        {
+          "endpoint": "coord2address",
+          "documents": []
+        },
+        {
+          "endpoint": "coord2regioncode",
+          "documents": [
+            {
+              "region_type": "B",
+              "code": "4281025030",
+              "address_name": "강원특별자치도 인제군 기린면 방동리",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면 방동리",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            },
+            {
+              "region_type": "H",
+              "code": "4281035000",
+              "address_name": "강원특별자치도 인제군 기린면",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            },
+            {
+              "region_type": "H",
+              "code": "4281035000",
+              "address_name": "강원특별자치도 인제군 기린면",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            },
+            {
+              "region_type": "H",
+              "code": "4281035000",
+              "address_name": "강원특별자치도 인제군 기린면",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            },
+            {
+              "region_type": "H",
+              "code": "4281035000",
+              "address_name": "강원특별자치도 인제군 기린면",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            },
+            {
+              "region_type": "H",
+              "code": "4281035000",
+              "address_name": "강원특별자치도 인제군 기린면",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            },
+            {
+              "region_type": "H",
+              "code": "4281035000",
+              "address_name": "강원특별자치도 인제군 기린면",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            },
+            {
+              "region_type": "H",
+              "code": "4281035000",
+              "address_name": "강원특별자치도 인제군 기린면",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            },
+            {
+              "region_type": "H",
+              "code": "4281035000",
+              "address_name": "강원특별자치도 인제군 기린면",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            },
+            {
+              "region_type": "H",
+              "code": "4281035000",
+              "address_name": "강원특별자치도 인제군 기린면",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            },
+            {
+              "region_type": "H",
+              "code": "4281035000",
+              "address_name": "강원특별자치도 인제군 기린면",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            }
+          ]
+        }
+      ],
+      "budgetCharges": 2,
+      "error": {
+        "cause": "INVALID_PLACE_PROVIDER_RESPONSE",
+        "status": 502
+      }
+    },
+    {
+      "id": "region-control-character",
+      "request": {
+        "mode": "coordinate",
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "fallback": "region"
+      },
+      "providerCalls": [
+        {
+          "endpoint": "coord2address",
+          "documents": []
+        },
+        {
+          "endpoint": "coord2regioncode",
+          "documents": [
+            {
+              "region_type": "B",
+              "code": "4281025030",
+              "address_name": "기린면\n방동리",
+              "region_1depth_name": "강원특별자치도",
+              "region_2depth_name": "인제군",
+              "region_3depth_name": "기린면 방동리",
+              "region_4depth_name": "",
+              "x": 128.2,
+              "y": 37.9
+            }
+          ]
+        }
+      ],
+      "budgetCharges": 2,
+      "error": {
+        "cause": "INVALID_PLACE_PROVIDER_RESPONSE",
+        "status": 502
+      }
+    }
+  ],
+  "coordinateClientChecks": [
+    {
+      "id": "address-id-without-opt-in",
+      "regionFallback": false,
+      "point": {
+        "latitude": 37.338811234,
+        "longitude": 127.269952145
+      },
+      "place": {
+        "kakaoPlaceId": "map:37.3388112:127.2699521",
+        "name": "공개 시험 산 84-1",
+        "category": "지도에서 선택",
+        "address": "공개 시험 산 84-1",
+        "roadAddress": null,
+        "phone": null,
+        "placeUrl": null,
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "verificationToken": "yV0KqqMd4-A1gLvDXw9PajEsYAJ8AkxAyR_Ham93vAg"
+      },
+      "accepted": true
+    },
+    {
+      "id": "address-id-with-opt-in",
+      "regionFallback": true,
+      "point": {
+        "latitude": 37.338811234,
+        "longitude": 127.269952145
+      },
+      "place": {
+        "kakaoPlaceId": "map:37.3388112:127.2699521",
+        "name": "공개 시험 산 84-1",
+        "category": "지도에서 선택",
+        "address": "공개 시험 산 84-1",
+        "roadAddress": null,
+        "phone": null,
+        "placeUrl": null,
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "verificationToken": "yV0KqqMd4-A1gLvDXw9PajEsYAJ8AkxAyR_Ham93vAg"
+      },
+      "accepted": true
+    },
+    {
+      "id": "region-id-with-opt-in",
+      "regionFallback": true,
+      "point": {
+        "latitude": 37.338811234,
+        "longitude": 127.269952145
+      },
+      "place": {
+        "kakaoPlaceId": "map:37.3388112:127.2699521:region",
+        "name": "인제군 기린면 방동리 부근",
+        "category": "지도에서 선택 · 상세 주소 없음",
+        "address": "강원특별자치도 인제군 기린면 방동리",
+        "roadAddress": null,
+        "phone": null,
+        "placeUrl": null,
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "verificationToken": "n20O7UaWIdH98R1G9r5jPulkOrSJ8KtOleHv4pf0ybs"
+      },
+      "accepted": true
+    },
+    {
+      "id": "region-id-without-opt-in",
+      "regionFallback": false,
+      "point": {
+        "latitude": 37.338811234,
+        "longitude": 127.269952145
+      },
+      "place": {
+        "kakaoPlaceId": "map:37.3388112:127.2699521:region",
+        "name": "인제군 기린면 방동리 부근",
+        "category": "지도에서 선택 · 상세 주소 없음",
+        "address": "강원특별자치도 인제군 기린면 방동리",
+        "roadAddress": null,
+        "phone": null,
+        "placeUrl": null,
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "verificationToken": "n20O7UaWIdH98R1G9r5jPulkOrSJ8KtOleHv4pf0ybs"
+      },
+      "accepted": false
+    },
+    {
+      "id": "other-suffix",
+      "regionFallback": true,
+      "point": {
+        "latitude": 37.338811234,
+        "longitude": 127.269952145
+      },
+      "place": {
+        "kakaoPlaceId": "map:37.3388112:127.2699521:regions",
+        "name": "인제군 기린면 방동리 부근",
+        "category": "지도에서 선택 · 상세 주소 없음",
+        "address": "강원특별자치도 인제군 기린면 방동리",
+        "roadAddress": null,
+        "phone": null,
+        "placeUrl": null,
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "verificationToken": "n20O7UaWIdH98R1G9r5jPulkOrSJ8KtOleHv4pf0ybs"
+      },
+      "accepted": false
+    },
+    {
+      "id": "other-coordinate-id",
+      "regionFallback": true,
+      "point": {
+        "latitude": 37.338811234,
+        "longitude": 127.269952145
+      },
+      "place": {
+        "kakaoPlaceId": "map:37.3388113:127.2699521:region",
+        "name": "인제군 기린면 방동리 부근",
+        "category": "지도에서 선택 · 상세 주소 없음",
+        "address": "강원특별자치도 인제군 기린면 방동리",
+        "roadAddress": null,
+        "phone": null,
+        "placeUrl": null,
+        "latitude": 37.3388112,
+        "longitude": 127.2699521,
+        "verificationToken": "n20O7UaWIdH98R1G9r5jPulkOrSJ8KtOleHv4pf0ybs"
+      },
+      "accepted": false
+    },
+    {
+      "id": "moved-coordinate",
+      "regionFallback": true,
+      "point": {
+        "latitude": 37.338811234,
+        "longitude": 127.269952145
+      },
+      "place": {
+        "kakaoPlaceId": "map:37.3388112:127.2699521:region",
+        "name": "인제군 기린면 방동리 부근",
+        "category": "지도에서 선택 · 상세 주소 없음",
+        "address": "강원특별자치도 인제군 기린면 방동리",
+        "roadAddress": null,
+        "phone": null,
+        "placeUrl": null,
+        "latitude": 37.3388113,
+        "longitude": 127.2699521,
+        "verificationToken": "n20O7UaWIdH98R1G9r5jPulkOrSJ8KtOleHv4pf0ybs"
+      },
+      "accepted": false
     }
   ]
 }

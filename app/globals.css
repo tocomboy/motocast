@@ -12,6 +12,7 @@
   --mc-signal-text: #8A5A00;
   --mc-signal-tint: #FFF3D1;
   --mc-signal-tint-border: #F1D48A;
+  --mc-star-fill: #FFB800;
   --mc-rain-high: #1F4FA3;
   --mc-rain-on-high: #F4F6F9;
   --mc-rain-low: #DCE6F2;
@@ -4931,6 +4932,24 @@ body:has(dialog:modal) {
 .login-membership-notice p { margin-bottom: 0; }
 .map-confirmation-body p { margin: 0 0 16px; overflow-wrap: anywhere; }
 .map-confirmation-actions { display: grid; gap: 12px; }
+.map-confirmation-heading { display: flex; align-items: flex-start; gap: 12px; }
+.map-confirmation-heading h2 { flex: 1; min-width: 0; }
+/* Saved-place sheet (Figma FP28 373:11447): title 24, close X, card, bold secondary cancel. */
+.map-confirmation-dialog.is-saved-place h2 { font-size: 1.5rem; font-weight: 900; line-height: 1.35; letter-spacing: -0.02em; }
+.map-confirmation-close { flex: 0 0 48px; width: 48px; height: 48px; display: grid; place-items: center; padding: 0; background: var(--mc-surface-card); border: 1px solid var(--mc-border-default); border-radius: 14px; color: var(--mc-text-primary); cursor: pointer; }
+.map-confirmation-dialog.is-saved-place .map-confirmation-body p { font-size: .8125rem; line-height: 1.5; margin: 0 0 16px; }
+.map-confirmation-dialog.is-saved-place .map-confirmation-actions button { min-height: 56px; border-radius: 14px; font-size: 1rem; font-weight: 700; }
+.map-confirmation-dialog.is-saved-place .map-confirmation-actions button:not(.primary-button) { background: var(--mc-surface-card); border: 1.5px solid var(--mc-text-primary); color: var(--mc-text-primary); }
+.map-confirmation-dialog.is-saved-place .map-confirmation-place { padding: 16px 16px 16px 18px; gap: 6px; }
+.map-confirmation-dialog.is-saved-place .map-confirmation-place strong { font-size: 1.0625rem; }
+.map-confirmation-dialog.is-saved-place .map-confirmation-place > span:last-child { font-size: .8125rem; }
+.map-confirmation-dialog.is-saved-place .map-confirmation-eyebrow { font-size: .8125rem; font-weight: 500; }
+.map-confirmation-dialog.is-saved-place .detail-address-chip { background: transparent; }
+.map-confirmation-place { display: grid; gap: 8px; border: 1px solid var(--mc-border-card); border-radius: 16px; padding: 16px 20px; margin: 0 0 16px; color: var(--mc-text-primary); }
+.map-confirmation-place strong { font-size: 18px; overflow-wrap: anywhere; }
+.map-confirmation-place > span:last-child { color: var(--mc-text-secondary); font-size: 14px; overflow-wrap: anywhere; }
+.map-confirmation-eyebrow { color: var(--mc-signal-text); font-size: 14px; font-weight: 700; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.detail-address-chip { display: inline-flex; padding: 2px 10px; border-radius: 999px; background: var(--mc-signal-tint); border: 1px solid var(--mc-signal-tint-border); color: var(--mc-signal-text); font-size: 13px; font-weight: 700; }
 .map-confirmation-actions button {
   background: var(--mc-surface-card); border: 1px solid var(--mc-border-default);
   border-radius: 10px; color: var(--mc-text-primary); font: inherit; font-weight: 700;
@@ -4955,6 +4974,10 @@ body:has(dialog:modal) {
   padding: 10px 16px; position: absolute; right: 12px; top: 12px; z-index: 7;
 }
 .map-fullscreen-header[hidden], .map-fullscreen-trigger[hidden] { display: none; }
+/* Map point picker (Figma 373:11122): fixed center marker while the map moves underneath. */
+.map-center-marker { position: absolute; left: calc(50% - 19px); top: calc(50% - 47px); z-index: 7; width: 41px; height: 53px; pointer-events: none; background: no-repeat center / 41px 53px url("/map/center-target.svg"); }
+.map-zoom-controls { position: absolute; right: 12px; top: 12px; z-index: 7; display: grid; background: var(--mc-surface-card); border: 1px solid var(--mc-border-card); border-radius: 12px; overflow: hidden; }
+.map-zoom-controls button { width: 48px; height: 48px; display: grid; place-items: center; border: 0; background: transparent; color: var(--mc-text-primary); cursor: pointer; font: inherit; font-size: 24px; font-weight: 900; line-height: 1.35; }
 .map-surface.is-fullscreen {
   display: flex; flex-direction: column; height: 100dvh; position: fixed; width: 100vw;
 }
@@ -4990,6 +5013,19 @@ body:has(dialog:modal) {
   .map-surface.is-fullscreen .map-waypoint-actions,
   .map-viewing-hint { padding-block: 8px max(8px, env(safe-area-inset-bottom)); }
 }
+/* Saved-place map: fullscreen button (FP01 396:10774) and fullscreen register view (FP40 396:11035). */
+.map-surface.is-saved-map .map-fullscreen-trigger { min-height: 48px; padding: 0 14px; border: 1px solid var(--mc-border-card); border-radius: 12px; font-size: .8125rem; font-weight: 500; }
+.map-surface.is-saved-map.is-fullscreen { position: fixed; }
+.map-surface.is-saved-map.is-fullscreen .map-viewport { position: absolute; inset: 0; }
+.map-surface.is-saved-map.is-fullscreen .map-fullscreen-header { position: absolute; z-index: 8; top: max(24px, env(safe-area-inset-top)); left: 20px; right: 20px; height: 56px; padding: 0 4px 0 16px; border-radius: 14px; background: var(--mc-surface-card); border: 1px solid var(--mc-border-card); }
+.map-surface.is-saved-map.is-fullscreen .map-fullscreen-header h2 { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; }
+.map-fullscreen-close { flex: 0 0 48px; width: 48px; height: 48px; display: grid; place-items: center; padding: 0; background: var(--mc-surface-card); border: 1px solid var(--mc-border-default); border-radius: 14px; color: var(--mc-text-primary); cursor: pointer; }
+.map-surface.is-saved-map.is-fullscreen .map-fullscreen-header .map-fullscreen-close { min-width: 48px; min-height: 48px; padding: 0; }
+.map-fullscreen-controls { position: absolute; z-index: 8; top: calc(max(24px, env(safe-area-inset-top)) + 64px); left: 20px; right: 20px; }
+.map-register-sheet { position: absolute; z-index: 8; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; gap: 12px; padding: 20px 20px max(24px, env(safe-area-inset-bottom)); border-radius: 20px 20px 0 0; background: var(--mc-surface-card); }
+.map-register-sheet p { margin: 0; font-size: .8125rem; line-height: 1.5; color: var(--mc-text-secondary); }
+.map-register-sheet .primary-button { width: 100%; min-height: 56px; border: 0; border-radius: 14px; background: var(--mc-signal-fill); color: var(--mc-signal-on); font: inherit; font-size: 1rem; font-weight: 700; cursor: pointer; }
+@media (min-width: 768px) { .map-register-sheet { left: 50%; right: auto; width: min(560px, calc(100vw - 64px)); transform: translateX(-50%); } }
 /* Asphalt & Signal v2. Visual roles override the legacy layout without changing interaction contracts. */
 .mc-icon { display: inline-block; flex: none; vertical-align: middle; width: 24px; height: 24px; }
 .mc-number { font-family: var(--mc-font-number); font-weight: 700; font-variant-numeric: tabular-nums; }

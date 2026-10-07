@@ -144,7 +144,7 @@ it("selects repeated saved meals only on confirmation and preserves add settings
   await act(async () => renderer.root.findByProps({ "aria-label": "머무는 시간 10분 늘리기" }).props.onClick());
   await click("즐겨찾기에서 선택");
   expect(renderer.root.findAllByProps({ className: "ordered-waypoint waypoint-card" })).toHaveLength(0);
-  await click("뒤로");
+  await act(async () => renderer.root.findByProps({ "aria-label": "뒤로" }).props.onClick());
   expect(renderer.root.findByProps({ className: "dwell-stepper" }).findByType("strong").children).toEqual(["40", "분"]);
   await click("식사");
   for (let i = 0; i < 3; i++) {
