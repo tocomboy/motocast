@@ -3,7 +3,7 @@
 Follow the personal global guidance (generated for Codex and Claude Code from the dev-environment source) and its role policy.
 
 - Product, security, cost, and operations decisions: `docs/product/MOTOCAST_SOT.md`
-- Verification, orchestrator review, Codex verification checkpoints (V1/V2 for high-risk slices, V3 before every merge), findings, and deployment gates: `docs/rules/verification-and-review.md`
+- Verification, orchestrator review, Codex verification checkpoints (V3 required before every merge; V1/V2 optional per the role policy), evidence-based finding triage, and deployment gates: `docs/rules/verification-and-review.md`
 - When implementation or live service state conflicts with a confirmed decision, record the conflict and interview the user before changing the affected slice.
 - Work on `develop`; promote to `main` only through a same-repository `develop -> main` pull request.
 - Codex sessions never read `CLAUDE.md` or `.claude/` unless the user explicitly requests a Claude configuration audit or migration.

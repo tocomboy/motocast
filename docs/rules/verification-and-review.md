@@ -118,19 +118,20 @@ The orchestrator and the Codex verifier review the fixed candidate commit SHA, n
 2. The orchestrator reads the exact committed changed set.
 3. The commit contains no user-owned `.gitignore` or unrelated changes unless explicitly included and reviewed.
 4. The orchestrator checks Decision IDs, invariants, file scope, acceptance criteria, and reusable verification evidence directly.
-5. For a high-risk slice (section 5), the Codex V2 report for that exact SHA is recorded.
+5. When the orchestrator ran an optional Codex V2 for that exact SHA (section 5), its findings are triaged under section 6.
 
 ## 5. Orchestrator design, Codex verification and review
 
-Roles follow the personal routing policy (decision 0010, confirmed 2026-10-04; verification scope narrowed by decision 0011, 2026-10-05): the Claude Code main session is the orchestrator and owns root-cause analysis, design, alternative comparison, dependency and scope decisions, delegation contracts, acceptance, integration, publication and final verification judgment. Claude subagents implement code and tests, and design screens only when a slice changes UI. Codex is the verifier. Models and effort are owned by that policy and are not duplicated here. The earlier lead-only review and single-writer wording (2026-09-11 to 2026-10-03) is historical and must not be restored.
+Roles follow the personal routing policy (decision 0010, confirmed 2026-10-04; verifier checkpoints and effort set by [decision 0012](https://github.com/tocomboy/dev-environment/blob/main/docs/decisions/0012-verifier-budget.md), 2026-10-07): the Claude Code main session is the orchestrator and owns root-cause analysis, design, alternative comparison, dependency and scope decisions, delegation contracts, acceptance, integration, publication and final verification judgment. Claude subagents implement code and tests, and design screens only when a slice changes UI. Codex is the verifier. Models and effort are owned by that policy and are not duplicated here. The earlier lead-only review and single-writer wording (2026-09-11 to 2026-10-03) is historical and must not be restored.
 
 - Delegate with a fixed contract: owned files, design and interfaces, protected invariants, acceptance criteria, failure paths and exact verification commands. Product, architecture, scope, prerequisite or acceptance changes return to the orchestrator.
-- Codex checkpoints, proportional to risk:
-  - **V1 design** before implementation for high-risk slices: those touching authentication, authorization, RLS or ownership, migrations or transactions, security boundaries (secrets, tokens), concurrency, budgets or cost, route safety, or recovery.
-  - **V2 code** for every implementer commit SHA in a high-risk slice: the diff against the contract and invariants, test adequacy, focused checks, document synchronization and, for UI changes, real browser or device flows. Other slices (UI-only, documentation, CI) skip V2; the orchestrator accepts them and V3 covers them.
-  - **V3 final candidate** before a `develop` integration or `develop -> main` merge and before the hosted Preview or Production mutation that depends on it.
-- Review-only checkpoints use the read-only Codex plugin `task`. Real DB, browser and device runs follow the routing policy's execution mode and resource ownership. The verifier writes no product code or tests.
-- **Acceptance gate:** an implementer SHA in a high-risk slice is accepted only after its V2 report is recorded with every `BLOCKER`/`HIGH` resolved and every `MEDIUM` fixed or given a recorded follow-up decision under section 6. Until then the work record states `V2 pending`, and no dependent Preview, merge, release or deployment step proceeds.
+- Codex checkpoints follow the routing policy's Verifier section; only V3 is required:
+  - **V1 design** and **V2 code** are optional. The orchestrator runs them when reversing the design would be expensive (a spec reading that can go two ways, a new concurrency or recovery design, a contract several slices depend on), for a large product-code change where waiting for V3 would make rework expensive, or when the user asks. A high-risk classification alone (authentication, authorization, RLS or ownership, migrations or transactions, security boundaries, concurrency, budgets or cost, route safety, recovery) does not trigger them; it selects `core-implementer` and deepens the orchestrator's review. A skipped V1/V2 is recorded in one line in the Issue or PR and never creates a blocking state such as `V2 pending`.
+  - **V3 final candidate (required)** before a `develop` integration or `develop -> main` merge and before the hosted Preview or Production mutation that depends on it. Until its report is recorded the work record states `V3 pending`, and no dependent Preview, merge, release or deployment step proceeds.
+- Before launching V3, the implementer's own validation ran on a clean Linux checkout (LF, `.git` present), compared candidate and base with the same command and environment against a sound base run (comparable test counts, no collection errors), and reached the named behavior on the production-like DB state this document defines. No known fix may remain outstanding.
+- After V3, re-verify only what changed and the checks that change invalidated; reuse base-side results and grounded impossibility judgments while their grounds hold.
+- The verifier's reasoning effort is the routing policy's fixed value; verification requests and launch commands never override it. Checks that need no real DB, browser or device run use the read-only Codex plugin `task`. Real DB, browser and device runs follow the routing policy's execution mode and resource ownership, and the request states resource rules as numbers and scope. The verifier writes no product code or tests.
+- **Acceptance gate:** an implementer SHA is accepted when the orchestrator's review is complete and, for any Codex report on it, no required-fix finding remains open under section 6.
 - The orchestrator still performs the required review axes below on the exact changed set. Orchestrator review and implementer self-checks are not verifier approval, and verifier results do not replace required tests, CI, Preview, Production or post-merge checks.
 
 Required review axes:
@@ -153,15 +154,22 @@ Each finding contains:
 - User/security/data/operations impact.
 - Minimum correction direction.
 
-Unsupported style preferences are not findings.
+Unsupported style preferences are not findings. Severity expresses impact and ordering; it does not by itself block a merge or force an implementation.
+
+Every verification request states the threat model: the user's recorded risk acceptances and the worst acceptable outcome. The verifier reports every finding and marks, without omitting, any it considers inside an accepted risk.
+
+Triage (routing policy [Finding triage](https://github.com/tocomboy/dev-environment/blob/main/docs/routing-policy.md#finding-triage), user decision 2026-10-06): the orchestrator judges each finding in a separate pass by its evidence, not its severity label, and records the class and reason in the PR.
+
+- **Required fix:** a violation of the accepted contract, the product SoT, an invariant or a required gate, or a failure path outside the accepted risks. It is fixed and the affected checks are re-run.
+- **Risk accepted:** the finding lies inside a risk the user already accepted. Link that decision; no change is made.
+- **Suggestion:** optional hardening beyond the threat model. Apply it when the cost is proportionate; otherwise record it or file a follow-up Issue.
 
 Rules:
 
-- Any `BLOCKER` or `HIGH` stops merge and Production deployment.
-- A `MEDIUM` is fixed now or receives an explicit recorded follow-up decision.
-- A `LOW` may remain but is disclosed.
-- The implementer fixes findings and reruns affected verification; valid baseline evidence is reused unless invalidated or required by a mandatory gate.
-- The Codex verifier re-checks the new fixed SHA (V2 for high-risk slices, otherwise in the V3 re-check of the final candidate) and the orchestrator labels each finding `RESOLVED`, `STILL_OPEN`, or `REGRESSED`.
+- Merge and Production deployment require no open required-fix finding plus the required tests, CI and the gates in sections 7-9. MOTOCAST's stricter deployment gates (Preview smoke, Production readback, AUTH-007 admission) remain mandatory regardless of finding classes.
+- Reclassify a finding only on new evidence. When a finding over-reads the approved scope, correct the contract or threat model, re-judge it on the existing evidence and record the result; this is not a new review round.
+- The implementer fixes required-fix findings and reruns affected verification; valid baseline evidence is reused unless invalidated or required by a mandatory gate.
+- Request a new verifier review only for a changed candidate or a new real defect, including the corrected contract or threat model. The orchestrator labels each re-checked finding `RESOLVED`, `STILL_OPEN`, or `REGRESSED`.
 - If the same root cause survives two correction rounds, reconsider the design, narrow the scope, or interview the user instead of expanding tests indefinitely.
 
 ## 7. Preview gate
@@ -186,8 +194,8 @@ A same-repository `develop -> main` PR may merge only when:
 - Changed set and fixed SHA are recorded.
 - Implementer verification is GREEN with exact taxonomy.
 - The orchestrator's required correctness, security, data integrity and other applicable review axes are complete.
-- Codex V2 reports exist for every included high-risk implementer SHA and the Codex V3 report for the fixed candidate is recorded.
-- `BLOCKER=0` and `HIGH=0`.
+- The Codex V3 report for the fixed candidate is recorded, together with any optional V1/V2 reports that were run.
+- Every finding is triaged under section 6 and no required-fix finding remains open.
 - GitHub `verify` and `develop-only` are GREEN.
 - The actual Vercel Preview context is stable and GREEN.
 - Preview smoke and secret scans are GREEN.
@@ -217,7 +225,7 @@ The final release report includes:
 - Product completion status and remaining blockers.
 - Decision IDs and interview outcomes, including deprecated decisions.
 - Fixed SHA, PR, CI runs, Vercel deployment ID/URL, and Supabase migration/function readback.
-- Implementer execution evidence, orchestrator review results by axis, and Codex V1/V2/V3 reports with finding closure.
+- Implementer execution evidence, orchestrator review results by axis, Codex V3 report (and any optional V1/V2 reports) with finding triage and closure.
 - Exact counts for pass/fail/error/skip/deselected/xfail/setup-or-import-failure/not-run.
 - Remaining findings and operational next actions.
 
