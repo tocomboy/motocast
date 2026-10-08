@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { LineIcon } from "@/components/line-icon";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
@@ -45,10 +46,6 @@ function subscribe(listener: () => void) {
     if (!listeners.size) window.removeEventListener("hashchange", onHash);
   };
 }
-/** Test hook: evaluate the capture again as if the module had just loaded. */
-export function recaptureForTest() {
-  captured = typeof window !== "undefined" && window.location.pathname === INVITE_PATH ? captureInviteFragment(window) : null;
-}
 
 type View =
   | { step: "checking" }
@@ -88,6 +85,7 @@ export function FolderInvite() {
   const [name, setName] = useState("");
   const nameId = useId();
   const sequence = useRef(0);
+  const router = useRouter();
 
   useEffect(() => {
     const attempt = ++sequence.current;
@@ -126,12 +124,12 @@ export function FolderInvite() {
     if (!value) { setView({ step: "missing" }); return; }
     // Same-tab navigation only; no new window copies the session storage.
     if (!savePendingInvite(sessionStore, value)) { setView({ step: "login", storageFailed: true }); return; }
-    window.location.assign("/login");
+    router.push("/login");
   }
 
   function openFolder(folderId: string | null) {
     try { if (folderId) window.sessionStorage.setItem(OPEN_FOLDER_STORAGE_KEY, folderId); } catch { /* the list opens instead */ }
-    window.location.assign("/#favorites");
+    router.push("/#favorites");
   }
 
   async function join(preview: InvitePreview) {

@@ -19,10 +19,10 @@ import {
 } from "./shared-place-actions";
 import { SharedPlaceDetail } from "./shared-place-detail";
 import { RoleChip, SavedPlacePicker, selectionCounts } from "./shared-folder-list";
-import { FolderSettings, type SettingsPage } from "./shared-folder-settings";
+import { FolderSettings, useInvites, type SettingsPage } from "./shared-folder-settings";
 import { PROVINCES, type SavedPlaceKind } from "@/lib/places/saved";
 import { PLACE_FOLDER_MEMBER_LIMIT, PLACE_FOLDER_PLACE_LIMIT, type SharedPlace } from "@/lib/places/shared-folders";
-import { canEditPlaces, lastEditLine, permissionLabel } from "@/lib/places/shared-folder-format";
+import { canEditPlaces, expiryLabel, lastEditLine, permissionLabel } from "@/lib/places/shared-folder-format";
 import styles from "./saved-places-manager.module.css";
 
 type AddFlow = null | "choose" | "search" | "import";
@@ -252,8 +252,14 @@ function FolderMenu({ folderId, onClose, onOpen }: { folderId: string; onClose: 
   const folder = snapshot.folders.find((row) => row.id === folderId);
   const members = snapshot.members.filter((row) => row.folderId === folderId);
   const mine = members.find((row) => row.memberId === snapshot.userId);
+  const owner = mine?.role === "owner";
+  const { invites, state } = useInvites(shared, folderId, owner);
   if (!folder || !mine) return null;
-  const owner = mine.role === "owner";
+  // G11: "사용 중인 링크 1개 · 7일 뒤 만료" (the link that expires first).
+  const soonest = invites?.reduce<string | null>((first, row) => (!first || row.expiresAt < first ? row.expiresAt : first), null);
+  const inviteLine = state !== "ready" || !invites
+    ? "만들기·회수 · 링크는 7일 동안 쓸 수 있어요"
+    : invites.length && soonest ? `사용 중인 링크 ${invites.length}개 · ${expiryLabel(soonest).left} 뒤 만료` : "사용 중인 링크 없음";
   const row = (icon: "link" | "person" | "folder", title: string, sub: string, page: SettingsPage) => (
     <li><button type="button" className={styles.menuRow} onClick={() => onOpen(page)}><LineIcon name={icon} /><span><strong>{title}</strong><span>{sub}</span></span><LineIcon name="chevron-right" /></button></li>
   );
@@ -261,7 +267,7 @@ function FolderMenu({ folderId, onClose, onOpen }: { folderId: string; onClose: 
     <SavedDialog title={folder.name} onClose={onClose} sheet>
       {!owner ? <p className={styles.helper}>내 권한 · {permissionLabel(mine.role)} (주인이 회원 관리에서 바꿀 수 있어요)</p> : null}
       <ul className={styles.menuList}>
-        {owner ? row("link", "초대 링크", "만들기·회수 · 링크는 7일 동안 쓸 수 있어요", "invites") : null}
+        {owner ? row("link", "초대 링크", inviteLine, "invites") : null}
         {row("person", owner ? "회원·권한 관리" : "회원 보기", `${members.length} / ${PLACE_FOLDER_MEMBER_LIMIT}명`, "members")}
         {row("person", "이 폴더에서 쓰는 내 이름", mine.displayName, "display-name")}
         {owner ? row("folder", "폴더 이름 바꾸기", folder.name, "rename") : null}

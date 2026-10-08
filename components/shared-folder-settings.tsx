@@ -143,7 +143,8 @@ function leavePopup(shared: Shared, folderId: string, onDone: () => void): Omit<
   };
 }
 
-function useInvites(shared: Shared, folderId: string) {
+/** Owner-only list of active invite links (`list_place_folder_invites`); `enabled` false reads nothing. */
+export function useInvites(shared: Shared, folderId: string, enabled = true) {
   const [invites, setInvites] = useState<FolderInvite[] | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const generation = useRef(0);
@@ -164,9 +165,10 @@ function useInvites(shared: Shared, folderId: string) {
     }
   }, [shared, folderId]);
   useEffect(() => {
+    if (!enabled) return;
     const task = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(task);
-  }, [load]);
+  }, [load, enabled]);
   return { invites, state, load };
 }
 

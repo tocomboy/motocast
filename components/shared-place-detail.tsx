@@ -56,9 +56,8 @@ export function SharedPlaceDetail({
   if (!row) {
     // Deleted here or by another member, or the folder is no longer visible.
     return (
-      <Container wide={wide} onClose={onClose}>
+      <Container wide={wide} onClose={onClose} overlay={popup}>
         <div className={styles.stateCard} role="status"><strong>장소를 찾지 못했어요</strong><p>폴더에서 삭제됐거나 더 볼 수 없는 장소예요. 이미 만든 일정·코스·공유 결과는 그대로예요.</p></div>
-        {popup}
       </Container>
     );
   }
@@ -73,7 +72,7 @@ export function SharedPlaceDetail({
   const backToFolder = () => { close(); (onBackToFolder ?? onClose)(); };
   const starPopup = () => open(sharedStarPopup(shared, row, onManageStars ? () => { close(); onManageStars(); } : undefined));
   return (
-    <Container wide={wide} onClose={onClose}>
+    <Container wide={wide} onClose={onClose} overlay={popup}>
       <div className={`${styles.placeSummary} ${styles.detailSummary} ${styles.sharedSummary}`}>
         <span className={styles.placeKind}>{kindLabel(row.kind)} · {row.province ?? "지역 미확인"}</span>
         <strong>{sharedName(row)}</strong>
@@ -150,12 +149,12 @@ export function SharedPlaceDetail({
           }}
         />
       ) : null}
-      {popup}
     </Container>
   );
 }
 
-function Container({ wide, onClose, children }: { wide: boolean; onClose: () => void; children: React.ReactNode }) {
+/** `overlay` (popups) stays outside the scrolling body so its centering margins are not reset. */
+function Container({ wide, onClose, overlay, children }: { wide: boolean; onClose: () => void; overlay: React.ReactNode; children: React.ReactNode }) {
   if (wide)
     return (
       <div className={styles.pcDetail}>
@@ -164,11 +163,13 @@ function Container({ wide, onClose, children }: { wide: boolean; onClose: () => 
           <h2>장소 상세</h2>
         </div>
         {children}
+        {overlay}
       </div>
     );
   return (
     <SavedDialog title="장소 상세" onBack={onClose} onClose={onClose} fullScreen>
       <div className={`${styles.waypointBody} ${styles.detailBody}`}>{children}</div>
+      {overlay}
     </SavedDialog>
   );
 }

@@ -637,7 +637,7 @@
 .selectionSummary { margin: 0; font-size: 0.8125rem; color: var(--mc-text-secondary); }
 .selectionSummary .countNumber { color: var(--mc-text-primary); }
 .folderCard { list-style: none; }
-.page .folderCard > button { width: 100%; display: flex; align-items: center; gap: 16px; padding: 20px 16px 20px 20px; border-radius: 16px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); text-align: left; }
+.page .folderCard > button { width: 100%; min-height: 0; display: flex; flex-direction: row; align-items: center; gap: 16px; padding: 20px 16px 20px 20px; border-radius: 16px; border: 1px solid var(--mc-border-card); background: var(--mc-surface-card); text-align: left; }
 .folderIcon { flex-shrink: 0; display: grid; place-items: center; }
 .folderText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .folderTitle { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
@@ -712,6 +712,8 @@
 }
 @media (min-width: 768px) {
   .page .layersWithFolders { flex-wrap: nowrap; }
+  .sectionSwitch { align-self: flex-start; }
+  .page .sectionSwitch button { flex: 0 0 160px; }
   .page .folderToggle { flex: 0 0 auto; }
   .dialog.sheet { width: min(480px, calc(100vw - 64px)); margin: auto; border-radius: 24px; }
   .page.sectionPage { max-width: 760px; margin: 0 auto; width: 100%; }
@@ -720,3 +722,10 @@
   .page.folderPage .heading :global(.primary-button) { width: auto; }
   .page.folderPage .registerFooter { display: none; }
 }
+.page .list .avoidCard > .releaseButton { width: auto; min-width: 80px; display: flex; flex-direction: row; align-items: center; justify-content: center; padding: 0 22px; }
+@media (min-width: 768px) {
+  .folderHeading { flex-direction: row; align-items: center; gap: 16px; }
+}
+.dialog .checkRow, .popup .checkRow, .dialog .roleChoice, .popup .roleChoice { flex-direction: row; }
+.dialog .list .inviteCard > .dangerButton { align-items: center; justify-content: center; }
+.checkRow > span > span { font-weight: 400; }
