@@ -13,6 +13,9 @@ export const FOLDER_DISPLAY_NAME_LIMIT = 20;
 export const SHARED_PLACE_PAGE_SIZE = 1000;
 
 export type FolderRole = "owner" | "editor" | "viewer";
+/** A create whose result is unknown: its id and exact input are kept so only the same request is resent. */
+export type PendingCreate = { requestId: string; folderName: string; displayName: string; ids: string[] };
+
 /** `createRequestId`: the create_place_folder request_id that made it (contract §6), null if unknown. */
 export type PlaceFolder = { id: string; ownerId: string; name: string; revision: number; createRequestId: string | null; createdAt: string; updatedAt: string };
 export type FolderMember = { folderId: string; memberId: string; role: FolderRole; displayName: string; joinedAt: string; revision: number };

@@ -16,6 +16,7 @@ import {
   PLACE_FOLDER_MEMBER_LIMIT,
   PLACE_FOLDER_PLACE_LIMIT,
   parsePlaceFolder,
+  type PendingCreate,
 } from "@/lib/places/shared-folders";
 import { folderLastEdit, roleLabel } from "@/lib/places/shared-folder-format";
 import styles from "./saved-places-manager.module.css";
@@ -180,41 +181,40 @@ export function leavingWhat(name: string, displayName: string, places: number) {
 }
 
 /** G04–G08: name, my folder name, optional copies of my places, then the final confirmation. */
-/** A create whose result is unknown: its id and exact input are kept so only the same request is resent. */
-export type PendingCreate = { requestId: string; folderName: string; displayName: string; ids: string[] };
+export type { PendingCreate };
 
-export function FolderCreate({ onClose, onCreated, resume = null, onUnresolved }: {
-  onClose: () => void;
-  onCreated: (folderId: string) => void;
-  /** Reopens the confirmation of a kept unknown create with the same id and input. */
-  resume?: PendingCreate | null;
-  /** The confirmation was closed while its result was unknown. */
-  onUnresolved: (pending: PendingCreate) => void;
-}) {
+/**
+ * G04–G08 folder create. While the account has a kept create with an unknown result
+ * (`shared.pendingCreate`), this screen only reopens that request: same id, same input, inputs
+ * locked, and closing its confirmation without an answer returns to the list (V3 delta 5).
+ */
+export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCreated: (folderId: string) => void }) {
   const shared = useSharedFolders();
   const saved = useSavedPlaces();
   const { open, close, popup } = useSharedPopup();
+  const kept = shared.pendingCreate;
   const [leaving, setLeaving] = useState<Pending<SharedSnapshot> | null>(null);
-  const [name, setName] = useState(resume?.folderName ?? "");
-  const [displayName, setDisplayName] = useState(resume?.displayName ?? "");
+  const [name, setName] = useState(kept?.folderName ?? "");
+  const [displayName, setDisplayName] = useState(kept?.displayName ?? "");
   const [touched, setTouched] = useState({ name: false, displayName: false });
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(resume?.ids ?? []));
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(kept?.ids ?? []));
   const nameId = useId();
   const created = useRef<string | null>(null);
-  // Set while the latest try's result is unknown; closing the confirmation then hands it to the list.
-  const unresolved = useRef<PendingCreate | null>(null);
   const popupOpen = popup !== null;
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (popupOpen || !unresolved.current) return;
-    const pending = unresolved.current;
-    unresolved.current = null;
-    onUnresolved(pending);
-  }, [popupOpen, onUnresolved]);
+    if (popupOpen) { wasOpen.current = true; return; }
+    if (!wasOpen.current) return;
+    wasOpen.current = false;
+    // Closed without an answer for the kept request: back to the list, which keeps it.
+    if (shared.pendingCreate) onClose();
+  }, [popupOpen, shared.pendingCreate, onClose]);
   useEffect(() => {
-    if (!resume) return;
-    const task = window.setTimeout(() => submit(resume), 0);
+    const atOpen = shared.pendingCreate;
+    if (!atOpen) return;
+    const task = window.setTimeout(() => submit(atOpen), 0);
     return () => window.clearTimeout(task);
-    // Opens once for the kept request.
+    // Opens the kept request's confirmation once, when this screen opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const { snapshot } = shared;
@@ -227,7 +227,8 @@ export function FolderCreate({ onClose, onCreated, resume = null, onUnresolved }
   const dirty = Boolean(name || displayName || total);
   const length = (value: string) => [...value.trim()].length;
   function back() {
-    if (!dirty) { onClose(); return; }
+    // A kept request loses nothing by leaving: the list still holds it.
+    if (!dirty || kept) { onClose(); return; }
     setLeaving({
       key: 1,
       title: "폴더 만들기를 그만둘까요?",
@@ -238,17 +239,17 @@ export function FolderCreate({ onClose, onCreated, resume = null, onUnresolved }
       ],
     });
   }
-  function submit(kept: PendingCreate | null = null) {
+  function submit(resume: PendingCreate | null = null) {
     setTouched({ name: true, displayName: true });
-    if (!kept && (nameIssue || displayIssue || full)) return;
-    const folderName = kept?.folderName ?? name.trim();
-    const mine = kept?.displayName ?? displayName.trim();
-    const ids = kept?.ids ?? saved.places.filter((row) => selected.has(row.id)).map((row) => row.id);
+    if (!resume && (nameIssue || displayIssue || full)) return;
+    const folderName = resume?.folderName ?? name.trim();
+    const mine = resume?.displayName ?? displayName.trim();
+    const ids = resume?.ids ?? saved.places.filter((row) => selected.has(row.id)).map((row) => row.id);
     const me = snapshot.userId;
     const count = snapshot.folders.length;
     // One request id per confirmation: every try in it (FP39 re-check, "확인하고 만들기") reuses it,
     // so a resent or browser-retried request makes one folder (contract §6, idempotent create).
-    const requestId = kept?.requestId ?? crypto.randomUUID();
+    const requestId = resume?.requestId ?? crypto.randomUUID();
     const request: PendingCreate = { requestId, folderName, displayName: mine, ids };
     const createdBy = (s: SharedSnapshot) => s.folders.find((f) => f.ownerId === me && f.createRequestId === requestId);
     const deletedSince: SharedWrite = { ok: false, reason: "rejected", title: "이 요청으로 만든 폴더는 이미 삭제됐어요", message: "같은 요청으로 만든 폴더가 그사이 삭제돼 다시 만들지 않았어요. 새로 만들려면 \"폴더 만들기\"를 다시 눌러 주세요." };
@@ -272,7 +273,6 @@ export function FolderCreate({ onClose, onCreated, resume = null, onUnresolved }
         notApplied: { title: "폴더가 만들어지지 않았어요", message: "폴더 목록을 다시 확인했지만 새 폴더가 없어요. 입력 내용은 그대로예요. 다시 만들려면 \"확인하고 만들기\"를 눌러 주세요." },
         run: async () => {
           created.current = null;
-          unresolved.current = null;
           const write = await shared.write({
             rpc: "create_place_folder",
             args: { folder_name: folderName, display_name: mine, saved_place_ids: ids, request_id: requestId },
@@ -295,21 +295,27 @@ export function FolderCreate({ onClose, onCreated, resume = null, onUnresolved }
                   ? { reason: "rejected", title: "이름을 확인해 주세요", message: "폴더 이름은 1~40자, 내 이름은 1~20자로 입력해 주세요." }
                   : null,
           });
-          // Unknown or a receipt the list does not show yet: closing now keeps this request.
-          if (!write.ok && (write.reason === "unknown" || write.reason === "mismatch")) unresolved.current = request;
           if (write.ok) {
+            shared.setPendingCreate(null);
             const id = created.current ?? createdBy(shared.current().snapshot)?.id;
             if (id) onCreated(id);
+            return write;
           }
           // The server replayed this request's receipt, but the readable list has no such folder:
-          // it was deleted since. Nothing is resent under this id.
-          if (!write.ok && write.reason === "mismatch" && write.checked && created.current) return deletedSince;
-          if (!write.ok && write.reason === "mismatch" && created.current) return { ...write, stillMissing: { title: deletedSince.title, message: deletedSince.message } };
+          // it was deleted since. This id is settled: nothing is kept or resent under it.
+          if (write.reason === "mismatch" && write.checked && created.current) { shared.setPendingCreate(null); return deletedSince; }
+          // Unknown, or a receipt the list does not show yet: kept for this account until a read settles it.
+          if (write.reason === "unknown" || write.reason === "mismatch") {
+            shared.setPendingCreate(request);
+            return write.reason === "mismatch" && created.current ? { ...write, stillMissing: { title: deletedSince.title, message: deletedSince.message } } : write;
+          }
+          // A clear refusal answers this id: it made nothing, so a new create may follow.
+          if (write.reason === "rejected" || write.reason === "star_limit") shared.setPendingCreate(null);
           return write;
         },
         finalOnRefusal: (write) => (write.title === deletedSince.title ? [{ label: "닫기", primary: true, onClick: () => undefined }] : null),
         onApplied: () => {
-          unresolved.current = null;
+          shared.setPendingCreate(null);
           const id = created.current ?? createdBy(shared.current().snapshot)?.id;
           if (id) onCreated(id);
         },
@@ -322,14 +328,14 @@ export function FolderCreate({ onClose, onCreated, resume = null, onUnresolved }
         {full ? <div className={styles.errorCard} role="alert"><strong>공유 폴더 {PLACE_FOLDER_LIMIT}개가 모두 찼어요</strong><p>내가 만든 폴더와 참여한 폴더를 합쳐 {PLACE_FOLDER_LIMIT}개까지예요. 쓰지 않는 폴더를 삭제하거나 나간 뒤 만들 수 있어요.</p></div> : null}
         <div className={styles.textFieldGroup}>
           <label className={styles.fieldLabel} htmlFor={`${nameId}-name`}>폴더 이름</label>
-          <input id={`${nameId}-name`} className={`${styles.textField}${touched.name && nameIssue ? ` ${styles.invalidInput}` : ""}`} value={name} maxLength={80} placeholder="예: 주말 라이더" aria-invalid={(touched.name && Boolean(nameIssue)) || undefined} aria-describedby={`${nameId}-name-hint`} onChange={(e) => setName(e.target.value)} onBlur={() => setTouched((t) => ({ ...t, name: true }))} />
+          <input id={`${nameId}-name`} className={`${styles.textField}${touched.name && nameIssue ? ` ${styles.invalidInput}` : ""}`} value={name} maxLength={80} placeholder="예: 주말 라이더" disabled={Boolean(kept)} aria-invalid={(touched.name && Boolean(nameIssue)) || undefined} aria-describedby={`${nameId}-name-hint`} onChange={(e) => setName(e.target.value)} onBlur={() => setTouched((t) => ({ ...t, name: true }))} />
           <p id={`${nameId}-name-hint`} className={touched.name && nameIssue ? styles.fieldError : styles.helper} role={touched.name && nameIssue ? "alert" : undefined}>
             {touched.name && nameIssue === "empty" ? "폴더 이름을 입력해 주세요. 1~40자" : nameIssue === "long" ? `${FOLDER_NAME_LIMIT}자 이하로 줄여 주세요. 지금 ${length(name)}자` : nameIssue === "invalid" && touched.name ? "쓸 수 없는 문자가 있어요." : `${length(name)} / ${FOLDER_NAME_LIMIT}`}
           </p>
         </div>
         <div className={styles.textFieldGroup}>
           <label className={styles.fieldLabel} htmlFor={`${nameId}-display`}>이 폴더에서 쓸 내 이름 (필수)</label>
-          <input id={`${nameId}-display`} className={`${styles.textField}${touched.displayName && displayIssue ? ` ${styles.invalidInput}` : displayIssue === "long" ? ` ${styles.invalidInput}` : ""}`} value={displayName} maxLength={40} placeholder="예: 주말라이더" aria-invalid={displayIssue === "long" || (touched.displayName && Boolean(displayIssue)) || undefined} aria-describedby={`${nameId}-display-hint`} onChange={(e) => setDisplayName(e.target.value)} onBlur={() => setTouched((t) => ({ ...t, displayName: true }))} />
+          <input id={`${nameId}-display`} className={`${styles.textField}${touched.displayName && displayIssue ? ` ${styles.invalidInput}` : displayIssue === "long" ? ` ${styles.invalidInput}` : ""}`} value={displayName} maxLength={40} placeholder="예: 주말라이더" disabled={Boolean(kept)} aria-invalid={displayIssue === "long" || (touched.displayName && Boolean(displayIssue)) || undefined} aria-describedby={`${nameId}-display-hint`} onChange={(e) => setDisplayName(e.target.value)} onBlur={() => setTouched((t) => ({ ...t, displayName: true }))} />
           <p id={`${nameId}-display-hint`} className={displayIssue === "long" || (touched.displayName && displayIssue) ? styles.fieldError : styles.helper} role={displayIssue === "long" ? "alert" : undefined}>
             {displayIssue === "long" ? `${FOLDER_DISPLAY_NAME_LIMIT}자 이하로 줄여 주세요. 지금 ${length(displayName)}자` : touched.displayName && displayIssue === "empty" ? "이 폴더에서 쓸 내 이름을 입력해 주세요. 1~20자" : displayName ? `${length(displayName)} / ${FOLDER_DISPLAY_NAME_LIMIT} · 이 폴더 회원에게만 보여요.` : "이 폴더 회원에게만 보여요. 1~20자, 카카오 닉네임은 보이지 않아요."}
           </p>
@@ -339,12 +345,12 @@ export function FolderCreate({ onClose, onCreated, resume = null, onUnresolved }
         {saved.status === "error" ? (
           <div className={`${styles.stateCard} ${styles.errorState}`} role="alert"><strong>내 장소를 불러오지 못했어요</strong><p>{saved.message}</p><button type="button" onClick={saved.retry}>다시 시도</button></div>
         ) : (
-          <SavedPlacePicker places={saved.places} selected={selected} onChange={setSelected} emptyRestaurants="폴더를 만든 뒤 폴더 화면에서 검색·지도로 식당을 바로 추가할 수 있어요." />
+          <SavedPlacePicker places={saved.places} selected={selected} onChange={(next) => { if (!kept) setSelected(next); }} emptyRestaurants="폴더를 만든 뒤 폴더 화면에서 검색·지도로 식당을 바로 추가할 수 있어요." />
         )}
       </div>
       <div className={styles.waypointFooter}>
         <p className={styles.selectionSummary}>라이딩 스팟 <b className={styles.countNumber}>{spots}</b> · 식당 <b className={styles.countNumber}>{restaurants}</b> 선택</p>
-        <button type="button" className="primary-button" disabled={blocked || full || Boolean(nameIssue) || Boolean(displayIssue)} onClick={() => submit()}>
+        <button type="button" className="primary-button" disabled={kept ? blocked : blocked || full || Boolean(nameIssue) || Boolean(displayIssue)} onClick={() => submit(kept)}>
           {total ? `폴더 만들기 · 장소 ${total}곳` : "빈 폴더로 만들기"}
         </button>
         {full ? <p className={styles.footerHint}>폴더 한도가 차서 만들 수 없어요.</p> : nameIssue || displayIssue ? <p className={styles.footerHint}>폴더 이름과 내 이름을 입력하면 만들 수 있어요. 장소는 고르지 않아도 돼요.</p> : null}

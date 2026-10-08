@@ -19,7 +19,8 @@ import { useSavedPlaces, type SavedPlaceWrite } from "./saved-places-provider";
 import { useSharedFolders } from "./shared-folders-provider";
 import { avoidedFor, avoidPopup, folderNameOf, folderPickerPopup, unavoidPopup, sharedStarPopup, useSharedPopup } from "./shared-place-actions";
 import { SharedPlaceDetail } from "./shared-place-detail";
-import { FolderCreate, SharedFolderList, type PendingCreate } from "./shared-folder-list";
+import { FolderCreate, SharedFolderList } from "./shared-folder-list";
+import type { PendingCreate } from "@/lib/places/shared-folders";
 import { SharedFolderDetail } from "./shared-folder-detail";
 import { AvoidedPlacesView } from "./avoided-places";
 import {
@@ -103,9 +104,8 @@ function SavedPlacesManagerContent({
   const [openFolder, setOpenFolder] = useState<{ id: string; notice?: string } | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [listNotice, setListNotice] = useState("");
-  // A create closed with an unknown result: new creates wait until a re-read settles it.
-  const [unresolvedCreate, setUnresolvedCreate] = useState<PendingCreate | null>(null);
-  const [resumeCreate, setResumeCreate] = useState(false);
+  // A create kept with an unknown result (account-wide, shared folders provider): new creates wait.
+  const unresolvedCreate = shared.pendingCreate;
   const [createCheck, setCreateCheck] = useState<"idle" | "checking" | "unreadable">("idle");
   /** Read only: the folder carrying the kept request id opens; otherwise the same confirmation reopens. */
   async function recheckCreate(pending: PendingCreate) {
@@ -117,11 +117,11 @@ function SavedPlacesManagerContent({
     setCreateCheck("idle");
     const folder = list.folders.find((row) => row.ownerId === list.userId && row.createRequestId === pending.requestId);
     if (folder) {
-      setUnresolvedCreate(null);
+      shared.setPendingCreate(null);
       setOpenFolder({ id: folder.id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." });
       return;
     }
-    setResumeCreate(true);
+    // Not there: the same confirmation reopens with the same id and input.
     setCreatingFolder(true);
   }
   const [tab, setTab] = useState<"starred" | SavedPlaceKind>("riding_spot");
@@ -603,10 +603,8 @@ function SavedPlacesManagerContent({
           ) : null}
           <SharedFolderList onOpen={(id) => { setListNotice(""); setOpenFolder({ id }); }} onCreate={() => setCreatingFolder(true)} createBlocked={Boolean(unresolvedCreate)} />
           {creatingFolder ? <FolderCreate
-            resume={resumeCreate ? unresolvedCreate : null}
-            onUnresolved={(pending) => { setCreatingFolder(false); setResumeCreate(false); setCreateCheck("idle"); setUnresolvedCreate(pending); }}
-            onClose={() => { setCreatingFolder(false); setResumeCreate(false); }}
-            onCreated={(id) => { setUnresolvedCreate(null); setResumeCreate(false); setCreatingFolder(false); setOpenFolder({ id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." }); }} /> : null}
+            onClose={() => { setCreatingFolder(false); setCreateCheck("idle"); }}
+            onCreated={(id) => { setCreatingFolder(false); setOpenFolder({ id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." }); }} /> : null}
         </div>
       ) : section === "avoided" ? (
         <div className={styles.sectionBody}><AvoidedPlacesView startView={startView} /></div>

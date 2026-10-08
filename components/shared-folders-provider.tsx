@@ -29,6 +29,7 @@ import {
   type AvoidedPlace,
   type FolderMember,
   type FolderPreference,
+  type PendingCreate,
   type PlaceFolder,
   type SharedPlace,
   type StarEntry,
@@ -84,6 +85,12 @@ type Controls = {
   write: (spec: WriteSpec) => Promise<SharedWrite>;
   /** Plain RPC without a list receipt (invite reads and creation). */
   call: (rpc: string, args: Record<string, unknown>) => Promise<{ data: unknown; code: string | null; lost: boolean }>;
+  /**
+   * A folder create with an unknown result, kept for this account across screens (not across
+   * reloads): new creates wait until a read settles it; only the same request may be resent.
+   */
+  pendingCreate: PendingCreate | null;
+  setPendingCreate: (pending: PendingCreate | null) => void;
 };
 const Context = createContext<Controls | null>(null);
 
@@ -144,6 +151,7 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
   const [verifying, setVerifying] = useState(false);
   const [message, setMessage] = useState("");
   const [accountEpoch, setAccountEpoch] = useState(0);
+  const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null);
   const mounted = useRef(false);
   const generation = useRef(0);
   const session = useRef(0);
@@ -202,6 +210,8 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
           setAccountEpoch(session.current);
           snapshotRef.current = empty;
           setSnapshot(empty);
+          // Another account (or none) never inherits a kept create.
+          setPendingCreate(null);
           setBusy(false);
           setVerifying(false);
           setMessage("");
@@ -369,7 +379,9 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
     recheck,
     write,
     call,
-  }), [accountEpoch, enabled, status, snapshot, busy, verifying, message, load, refresh, reloadStars, captureSnapshot, recheck, write, call]);
+    pendingCreate,
+    setPendingCreate,
+  }), [accountEpoch, enabled, status, snapshot, busy, verifying, message, load, refresh, reloadStars, captureSnapshot, recheck, write, call, pendingCreate]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

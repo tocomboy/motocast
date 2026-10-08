@@ -7,6 +7,7 @@ import { mealTargetAt, type RecommendationRequest } from "@/lib/planner/restaura
 
 const mocks = vi.hoisted(() => ({
   reads: [] as string[],
+  pickers: new Map<string, { onOpen?: () => void }>(),
   invoke: vi.fn(),
   rpc: vi.fn(),
   savedRows: [] as unknown[],
@@ -18,7 +19,7 @@ vi.mock("next/link", () => ({ default: ({ children, ...props }: { children: Reac
 vi.mock("next/image", () => ({ default: ({ src }: { src: string }) => <span data-image-src={src} /> }));
 vi.mock("@/components/kakao-map-canvas", () => ({ KakaoMapCanvas: () => <div />, MapMarkerLegend: () => <div /> }));
 vi.mock("@/components/map-point-confirmation", () => ({ MapPointConfirmation: () => <div /> }));
-vi.mock("@/components/place-search-field", () => ({ PlaceSearchField: () => <div /> }));
+vi.mock("@/components/place-search-field", () => ({ PlaceSearchField: (props: { onOpen?: () => void; label: string }) => { mocks.pickers.set(props.label, props); return <div />; } }));
 vi.mock("@/components/ordered-waypoint-editor", () => ({ OrderedWaypointEditor: () => <div /> }));
 vi.mock("@/components/collection-manager", () => ({ CollectionManager: () => <div /> }));
 vi.mock("@/components/share-manager", () => ({ ShareManager: () => <div /> }));
@@ -323,6 +324,19 @@ describe("PlannerDashboard restaurant recommendation", () => {
     await act(async () => buttons(renderer.root, "음식점 추천 받기")[0].props.onClick());
     await flush();
     expect(mocks.reads.filter((table) => table === "place_folder_preferences").length).toBe(before + 1);
+  });
+
+  it("delta 5: opening a place picker re-reads my star list", async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={course} navigationMode="memory" />, { createNodeMock }); });
+    await flush();
+    const before = mocks.reads.filter((table) => table === "my_star_entries").length;
+    const origin = mocks.pickers.get("출발");
+    expect(origin?.onOpen).toBeTypeOf("function");
+    await act(async () => origin!.onOpen!());
+    await flush();
+    expect(mocks.reads.filter((table) => table === "my_star_entries").length).toBe(before + 1);
+    void renderer;
   });
 
   it("requests with the displayed basis, then adds the chosen restaurant as a meal without any further call", async () => {

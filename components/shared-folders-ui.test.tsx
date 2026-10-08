@@ -79,6 +79,9 @@ beforeEach(() => {
     current: () => ({ status: "ready", snapshot }),
     retry: vi.fn(), refresh: vi.fn(), reloadStars: vi.fn(async () => undefined),
     captureSnapshot: () => () => true, recheck: vi.fn(async () => "unreadable"), write, call: vi.fn(async () => ({ data: [] })),
+    // Like the provider: account-wide, outside the favorites screen.
+    pendingCreate: null,
+    setPendingCreate: vi.fn((next: unknown) => { mocks.shared.pendingCreate = next; }),
   };
   mocks.canvases = [];
 });
@@ -415,6 +418,73 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
     await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "폴더 만들기").props.onClick());
     expect(write).toHaveBeenCalledTimes(2);
     expect(write.mock.calls[1][0].args).toEqual(write.mock.calls[0][0].args);
+    await act(async () => r.unmount());
+  });
+
+  async function keepUnknownCreate(r: ReactTestRenderer) {
+    await startCreate(r);
+    write.mockImplementationOnce(async () => ({ ok: false, reason: "unknown", checked: false, title: "목록을 확인하지 못했어요", message: "", recheck: () => false }));
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "폴더 만들기").props.onClick());
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "취소").props.onClick());
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+  }
+  const rerenderManager = (r: ReactTestRenderer) => act(async () => r.update(<SavedPlacesManager onBack={vi.fn()} onAddWaypoint={vi.fn(() => null)} routePoints={[]} />));
+  async function resume(r: ReactTestRenderer) {
+    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => snapshot);
+    await rerenderManager(r);
+    await act(async () => { button(r, "다시 확인").props.onClick(); await Promise.resolve(); });
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+  }
+
+  it("delta 5-1: cancelling the reopened confirmation returns to the kept request, never to a new id or edited input", async () => {
+    const r = await mount();
+    await keepUnknownCreate(r);
+    await resume(r);
+    // The reopened screen is locked to the kept input.
+    expect(r.root.find((n) => n.type === "input" && n.props.placeholder === "예: 주말 라이더").props.disabled).toBe(true);
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "취소").props.onClick());
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+    expect(r.root.findAll((n) => n.type === "input" && n.props.placeholder === "예: 주말 라이더")).toHaveLength(0);
+    expect(text(r.root)).toContain("폴더를 만들었는지 확인하고 있어요");
+    expect(button(r, "＋ 공유 폴더 만들기").props.disabled).toBe(true);
+    expect(write).toHaveBeenCalledTimes(1);
+    await act(async () => r.unmount());
+  });
+
+  it("delta 5-2: closing the deleted-since notice settles the kept request and allows a new create", async () => {
+    const r = await mount();
+    await keepUnknownCreate(r);
+    await resume(r);
+    write.mockImplementationOnce(async (spec: { args: { request_id: string }; receipt: (data: unknown) => unknown }) => {
+      spec.receipt({ folder: { id: "00000000-0000-4000-8000-0000000000f9", owner_id: ME, name: "새 폴더", revision: 1, create_request_id: spec.args.request_id, created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z" } });
+      return { ok: false, reason: "mismatch", checked: true, title: "", message: "", recheck: () => false };
+    });
+    const popup = () => dialogWith(r, "이 공유 폴더를 만들까요?");
+    await act(async () => button(popup(), "폴더 만들기").props.onClick());
+    expect(text(popup())).toContain("이 요청으로 만든 폴더는 이미 삭제됐어요");
+    await act(async () => button(popup(), "닫기").props.onClick());
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+    expect(mocks.shared.pendingCreate).toBeNull();
+    await act(async () => r.root.findByProps({ "aria-label": "공유 폴더 만들기 뒤로" }).props.onClick());
+    await act(async () => { const leave = r.root.findAll((n) => n.type === "button" && text(n) === "그만두기")[0]; if (leave) leave.props.onClick(); });
+    expect(text(r.root)).not.toContain("폴더를 만들었는지 확인하고 있어요");
+    expect(button(r, "＋ 공유 폴더 만들기").props.disabled).toBe(false);
+    await act(async () => r.unmount());
+  });
+
+  it("delta 5-3: the kept request survives leaving the favorites screen in the same account", async () => {
+    let r = await mount();
+    await keepUnknownCreate(r);
+    const first = write.mock.calls[0][0].args;
+    await act(async () => r.unmount());
+    // Home and back: a new favorites screen over the same account state.
+    r = await mount();
+    await act(async () => button(r, "공유 폴더").props.onClick());
+    expect(text(r.root)).toContain("폴더를 만들었는지 확인하고 있어요");
+    expect(button(r, "＋ 공유 폴더 만들기").props.disabled).toBe(true);
+    await resume(r);
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "폴더 만들기").props.onClick());
+    expect(write.mock.calls[1][0].args).toEqual(first);
     await act(async () => r.unmount());
   });
 

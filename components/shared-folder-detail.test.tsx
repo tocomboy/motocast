@@ -83,6 +83,7 @@ beforeEach(() => {
     current: () => ({ status: "ready", snapshot }),
     retry: vi.fn(), refresh, reloadStars: vi.fn(async () => undefined),
     captureSnapshot: () => () => true, recheck, write, call: vi.fn(async () => ({ data: [] })),
+    pendingCreate: null, setPendingCreate: vi.fn(),
   };
 });
 afterEach(() => vi.unstubAllGlobals());
