@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { expectSectionPageFills } from "./section-page-layout";
 import { existsSync, mkdtempSync, readFileSync, rmdirSync, unlinkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -159,6 +160,17 @@ for (const viewport of [
       expect(JSON.parse(stored ?? "null")).toEqual({ token: TOKEN, savedAt: expect.any(Number) });
       expect(sent.filter((line) => line.includes(TOKEN))).toEqual([]);
     });
+  });
+}
+
+// Wide windows too: the section column must keep its content width (Preview defect 2026-10-09).
+for (const width of [320, 390, 820, 1440, 1920, 2560]) {
+  test(`favorites section pages fill their column at ${width} (production markup)`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    for (const name of ["folders", "avoided"]) {
+      await setProductionMarkup(page, markup[name]);
+      await expectSectionPageFills(page, `${name} ${width}`);
+    }
   });
 }
 

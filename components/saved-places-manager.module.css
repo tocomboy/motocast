@@ -720,7 +720,9 @@ p.noticeCard { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--m
   .page .sectionSwitch button { flex: 0 0 160px; }
   .page .folderToggle { flex: 0 0 auto; }
   .dialog.sheet { width: min(480px, calc(100vw - 64px)); margin: auto; border-radius: 24px; }
-  .page.sectionPage { max-width: 760px; margin: 0 auto; width: 100%; }
+  /* A centered column: fixed side padding. The page padding above is a share of the parent width,
+     which on a wide window is larger than this capped column and left the content ~20px wide. */
+  .page.sectionPage { max-width: 824px; margin: 0 auto; width: 100%; padding-left: 32px; padding-right: 32px; }
   .page.sectionPage .registerFooter { display: block; position: static; margin: 0; padding: 0; border: 0; background: transparent; }
   .page.sectionPage .registerFooter button { width: auto; min-width: 240px; }
   .page.folderPage .heading :global(.primary-button) { width: auto; }
