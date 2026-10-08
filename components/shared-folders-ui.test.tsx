@@ -356,6 +356,77 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
     await act(async () => r.unmount());
   });
 
+  for (const [label, kind] of [["폴더 이름 바꾸기", "folder"], ["이 폴더에서 쓰는 내 이름", "member"]] as const) {
+    it(`delta 3-1: an unread stale ${kind} name stays read-only while the re-read shows the same or an older revision`, async () => {
+      let status = "ready";
+      mocks.shared.current = () => ({ status, snapshot });
+      // Shown at revision 2, so an older revision (1) can be read back.
+      const setRevision = (revision: number, name: string) => {
+        reload(kind === "folder"
+          ? { ...snapshot, folders: snapshot.folders.map((row) => (row.id === F1 ? { ...row, name, revision } : row)) }
+          : { ...snapshot, members: snapshot.members.map((row) => (row.folderId === F1 && row.memberId === ME ? { ...row, displayName: name, revision } : row)) });
+      };
+      setRevision(2, kind === "folder" ? "주말 라이더" : "바람개비");
+      const r = await mount();
+      await openMenuRow(r, label);
+      await act(async () => inputOf(r).props.onChange({ target: { value: kind === "folder" ? "주말 라이더 C" : "바람개비C" } }));
+      await act(async () => button(r, "이름 저장").props.onClick());
+      const title = kind === "folder" ? "폴더 이름을 바꿀까요?" : "폴더용 이름을 바꿀까요?";
+      const popup = () => dialogs(r, title).at(-1)!;
+      write.mockImplementationOnce(async () => { status = "error"; generation += 1; return { ok: false, reason: "rejected", stale: true, title: "다른 기기에서 먼저 바뀌었어요", message: "" }; });
+      await act(async () => button(popup(), "확인하고 바꾸기").props.onClick());
+      for (const revision of [2, 1]) {
+        (mocks.shared as { recheck: ReturnType<typeof vi.fn> }).recheck = vi.fn(async (applied: (s: SharedSnapshot) => boolean) => {
+          setRevision(revision, kind === "folder" ? "옛 이름" : "옛이름");
+          status = "ready";
+          return applied(snapshot) ? "applied" : "missing";
+        });
+        await act(async () => r.update(<SavedPlacesManager onBack={vi.fn()} onAddWaypoint={vi.fn(() => null)} routePoints={[]} />));
+        await act(async () => { button(popup(), "최신 이름 다시 확인").props.onClick(); await Promise.resolve(); });
+        expect(text(popup())).toContain("아직 최신 이름이 보이지 않아요. 이름 변경은 다시 보내지 않아요.");
+        expect(buttons(popup(), "최신 이름 다시 확인")).toHaveLength(1);
+        expect(buttons(popup(), "확인하고 바꾸기")).toHaveLength(0);
+        expect(buttons(popup(), "다시 시도")).toHaveLength(0);
+        expect(buttons(popup(), "최신 이름 확인")).toHaveLength(0);
+      }
+      expect(inputOf(r).props.value).toBe(kind === "folder" ? "주말 라이더 C" : "바람개비C");
+      expect(write).toHaveBeenCalledTimes(1);
+      await act(async () => r.unmount());
+    });
+  }
+
+  it("delta 3-3: a replayed receipt for a folder deleted since ends with its own notice and resends nothing", async () => {
+    const r = await mount();
+    await startCreate(r);
+    write.mockImplementationOnce(async (spec: { args: { request_id: string }; receipt: (data: unknown) => unknown }) => {
+      spec.receipt({ folder: { id: "00000000-0000-4000-8000-0000000000f9", owner_id: ME, name: "새 폴더", revision: 1, create_request_id: spec.args.request_id, created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z" } });
+      return { ok: false, reason: "mismatch", checked: true, title: "목록에서 변경을 확인하지 못했어요", message: "", recheck: () => false };
+    });
+    const popup = () => dialogWith(r, "이 공유 폴더를 만들까요?");
+    await act(async () => button(popup(), "폴더 만들기").props.onClick());
+    expect(text(popup())).toContain("이 요청으로 만든 폴더는 이미 삭제됐어요");
+    expect(buttons(popup(), "목록 다시 확인")).toHaveLength(0);
+    expect(buttons(popup(), "다시 시도")).toHaveLength(0);
+    await act(async () => button(popup(), "닫기").props.onClick());
+    expect(write).toHaveBeenCalledTimes(1);
+    await act(async () => r.unmount());
+  });
+
+  it("delta 3-4: changing the input after closing the confirmation sends a new request id", async () => {
+    const r = await mount();
+    await startCreate(r);
+    write.mockResolvedValueOnce({ ok: false, reason: "rejected", title: "폴더를 만들지 못했어요", message: "" });
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "폴더 만들기").props.onClick());
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "취소").props.onClick());
+    await act(async () => r.root.findByProps({ placeholder: "예: 주말 라이더" }).props.onChange({ target: { value: "새 폴더 2" } }));
+    await act(async () => button(r, "빈 폴더로 만들기").props.onClick());
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "폴더 만들기").props.onClick());
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(write.mock.calls[1][0].args.folder_name).toBe("새 폴더 2");
+    expect(write.mock.calls[1][0].args.request_id).not.toBe(write.mock.calls[0][0].args.request_id);
+    await act(async () => r.unmount());
+  });
+
   it("V3-2: a display name confirm whose row changed underneath sends nothing and shows the newest name", async () => {
     const r = await mount();
     await openMenuRow(r, "이 폴더에서 쓰는 내 이름");

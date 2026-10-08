@@ -24,6 +24,8 @@ export type ConfirmWrite<T> =
       checked?: boolean;
       stale?: boolean;
       recheck?: (list: T) => boolean;
+      /** Read-only until `recheck` is applied: a "missing" re-read shows this and never unlocks a resend. */
+      stillMissing?: { title: string; message: string };
     };
 /** Outcome of a read-only recheck of an earlier write. */
 export type Recheck = "applied" | "missing" | "unreadable";
@@ -106,7 +108,7 @@ export function ConfirmPopup<T>({
   const [error, setError] = useState<{ title: string; message: string; retry?: boolean; again?: boolean } | null>(pending.error ?? null);
   const [final, setFinal] = useState<PopupButton[] | null>(null);
   // Unknown without a readable list, or a receipt the list does not show yet: only reading is allowed.
-  const [readOnly, setReadOnly] = useState<{ check: (list: T) => boolean; mismatch: boolean } | null>(null);
+  const [readOnly, setReadOnly] = useState<{ check: (list: T) => boolean; mismatch: boolean; stillMissing?: { title: string; message: string } } | null>(null);
   const [rechecking, setRechecking] = useState(false);
   useEffect(() => {
     mounted.current = true;
@@ -131,7 +133,7 @@ export function ConfirmPopup<T>({
       if (write.ok) onClose();
       else if ((write.reason === "unknown" && !write.checked) || write.reason === "mismatch") {
         setError({ title: write.title, message: write.message });
-        setReadOnly(write.recheck ? { check: write.recheck, mismatch: write.reason === "mismatch" } : null);
+        setReadOnly(write.recheck ? { check: write.recheck, mismatch: write.reason === "mismatch" || Boolean(write.stillMissing), stillMissing: write.stillMissing } : null);
       } else if (write.reason !== "blocked" || write.message) {
         const ending = write.reason === "rejected" || write.reason === "star_limit" ? action.finalOnRefusal?.(write) : null;
         if (ending) {
@@ -170,7 +172,7 @@ export function ConfirmPopup<T>({
         setSnapshot(() => capture());
       } else {
         setError(result === "missing"
-          ? { title: "목록에서 변경을 확인하지 못했어요", message: "변경 요청은 접수됐지만 최신 목록에 아직 보이지 않아요. 같은 요청은 다시 보내지 않아요. 잠시 뒤 목록을 다시 확인해 주세요." }
+          ? readOnly.stillMissing ?? { title: "목록에서 변경을 확인하지 못했어요", message: "변경 요청은 접수됐지만 최신 목록에 아직 보이지 않아요. 같은 요청은 다시 보내지 않아요. 잠시 뒤 목록을 다시 확인해 주세요." }
           : { title: "목록을 확인하지 못했어요", message: "변경됐는지 아직 몰라요. 목록을 다시 확인한 뒤에 다시 시도할 수 있어요." });
       }
     } finally {

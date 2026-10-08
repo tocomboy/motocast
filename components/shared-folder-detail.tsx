@@ -293,6 +293,10 @@ export function SharedFolderDetail({
           onSave={(place, alias, kind, starred) => open(addSharedPopup(shared, folderId, { place, alias, kind, starred }, {
             onSaved: (row) => {
               setAdding(null);
+              // A new save ends the previous save's star result and success notice.
+              setStarIssue(null);
+              setStarDone(null);
+              starRun.current += 1;
               if (row) setTab(row.kind);
               if (starred) void starNewPlace(row, row ? sharedName(row) : alias.trim() || place.name);
             },

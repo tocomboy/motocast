@@ -217,6 +217,25 @@ describe("adding a place to a shared folder (G13b)", () => {
     expect(text(r.root)).toContain("폴더에서 장소를 삭제했어요.");
   });
 
+  it("delta 3-2: saving another place without a star ends the previous star success notice and sends no star", async () => {
+    const second = { ...searched, kakaoPlaceId: "k-second", name: "두번째 식당" };
+    const secondRow = () => parseSharedPlace(sharedRow(41, F1, "k-second", "두번째 식당", { kind: "restaurant" }));
+    write
+      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; })
+      .mockResolvedValueOnce({ ok: false, reason: "unknown", checked: false, title: "", message: "" })
+      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, secondRow()] }; return { ok: true }; });
+    const r = await mount();
+    await addPlace(r, searched, true);
+    await act(async () => { buttons(dialogs(r, "폴더에 저장할까요?").at(-1)!, "확인하고 저장")[0].props.onClick(); await Promise.resolve(); });
+    refresh.mockImplementationOnce(async () => { snapshot = { ...snapshot, places: snapshot.places.map((p) => (p.id === newRow().id ? { ...p, starred: true } : p)) }; return snapshot; });
+    await act(async () => buttons(r, "목록 다시 확인")[0].props.onClick());
+    expect(text(r.root)).toContain("폴더에 저장하고 자주 찾는 장소에도 추가했어요.");
+    await addPlace(r, second, false);
+    await act(async () => { buttons(dialogs(r, "폴더에 저장할까요?").at(-1)!, "확인하고 저장")[0].props.onClick(); await Promise.resolve(); });
+    expect(write.mock.calls.map((call) => call[0].rpc)).toEqual(["add_shared_place", "set_shared_place_star", "add_shared_place"]);
+    expect(text(r.root)).not.toContain("폴더에 저장하고 자주 찾는 장소에도 추가했어요.");
+  });
+
   it("V3-10: the duplicate-place popup closes with 닫기 and with 기존 장소 열기", async () => {
     const existing = { ...searched, kakaoPlaceId: "k-f1", name: "문호리 강변 쉼터" };
     const r = await mount();

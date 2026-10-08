@@ -5,7 +5,7 @@ import { LineIcon } from "@/components/line-icon";
 import { ConfirmPopup, type Pending } from "./confirm-popup";
 import { SavedDialog } from "./saved-dialog";
 import { useSavedPlaces } from "./saved-places-provider";
-import { useSharedFolders, type SharedSnapshot } from "./shared-folders-provider";
+import { useSharedFolders, type SharedSnapshot, type SharedWrite } from "./shared-folders-provider";
 import { kindLabel, useSharedPopup } from "./shared-place-actions";
 import { isRegionOnlyPlace, savedPlaceName, type SavedPlaceEntry, type SavedPlaceKind } from "@/lib/places/saved";
 import {
@@ -224,6 +224,7 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
     // so a resent or browser-retried request makes one folder (contract §6, idempotent create).
     const requestId = crypto.randomUUID();
     const createdBy = (s: SharedSnapshot) => s.folders.find((f) => f.ownerId === me && f.createRequestId === requestId);
+    const deletedSince: SharedWrite = { ok: false, reason: "rejected", title: "이 요청으로 만든 폴더는 이미 삭제됐어요", message: "같은 요청으로 만든 폴더가 그사이 삭제돼 다시 만들지 않았어요. 새로 만들려면 \"폴더 만들기\"를 다시 눌러 주세요." };
     open({
       title: "이 공유 폴더를 만들까요?",
       card: { eyebrow: "새 공유 폴더", name: folderName, line: `이 폴더에서 쓸 내 이름 · ${mine}` },
@@ -270,8 +271,13 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
             const id = created.current ?? createdBy(shared.current().snapshot)?.id;
             if (id) onCreated(id);
           }
+          // The server replayed this request's receipt, but the readable list has no such folder:
+          // it was deleted since. Nothing is resent under this id.
+          if (!write.ok && write.reason === "mismatch" && write.checked && created.current) return deletedSince;
+          if (!write.ok && write.reason === "mismatch" && created.current) return { ...write, stillMissing: { title: deletedSince.title, message: deletedSince.message } };
           return write;
         },
+        finalOnRefusal: (write) => (write.title === deletedSince.title ? [{ label: "닫기", primary: true, onClick: () => undefined }] : null),
         onApplied: () => {
           const id = created.current ?? createdBy(shared.current().snapshot)?.id;
           if (id) onCreated(id);

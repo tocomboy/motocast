@@ -78,6 +78,11 @@ insert into tap_results values
 select pg_temp.expect_error($q$select public.create_place_folder('다른 이름','Ace',array[pg_temp.saved(1,'s4')],'95000000-0000-0000-0000-000000000001')$q$,'PLACE_FOLDER_REQUEST_MISMATCH','another name under the same request id is refused');
 select pg_temp.expect_error($q$select public.create_place_folder('요청 폴더','Ace','{}','95000000-0000-0000-0000-000000000001')$q$,'PLACE_FOLDER_REQUEST_MISMATCH','other places under the same request id are refused');
 select pg_temp.expect_error($q$select public.create_place_folder('요청 폴더','Ace','{}',null)$q$,'INVALID_PLACE_FOLDER','a missing request id is rejected');
+select pg_temp.expect_error($q$select public.create_place_folder('요청 폴더','Ace2',array[pg_temp.saved(1,'s4')],'95000000-0000-0000-0000-000000000001')$q$,'PLACE_FOLDER_REQUEST_MISMATCH','another folder-only name under the same request id is refused');
+insert into res select 'RQ3', public.create_place_folder('순서 폴더','Ace',array[pg_temp.saved(1,'s5'),pg_temp.saved(1,'s7')],'95000000-0000-0000-0000-000000000003');
+insert into tap_results values
+(public.create_place_folder('순서 폴더','Ace',array[pg_temp.saved(1,'s7'),pg_temp.saved(1,'s5')],'95000000-0000-0000-0000-000000000003')=pg_temp.r('RQ3'),'the same places in another order are the same request'),
+((select count(*)=1 from public.place_folders where owner_id=pg_temp.u(1) and name='순서 폴더'),'reordered ids make no second folder');
 select pg_temp.expect_error($q$select * from public.place_folder_create_requests$q$,'permission denied for table place_folder_create_requests','request records are not readable by riders','42501');
 reset role;
 select pg_temp.sub(2); set local role authenticated;
@@ -86,7 +91,13 @@ insert into tap_results values
 (pg_temp.fid('RQ2')<>pg_temp.fid('RQ1'),'another rider''s same request id is independent');
 reset role;
 -- The request folders are not part of the scenarios below.
-delete from public.place_folders where id in (pg_temp.fid('RQ1'),pg_temp.fid('RQ2'));
+delete from public.place_folders where id in (pg_temp.fid('RQ1'),pg_temp.fid('RQ2'),pg_temp.fid('RQ3'));
+-- A replay after the folder was deleted returns the stored result and does not recreate it.
+select pg_temp.sub(1); set local role authenticated;
+insert into tap_results values
+(public.create_place_folder('요청 폴더','Ace',array[pg_temp.saved(1,'s4')],'95000000-0000-0000-0000-000000000001')=pg_temp.r('RQ1'),'a replay after the folder was deleted returns the stored result'),
+((select count(*)=0 from public.place_folders where owner_id=pg_temp.u(1) and name='요청 폴더'),'a replay after deletion does not recreate the folder');
+reset role;
 select pg_temp.sub(1); set local role authenticated;
 insert into res select 'F2', public.create_place_folder(repeat('가',40),repeat('나',20),'{}',gen_random_uuid());
 insert into tap_results values
@@ -612,6 +623,7 @@ delete from auth.users where id=pg_temp.u(1);
 insert into tap_results values
 ((select count(*)=0 from public.place_folders where owner_id=pg_temp.u(1)) and (select count(*)=0 from public.shared_places where folder_id=pg_temp.fid('F1'))
   and (select count(*)=0 from public.place_folder_members where folder_id=pg_temp.fid('F1')),'deleting an owner account deletes the owner''s folders'),
+((select count(*)=0 from public.place_folder_create_requests where owner_id=pg_temp.u(1)) and (select count(*)>0 from public.place_folder_create_requests where owner_id=pg_temp.u(2)),'deleting an account removes only that rider''s create request records'),
 ((select count(*)=0 from public.place_folder_members where folder_id=pg_temp.fid('F2')),'the owner''s other folders and their members are deleted too');
 set constraints all immediate;
 insert into tap_results values (true,'account deletion cascades pass every deferred check');
@@ -620,7 +632,7 @@ select (case when ok then 'ok ' else 'not ok ' end)||row_number() over()||' - '|
 select '1..'||count(*) from tap_results;
 -- Fixed plan: a skipped or row-less assertion fails the suite instead of vanishing.
 do $$ begin
-  if (select count(*) from tap_results)<>277 then raise exception 'SHARED_PLACE_FOLDERS_PLAN_MISMATCH: % of 277', (select count(*) from tap_results); end if;
+  if (select count(*) from tap_results)<>283 then raise exception 'SHARED_PLACE_FOLDERS_PLAN_MISMATCH: % of 283', (select count(*) from tap_results); end if;
   if exists(select 1 from tap_results where not ok) then raise exception 'SHARED_PLACE_FOLDERS_TEST_FAILED'; end if;
 end $$;
 rollback;

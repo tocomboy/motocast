@@ -533,7 +533,7 @@ function DisplayNameEdit({ folderId, onClose }: { folderId: string; onClose: () 
         run: async () => {
           const latest = shared.current().snapshot.members.find((row) => row.folderId === folderId && row.memberId === mine.memberId);
           if (!latest) return { ok: false, reason: "rejected", title: "폴더를 찾지 못했어요", message: "폴더가 삭제됐거나 더 볼 수 없어요." };
-          if (latest.revision !== shown) return conflict(latest);
+          if (latest.revision > shown) return conflict(latest);
           const applied = (s: SharedSnapshot) => s.members.some((row) => row.folderId === folderId && row.memberId === mine.memberId && row.displayName === next);
           const write = await shared.write({
             rpc: "set_place_folder_display_name",
@@ -549,10 +549,10 @@ function DisplayNameEdit({ folderId, onClose }: { folderId: string; onClose: () 
           if (write.ok) onClose();
           if (!write.ok && write.reason === "rejected" && write.stale) {
             const fresh = latestMine(shared.current().snapshot);
-            if (shared.current().status === "ready" && fresh && fresh.revision !== shown) return conflict(fresh);
-            // The newest name could not be read: only reading may follow, then G36c as a new approval.
+            if (shared.current().status === "ready" && fresh && fresh.revision > shown) return conflict(fresh);
+            // No newer name was read: stay read-only (no resend) until a newer revision shows, then G36c.
             staleUnread = true;
-            return { ok: false, reason: "unknown", checked: false, title: "최신 이름을 확인하지 못했어요", message: "다른 기기에서 먼저 바뀌었지만 최신 이름을 불러오지 못했어요. 이름 변경은 다시 보내지 않아요. 연결을 확인한 뒤 최신 이름을 다시 확인해 주세요.", recheck: (s) => (latestMine(s)?.revision ?? shown) !== shown };
+            return { ok: false, reason: "unknown", checked: false, title: "최신 이름을 확인하지 못했어요", message: "다른 기기에서 먼저 바뀌었지만 최신 이름을 불러오지 못했어요. 이름 변경은 다시 보내지 않아요. 연결을 확인한 뒤 최신 이름을 다시 확인해 주세요.", recheck: (s) => (latestMine(s)?.revision ?? shown) > shown, stillMissing: { title: "최신 이름을 확인하지 못했어요", message: "아직 최신 이름이 보이지 않아요. 이름 변경은 다시 보내지 않아요. 잠시 뒤 최신 이름을 다시 확인해 주세요." } };
           }
           return write;
         },
@@ -560,7 +560,7 @@ function DisplayNameEdit({ folderId, onClose }: { folderId: string; onClose: () 
         onApplied: () => {
           const fresh = staleUnread ? latestMine(shared.current().snapshot) : null;
           staleUnread = false;
-          if (fresh && fresh.revision !== shown) conflict(fresh);
+          if (fresh && fresh.revision > shown) conflict(fresh);
           else onClose();
         },
         finalOnRefusal: (write) => (write.title === "같은 이름이 있어요"
@@ -633,7 +633,7 @@ function FolderRename({ folderId, onClose }: { folderId: string; onClose: () => 
         run: async () => {
           const latest = shared.current().snapshot.folders.find((row) => row.id === folderId);
           if (!latest) return { ok: false, reason: "rejected", title: "폴더를 찾지 못했어요", message: "폴더가 삭제됐어요." };
-          if (latest.revision !== shown) return conflict(latest);
+          if (latest.revision > shown) return conflict(latest);
           const write = await shared.write({
             rpc: "rename_place_folder",
             args: { folder_id: folderId, expected_revision: shown, folder_name: next },
@@ -648,10 +648,10 @@ function FolderRename({ folderId, onClose }: { folderId: string; onClose: () => 
           if (write.ok) onClose();
           if (!write.ok && write.reason === "rejected" && write.stale) {
             const fresh = latestFolder(shared.current().snapshot);
-            if (shared.current().status === "ready" && fresh && fresh.revision !== shown) return conflict(fresh);
-            // The newest name could not be read: only reading may follow, then G37c as a new approval.
+            if (shared.current().status === "ready" && fresh && fresh.revision > shown) return conflict(fresh);
+            // No newer name was read: stay read-only (no resend) until a newer revision shows, then G37c.
             staleUnread = true;
-            return { ok: false, reason: "unknown", checked: false, title: "최신 이름을 확인하지 못했어요", message: "다른 기기에서 먼저 바뀌었지만 최신 이름을 불러오지 못했어요. 이름 변경은 다시 보내지 않아요. 연결을 확인한 뒤 최신 이름을 다시 확인해 주세요.", recheck: (s) => (latestFolder(s)?.revision ?? shown) !== shown };
+            return { ok: false, reason: "unknown", checked: false, title: "최신 이름을 확인하지 못했어요", message: "다른 기기에서 먼저 바뀌었지만 최신 이름을 불러오지 못했어요. 이름 변경은 다시 보내지 않아요. 연결을 확인한 뒤 최신 이름을 다시 확인해 주세요.", recheck: (s) => (latestFolder(s)?.revision ?? shown) > shown, stillMissing: { title: "최신 이름을 확인하지 못했어요", message: "아직 최신 이름이 보이지 않아요. 이름 변경은 다시 보내지 않아요. 잠시 뒤 최신 이름을 다시 확인해 주세요." } };
           }
           return write;
         },
@@ -659,7 +659,7 @@ function FolderRename({ folderId, onClose }: { folderId: string; onClose: () => 
         onApplied: () => {
           const fresh = staleUnread ? latestFolder(shared.current().snapshot) : null;
           staleUnread = false;
-          if (fresh && fresh.revision !== shown) conflict(fresh);
+          if (fresh && fresh.revision > shown) conflict(fresh);
           else onClose();
         },
       },
