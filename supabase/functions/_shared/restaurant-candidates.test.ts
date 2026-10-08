@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -124,4 +125,49 @@ describe("candidate pool", () => {
     expect(pool.restaurants.map((restaurant) => restaurant.kakaoPlaceId)).toEqual(["poi-2"]);
     expect(pool).toMatchObject({ duplicateMerged: 1, avoidedExcluded: 1 });
   });
+});
+
+// Shared web/Android fixture (contracts/android/shared-folders/merge-fixtures.json). The
+// server reads only enabled folders' restaurants already ordered by (created_at, id), so the
+// runner applies that read here; fixture ids are mapped to UUIDs that keep their order.
+describe("shared merged-view fixture", () => {
+  type MergeCase = {
+    name: string;
+    input: { enabledFolderIds: string[]; saved: Array<{ id: string; kakaoPlaceId: string }>; shared: Array<{ id: string; folderId: string; kakaoPlaceId: string; createdAt: string }> };
+    expected: Array<{ source: "saved" | "shared"; id: string; folderId?: string; otherFolderIds: string[] }>;
+  };
+  type AvoidedCase = { name: string; place: { kakaoPlaceId: string; latitude: number; longitude: number }; avoided: Array<{ id: string; kakaoPlaceId: string; latitude: number; longitude: number }>; expected: string | null };
+  const fixture = JSON.parse(readFileSync(new URL("../../../contracts/android/shared-folders/merge-fixtures.json", import.meta.url), "utf8")) as { mergeCases: MergeCase[]; avoidedCases: AvoidedCase[] };
+  const uuidMap = (values: string[]) => {
+    const sorted = [...new Set(values)].sort();
+    const forward = new Map(sorted.map((value, index) => [value, `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`]));
+    return { to: (value: string) => forward.get(value)!, from: new Map([...forward].map(([key, value]) => [value, key])) };
+  };
+
+  it("runs every merge case", () => expect(fixture.mergeCases.length).toBeGreaterThan(5));
+  for (const testCase of fixture.mergeCases) {
+    it(testCase.name, () => {
+      const { saved, shared, enabledFolderIds } = testCase.input;
+      const ids = uuidMap([...saved.map((row) => row.id), ...shared.map((row) => row.id)]);
+      const folders = uuidMap(shared.map((row) => row.folderId));
+      const savedRows = saved.map((row) => ({ id: ids.to(row.id), alias: null, revision: 1, place: place(row.kakaoPlaceId) }));
+      const sharedRows = shared
+        .filter((row) => enabledFolderIds.includes(row.folderId))
+        .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .map((row) => ({ id: ids.to(row.id), alias: null, revision: 1, place: place(row.kakaoPlaceId), folder_id: folders.to(row.folderId), created_at: row.createdAt }));
+      const pool = buildCandidatePool(savedRows, [], sharedRows);
+      expect(pool.restaurants.map((restaurant) => ({
+        source: restaurant.source.type,
+        id: ids.from.get(restaurant.source.id),
+        ...(restaurant.source.type === "shared" ? { folderId: folders.from.get(restaurant.source.folderId) } : {}),
+        otherFolderIds: restaurant.otherFolderIds.map((id) => folders.from.get(id)),
+      }))).toEqual(testCase.expected.map(({ source, id, folderId, otherFolderIds }) => ({ source, id, ...(folderId ? { folderId } : {}), otherFolderIds })));
+    });
+  }
+  for (const testCase of fixture.avoidedCases) {
+    it(`avoidance: ${testCase.name}`, () => {
+      const matches = testCase.avoided.filter((row) => avoidanceMatcher([row])(testCase.place)).map((row) => row.id);
+      expect(matches[0] ?? null).toBe(testCase.expected);
+    });
+  }
 });
