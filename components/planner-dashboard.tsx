@@ -236,7 +236,9 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   // SRC01: frequent places are every star, personal and shared, ordered by when they were
   // starred and shown with their source; folder toggles never hide them.
   const favoriteControls = useMemo(() => {
-    if (!sharedFolders.enabled || sharedFolders.status !== "ready") return { ...savedControls, favorites: savedControls.favorites.map((favorite) => ({ ...favorite, sourceLabel: "내 장소" })) };
+    // Without shared folders there is nothing to tell apart, so no source line (same rule as Android).
+    if (!sharedFolders.enabled || sharedFolders.status !== "ready" || !sharedFolders.snapshot.folders.length) return savedControls;
+    // A place starred both as mine and from a folder shows twice and counts twice (two stars).
     const { stars, folders } = sharedFolders.snapshot;
     const favorites = stars.map((star, index): PlaceFavorite => ({
       slot: (index + 1) as PlaceFavorite["slot"],

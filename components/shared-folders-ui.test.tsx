@@ -158,6 +158,24 @@ describe("favorites places view with shared folders (G00, G00a, G00b)", () => {
     snapshot = { ...snapshot, folders: [], members: [], preferences: [], places: [] };
     r = await mount();
     expect(r.root.findAll((n) => n.props["aria-label"]?.toString().startsWith("공유 폴더") && n.type === "button")).toHaveLength(0);
+    // Without any shared folder there is nothing to tell apart: no "내 장소" source line.
+    expect(cards(r).some((card) => card.includes("내 장소"))).toBe(false);
+    await act(async () => r.unmount());
+  });
+
+  it("lists a place starred both as mine and from a folder twice and counts both stars", async () => {
+    const tables = sampleTables();
+    const mineStar = tables.my_star_entries.find((row) => row.source === "saved")!;
+    tables.shared_place_entries[0].starred = true;
+    tables.my_star_entries.push({ ...mineStar, source: "shared", id: tables.shared_place_entries[0].id, folder_id: F1, star_slot: null, starred_at: "2026-10-05T00:00:00Z" });
+    snapshot = snapshotFrom(tables);
+    const r = await mount();
+    await act(async () => button(r, "자주 찾는 장소").props.onClick());
+    const rows = cards(r).filter((card) => card.includes("팔당 라이딩 카페"));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain("내 장소");
+    expect(rows[1]).toContain("공유 · 주말 라이더");
+    expect(text(r.root)).toContain("3 / 10");
     await act(async () => r.unmount());
   });
 

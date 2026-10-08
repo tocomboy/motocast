@@ -372,6 +372,8 @@ export function ResultView({ view, selection, input, settingsChanged, refused, a
   const selectedName = (mealIndex: MealIndex) => response.meals[mealIndex - 1]?.candidates.find((candidate) => candidate.savedPlaceId === selection[mealIndex])?.displayName;
   const chosenCount = Object.values(selection).filter(Boolean).length;
   // Source line (SRC02): "내 장소" or "공유 · <folder>" with "외 n" for the other enabled folders.
+  // The source line shows only while I belong to a shared folder (web = Android).
+  const showSources = Boolean(onFolderSettings) || view.response.coverage.sharedRestaurants > 0;
   const sourceOf = (key: string) => {
     const entry = view.sources.get(key);
     if (!entry || entry.source.type === "saved") return { icon: "pin" as const, text: "내 장소" };
@@ -410,7 +412,7 @@ export function ResultView({ view, selection, input, settingsChanged, refused, a
               ? <p className={styles.emptyMeal}>식사 {meal.index} 시간에는 조건에 맞는 음식점이 없습니다.</p>
               : <>
                 <p className={styles.hint}>{otherName ? `식사 ${otherIndex} '${otherName}'${andParticle(otherName)} 함께 가는 기준이에요. 도착 시각과 두 곳 합계가 바뀌었어요.` : rows.some((row) => row.pairOnly) ? "늘어나는 주행이 짧은 순서예요. 함께 갈 때만 가능한 곳은 뒤에 두었어요." : "늘어나는 주행이 짧은 순서예요."}</p>
-                <ul className={styles.rows}>{rows.map((row) => <li key={row.candidate.savedPlaceId}><CandidateRow row={row} source={sourceOf(row.candidate.savedPlaceId)} onSelect={() => onSelect(meal.index, row.candidate.savedPlaceId)} /></li>)}</ul>
+                <ul className={styles.rows}>{rows.map((row) => <li key={row.candidate.savedPlaceId}><CandidateRow row={row} source={showSources ? sourceOf(row.candidate.savedPlaceId) : null} onSelect={() => onSelect(meal.index, row.candidate.savedPlaceId)} /></li>)}</ul>
               </>}
           </section>;
         })}
@@ -433,7 +435,7 @@ export function ResultView({ view, selection, input, settingsChanged, refused, a
   </>;
 }
 
-function CandidateRow({ row, source, onSelect }: { row: CandidateRowState; source: { icon: "pin" | "folder"; text: string }; onSelect: () => void }) {
+function CandidateRow({ row, source, onSelect }: { row: CandidateRowState; source: { icon: "pin" | "folder"; text: string } | null; onSelect: () => void }) {
   const { candidate } = row;
   const blocked = !row.selectable && !row.selected;
   const extra = extraDriveLabel(row.extraDriveSeconds, row.combined);
@@ -441,7 +443,7 @@ function CandidateRow({ row, source, onSelect }: { row: CandidateRowState; sourc
   const spoken = [
     candidate.displayName,
     candidate.address,
-    source.text,
+    source?.text,
     `${spokenClock(row.arrivalAt)} 도착`,
     extraSpoken,
     "영업정보 없음",
@@ -461,7 +463,7 @@ function CandidateRow({ row, source, onSelect }: { row: CandidateRowState; sourc
     <span className={styles.candidateText}>
       <strong>{candidate.displayName}</strong>
       <span>{candidate.address}</span>
-      <span className={styles.sourceLine}><LineIcon name={source.icon} />{source.text}</span>
+      {source ? <span className={styles.sourceLine}><LineIcon name={source.icon} />{source.text}</span> : null}
       <span className={styles.candidateFacts}>{seoulClock(row.arrivalAt)} 도착 · {extra}</span>
       <small>영업정보 없음 · 방문 전 확인</small>
       {row.pairOnly ? <em>{row.reason}</em> : row.reason && (blocked || row.selected) ? <em>선택 불가 · {row.reason}</em> : null}

@@ -641,7 +641,7 @@ function SavedPlacesManagerContent({
                 <span className={styles.placeKind}>{kindLabel(preview.row.kind)} · {preview.row.province ?? "지역 미확인"}{preview.starred ? " · 자주 찾는 장소" : ""}</span>
                 <strong>{itemName(preview)}</strong>
                 <span>{placeLine(preview.row)}</span>
-                {shared.enabled ? sourceLine(preview) : null}
+                {folderCount ? sourceLine(preview) : null}
               </button>
               <StarIconButton starred={preview.starred} disabled={preview.source === "saved" ? blocked : shared.busy} onClick={() => confirmItemStar(preview)} />
             </div>
@@ -724,7 +724,7 @@ function SavedPlacesManagerContent({
                     <span className={styles.placeKind}>{kindLabel(p.row.kind)} · {p.row.province ?? "지역 미확인"}{avoidedOf(p.row.place) ? <span className={styles.chip}>기피</span> : null}</span>
                     <strong>{itemName(p)}</strong>
                     <span>{placeLine(p.row)}</span>
-                    {shared.enabled ? sourceLine(p) : null}
+                    {folderCount ? sourceLine(p) : null}
                   </button>
                   <StarIconButton starred={p.starred} disabled={p.source === "saved" ? blocked : shared.busy} onClick={() => confirmItemStar(p)} />
                 </li>
@@ -761,7 +761,7 @@ function SavedPlacesManagerContent({
                   <span className={styles.placeKind}>{kindLabel(p.row.kind)} · {p.row.province ?? "지역 미확인"}</span>
                   <strong>{itemName(p)}</strong>
                   <span>{placeLine(p.row)}</span>
-                  {shared.enabled ? sourceLine(p) : null}
+                  {folderCount ? sourceLine(p) : null}
                 </button>
               </li>
             ))}

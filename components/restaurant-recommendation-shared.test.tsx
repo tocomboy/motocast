@@ -85,6 +85,14 @@ describe("restaurant recommendation with shared folders (SRC02, SRC02b, SRC03)",
     expect(request).toHaveBeenCalledTimes(1);
   });
 
+  it("drops the source line for someone without any shared folder", async () => {
+    mocks.shared = { ...mocks.shared, snapshot: { ...(mocks.shared.snapshot as object), folders: [], preferences: [] } };
+    const mine = v2({ meals: v2().meals.map((meal) => ({ ...meal, candidates: meal.candidates.filter((candidate) => candidate.source.type === "saved") })) }, { sharedRestaurants: 0, avoidedExcluded: 0, disabledFolders: 0, duplicateMerged: 0 });
+    const { r } = await mount(mine);
+    expect(text(r.root)).not.toContain("내 장소");
+    expect(buttons(r, "공유 폴더 설정")).toHaveLength(0);
+  });
+
   it("marks a result from before a folder or avoided change and never re-requests by itself (SRC02b)", async () => {
     const { r, rerender } = await mount(v2());
     expect(text(r.root)).not.toContain("공유 폴더 설정이 바뀌었어요");
