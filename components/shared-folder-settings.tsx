@@ -148,10 +148,12 @@ export function useInvites(shared: Shared, folderId: string, enabled = true) {
   const [invites, setInvites] = useState<FolderInvite[] | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const generation = useRef(0);
+  // Keyed on the stable `call`, not the whole provider value, so folder re-reads do not re-read invites.
+  const { call } = shared;
   const load = useCallback(async (): Promise<FolderInvite[] | null> => {
     const read = ++generation.current;
     setState("loading");
-    const { data, code, lost } = await shared.call("list_place_folder_invites", { folder_id: folderId });
+    const { data, code, lost } = await call("list_place_folder_invites", { folder_id: folderId });
     if (read !== generation.current) return null;
     try {
       if (code || lost || !Array.isArray(data) || data.length > PLACE_FOLDER_INVITE_LIMIT * 10) throw new Error("READ_FAILED");
@@ -163,7 +165,7 @@ export function useInvites(shared: Shared, folderId: string, enabled = true) {
       setState("error");
       return null;
     }
-  }, [shared, folderId]);
+  }, [call, folderId]);
   useEffect(() => {
     if (!enabled) return;
     const task = window.setTimeout(() => void load(), 0);
@@ -279,14 +281,19 @@ function InviteLinks({ folderId, onClose }: { folderId: string; onClose: () => v
       <div className={`${styles.waypointBody} ${styles.formBody}`}>
         <p className={styles.helper}>링크를 받은 사람은 로그인한 뒤 이 폴더에 들어올 수 있어요. 링크는 만든 뒤 7일 동안 쓸 수 있어요.</p>
         <p className={styles.sectionCount}><strong>회원</strong><b className={styles.countNumber}>{members.length} / {PLACE_FOLDER_MEMBER_LIMIT}</b></p>
+        {invites && state !== "error" ? <p className={styles.sectionCount}><strong>사용 중인 링크</strong><b className={styles.countNumber}>{invites.length} / {PLACE_FOLDER_INVITE_LIMIT}</b></p> : null}
         {error ? <div className={styles.errorCard} role="alert"><strong>{error.title}</strong><p>{error.message}</p></div> : null}
         {state === "loading" && !invites ? (
           <div className={styles.stateCard} role="status"><strong>초대 링크를 불러오고 있어요</strong></div>
         ) : state === "error" ? (
           <div className={`${styles.stateCard} ${styles.errorState}`} role="alert"><strong>초대 링크를 불러오지 못했어요</strong><p>연결을 확인하고 다시 시도해 주세요.</p><button type="button" onClick={() => void load()}>다시 시도</button></div>
         ) : !invites?.length ? (
-          <div className={styles.stateCard}><strong>사용 중인 초대 링크가 없어요</strong><p>새 초대 링크를 만들어 메신저로 보내 보세요.</p></div>
+          // G20a (456:13255)
+          <div className={styles.stateCard}><strong>사용 중인 초대 링크가 없어요</strong><p>새 링크를 만들어 보내면, 받은 사람이 로그인한 뒤 이 폴더에 들어올 수 있어요.</p></div>
         ) : (
+          <>
+          {/* G20b (456:13299) */}
+          {full ? <div className={styles.noticeCard} role="status"><strong>사용 중인 초대 링크 {PLACE_FOLDER_INVITE_LIMIT}개가 모두 찼어요</strong><p>쓰지 않는 링크를 회수하면 새 링크를 만들 수 있어요.</p></div> : null}
           <ul className={styles.list}>
             {invites.map((invite) => {
               const expiry = expiryLabel(invite.expiresAt);
@@ -300,12 +307,13 @@ function InviteLinks({ folderId, onClose }: { folderId: string; onClose: () => v
               );
             })}
           </ul>
+          </>
         )}
         <p className={styles.noticeCard}>보안을 위해 링크 주소는 만들 때 한 번만 복사할 수 있어요. 다시 보내야 하면 새 링크를 만드세요.</p>
       </div>
       <div className={styles.waypointFooter}>
         <button type="button" className="primary-button" disabled={creating || state !== "ready" || full} onClick={() => void create()}>{creating ? "만드는 중…" : "새 초대 링크 만들기"}</button>
-        {full ? <p className={styles.footerHint}>사용 중인 링크가 {PLACE_FOLDER_INVITE_LIMIT}개예요. 회수한 뒤 만들 수 있어요.</p> : null}
+        {full ? <p className={styles.footerHint}>사용 중인 링크가 {PLACE_FOLDER_INVITE_LIMIT}개라 더 만들 수 없어요.</p> : null}
       </div>
       {pending ? <ConfirmPopup<FolderInvite[]> key={pending.key} pending={pending} busy={false} verifying={false} recheck={recheck} capture={() => () => true} onClose={() => setPending(null)} /> : null}
     </SavedDialog>

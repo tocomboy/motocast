@@ -321,6 +321,9 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
     }
   }, [enabled]);
 
+  // Stable across status changes: screens re-read on entry with an effect keyed on this function.
+  const refresh = useCallback(() => load(), [load]);
+
   const reloadStars = useCallback(async () => {
     const client = getBrowserSupabase();
     if (!enabled || !client || operation.current || statusRef.current !== "ready") return;
@@ -358,13 +361,13 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
     message,
     current: () => ({ status: statusRef.current, snapshot: snapshotRef.current }),
     retry: () => { void load(); },
-    refresh: () => load(),
+    refresh,
     reloadStars,
     captureSnapshot,
     recheck,
     write,
     call,
-  }), [accountEpoch, enabled, status, snapshot, busy, verifying, message, load, reloadStars, captureSnapshot, recheck, write, call]);
+  }), [accountEpoch, enabled, status, snapshot, busy, verifying, message, load, refresh, reloadStars, captureSnapshot, recheck, write, call]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

@@ -63,6 +63,24 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("SharedFoldersProvider", () => {
+  it("keeps refresh stable so a screen that re-reads on entry reads once, not in a loop", async () => {
+    let reads = 0;
+    const counting = new Proxy(mocks.tables!, { get: (target, key: string) => { if (key === "place_folders") reads++; return target[key]; } });
+    mocks.tables = counting;
+    // Mirrors the favorites screen and the folder detail: refresh once per refresh identity.
+    function Entry() {
+      const { refresh } = useSharedFolders();
+      useEffect(() => { const task = setTimeout(() => void refresh(), 0); return () => clearTimeout(task); }, [refresh]);
+      return null;
+    }
+    let r!: ReactTestRenderer;
+    await act(async () => { r = create(<SharedFoldersProvider enabled><Harness /><Entry /></SharedFoldersProvider>); });
+    for (let i = 0; i < 5; i++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(controls.status).toBe("ready");
+    expect(reads).toBe(2);
+    await act(async () => r.unmount());
+  });
+
   it("reads every page of shared places instead of stopping at 1,000 rows", async () => {
     tables.shared_place_entries = Array.from({ length: 1500 }, (_, index) => sharedRow(index + 10, index < 1000 ? F1 : F2, `bulk-${index}`, `장소 ${index}`));
     await mount();
