@@ -189,10 +189,10 @@ export function SharedFolderDetail({
       </header>
       <div className={`${styles.mobileRegion} ${styles.mobileOnly}`}>{regionSelect("large")}</div>
       {starIssueShown ? (
-        <div className={styles.noticeCard} role="status"><strong>장소를 폴더에 저장했어요</strong><p>{starIssueShown.saved}</p></div>
+        <div className={`${styles.noticeCard} ${styles.compactCard}`} role="status"><strong>장소를 폴더에 저장했어요</strong><p>{starIssueShown.saved}</p></div>
       ) : starDone ? <p className={styles.noticeCard} role="status">{starDone}</p> : shared.message !== baseline ? <p className={styles.noticeCard} role="status">{shared.message}</p> : status ? <p className={styles.noticeCard} role="status">{status}</p> : null}
       {starIssueShown ? (
-        <div className={styles.errorCard} role="alert">
+        <div className={`${styles.errorCard} ${styles.compactCard}`} role="alert">
           <strong>{starIssueShown.title}</strong>
           <p>{starIssueShown.message}</p>
           {starIssueShown.unknown && starIssueShown.placeId ? <button type="button" className={styles.secondaryButton} disabled={shared.busy || starChecking} onClick={() => void recheckStar(starIssueShown.placeId!)}>{starChecking ? "확인하는 중…" : "목록 다시 확인"}</button> : null}

@@ -252,7 +252,7 @@ export function RestaurantRecommendationDialog(props: Props) {
           : <><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={() => void submit(input)}>다시 시도</button></>} />
           : view.name === "stale" ? <StatusView key="stale" stateTitleRef={stateTitleRef} tone="tint" role="status" icon={<LineIcon name="clock" />} title="경로가 바뀌어 이전 추천을 사용할 수 없습니다" text="선택한 식당은 일정에 추가하지 않았어요." note="경로 편집에서 경로 다시 계산을 누른 뒤 추천을 다시 받아 주세요." actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onEditRoute}>경로 편집으로</button></>} />
             : view.view.response.status === "NO_SAVED_RESTAURANTS" ? <StatusView key="no-saved" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="star" />} title="저장한 식당이 없습니다" text="즐겨찾기에 식당을 저장하면 이 경로에 맞춰 추천해 드려요." note="추천은 내 식당과 켜 둔 공유 폴더 식당 중에서만 해요. 외부 검색으로 새 음식점을 추가하지 않아요." extra={<Exclusions view={view.view} names={disabledFolderNames} ending="뺐어요. 꺼 둔 폴더를 켜면 후보가 늘 수 있어요." onFolderSettings={folderSettings} />} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onOpenFavorites}>즐겨찾기에서 식당 등록</button></>} />
-              : view.view.response.status === "ALL_EXCLUDED" ? <StatusView key="all-excluded" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="ban" />} title="추천할 식당이 모두 기피 장소예요" text="경로 근처에서 찾은 식당이 모두 기피 장소라 후보에서 뺐어요. 기피를 해제하면 다시 후보에 들어가요." note="" extra={<Exclusions view={view.view} names={disabledFolderNames} ending={view.view.response.coverage.disabledFolders ? "뺐어요. 꺼 둔 폴더를 켜면 후보가 늘 수 있어요." : "뺐어요."} onFolderSettings={folderSettings} />} conditions={conditionLines({ ...input, mealCount: view.view.response.settings.mealCount, toleranceMinutes: view.view.response.settings.toleranceMinutes }, view.view.response.settings.detourLimitMinutes, view.view.response.basis.departureAt)} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onOpenAvoided}>기피 장소 보기</button></>} />
+              : view.view.response.status === "ALL_EXCLUDED" ? <AllExcludedStatus key="all-excluded" stateTitleRef={stateTitleRef} view={view.view} names={disabledFolderNames} onFolderSettings={folderSettings} conditions={conditionLines({ ...input, mealCount: view.view.response.settings.mealCount, toleranceMinutes: view.view.response.settings.toleranceMinutes }, view.view.response.settings.detourLimitMinutes, view.view.response.basis.departureAt)} onClose={onClose} onOpenAvoided={props.onOpenAvoided} />
               : view.view.response.meals.every((meal) => meal.candidates.length === 0) ? <StatusView key="none" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="search" />} title="조건에 맞는 음식점이 없습니다" text={`원하는 식사 시간 앞뒤 ${view.view.response.settings.toleranceMinutes}분 안에 도착하고 주행이 ${durationLabel(view.view.response.settings.detourLimitMinutes)} 이내로 늘어나는 식당이 없어요.`} note={coverageTextV2(view.view.response)} extra={<Exclusions view={view.view} names={disabledFolderNames} ending={view.view.response.coverage.disabledFolders ? "뺐어요. 꺼 둔 폴더를 켜면 후보가 늘 수 있어요." : "뺐어요."} onFolderSettings={folderSettings} />} conditions={conditionLines({ ...input, mealCount: view.view.response.settings.mealCount, toleranceMinutes: view.view.response.settings.toleranceMinutes }, view.view.response.settings.detourLimitMinutes, view.view.response.basis.departureAt)} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={backToInput}>조건 바꾸기</button></>} />
                 : <ResultView view={view.view} selection={view.selection} input={input} settingsChanged={settingsChanged} refused={view.refused} applying={applying} disabledFolderNames={disabledFolderNames} folderName={folderName} onFolderSettings={folderSettings} onRecommendAgain={() => void submit(input)} onSelect={select} onChangeConditions={backToInput} onConfirm={() => void confirmSelection()} />}
     {folderPopup.popup}
@@ -340,6 +340,19 @@ export function Exclusions({ view, names, ending = "후보에서 뺐어요.", on
   </div>;
 }
 
+/** SRC04 (ALL_EXCLUDED): every candidate near the route is avoided; no provider call, so no "조건 바꾸기". */
+export function AllExcludedStatus({ stateTitleRef, view, names, onFolderSettings, conditions, onClose, onOpenAvoided }: {
+  stateTitleRef: RefObject<HTMLHeadingElement | null>;
+  view: RecommendationView;
+  names: string[];
+  onFolderSettings: (() => void) | null;
+  conditions: readonly [string, string];
+  onClose: () => void;
+  onOpenAvoided: () => void;
+}) {
+  return <StatusView stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="ban" />} title="추천할 식당이 모두 기피 장소예요" text="경로 근처에서 찾은 식당이 모두 기피 장소라 후보에서 뺐어요. 기피를 해제하면 다시 후보에 들어가요." note="" extra={<Exclusions view={view} names={names} ending={view.response.coverage.disabledFolders ? "뺐어요. 꺼 둔 폴더를 켜면 후보가 늘 수 있어요." : "뺐어요."} onFolderSettings={onFolderSettings} />} conditions={conditions} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={onOpenAvoided}>기피 장소 보기</button></>} />;
+}
+
 export function StatusView({ stateTitleRef, tone, role, icon, title, text, note, extra, conditions, actions }: {
   stateTitleRef: RefObject<HTMLHeadingElement | null>;
   tone: "neutral" | "danger" | "tint";
@@ -399,7 +412,7 @@ export function ResultView({ view, selection, input, settingsChanged, refused, a
   };
   return <>
     <div className={styles.body}>
-      {refused ? <section className={styles.changedBanner} role="alert">
+      {refused ? <section className={styles.changedBanner} data-tone="danger" role="alert">
         <strong>{refused === "changed" ? "추천 결과가 바뀌었어요" : "고른 식당을 확인하지 못했어요"}</strong>
         <p>{refused === "changed"
           ? "고른 식당이 수정·삭제됐거나, 공유 폴더가 꺼졌거나, 기피 장소가 됐어요. 일정에 추가하지 않았어요. 다시 추천을 받으면 지금 상태로 계산해요."

@@ -171,6 +171,7 @@ describe("restaurant recommendation with shared folders (SRC02, SRC02b, SRC03)",
     await act(async () => buttons(r, "선택한 식당 1곳 일정에 추가")[0].props.onClick());
     const banner = r.root.findAll((node) => node.type === "section" && node.props.role === "alert")[0];
     expect(text(banner)).toContain("다시 추천을 받으면 지금 상태로 계산해요.");
+    expect(banner.props["data-tone"]).toBe("danger");
     expect(rows().every((row) => row.props["aria-pressed"] === false)).toBe(true);
     expect(text(r.root)).toContain("고른 식당이 없어요");
     expect(text(r.root)).toContain("다른 식당을 고르거나 다시 추천을 받아 주세요.");

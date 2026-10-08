@@ -18,14 +18,14 @@ import { FolderSettings } from "@/components/shared-folder-settings";
 import { deleteSharedPopup, folderPickerPopup, sharedStarPopup } from "@/components/shared-place-actions";
 import type { SharedSnapshot } from "@/components/shared-folders-provider";
 import { F1, F2, ME, sampleSaved, sampleTables } from "./shared-folders";
-import { Exclusions, ResultView, StatusView } from "@/components/restaurant-recommendation-dialog";
+import { AllExcludedStatus, Exclusions, ResultView, StatusView } from "@/components/restaurant-recommendation-dialog";
 import recommendationStyles from "@/components/restaurant-recommendation-dialog.module.css";
 import { LineIcon } from "@/components/line-icon";
 import { coverageTextV2, recommendationView } from "@/lib/planner/recommendation-sources";
 import type { RecommendationResponseV2 } from "@/lib/planner/restaurant-recommendation";
 
 // SRC02 sample: one meal, my restaurant and a folder restaurant held by another enabled folder.
-function recommendation(empty = false): RecommendationResponseV2 {
+function recommendation(empty = false, coverage: Partial<RecommendationResponseV2["coverage"]> = {}, status: RecommendationResponseV2["status"] = "OK"): RecommendationResponseV2 {
   const candidate = (source: RecommendationResponseV2["meals"][number]["candidates"][number]["source"], otherFolderIds: string[], name: string, address: string, minutes: number) => ({
     source, otherFolderIds, displayName: name, placeName: name, address, longitude: 127.7, latitude: 37.9,
     insertion: { legIndex: 0, afterPointId: "a", beforePointId: "b" },
@@ -33,7 +33,7 @@ function recommendation(empty = false): RecommendationResponseV2 {
   });
   return {
     contractVersion: 2,
-    status: "OK",
+    status,
     basis: { tripId: "t", departureAt: "2026-10-10T00:00:00.000Z", returnAt: "2026-10-10T08:40:00.000Z", pointIds: ["a", "b"], arrivalAts: ["2026-10-10T08:40:00.000Z"] },
     settings: { mealCount: 1, toleranceMinutes: 30, detourLimitMinutes: 60 },
     meals: [{ index: 1, targetAt: "2026-10-10T03:00:00.000Z", windowStartAt: "2026-10-10T02:30:00.000Z", windowEndAt: "2026-10-10T03:30:00.000Z", dwellMinutes: 45, candidates: empty ? [] : [
@@ -42,7 +42,7 @@ function recommendation(empty = false): RecommendationResponseV2 {
       candidate({ type: "saved", id: "10000000-0000-4000-8000-000000000003", revision: 1 }, [], "소양강 다리 건너 왼쪽 숯불닭갈비집 (지난가을 투어 때 들른 곳)", "강원 춘천시 동면 소양강로 순환도로 옆 공영주차장 맞은편 2층", 18),
     ] }],
     pairs: [],
-    coverage: { savedRestaurants: 12, invalidSaved: 0, alreadyInRoute: 0, nearRoute: 5, evaluated: 5, unreachable: 0, notEvaluated: 0, providerRequests: empty ? 0 : 5, sharedRestaurants: 9, duplicateMerged: 1, avoidedExcluded: 2, disabledFolders: 1, sharedReadTruncated: false },
+    coverage: { savedRestaurants: 12, invalidSaved: 0, alreadyInRoute: 0, nearRoute: 5, evaluated: 5, unreachable: 0, notEvaluated: 0, providerRequests: empty ? 0 : 5, sharedRestaurants: 9, duplicateMerged: 1, avoidedExcluded: 2, disabledFolders: 1, sharedReadTruncated: false, ...coverage },
   };
 }
 const recommendationDialog = (size: string, body: ReactNode) => renderToStaticMarkup(
@@ -94,9 +94,9 @@ const page = (node: ReactNode) => renderToStaticMarkup(<>{node}</>);
 const popup = (pending: Pending<SharedSnapshot>) =>
   page(<ConfirmPopup<SharedSnapshot> pending={pending} busy={false} verifying={false} recheck={async () => "unreadable"} capture={() => () => true} onClose={() => undefined} />);
 
-function recommendationResult(settingsChanged: boolean) {
-  const view = recommendationView(recommendation());
-  return recommendationDialog("result-1", <ResultView view={view} selection={{ 1: "shared:20000000-0000-4000-8000-000000000002" }} input={{ mealCount: 1, meals: [{ desiredTime: "12:00" }, { desiredTime: "18:00" }], toleranceMinutes: 30 }} settingsChanged={settingsChanged} applying={false} disabledFolderNames={["동호회 정모 코스"]} folderName={(id) => (id === F1 ? "주말 라이더" : "남한강 맛집")} onFolderSettings={() => undefined} onRecommendAgain={() => undefined} onSelect={() => undefined} onChangeConditions={() => undefined} onConfirm={() => undefined} />);
+function recommendationResult(settingsChanged: boolean, options: { response?: RecommendationResponseV2; refused?: "changed" | "unreadable"; selection?: Record<number, string> } = {}) {
+  const view = recommendationView(options.response ?? recommendation());
+  return recommendationDialog("result-1", <ResultView view={view} selection={options.selection ?? { 1: "shared:20000000-0000-4000-8000-000000000002" }} input={{ mealCount: 1, meals: [{ desiredTime: "12:00" }, { desiredTime: "18:00" }], toleranceMinutes: 30 }} settingsChanged={settingsChanged} refused={options.refused} applying={false} disabledFolderNames={["동호회 정모 코스"]} folderName={(id) => (id === F1 ? "주말 라이더" : "남한강 맛집")} onFolderSettings={() => undefined} onRecommendAgain={() => undefined} onSelect={() => undefined} onChangeConditions={() => undefined} onConfirm={() => undefined} />);
 }
 
 describe("shared folder screens production markup", () => {
@@ -114,6 +114,12 @@ describe("shared folder screens production markup", () => {
       deletePopup: popup({ key: 3, ...deleteSharedPopup(shared as never, snapshot.places[3], () => undefined) }),
       recommendResult: recommendationResult(false),
       recommendChanged: recommendationResult(true),
+      // SRC04–SRC07 (#124 copy frames 462:*)
+      recommendAllExcluded: recommendationDialog("status", <AllExcludedStatus stateTitleRef={{ current: null }} view={recommendationView(recommendation(true, { avoidedExcluded: 6 }, "ALL_EXCLUDED"))} names={["동호회 정모 코스"]} onFolderSettings={() => undefined} conditions={["식사 1 12:00 · 식사 2 18:00 · 앞뒤 30분 · 각 45분", "경로에서 1시간 넘게 돌아가는 식당은 제외해요."]} onClose={() => undefined} onOpenAvoided={() => undefined} />),
+      recommendTruncated: recommendationResult(false, { response: recommendation(false, { sharedRestaurants: 2000, sharedReadTruncated: true }) }),
+      recommendTruncatedNone: recommendationDialog("status", <StatusView stateTitleRef={{ current: null }} tone="neutral" role="status" icon={<LineIcon name="search" />} title="조건에 맞는 음식점이 없습니다" text="원하는 식사 시간 앞뒤 30분 안에 도착하고 주행이 1시간 이내로 늘어나는 식당이 없어요." note={coverageTextV2(recommendation(true, { sharedRestaurants: 2000, sharedReadTruncated: true }))} extra={<Exclusions view={recommendationView(recommendation(true, { sharedRestaurants: 2000, sharedReadTruncated: true }))} names={["동호회 정모 코스"]} ending="뺐어요. 꺼 둔 폴더를 켜면 후보가 늘 수 있어요." onFolderSettings={() => undefined} />} conditions={["식사 1 12:00 · 식사 2 18:00 · 앞뒤 30분 · 각 45분", "경로에서 1시간 넘게 돌아가는 식당은 제외해요."]} actions={<><button type="button" className={recommendationStyles.textAction}>닫기</button><button type="button" className="primary-button">조건 바꾸기</button></>} />),
+      recommendRefused: recommendationResult(false, { refused: "changed", selection: {} }),
+      recommendUnreadable: recommendationResult(false, { refused: "unreadable" }),
       recommendNone: recommendationDialog("status", <StatusView stateTitleRef={{ current: null }} tone="neutral" role="status" icon={<LineIcon name="search" />} title="조건에 맞는 음식점이 없습니다" text="원하는 식사 시간 앞뒤 30분 안에 도착하고 주행이 1시간 이내로 늘어나는 식당이 없어요." note={coverageTextV2(recommendation(true))} extra={<Exclusions view={recommendationView(recommendation(true))} names={["동호회 정모 코스"]} ending="뺐어요. 꺼 둔 폴더를 켜면 후보가 늘 수 있어요." onFolderSettings={() => undefined} />} conditions={["식사 1 12:00 · 식사 2 18:00 · 앞뒤 30분 · 각 45분", "경로에서 1시간 넘게 돌아가는 식당은 제외해요."]} actions={<><button type="button" className={recommendationStyles.textAction}>닫기</button><button type="button" className="primary-button">조건 바꾸기</button></>} />),
     };
     expect(markup.places).toContain("공유 · 남한강 맛집 외 1");
@@ -126,6 +132,10 @@ describe("shared folder screens production markup", () => {
     expect(markup.recommendResult).toContain("공유 · 주말 라이더 외 1");
     expect(markup.recommendChanged).toContain("공유 폴더 설정이 바뀌었어요");
     expect(markup.recommendNone).toContain("꺼 둔 폴더를 켜면 후보가 늘 수 있어요.");
+    expect(markup.recommendAllExcluded).toContain("추천할 식당이 모두 기피 장소예요");
+    expect(markup.recommendTruncated).toContain("2,000곳까지만 후보로 읽었어요.");
+    expect(markup.recommendRefused).toContain("고른 식당이 없어요");
+    expect(markup.recommendUnreadable).toContain("다시 시도 · 선택한 식당 1곳 일정에 추가");
     const outputPath = process.env.MOTOCAST_SHARED_FOLDERS_MARKUP_OUTPUT?.trim();
     if (outputPath) writeFileSync(outputPath, JSON.stringify(markup), "utf8");
   });

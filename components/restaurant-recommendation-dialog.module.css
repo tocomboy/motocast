@@ -175,4 +175,7 @@
 .changedBanner { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--mc-signal-tint-border); border-radius: 16px; background: var(--mc-signal-tint); }
 .changedBanner > strong { font-size: 14px; font-weight: 700; line-height: 1.4; }
 .changedBanner > p { margin: 0; font-size: 13px; line-height: 1.5; }
+/* SRC06 / SRC07: a refused or unreadable re-check is an alert (red outline), not the SRC02b notice. */
+.changedBanner[data-tone="danger"] { border: 1.5px solid var(--mc-danger-text); background: var(--mc-surface-card); }
+.changedBanner[data-tone="danger"] > strong { color: var(--mc-danger-text); }
 .bannerAction { min-height: 48px; padding: 0 16px; border: 1.5px solid var(--mc-border-strong); border-radius: 14px; background: var(--mc-surface-card); color: var(--mc-text-primary); font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }

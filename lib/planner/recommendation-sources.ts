@@ -134,10 +134,11 @@ export async function recheckRecommendationSources(client: RecheckClient, source
 /** "내 식당 12곳과 켜 둔 공유 폴더 식당 9곳 중 경로 근처 5곳을 실제 도로 경로로 확인했어요." */
 export function coverageTextV2(response: RecommendationResponseV2) {
   const { savedRestaurants, sharedRestaurants, nearRoute, evaluated } = response.coverage;
-  const pool = sharedRestaurants ? `내 식당 ${savedRestaurants}곳과 켜 둔 공유 폴더 식당 ${sharedRestaurants}곳` : `저장한 식당 ${savedRestaurants}곳`;
+  const n = (value: number) => value.toLocaleString("ko-KR");
+  const pool = sharedRestaurants ? `내 식당 ${n(savedRestaurants)}곳과 켜 둔 공유 폴더 식당 ${n(sharedRestaurants)}곳` : `저장한 식당 ${n(savedRestaurants)}곳`;
   return evaluated === nearRoute
-    ? `${pool} 중 경로 근처 ${nearRoute}곳을 실제 도로 경로로 확인했어요.`
-    : `${pool} 중 경로 근처 ${nearRoute}곳, 그중 ${evaluated}곳을 실제 도로 경로로 확인했어요.`;
+    ? `${pool} 중 경로 근처 ${n(nearRoute)}곳을 실제 도로 경로로 확인했어요.`
+    : `${pool} 중 경로 근처 ${n(nearRoute)}곳, 그중 ${n(evaluated)}곳을 실제 도로 경로로 확인했어요.`;
 }
 
 /** "기피 장소 2곳과 꺼 둔 공유 폴더 1개(동호회 정모 코스)의 식당은 후보에서 뺐어요." or null when nothing was left out. */

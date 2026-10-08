@@ -158,6 +158,8 @@ describe("v2 result wording and keys", () => {
   it("states the pool and what was left out (SRC02, SRC03)", () => {
     expect(coverageTextV2(response())).toBe("내 식당 12곳과 켜 둔 공유 폴더 식당 9곳 중 경로 근처 5곳을 실제 도로 경로로 확인했어요.");
     expect(coverageTextV2(response({ sharedRestaurants: 0 }))).toBe("저장한 식당 12곳 중 경로 근처 5곳을 실제 도로 경로로 확인했어요.");
+    // SRC05: a truncated read of 2,000 is written with a thousands separator.
+    expect(coverageTextV2(response({ sharedRestaurants: 2000 }))).toBe("내 식당 12곳과 켜 둔 공유 폴더 식당 2,000곳 중 경로 근처 5곳을 실제 도로 경로로 확인했어요.");
     expect(exclusionText(response(), ["동호회 정모 코스"])).toBe("기피 장소 2곳과 꺼 둔 공유 폴더 1개(동호회 정모 코스)의 식당은 후보에서 뺐어요.");
     expect(exclusionText(response({ avoidedExcluded: 0 }), [])).toBe("꺼 둔 공유 폴더 1개의 식당은 후보에서 뺐어요.");
     expect(exclusionText(response({ avoidedExcluded: 0, disabledFolders: 0 }), [])).toBeNull();

@@ -125,8 +125,8 @@ for (const viewport of [
       await page.screenshot({ path: testInfo.outputPath(`members-${viewport.width}.png`) });
     });
 
-    test("restaurant recommendations show sources, exclusions and the settings-changed notice (SRC02, SRC02b, SRC03)", async ({ page }, testInfo) => {
-      for (const name of ["recommendResult", "recommendChanged", "recommendNone"]) {
+    test("restaurant recommendations show sources, exclusions and the settings-changed notice (SRC02–SRC07)", async ({ page }, testInfo) => {
+      for (const name of ["recommendResult", "recommendChanged", "recommendNone", "recommendAllExcluded", "recommendTruncated", "recommendTruncatedNone", "recommendRefused", "recommendUnreadable"]) {
         await setProductionMarkup(page, markup[name], recommendationCss);
         await textScale(page);
         await openLastDialog(page);
