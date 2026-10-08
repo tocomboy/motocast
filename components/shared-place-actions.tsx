@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import styles from "./saved-places-manager.module.css";
 import { ConfirmPopup, type Pending, type PopupButton } from "./confirm-popup";
 import { sharedPlacePayload, useSharedFolders, type Refusal, type SharedSnapshot, type SharedWrite } from "./shared-folders-provider";
 import { FREQUENT_PLACE_LIMIT, isRegionOnlyPlace, type SavedPlaceKind } from "@/lib/places/saved";
@@ -406,3 +407,74 @@ export async function starAfterAdd(shared: Actions, row: SharedPlace) {
     unknownMessage: "별표가 반영됐는지 확인하지 못했어요. 장소 상세에서 다시 확인해 주세요.",
   });
 }
+
+/** G00b / G00c / GW03b: choose which folders show; only the changed folders are sent (desired state). */
+export function folderPickerPopup(shared: Actions, enabledNow: readonly string[]): SharedPending {
+  const snapshot = shared.current().snapshot;
+  let draft = new Set(enabledNow);
+  const changes = () => snapshot.folders
+    .filter((folder) => enabledNow.includes(folder.id) !== draft.has(folder.id))
+    .map((folder) => ({ folderId: folder.id, enabled: draft.has(folder.id) }));
+  return {
+    title: "지도와 목록에 보일 공유 폴더",
+    body: <FolderChoices snapshot={snapshot} initial={enabledNow} onChange={(next) => { draft = next; }} />,
+    note: "끈 폴더의 장소는 지도·목록과 식당 추천에서 빠져요. 별표한 장소는 자주 찾는 장소에 그대로 보여요. 설정은 내 계정에 저장돼 웹·앱 어디서나 같아요.",
+    confirm: {
+      label: "적용",
+      busyLabel: "적용하는 중…",
+      retryLabel: "확인하고 적용",
+      checking: "적용됐는지 확인하고 있어요",
+      notApplied: { title: "적용되지 않았어요", message: "설정을 다시 확인했지만 바뀌지 않았어요. 다시 적용하려면 \"확인하고 적용\"을 눌러 주세요." },
+      run: async () => {
+        const changed = changes();
+        if (!changed.length) return { ok: true };
+        const applied = (s: SharedSnapshot) => changed.every((change) => s.preferences.some((row) => row.folderId === change.folderId && row.enabled === change.enabled) || !s.folders.some((f) => f.id === change.folderId));
+        return shared.write({
+          rpc: "set_place_folders_enabled",
+          args: { changes: changed },
+          success: "공유 폴더 설정을 적용했어요.",
+          receipt: (data) => { if (!Array.isArray(data)) throw new Error("NO_RECEIPT"); return applied; },
+          applied,
+          unknownMessage: "설정이 적용됐는지 확인하지 못했어요.",
+          refusal: (code) => code === "PLACE_FOLDER_NOT_FOUND"
+            ? { reason: "rejected", stale: true, title: "폴더 목록이 바뀌었어요", message: "나간 폴더가 있어요. 최신 목록을 불러왔어요. 닫고 다시 골라 주세요." }
+            : null,
+        });
+      },
+    },
+  };
+}
+
+/** Nothing changes until "적용"; X, 취소, the backdrop and back close without a request (G00c). */
+function FolderChoices({ snapshot, initial, onChange }: { snapshot: SharedSnapshot; initial: readonly string[]; onChange: (next: Set<string>) => void }) {
+  const [draft, setDraft] = useState(() => new Set(initial));
+  const set = (next: Set<string>) => { setDraft(next); onChange(next); };
+  const me = snapshot.userId;
+  return (
+    <div className={styles.folderChoices}>
+      <div className={styles.folderChoiceTools}>
+        <button type="button" onClick={() => set(new Set(snapshot.folders.map((f) => f.id)))}>모두 켜기</button>
+        <button type="button" onClick={() => set(new Set())}>모두 끄기</button>
+      </div>
+      <p className={styles.popupCount}><span>켜 둔 폴더</span><b className={styles.countNumber}>{draft.size} / {snapshot.folders.length}</b></p>
+      <ul className={styles.checkList}>
+        {snapshot.folders.map((folder) => {
+          const owner = folder.ownerId === me;
+          const on = draft.has(folder.id);
+          return (
+            <li key={folder.id}>
+              <label className={`${styles.checkRow}${on ? ` ${styles.checkRowOn}` : ""}`}>
+                <input type="checkbox" checked={on} onChange={(e) => { const next = new Set(draft); if (e.target.checked) next.add(folder.id); else next.delete(folder.id); set(next); }} />
+                <span>
+                  <strong>{folder.name} <span className={owner ? styles.ownerChip : styles.memberChip}>{owner ? "주인" : "회원"}</span></strong>
+                  <span>장소 {snapshot.places.filter((p) => p.folderId === folder.id).length.toLocaleString()}</span>
+                </span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+

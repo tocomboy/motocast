@@ -85,3 +85,18 @@ describe("contract v2 request", () => {
     expect(() => parseRecommendationRequest({ ...missing, contractVersion: 2 })).toThrow("INVALID_RECOMMENDATION_REQUEST");
   });
 });
+
+// Contract v2 request examples (contracts/android/restaurant-recommendation/fixtures-v2.json).
+describe("shared Android v2 request fixtures", async () => {
+  const v2 = (await import("../../../contracts/android/restaurant-recommendation/fixtures-v2.json")).default as { requests: RequestCase[] };
+  it("has an accepted and rejected v2 request", () => {
+    expect(v2.requests.filter((item) => item.expected)).toHaveLength(1);
+    expect(v2.requests.filter((item) => item.error).length).toBeGreaterThanOrEqual(2);
+  });
+  it.each(v2.requests.filter((item) => item.expected))("accepts $id", ({ input, expected }) => {
+    expect(parseWithTargets(input).request).toEqual(expected!.request);
+  });
+  it.each(v2.requests.filter((item) => item.error))("rejects $id", ({ input, error }) => {
+    expect(() => parseWithTargets(input)).toThrow(error);
+  });
+});

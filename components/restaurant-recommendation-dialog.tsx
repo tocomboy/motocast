@@ -26,22 +26,27 @@ import {
   type MealIndex,
   type RecommendationFailure,
   type RecommendationInput,
-  type RecommendationResponse,
   type RecommendationSelection,
 } from "@/lib/planner/restaurant-recommendation";
 import { MEAL_DWELL_MINUTES, MEAL_DWELL_NOTE } from "@/lib/planner/ordered-waypoints";
+import { coverageTextV2, exclusionText, type RecommendationView } from "@/lib/planner/recommendation-sources";
+import { useSharedFolders } from "./shared-folders-provider";
+import { folderPickerPopup, useSharedPopup } from "./shared-place-actions";
 import styles from "./restaurant-recommendation-dialog.module.css";
 
 export type RecommendationOutcome =
-  | { kind: "ok"; response: RecommendationResponse }
+  | { kind: "ok"; view: RecommendationView; inputs: string | null }
   | { kind: "error"; failure: RecommendationFailure }
   | { kind: "stale" }
   | { kind: "discarded" };
 
+/** Result of "일정에 추가": added, route changed, a chosen source changed (§7.4), or unreadable. */
+export type RecommendationConfirmResult = "ok" | "stale" | "changed" | "unreadable";
+
 type Phase =
   | { name: "input" }
   | { name: "loading" }
-  | { name: "result"; response: RecommendationResponse; selection: RecommendationSelection }
+  | { name: "result"; view: RecommendationView; inputs: string | null; selection: RecommendationSelection; applying?: boolean; refused?: "changed" | "unreadable" }
   | { name: "error"; failure: RecommendationFailure }
   | { name: "stale" };
 
@@ -52,7 +57,9 @@ type Props = {
   returnAt: string;
   waypointCount: number;
   request: (input: RecommendationInput) => Promise<RecommendationOutcome>;
-  confirm: (response: RecommendationResponse, selection: RecommendationSelection) => boolean;
+  /** Folder and avoided-place inputs right now; differs from a result's inputs after a change (SRC02b). */
+  currentInputs: string | null;
+  confirm: (view: RecommendationView, selection: RecommendationSelection) => Promise<RecommendationConfirmResult>;
   onClose: () => void;
   onEditRoute: () => void;
   onOpenFavorites: () => void;
@@ -99,6 +106,8 @@ function spokenClock(iso: string) {
 
 export function RestaurantRecommendationDialog(props: Props) {
   const { stale, request, confirm, onClose } = props;
+  const shared = useSharedFolders();
+  const folderPopup = useSharedPopup();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const stateTitleRef = useRef<HTMLHeadingElement>(null);
@@ -128,9 +137,9 @@ export function RestaurantRecommendationDialog(props: Props) {
   // empty result or no saved restaurants) focuses its own state title.
   const focusTarget = view.name !== "result"
     ? view.name
-    : view.response.status === "NO_SAVED_RESTAURANTS"
+    : view.view.response.status === "NO_SAVED_RESTAURANTS"
       ? "no-saved"
-      : view.response.meals.every((meal) => meal.candidates.length === 0) ? "none" : "result";
+      : view.view.response.meals.every((meal) => meal.candidates.length === 0) ? "none" : "result";
   useEffect(() => {
     const target = focusTarget === "input" || focusTarget === "result" ? titleRef.current : stateTitleRef.current;
     target?.focus({ preventScroll: true });
@@ -144,7 +153,7 @@ export function RestaurantRecommendationDialog(props: Props) {
     setPhase({ name: "loading" });
     const outcome = await request(values);
     if (!mounted.current || serial !== requestSerial.current || outcome.kind === "discarded") return;
-    if (outcome.kind === "ok") setPhase({ name: "result", response: outcome.response, selection: {} });
+    if (outcome.kind === "ok") setPhase({ name: "result", view: outcome.view, inputs: outcome.inputs, selection: {} });
     else if (outcome.kind === "error") setPhase({ name: "error", failure: outcome.failure });
     else setPhase({ name: "stale" });
   }
@@ -157,7 +166,7 @@ export function RestaurantRecommendationDialog(props: Props) {
   // Esc / back: results, empty results and errors return to the (kept) input;
   // input, loading, route-changed and no-saved states close the dialog.
   function back() {
-    if (view.name === "error" || (view.name === "result" && view.response.status === "OK")) backToInput();
+    if (view.name === "error" || (view.name === "result" && view.view.response.status !== "NO_SAVED_RESTAURANTS")) backToInput();
     else onClose();
   }
 
@@ -172,19 +181,36 @@ export function RestaurantRecommendationDialog(props: Props) {
 
   function select(mealIndex: MealIndex, savedPlaceId: string) {
     setPhase((current) => current.name === "result"
-      ? { ...current, selection: toggleSelection(current.response, current.selection, mealIndex, savedPlaceId) }
+      ? { ...current, refused: undefined, selection: toggleSelection(current.view.selectable, current.selection, mealIndex, savedPlaceId) }
       : current);
   }
 
-  function confirmSelection() {
-    if (view.name !== "result") return;
-    if (!confirm(view.response, view.selection) && mounted.current) setPhase({ name: "stale" });
+  async function confirmSelection() {
+    if (view.name !== "result" || view.applying) return;
+    const current = view;
+    setPhase({ ...current, applying: true, refused: undefined });
+    const result = await confirm(current.view, current.selection);
+    if (!mounted.current || result === "ok") return;
+    // §7.4: a changed source adds nothing and asks for a new recommendation.
+    if (result === "stale") setPhase({ name: "stale" });
+    else setPhase({ ...current, applying: false, refused: result });
   }
+
+  const snapshot = shared.snapshot;
+  const disabledFolderNames = snapshot.preferences
+    .filter((row) => !row.enabled)
+    .map((row) => snapshot.folders.find((folder) => folder.id === row.folderId)?.name)
+    .filter((name): name is string => Boolean(name));
+  const folderSettings = shared.enabled && shared.status === "ready" && snapshot.folders.length
+    ? () => folderPopup.open(folderPickerPopup(shared, snapshot.preferences.filter((row) => row.enabled).map((row) => row.folderId)))
+    : null;
+  const folderName = (id: string) => snapshot.folders.find((folder) => folder.id === id)?.name ?? "공유 폴더";
+  const settingsChanged = view.name === "result" && view.inputs !== null && props.currentInputs !== null && view.inputs !== props.currentInputs;
 
   const size = view.name === "input"
     ? "input"
-    : view.name === "result" && view.response.status === "OK" && view.response.meals.some((meal) => meal.candidates.length > 0)
-      ? view.response.settings.mealCount === 2 ? "result-2" : "result-1"
+    : view.name === "result" && view.view.response.status === "OK" && view.view.response.meals.some((meal) => meal.candidates.length > 0)
+      ? view.view.response.settings.mealCount === 2 ? "result-2" : "result-1"
       : "status";
 
   return <dialog
@@ -203,14 +229,15 @@ export function RestaurantRecommendationDialog(props: Props) {
       <button type="button" aria-label="음식점 추천 닫기" onClick={onClose}><LineIcon name="close" /></button>
     </header>
     {view.name === "input" ? <InputView routeLabel={props.routeLabel} departureAt={props.departureAt} returnAt={props.returnAt} idPrefix={titleId} onSubmit={(values) => void submit(values)} input={input} error={inputError} setInput={setInput} updateMeal={updateMeal} />
-      : view.name === "loading" ? <StatusView key="loading" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<span className={styles.spinner} aria-hidden="true" />} title="추천을 계산하고 있어요" text="저장한 식당 중 경로 근처 식당을 실제 도로 경로로 확인하고 있어요." note="닫으면 이번 추천 결과는 받지 않아요." conditions={conditionLines(input, SERVER_DETOUR_CAP_MINUTES, props.departureAt)} actions={<button type="button" className={styles.textAction} onClick={onClose}>닫기</button>} />
+      : view.name === "loading" ? <StatusView key="loading" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<span className={styles.spinner} aria-hidden="true" />} title="추천을 계산하고 있어요" text="내 식당과 켜 둔 공유 폴더 식당 중 경로 근처 식당을 실제 도로 경로로 확인하고 있어요." note="닫으면 이번 추천 결과는 받지 않아요." conditions={conditionLines(input, SERVER_DETOUR_CAP_MINUTES, props.departureAt)} actions={<button type="button" className={styles.textAction} onClick={onClose}>닫기</button>} />
         : view.name === "error" ? <StatusView key="error" stateTitleRef={stateTitleRef} tone="danger" role="alert" icon={<span className={styles.alertMark} aria-hidden="true">!</span>} title="추천을 계산하지 못했습니다" text={recommendationFailureMessage(view.failure)} note={`음식점이 없다는 뜻이 아닙니다.${view.failure.code === "RECOMMENDATION_BUDGET_OR_CONFIG" ? " 이미 시도한 계산도 오늘 사용 한도에 포함돼요." : ""}`} conditions={conditionLines(input, SERVER_DETOUR_CAP_MINUTES, props.departureAt)} actions={isDailyBudgetFailure(view.failure)
           ? <><button type="button" className={styles.textAction} onClick={() => void submit(input)}>다시 시도</button><button type="button" className="primary-button" onClick={onClose}>닫기</button></>
           : <><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={() => void submit(input)}>다시 시도</button></>} />
           : view.name === "stale" ? <StatusView key="stale" stateTitleRef={stateTitleRef} tone="tint" role="status" icon={<LineIcon name="clock" />} title="경로가 바뀌어 이전 추천을 사용할 수 없습니다" text="선택한 식당은 일정에 추가하지 않았어요." note="경로 편집에서 경로 다시 계산을 누른 뒤 추천을 다시 받아 주세요." actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onEditRoute}>경로 편집으로</button></>} />
-            : view.response.status === "NO_SAVED_RESTAURANTS" ? <StatusView key="no-saved" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="star" />} title="저장한 식당이 없습니다" text="즐겨찾기에 식당을 저장하면 이 경로에 맞춰 추천해 드려요." note="추천은 저장한 식당 중에서만 해요. 외부 검색으로 새 음식점을 추가하지 않아요." actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onOpenFavorites}>즐겨찾기에서 식당 등록</button></>} />
-              : view.response.meals.every((meal) => meal.candidates.length === 0) ? <StatusView key="none" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="search" />} title="조건에 맞는 음식점이 없습니다" text={`원하는 식사 시간 앞뒤 ${view.response.settings.toleranceMinutes}분 안에 도착하고 주행이 ${durationLabel(view.response.settings.detourLimitMinutes)} 이내로 늘어나는 식당이 없어요. 시간 범위를 자동으로 넓히지 않아요.`} note={coverageText(view.response)} conditions={conditionLines({ ...input, mealCount: view.response.settings.mealCount, toleranceMinutes: view.response.settings.toleranceMinutes }, view.response.settings.detourLimitMinutes, view.response.basis.departureAt)} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={backToInput}>조건 바꾸기</button></>} />
-                : <ResultView response={view.response} selection={view.selection} input={input} onSelect={select} onChangeConditions={backToInput} onConfirm={confirmSelection} />}
+            : view.view.response.status === "NO_SAVED_RESTAURANTS" ? <StatusView key="no-saved" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="star" />} title="저장한 식당이 없습니다" text="즐겨찾기에 식당을 저장하면 이 경로에 맞춰 추천해 드려요." note="추천은 내 식당과 켜 둔 공유 폴더 식당 중에서만 해요. 외부 검색으로 새 음식점을 추가하지 않아요." extra={<Exclusions view={view.view} names={disabledFolderNames} ending="뺐어요. 꺼 둔 폴더를 켜면 후보가 늘 수 있어요." onFolderSettings={folderSettings} />} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onOpenFavorites}>즐겨찾기에서 식당 등록</button></>} />
+              : view.view.response.meals.every((meal) => meal.candidates.length === 0) ? <StatusView key="none" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="search" />} title="조건에 맞는 음식점이 없습니다" text={view.view.response.status === "ALL_EXCLUDED" ? "경로 근처 식당이 모두 기피 장소라서 추천에서 뺐어요." : `원하는 식사 시간 앞뒤 ${view.view.response.settings.toleranceMinutes}분 안에 도착하고 주행이 ${durationLabel(view.view.response.settings.detourLimitMinutes)} 이내로 늘어나는 식당이 없어요.`} note={coverageTextV2(view.view.response)} extra={<Exclusions view={view.view} names={disabledFolderNames} ending={view.view.response.coverage.disabledFolders ? "뺐어요. 꺼 둔 폴더를 켜면 후보가 늘 수 있어요." : "뺐어요."} onFolderSettings={folderSettings} />} conditions={conditionLines({ ...input, mealCount: view.view.response.settings.mealCount, toleranceMinutes: view.view.response.settings.toleranceMinutes }, view.view.response.settings.detourLimitMinutes, view.view.response.basis.departureAt)} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={backToInput}>조건 바꾸기</button></>} />
+                : <ResultView view={view.view} selection={view.selection} input={input} settingsChanged={settingsChanged} refused={view.refused} applying={Boolean(view.applying)} disabledFolderNames={disabledFolderNames} folderName={folderName} onFolderSettings={folderSettings} onRecommendAgain={() => void submit(input)} onSelect={select} onChangeConditions={backToInput} onConfirm={() => void confirmSelection()} />}
+    {folderPopup.popup}
   </dialog>;
 }
 
@@ -233,7 +260,7 @@ function InputView(viewProps: {
         <strong>{viewProps.routeLabel}</strong>
         <small>출발 {seoulDateTime(viewProps.departureAt)} · 예상 도착 {seoulClock(viewProps.returnAt)}</small>
       </section>
-      <p className={styles.infoBanner}><LineIcon name="star" />즐겨찾기에 저장한 식당 중에서만 추천해요.</p>
+      <p className={styles.infoBanner}><LineIcon name="star" />즐겨찾기의 내 식당과 켜 둔 공유 폴더 식당 중에서만 추천해요.</p>
       <fieldset className={styles.countField}>
         <legend>방문할 식당 수</legend>
         <div className={styles.segmented}>
@@ -283,14 +310,19 @@ function InputView(viewProps: {
   </>;
 }
 
-function coverageText(response: RecommendationResponse) {
-  const { savedRestaurants, nearRoute, evaluated } = response.coverage;
-  return evaluated === nearRoute
-    ? `저장한 식당 ${savedRestaurants}곳 중 경로 근처 ${nearRoute}곳을 실제 도로 경로로 확인했어요.`
-    : `저장한 식당 ${savedRestaurants}곳 중 경로 근처 ${nearRoute}곳, 그중 ${evaluated}곳을 실제 도로 경로로 확인했어요.`;
+/** SRC02/SRC03: what was left out (avoided places, folders switched off) and the folder settings link. */
+function Exclusions({ view, names, ending = "후보에서 뺐어요.", onFolderSettings }: { view: RecommendationView; names: string[]; ending?: string; onFolderSettings: (() => void) | null }) {
+  const text = exclusionText(view.response, names, ending);
+  const truncated = view.response.coverage.sharedReadTruncated;
+  if (!text && !truncated && !onFolderSettings) return null;
+  return <div className={styles.exclusions}>
+    {truncated ? <p>공유 폴더 식당이 많아 경로 근처 2,000곳까지만 확인했어요. 더 먼 후보가 있을 수 있어요.</p> : null}
+    {text ? <p>{text}</p> : null}
+    {onFolderSettings ? <button type="button" className={styles.linkAction} onClick={onFolderSettings}>공유 폴더 설정<LineIcon name="chevron-right" /></button> : null}
+  </div>;
 }
 
-function StatusView({ stateTitleRef, tone, role, icon, title, text, note, conditions, actions }: {
+function StatusView({ stateTitleRef, tone, role, icon, title, text, note, extra, conditions, actions }: {
   stateTitleRef: RefObject<HTMLHeadingElement | null>;
   tone: "neutral" | "danger" | "tint";
   role: "status" | "alert";
@@ -298,6 +330,7 @@ function StatusView({ stateTitleRef, tone, role, icon, title, text, note, condit
   title: string;
   text: string;
   note: string;
+  extra?: ReactNode;
   conditions?: readonly [string, string];
   actions: ReactNode;
 }) {
@@ -308,6 +341,7 @@ function StatusView({ stateTitleRef, tone, role, icon, title, text, note, condit
         <h3 ref={stateTitleRef} tabIndex={-1}>{title}</h3>
         <p>{text}</p>
         <small>{note}</small>
+        {extra}
       </section>
       {conditions ? <p className={styles.conditionSummary}><span>{conditions[0]}</span><small>{conditions[1]}</small></p> : null}
     </div>
@@ -315,22 +349,47 @@ function StatusView({ stateTitleRef, tone, role, icon, title, text, note, condit
   </>;
 }
 
-function ResultView({ response, selection, input, onSelect, onChangeConditions, onConfirm }: {
-  response: RecommendationResponse;
+function ResultView({ view, selection, input, settingsChanged, refused, applying, disabledFolderNames, folderName, onFolderSettings, onRecommendAgain, onSelect, onChangeConditions, onConfirm }: {
+  view: RecommendationView;
   selection: RecommendationSelection;
   input: RecommendationInput;
+  settingsChanged: boolean;
+  refused?: "changed" | "unreadable";
+  applying: boolean;
+  disabledFolderNames: string[];
+  folderName: (id: string) => string;
+  onFolderSettings: (() => void) | null;
+  onRecommendAgain: () => void;
   onSelect: (mealIndex: MealIndex, savedPlaceId: string) => void;
   onChangeConditions: () => void;
   onConfirm: () => void;
 }) {
+  const response = view.selectable;
   const twoMeals = response.settings.mealCount === 2;
   const resolved = resolveSelection(response, selection);
   const conditions = conditionLines({ ...input, mealCount: response.settings.mealCount, toleranceMinutes: response.settings.toleranceMinutes }, response.settings.detourLimitMinutes, response.basis.departureAt);
   const noPairs = twoMeals && response.meals.every((meal) => meal.candidates.length > 0) && response.pairs.length === 0;
   const selectedName = (mealIndex: MealIndex) => response.meals[mealIndex - 1]?.candidates.find((candidate) => candidate.savedPlaceId === selection[mealIndex])?.displayName;
   const chosenCount = Object.values(selection).filter(Boolean).length;
+  // Source line (SRC02): "내 장소" or "공유 · <folder>" with "외 n" for the other enabled folders.
+  const sourceOf = (key: string) => {
+    const entry = view.sources.get(key);
+    if (!entry || entry.source.type === "saved") return { icon: "pin" as const, text: "내 장소" };
+    return { icon: "folder" as const, text: `공유 · ${folderName(entry.source.folderId)}${entry.otherFolderIds.length ? ` 외 ${entry.otherFolderIds.length}` : ""}` };
+  };
   return <>
     <div className={styles.body}>
+      {refused ? <section className={styles.changedBanner} role="alert">
+        <strong>{refused === "changed" ? "추천 결과가 바뀌었어요" : "고른 식당을 확인하지 못했어요"}</strong>
+        <p>{refused === "changed"
+          ? "고른 식당이 수정·삭제됐거나, 공유 폴더가 꺼졌거나, 기피 장소가 됐어요. 일정에 추가하지 않았어요."
+          : "연결을 확인한 뒤 다시 시도해 주세요. 일정에 추가하지 않았어요."}</p>
+        <button type="button" className={styles.bannerAction} onClick={onRecommendAgain}>다시 추천 받기</button>
+      </section> : settingsChanged ? <section className={styles.changedBanner} role="status">
+        <strong>공유 폴더 설정이 바뀌었어요</strong>
+        <p>아래 결과는 바꾸기 전 설정 기준이에요. 새 설정으로 보려면 다시 추천을 받아 주세요. 자동으로 다시 계산하지 않아요.</p>
+        <button type="button" className={styles.bannerAction} onClick={onRecommendAgain}>다시 추천 받기</button>
+      </section> : null}
       {noPairs ? <p className={styles.infoBanner} role="status"><LineIcon name="info" />두 곳을 함께 가는 조합은 조건을 벗어나요. 한 곳만 선택해 추가할 수 있어요.</p> : null}
       <section className={styles.conditionPanel} aria-label="추천 조건">
         <div><span>추천 조건</span><button type="button" className={styles.linkAction} onClick={onChangeConditions}>조건 바꾸기<LineIcon name="chevron-right" /></button></div>
@@ -351,12 +410,16 @@ function ResultView({ response, selection, input, onSelect, onChangeConditions, 
               ? <p className={styles.emptyMeal}>식사 {meal.index} 시간에는 조건에 맞는 음식점이 없습니다.</p>
               : <>
                 <p className={styles.hint}>{otherName ? `식사 ${otherIndex} '${otherName}'${andParticle(otherName)} 함께 가는 기준이에요. 도착 시각과 두 곳 합계가 바뀌었어요.` : rows.some((row) => row.pairOnly) ? "늘어나는 주행이 짧은 순서예요. 함께 갈 때만 가능한 곳은 뒤에 두었어요." : "늘어나는 주행이 짧은 순서예요."}</p>
-                <ul className={styles.rows}>{rows.map((row) => <li key={row.candidate.savedPlaceId}><CandidateRow row={row} onSelect={() => onSelect(meal.index, row.candidate.savedPlaceId)} /></li>)}</ul>
+                <ul className={styles.rows}>{rows.map((row) => <li key={row.candidate.savedPlaceId}><CandidateRow row={row} source={sourceOf(row.candidate.savedPlaceId)} onSelect={() => onSelect(meal.index, row.candidate.savedPlaceId)} /></li>)}</ul>
               </>}
           </section>;
         })}
       </div>
-      <p className={styles.footnote}>{coverageText(response)}<br />도착 시각과 늘어나는 주행 시간은 추정값이에요. 일정에 추가한 뒤 경로 다시 계산으로 확인해 주세요.</p>
+      <div className={styles.footnote}>
+        <p>{coverageTextV2(view.response)}</p>
+        <Exclusions view={view} names={disabledFolderNames} onFolderSettings={onFolderSettings} />
+        <p>도착 시각과 늘어나는 주행 시간은 추정값이에요. 일정에 추가한 뒤 경로 다시 계산으로 확인해 주세요.</p>
+      </div>
     </div>
     <footer className={styles.footer}>
       <div className={styles.selectionSummary} aria-live="polite">
@@ -365,12 +428,12 @@ function ResultView({ response, selection, input, onSelect, onChangeConditions, 
           <span>{extraDriveLabel(resolved.extraDriveSeconds, resolved.items.length === 2)} · 예상 복귀 {seoulClock(resolved.returnAt)}</span>
         </> : <span>{selectionGuidance(response, selection) ?? (chosenCount ? "선택한 식당은 함께 추가할 수 없어요. 선택을 바꿔 주세요." : "일정에 추가할 식당을 골라 주세요.")}</span>}
       </div>
-      <button type="button" className="primary-button" disabled={!resolved} onClick={onConfirm}>{resolved ? `선택한 식당 ${resolved.items.length}곳 일정에 추가` : "선택한 식당 일정에 추가"}</button>
+      <button type="button" className="primary-button" disabled={!resolved || applying} onClick={onConfirm}>{applying ? "식당을 확인하는 중…" : resolved ? `선택한 식당 ${resolved.items.length}곳 일정에 추가` : "선택한 식당 일정에 추가"}</button>
     </footer>
   </>;
 }
 
-function CandidateRow({ row, onSelect }: { row: CandidateRowState; onSelect: () => void }) {
+function CandidateRow({ row, source, onSelect }: { row: CandidateRowState; source: { icon: "pin" | "folder"; text: string }; onSelect: () => void }) {
   const { candidate } = row;
   const blocked = !row.selectable && !row.selected;
   const extra = extraDriveLabel(row.extraDriveSeconds, row.combined);
@@ -378,6 +441,7 @@ function CandidateRow({ row, onSelect }: { row: CandidateRowState; onSelect: () 
   const spoken = [
     candidate.displayName,
     candidate.address,
+    source.text,
     `${spokenClock(row.arrivalAt)} 도착`,
     extraSpoken,
     "영업정보 없음",
@@ -397,6 +461,7 @@ function CandidateRow({ row, onSelect }: { row: CandidateRowState; onSelect: () 
     <span className={styles.candidateText}>
       <strong>{candidate.displayName}</strong>
       <span>{candidate.address}</span>
+      <span className={styles.sourceLine}><LineIcon name={source.icon} />{source.text}</span>
       <span className={styles.candidateFacts}>{seoulClock(row.arrivalAt)} 도착 · {extra}</span>
       <small>영업정보 없음 · 방문 전 확인</small>
       {row.pairOnly ? <em>{row.reason}</em> : row.reason && (blocked || row.selected) ? <em>선택 불가 · {row.reason}</em> : null}

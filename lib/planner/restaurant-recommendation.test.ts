@@ -1005,3 +1005,13 @@ describe("recommendation response parser, contract v2", () => {
     expect(responseMatchesRequest(response, { ...request, toleranceMinutes: 60 })).toBe(false);
   });
 });
+
+// The web client reads the published v2 examples (contracts/android/restaurant-recommendation/fixtures-v2.json).
+describe("contract v2 published examples", async () => {
+  const v2 = (await import("../../contracts/android/restaurant-recommendation/fixtures-v2.json")).default as { responses: Array<{ id: string; body: unknown }> };
+  it.each(v2.responses.map((response) => [response.id, response.body] as const))("parses %s unchanged", (_id, body) => {
+    const parsed = parseRecommendationResponseV2(structuredClone(body));
+    expect(parsed.contractVersion).toBe(2);
+    expect(parsed.coverage).toEqual((body as { coverage: unknown }).coverage);
+  });
+});

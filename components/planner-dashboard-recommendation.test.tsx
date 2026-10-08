@@ -21,11 +21,46 @@ vi.mock("@/components/place-search-field", () => ({ PlaceSearchField: () => <div
 vi.mock("@/components/ordered-waypoint-editor", () => ({ OrderedWaypointEditor: () => <div /> }));
 vi.mock("@/components/collection-manager", () => ({ CollectionManager: () => <div /> }));
 vi.mock("@/components/share-manager", () => ({ ShareManager: () => <div /> }));
+// Contract v2 (#124 §7.3): the bodies below are written in the v1 shape and converted here,
+// so each candidate comes from my saved place and every v2-only count is zero.
+function toV2(body: unknown) {
+  if (!body || typeof body !== "object") return body;
+  const raw = body as { meals?: Array<{ candidates?: Array<Record<string, unknown>> }>; pairs?: Array<Record<string, unknown>>; coverage?: Record<string, unknown> };
+  const source = (id: unknown, revision: unknown) => ({ type: "saved", id, revision });
+  return {
+    contractVersion: 2,
+    ...raw,
+    meals: raw.meals?.map((meal) => ({
+      ...meal,
+      candidates: meal.candidates?.map(({ savedPlaceId, savedPlaceRevision, ...candidate }) => ({ ...candidate, source: source(savedPlaceId, savedPlaceRevision), otherFolderIds: [] })),
+    })),
+    pairs: raw.pairs?.map(({ firstSavedPlaceId, secondSavedPlaceId, ...pair }) => ({ ...pair, first: source(firstSavedPlaceId, 1), second: source(secondSavedPlaceId, 1) })),
+    coverage: raw.coverage && { ...raw.coverage, sharedRestaurants: 0, duplicateMerged: 0, avoidedExcluded: 0, disabledFolders: 0, sharedReadTruncated: false },
+  };
+}
+// Pairs name both sources with their revisions; the two-meal fixtures use revision 1 throughout.
 vi.mock("@/lib/supabase/browser", () => ({
   getBrowserSupabase: () => ({
-    functions: { invoke: mocks.invoke },
+    functions: {
+      invoke: async (name: string, options: unknown) => {
+        const result = await mocks.invoke(name, options);
+        return name === "recommend-restaurants" && result && typeof result === "object" && "data" in result ? { ...result, data: toV2((result as { data: unknown }).data) } : result;
+      },
+    },
     rpc: mocks.rpc,
-    from: () => ({ select() { return this; }, order() { return this; }, limit: async () => ({ data: mocks.savedRows, error: null }) }),
+    // Table-aware reads: my saved places, and nothing shared or avoided (§7.4 re-check reads too).
+    from: (table: string) => {
+      const rows = () => (table === "saved_place_entries" ? mocks.savedRows : []);
+      const builder = {
+        select() { return builder; },
+        order() { return builder; },
+        in() { return builder; },
+        range() { return builder; },
+        limit: async () => ({ data: rows(), error: null }),
+        then: (resolve: (value: { data: unknown; error: null }) => unknown) => Promise.resolve(resolve({ data: rows(), error: null })),
+      };
+      return builder;
+    },
     auth: { onAuthStateChange: (listener: (event: string, session: { user: { id: string } } | null) => void) => { mocks.authListeners.push(listener); return { data: { subscription: { unsubscribe: vi.fn() } } }; } },
   }),
 }));
@@ -293,6 +328,7 @@ describe("PlannerDashboard restaurant recommendation", () => {
       // 08:00–08:30 route: 12:00 is outside, so meal 1 defaults to a third of the way (08:10).
       meals: [{ desiredTime: "08:10", dwellMinutes: 45 }],
       toleranceMinutes: 30,
+      contractVersion: 2,
     });
     const row = dialog(renderer).find((node) => node.type === "button" && node.props["aria-pressed"] === false);
     expect(row.props["aria-label"]).toContain("단골 국밥, 테스트 주소");
@@ -307,6 +343,7 @@ describe("PlannerDashboard restaurant recommendation", () => {
     const totalCalls = mocks.invoke.mock.calls.length;
     const rpcCalls = mocks.rpc.mock.calls.length;
     await act(async () => buttons(dialog(renderer), "선택한 식당 1곳 일정에 추가")[0].props.onClick());
+    await flush();
 
     expect(renderer.root.findAllByType(RestaurantRecommendationDialog)).toHaveLength(0);
     expect(renderer.root.findByType("main").props["data-view"]).toBe("editor");
@@ -351,6 +388,7 @@ describe("PlannerDashboard restaurant recommendation", () => {
     expect(text(dialog(renderer))).toContain("경로가 바뀌어 이전 추천을 사용할 수 없습니다");
     // A confirmation captured before the change is refused too.
     await act(async () => confirm());
+    await flush();
     await act(async () => buttons(dialog(renderer), "경로 편집으로")[0].props.onClick());
     expect(renderer.root.findByType(OrderedWaypointEditor).props.waypoints.map((item: { id: string }) => item.id)).toEqual(["occ"]);
     expect(calls("recommend-restaurants")).toHaveLength(1);
@@ -377,8 +415,13 @@ describe("PlannerDashboard restaurant recommendation", () => {
     await act(async () => buttons(dialog(renderer), "추천 받기")[0].props.onClick());
     const row = dialog(renderer).find((node) => node.type === "button" && node.props["aria-pressed"] === false);
     await act(async () => row.props.onClick());
+    const before = mocks.invoke.mock.calls.length;
     await act(async () => buttons(dialog(renderer), "선택한 식당 1곳 일정에 추가")[0].props.onClick());
-    expect(text(dialog(renderer))).toContain("선택한 식당은 일정에 추가하지 않았어요.");
+    await flush();
+    // §7.4: the source row re-read on the server has revision 2, not 1. No provider call.
+    expect(text(dialog(renderer))).toContain("추천 결과가 바뀌었어요");
+    expect(text(dialog(renderer))).toContain("일정에 추가하지 않았어요.");
+    expect(mocks.invoke.mock.calls.length).toBe(before);
     expect(renderer.root.findByType(OrderedWaypointEditor).props.waypoints).toHaveLength(0);
     expect(renderer.root.findByType("main").props["data-view"]).toBe("summary");
     await act(async () => renderer.unmount());

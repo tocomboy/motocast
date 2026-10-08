@@ -1,0 +1,399 @@
+{
+  "contract": "recommend-restaurants request/response v2 (issue #124 contract §7.1–§7.3)",
+  "requestVersion": 2,
+  "base": "fixtures.json 3.0.1 (v1 rules unchanged; v2 adds contractVersion and the source fields)",
+  "requests": [
+    {
+      "id": "v2-one-meal-defaults",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 45
+          }
+        ],
+        "toleranceMinutes": 30,
+        "contractVersion": 2
+      },
+      "expected": {
+        "request": {
+          "tripId": "11111111-1111-4111-8111-111111111111",
+          "basis": {
+            "departureAt": "2030-01-01T00:00:00.000Z",
+            "returnAt": "2030-01-01T04:00:00.000Z",
+            "pointIds": [
+              "origin-kakao-id",
+              "occurrence-1",
+              "destination-kakao-id"
+            ],
+            "arrivalAts": [
+              "2030-01-01T02:00:00.000Z",
+              "2030-01-01T04:00:00.000Z"
+            ]
+          },
+          "mealCount": 1,
+          "meals": [
+            {
+              "desiredTime": "12:00",
+              "dwellMinutes": 45
+            }
+          ],
+          "toleranceMinutes": 30,
+          "contractVersion": 2
+        },
+        "targets": [
+          {
+            "targetAt": "2030-01-01T03:00:00.000Z",
+            "windowStartAt": "2030-01-01T02:30:00.000Z",
+            "windowEndAt": "2030-01-01T03:30:00.000Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "v2-version-3",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 45
+          }
+        ],
+        "toleranceMinutes": 30,
+        "contractVersion": 3
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    },
+    {
+      "id": "v2-version-string",
+      "input": {
+        "tripId": "11111111-1111-4111-8111-111111111111",
+        "basis": {
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin-kakao-id",
+            "occurrence-1",
+            "destination-kakao-id"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "mealCount": 1,
+        "meals": [
+          {
+            "desiredTime": "12:00",
+            "dwellMinutes": 45
+          }
+        ],
+        "toleranceMinutes": 30,
+        "contractVersion": "2"
+      },
+      "error": "INVALID_RECOMMENDATION_REQUEST"
+    }
+  ],
+  "responses": [
+    {
+      "id": "v2-ok-shared",
+      "description": "내 식당 1곳 + 켜 둔 폴더 식당(다른 켜 둔 폴더에도 있음, otherFolderIds) + 기피로 빠진 폴더 식당 1곳, 꺼 둔 폴더 1개",
+      "status": 200,
+      "body": {
+        "contractVersion": 2,
+        "status": "OK",
+        "basis": {
+          "tripId": "11111111-1111-4111-8111-111111111111",
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin",
+            "occ-w",
+            "destination"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "settings": {
+          "mealCount": 1,
+          "toleranceMinutes": 30,
+          "detourLimitMinutes": 60
+        },
+        "meals": [
+          {
+            "index": 1,
+            "targetAt": "2030-01-01T03:00:00.000Z",
+            "windowStartAt": "2030-01-01T02:30:00.000Z",
+            "windowEndAt": "2030-01-01T03:30:00.000Z",
+            "dwellMinutes": 45,
+            "candidates": [
+              {
+                "source": {
+                  "type": "saved",
+                  "id": "00000000-0000-4000-8000-0000000c0001",
+                  "revision": 2
+                },
+                "displayName": "단골 국밥",
+                "placeName": "공개 시험 국밥",
+                "address": "공개 시험 주소",
+                "longitude": 127.75,
+                "latitude": 37.001,
+                "insertion": {
+                  "legIndex": 1,
+                  "afterPointId": "occ-w",
+                  "beforePointId": "destination"
+                },
+                "single": {
+                  "feasible": true,
+                  "arrivalAt": "2030-01-01T03:00:00.000Z",
+                  "extraDriveSeconds": 540,
+                  "returnAt": "2030-01-01T04:54:00.000Z",
+                  "reason": null
+                },
+                "otherFolderIds": []
+              },
+              {
+                "source": {
+                  "type": "shared",
+                  "id": "00000000-0000-4000-8000-0000000d0002",
+                  "revision": 4,
+                  "folderId": "aaaaaaaa-0000-4000-8000-0000000000a1"
+                },
+                "displayName": "공개 시험 닭갈비",
+                "placeName": "공개 시험 닭갈비",
+                "address": "공개 시험 주소",
+                "longitude": 127.8,
+                "latitude": 37.002,
+                "insertion": {
+                  "legIndex": 1,
+                  "afterPointId": "occ-w",
+                  "beforePointId": "destination"
+                },
+                "single": {
+                  "feasible": true,
+                  "arrivalAt": "2030-01-01T03:06:00.000Z",
+                  "extraDriveSeconds": 600,
+                  "returnAt": "2030-01-01T04:55:00.000Z",
+                  "reason": null
+                },
+                "otherFolderIds": [
+                  "aaaaaaaa-0000-4000-8000-0000000000b2"
+                ]
+              }
+            ]
+          }
+        ],
+        "pairs": [],
+        "coverage": {
+          "savedRestaurants": 1,
+          "invalidSaved": 0,
+          "alreadyInRoute": 0,
+          "nearRoute": 2,
+          "evaluated": 2,
+          "unreachable": 0,
+          "notEvaluated": 0,
+          "providerRequests": 2,
+          "sharedRestaurants": 3,
+          "duplicateMerged": 1,
+          "avoidedExcluded": 1,
+          "disabledFolders": 1,
+          "sharedReadTruncated": false
+        }
+      }
+    },
+    {
+      "id": "v2-all-excluded",
+      "description": "읽은 후보(내 식당 1, 공유 1)가 모두 기피 장소 → ALL_EXCLUDED, 공급자 호출 0",
+      "status": 200,
+      "body": {
+        "contractVersion": 2,
+        "status": "ALL_EXCLUDED",
+        "basis": {
+          "tripId": "11111111-1111-4111-8111-111111111111",
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin",
+            "occ-w",
+            "destination"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "settings": {
+          "mealCount": 1,
+          "toleranceMinutes": 30,
+          "detourLimitMinutes": 60
+        },
+        "meals": [
+          {
+            "index": 1,
+            "targetAt": "2030-01-01T03:00:00.000Z",
+            "windowStartAt": "2030-01-01T02:30:00.000Z",
+            "windowEndAt": "2030-01-01T03:30:00.000Z",
+            "dwellMinutes": 45,
+            "candidates": []
+          }
+        ],
+        "pairs": [],
+        "coverage": {
+          "savedRestaurants": 1,
+          "invalidSaved": 0,
+          "alreadyInRoute": 0,
+          "nearRoute": 0,
+          "evaluated": 0,
+          "unreachable": 0,
+          "notEvaluated": 0,
+          "providerRequests": 0,
+          "sharedRestaurants": 1,
+          "duplicateMerged": 0,
+          "avoidedExcluded": 2,
+          "disabledFolders": 0,
+          "sharedReadTruncated": false
+        }
+      }
+    },
+    {
+      "id": "v2-no-saved",
+      "description": "내 식당 0 + 켜 둔 폴더 식당 0(꺼 둔 폴더 2개) → NO_SAVED_RESTAURANTS",
+      "status": 200,
+      "body": {
+        "contractVersion": 2,
+        "status": "NO_SAVED_RESTAURANTS",
+        "basis": {
+          "tripId": "11111111-1111-4111-8111-111111111111",
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin",
+            "occ-w",
+            "destination"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "settings": {
+          "mealCount": 1,
+          "toleranceMinutes": 30,
+          "detourLimitMinutes": 60
+        },
+        "meals": [
+          {
+            "index": 1,
+            "targetAt": "2030-01-01T03:00:00.000Z",
+            "windowStartAt": "2030-01-01T02:30:00.000Z",
+            "windowEndAt": "2030-01-01T03:30:00.000Z",
+            "dwellMinutes": 45,
+            "candidates": []
+          }
+        ],
+        "pairs": [],
+        "coverage": {
+          "savedRestaurants": 0,
+          "invalidSaved": 0,
+          "alreadyInRoute": 0,
+          "nearRoute": 0,
+          "evaluated": 0,
+          "unreachable": 0,
+          "notEvaluated": 0,
+          "providerRequests": 0,
+          "sharedRestaurants": 0,
+          "duplicateMerged": 0,
+          "avoidedExcluded": 0,
+          "disabledFolders": 2,
+          "sharedReadTruncated": false
+        }
+      }
+    },
+    {
+      "id": "v2-truncated",
+      "description": "공유 읽기 2,000곳 잘림(truncated), 읽은 범위가 모두 기피여도 OK + 빈 후보 + sharedReadTruncated",
+      "status": 200,
+      "body": {
+        "contractVersion": 2,
+        "status": "OK",
+        "basis": {
+          "tripId": "11111111-1111-4111-8111-111111111111",
+          "departureAt": "2030-01-01T00:00:00.000Z",
+          "returnAt": "2030-01-01T04:00:00.000Z",
+          "pointIds": [
+            "origin",
+            "occ-w",
+            "destination"
+          ],
+          "arrivalAts": [
+            "2030-01-01T02:00:00.000Z",
+            "2030-01-01T04:00:00.000Z"
+          ]
+        },
+        "settings": {
+          "mealCount": 1,
+          "toleranceMinutes": 30,
+          "detourLimitMinutes": 60
+        },
+        "meals": [
+          {
+            "index": 1,
+            "targetAt": "2030-01-01T03:00:00.000Z",
+            "windowStartAt": "2030-01-01T02:30:00.000Z",
+            "windowEndAt": "2030-01-01T03:30:00.000Z",
+            "dwellMinutes": 45,
+            "candidates": []
+          }
+        ],
+        "pairs": [],
+        "coverage": {
+          "savedRestaurants": 0,
+          "invalidSaved": 0,
+          "alreadyInRoute": 0,
+          "nearRoute": 0,
+          "evaluated": 0,
+          "unreachable": 0,
+          "notEvaluated": 0,
+          "providerRequests": 0,
+          "sharedRestaurants": 2000,
+          "duplicateMerged": 0,
+          "avoidedExcluded": 2000,
+          "disabledFolders": 0,
+          "sharedReadTruncated": true
+        }
+      }
+    }
+  ]
+}

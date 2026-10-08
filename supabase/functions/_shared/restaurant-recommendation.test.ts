@@ -1004,3 +1004,62 @@ describe("contract v2 candidates", () => {
     expect(37 + 29.9 / 111.195).toBeLessThan(bounds.maxLatitude);
   });
 });
+
+// --- Contract v2 Android examples (#124 §7.3) are real outputs of these scenarios ----
+// contracts/android/restaurant-recommendation/fixtures-v2.json. With
+// MOTOCAST_WRITE_V2_FIXTURES=<path> the outputs are written there instead of compared.
+describe("shared Android v2 response fixtures", () => {
+  const FOLDER_A = "aaaaaaaa-0000-4000-8000-0000000000a1";
+  const FOLDER_B = "aaaaaaaa-0000-4000-8000-0000000000b2";
+  const mineRow = (suffix: string, longitude: number, latitude: number, name: string, alias: string | null = null) => ({
+    id: `00000000-0000-4000-8000-0000000c${suffix}`, alias, revision: 2,
+    place: { kakaoPlaceId: `v2-mine-${suffix}`, verificationToken: "a".repeat(43), name, address: "공개 시험 주소", roadAddress: null, longitude, latitude },
+  });
+  const folderRow = (suffix: string, folderId: string, longitude: number, latitude: number, name: string, kakaoPlaceId = `v2-shared-${suffix}`) => ({
+    id: `00000000-0000-4000-8000-0000000d${suffix}`, folder_id: folderId, alias: null, revision: 4, created_at: `2026-10-0${suffix.at(-1)}T00:00:00+00:00`,
+    place: { kakaoPlaceId, verificationToken: "a".repeat(43), name, address: "공개 시험 주소", roadAddress: null, longitude, latitude },
+  });
+  const avoided = (kakaoPlaceId: string, longitude: number, latitude: number) => ({
+    id: "00000000-0000-4000-8000-0000000e0001",
+    place: { kakaoPlaceId, verificationToken: "a".repeat(43), name: "기피", address: "공개 시험 주소", roadAddress: null, longitude, latitude },
+  });
+  async function run(savedRows: unknown[], shared: Record<string, unknown>, avoidedRows: unknown[], options: Parameters<typeof harness>[1] = {}) {
+    const summary = storedSummary();
+    const request = requestFor(summary, { contractVersion: 2 });
+    const h = harness(summary, options);
+    const read = parseSharedRestaurantRead({ truncated: false, disabledFolders: 0, ...shared, enabledTotal: (shared.enabledTotal as number | undefined) ?? (shared.rows as unknown[]).length });
+    return recommendRestaurantsV2({
+      request, targets: mealTargets(request), route: prepareStoredRoute(request, summary),
+      savedRows, avoided: parseAvoidedPlaces(avoidedRows), shared: read,
+    }, h.dependencies);
+  }
+  const mine = mineRow("0001", 127.75, 37.001, "공개 시험 국밥", "단골 국밥");
+  const shared = folderRow("0002", FOLDER_A, 127.8, 37.002, "공개 시험 닭갈비");
+  const sharedCopy = folderRow("0003", FOLDER_B, 127.8, 37.002, "공개 시험 닭갈비", shared.place.kakaoPlaceId);
+  const avoidedShared = folderRow("0004", FOLDER_B, 127.7, 37.001, "기피한 식당");
+  const scenarios: Record<string, () => Promise<unknown>> = {
+    "v2-ok-shared": () => run([mine], { rows: [shared, sharedCopy, avoidedShared], disabledFolders: 1 }, [avoided(avoidedShared.place.kakaoPlaceId, 127.7, 37.001)], {
+      overrides: { [mine.id]: [3600, 4140], [shared.id]: [3960, 3840] },
+    }),
+    "v2-all-excluded": () => run([mine], { rows: [shared] }, [avoided(mine.place.kakaoPlaceId, 127.75, 37.001), { ...avoided(shared.place.kakaoPlaceId, 127.8, 37.002), id: "00000000-0000-4000-8000-0000000e0002" }]),
+    "v2-no-saved": () => run([], { rows: [], enabledTotal: 0, disabledFolders: 2 }, []),
+    "v2-truncated": () => run([], { rows: Array.from({ length: 2000 }, (_, index) => ({ ...folderRow("0005", FOLDER_A, 127.8, 37.001, "많은 식당"), id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, place: { ...folderRow("0005", FOLDER_A, 127.8, 37.001, "많은 식당").place, kakaoPlaceId: `v2-many-${index}` } })), truncated: true, enabledTotal: 2400 }, [{ ...avoided("map:37.0010000:127.8000000", 127.8, 37.001) }]),
+  };
+
+  it("writes or matches every published v2 example", async () => {
+    const outputs: Record<string, unknown> = {};
+    for (const [id, scenario] of Object.entries(scenarios)) outputs[id] = await scenario();
+    const target = process.env.MOTOCAST_WRITE_V2_FIXTURES?.trim();
+    if (target) {
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(target, JSON.stringify(outputs, null, 2), "utf8");
+      return;
+    }
+    const published = (await import("../../../contracts/android/restaurant-recommendation/fixtures-v2.json")).default as { responses: Array<{ id: string; status: number; body: unknown }> };
+    expect(published.responses.map((item) => item.id).sort()).toEqual(Object.keys(scenarios).sort());
+    for (const item of published.responses) {
+      expect(item.status).toBe(200);
+      expect(outputs[item.id]).toEqual(item.body);
+    }
+  });
+});

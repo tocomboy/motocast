@@ -906,6 +906,21 @@ export type ApplyRecommendationResult =
   | { ok: false; reason: "SELECTION" | "ROUTE_CHANGED" | "SAVED_PLACE_CHANGED" | "LIMIT" };
 
 export function applyRecommendedMeals(input: ApplyRecommendationInput): ApplyRecommendationResult {
+  return applyRecommendedMealsWith(input, (candidate) => {
+    const saved = input.savedPlacesReady ? input.savedPlaces.find((place) => place.id === candidate.savedPlaceId) : undefined;
+    return saved && saved.revision === candidate.savedPlaceRevision ? saved.place : null;
+  });
+}
+
+/**
+ * Same insertion as `applyRecommendedMeals`, with the place of each chosen candidate taken from
+ * `placeOf` (v2: the source row re-read right before applying, contract §7.4). `null` means the
+ * source changed; the place must still sit where the candidate was evaluated.
+ */
+export function applyRecommendedMealsWith(
+  input: Omit<ApplyRecommendationInput, "savedPlaces" | "savedPlacesReady">,
+  placeOf: (candidate: RecommendationCandidate) => PlaceSearchResult | null,
+): ApplyRecommendationResult {
   const resolved = resolveSelection(input.response, input.selection);
   if (!resolved) return { ok: false, reason: "SELECTION" };
   const pointIds = [input.originId, ...input.waypoints.map((waypoint) => waypoint.id), input.destinationId];
@@ -919,16 +934,13 @@ export function applyRecommendedMeals(input: ApplyRecommendationInput): ApplyRec
     if (pointIds[insertion.legIndex] !== insertion.afterPointId || pointIds[insertion.legIndex + 1] !== insertion.beforePointId) {
       return { ok: false, reason: "ROUTE_CHANGED" };
     }
-    const saved = input.savedPlacesReady
-      ? input.savedPlaces.find((place) => place.id === item.candidate.savedPlaceId)
-      : undefined;
-    if (
-      !saved || saved.revision !== item.candidate.savedPlaceRevision ||
-      saved.place.longitude !== item.candidate.longitude || saved.place.latitude !== item.candidate.latitude
-    ) return { ok: false, reason: "SAVED_PLACE_CHANGED" };
+    const place = placeOf(item.candidate);
+    if (!place || place.longitude !== item.candidate.longitude || place.latitude !== item.candidate.latitude) {
+      return { ok: false, reason: "SAVED_PLACE_CHANGED" };
+    }
     additions.push({
       legIndex: insertion.legIndex,
-      waypoint: { id: input.createId(), role: "meal", dwellMinutes: item.dwellMinutes, place: { ...saved.place } as PlaceSearchResult },
+      waypoint: { id: input.createId(), role: "meal", dwellMinutes: item.dwellMinutes, place: { ...place } as PlaceSearchResult },
     });
   }
   let checked = input.waypoints;
