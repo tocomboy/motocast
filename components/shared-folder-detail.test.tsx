@@ -183,6 +183,40 @@ describe("adding a place to a shared folder (G13b)", () => {
     expect(text(r.root)).not.toContain("자주 찾는 장소에는 추가하지 못했어요");
   });
 
+  it("delta 2-2: a resolved star issue stays resolved after unstarring, and a later change replaces the success notice", async () => {
+    write
+      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; })
+      .mockResolvedValueOnce({ ok: false, reason: "star_limit", title: "", message: "" });
+    const r = await mount();
+    const rerender = () => act(async () => r.update(<SharedFolderDetail folderId={F1} wide={false} disabled={false} onBack={vi.fn()} onAddWaypoint={vi.fn()} />));
+    const setStar = (starred: boolean) => { snapshot = { ...snapshot, places: snapshot.places.map((p) => (p.id === newRow().id ? { ...p, starred } : p)) }; };
+    await addPlace(r, searched, true);
+    await act(async () => { buttons(dialogs(r, "폴더에 저장할까요?").at(-1)!, "확인하고 저장")[0].props.onClick(); await Promise.resolve(); });
+    expect(text(r.root)).toContain("자주 찾는 장소에는 추가하지 못했어요");
+    setStar(true); await rerender();
+    expect(text(r.root)).not.toContain("자주 찾는 장소에는 추가하지 못했어요");
+    setStar(false); await rerender();
+    expect(text(r.root)).not.toContain("자주 찾는 장소에는 추가하지 못했어요");
+  });
+
+  it("delta 2-2: the re-check success notice gives way once the place is unstarred or deleted", async () => {
+    write
+      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; })
+      .mockResolvedValueOnce({ ok: false, reason: "unknown", checked: false, title: "", message: "" });
+    const r = await mount();
+    const rerender = () => act(async () => r.update(<SharedFolderDetail folderId={F1} wide={false} disabled={false} onBack={vi.fn()} onAddWaypoint={vi.fn()} />));
+    await addPlace(r, searched, true);
+    await act(async () => { buttons(dialogs(r, "폴더에 저장할까요?").at(-1)!, "확인하고 저장")[0].props.onClick(); await Promise.resolve(); });
+    refresh.mockImplementationOnce(async () => { snapshot = { ...snapshot, places: snapshot.places.map((p) => (p.id === newRow().id ? { ...p, starred: true } : p)) }; return snapshot; });
+    await act(async () => buttons(r, "목록 다시 확인")[0].props.onClick());
+    expect(text(r.root)).toContain("폴더에 저장하고 자주 찾는 장소에도 추가했어요.");
+    snapshot = { ...snapshot, places: snapshot.places.filter((p) => p.id !== newRow().id) };
+    (mocks.shared as { message: string }).message = "폴더에서 장소를 삭제했어요.";
+    await rerender();
+    expect(text(r.root)).not.toContain("폴더에 저장하고 자주 찾는 장소에도 추가했어요.");
+    expect(text(r.root)).toContain("폴더에서 장소를 삭제했어요.");
+  });
+
   it("V3-10: the duplicate-place popup closes with 닫기 and with 기존 장소 열기", async () => {
     const existing = { ...searched, kakaoPlaceId: "k-f1", name: "문호리 강변 쉼터" };
     const r = await mount();

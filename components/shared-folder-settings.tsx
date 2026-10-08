@@ -504,6 +504,8 @@ function DisplayNameEdit({ folderId, onClose }: { folderId: string; onClose: () 
   function submit() {
     if (issue || duplicate || same) return;
     const shown = mine.revision;
+    const latestMine = (s: SharedSnapshot) => s.members.find((row) => row.folderId === folderId && row.memberId === mine.memberId);
+    let staleUnread = false;
     const card = { eyebrow: `${folder.name} · 내 폴더용 이름`, name: next, line: "1~20자 · 이 폴더 안에서 겹치지 않음" };
     const note = `${folder.name} 폴더 회원 ${members.length - 1}명에게 새 이름으로 보여요. 다른 폴더의 내 이름은 그대로예요.`;
     // G36c: a newer name ends this approval; "전" shows the newest name and nothing is retried.
@@ -546,13 +548,21 @@ function DisplayNameEdit({ folderId, onClose }: { folderId: string; onClose: () 
           });
           if (write.ok) onClose();
           if (!write.ok && write.reason === "rejected" && write.stale) {
-            // Unread newer value: the refusal stays and a retry still sends the shown revision.
-            const fresh = shared.current().snapshot.members.find((row) => row.folderId === folderId && row.memberId === mine.memberId);
-            if (fresh && fresh.revision !== shown) return conflict(fresh);
+            const fresh = latestMine(shared.current().snapshot);
+            if (shared.current().status === "ready" && fresh && fresh.revision !== shown) return conflict(fresh);
+            // The newest name could not be read: only reading may follow, then G36c as a new approval.
+            staleUnread = true;
+            return { ok: false, reason: "unknown", checked: false, title: "최신 이름을 확인하지 못했어요", message: "다른 기기에서 먼저 바뀌었지만 최신 이름을 불러오지 못했어요. 이름 변경은 다시 보내지 않아요. 연결을 확인한 뒤 최신 이름을 다시 확인해 주세요.", recheck: (s) => (latestMine(s)?.revision ?? shown) !== shown };
           }
           return write;
         },
-        onApplied: onClose,
+        readAgainLabel: "최신 이름 다시 확인",
+        onApplied: () => {
+          const fresh = staleUnread ? latestMine(shared.current().snapshot) : null;
+          staleUnread = false;
+          if (fresh && fresh.revision !== shown) conflict(fresh);
+          else onClose();
+        },
         finalOnRefusal: (write) => (write.title === "같은 이름이 있어요"
           ? [{ label: "이름 고치기", primary: true, onClick: () => { close(); setTaken(true); } }]
           : null),
@@ -594,6 +604,8 @@ function FolderRename({ folderId, onClose }: { folderId: string; onClose: () => 
   function submit() {
     if (issue || same) return;
     const shown = folder.revision;
+    const latestFolder = (s: SharedSnapshot) => s.folders.find((row) => row.id === folderId);
+    let staleUnread = false;
     const card = { eyebrow: "공유 폴더 · 주인", line: `회원 ${members}명 · 장소 ${places.toLocaleString()}` };
     const note = "회원 모두에게 새 이름으로 보여요. 초대 링크와 장소는 그대로예요.";
     // G37c: a newer name ends this approval; "전" shows the newest name and nothing is retried.
@@ -635,12 +647,21 @@ function FolderRename({ folderId, onClose }: { folderId: string; onClose: () => 
           });
           if (write.ok) onClose();
           if (!write.ok && write.reason === "rejected" && write.stale) {
-            const fresh = shared.current().snapshot.folders.find((row) => row.id === folderId);
-            if (fresh && fresh.revision !== shown) return conflict(fresh);
+            const fresh = latestFolder(shared.current().snapshot);
+            if (shared.current().status === "ready" && fresh && fresh.revision !== shown) return conflict(fresh);
+            // The newest name could not be read: only reading may follow, then G37c as a new approval.
+            staleUnread = true;
+            return { ok: false, reason: "unknown", checked: false, title: "최신 이름을 확인하지 못했어요", message: "다른 기기에서 먼저 바뀌었지만 최신 이름을 불러오지 못했어요. 이름 변경은 다시 보내지 않아요. 연결을 확인한 뒤 최신 이름을 다시 확인해 주세요.", recheck: (s) => (latestFolder(s)?.revision ?? shown) !== shown };
           }
           return write;
         },
-        onApplied: onClose,
+        readAgainLabel: "최신 이름 다시 확인",
+        onApplied: () => {
+          const fresh = staleUnread ? latestFolder(shared.current().snapshot) : null;
+          staleUnread = false;
+          if (fresh && fresh.revision !== shown) conflict(fresh);
+          else onClose();
+        },
       },
     });
   }

@@ -59,6 +59,8 @@ export type Pending<T> = {
     busyLabel: string;
     /** Label once a re-read proved the change missing (FP39b), e.g. "확인하고 삭제". */
     retryLabel?: string;
+    /** Read-only re-check button, e.g. "최신 이름 다시 확인"; "목록 다시 확인" by default. */
+    readAgainLabel?: string;
     danger?: boolean;
     disabled?: boolean;
     /** Second button; it only closes (G15 "지금 저장된 내용 유지"). */
@@ -232,7 +234,7 @@ export function ConfirmPopup<T>({
           <>
             {readOnly ? (
               <button type="button" className="primary-button" disabled={busy || running} onClick={() => void readAgain()}>
-                {running ? "확인 중…" : "목록 다시 확인"}
+                {running ? "확인 중…" : pending.confirm.readAgainLabel ?? "목록 다시 확인"}
               </button>
             ) : (
               <button

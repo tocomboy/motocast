@@ -328,6 +328,33 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
     await act(async () => r.unmount());
   });
 
+  it("delta 2-1: a stale rename whose newest name could not be read only re-reads, then opens G37c with the newest name", async () => {
+    let status = "ready";
+    mocks.shared = { ...mocks.shared, current: () => ({ status, snapshot }) };
+    const r = await mount();
+    await openMenuRow(r, "폴더 이름 바꾸기");
+    await act(async () => inputOf(r).props.onChange({ target: { value: "주말 라이더 C" } }));
+    await act(async () => button(r, "이름 저장").props.onClick());
+    // STALE, and the provider's re-read failed: the list is in error and still shows the old row.
+    write.mockImplementationOnce(async () => { status = "error"; generation += 1; return { ok: false, reason: "rejected", stale: true, title: "다른 기기에서 먼저 바뀌었어요", message: "최신 이름을 불러왔어요. 최신 목록도 확인하지 못했어요." }; });
+    const popup = () => dialogs(r, "폴더 이름을 바꿀까요?").at(-1)!;
+    await act(async () => button(popup(), "확인하고 바꾸기").props.onClick());
+    expect(buttons(popup(), "다시 시도")).toHaveLength(0);
+    expect(text(popup())).toContain("최신 이름을 확인하지 못했어요");
+    // The connection is back: reading again shows the newest name as a new approval (G37c).
+    (mocks.shared as { recheck: ReturnType<typeof vi.fn> }).recheck = vi.fn(async (applied: (s: SharedSnapshot) => boolean) => {
+      reload({ ...snapshot, folders: snapshot.folders.map((row) => (row.id === F1 ? { ...row, name: "주말 라이더 모임", revision: 2 } : row)) });
+      status = "ready";
+      return applied(snapshot) ? "applied" : "missing";
+    });
+    await act(async () => r.update(<SavedPlacesManager onBack={vi.fn()} onAddWaypoint={vi.fn(() => null)} routePoints={[]} />));
+    await act(async () => { button(popup(), "최신 이름 다시 확인").props.onClick(); await Promise.resolve(); });
+    expect(text(popup())).toContain("지금 폴더 이름은 \"주말 라이더 모임\"이에요.");
+    expect(buttons(popup(), "최신 이름 확인")).toHaveLength(1);
+    expect(write).toHaveBeenCalledTimes(1);
+    await act(async () => r.unmount());
+  });
+
   it("V3-2: a display name confirm whose row changed underneath sends nothing and shows the newest name", async () => {
     const r = await mount();
     await openMenuRow(r, "이 폴더에서 쓰는 내 이름");
