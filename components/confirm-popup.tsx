@@ -159,8 +159,8 @@ export function ConfirmPopup<T>({
       const result = await recheck(readOnly.check);
       if (!mounted.current) return;
       if (result === "applied") {
-        action.onApplied?.();
         onClose();
+        action.onApplied?.();
       } else if (result === "missing" && !readOnly.mismatch) {
         // The list now proves the change is missing, so one new request may be confirmed.
         setReadOnly(null);

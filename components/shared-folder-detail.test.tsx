@@ -127,6 +127,62 @@ describe("adding a place to a shared folder (G13b)", () => {
     expect(write.mock.calls.map((call) => call[0].rpc)).toEqual(["add_shared_place", "set_shared_place_star"]);
   });
 
+  it("delta A: an already_exists reply confirmed only by a later re-read shows the duplicate notice and stars nothing", async () => {
+    // Like the provider: the reply is read through `receipt`, then the list re-read fails (mismatch).
+    write.mockImplementationOnce(async (spec: { receipt: (data: unknown) => (s: SharedSnapshot) => boolean }) => {
+      const shows = spec.receipt({ status: "already_exists", shared_place: sharedRow(40, F1, "k-new", "양서 손두부", { kind: "restaurant" }) });
+      return { ok: false, reason: "mismatch", checked: false, title: "목록에서 변경을 확인하지 못했어요", message: "", recheck: shows };
+    });
+    recheck.mockImplementationOnce(async (applied: (s: SharedSnapshot) => boolean) => {
+      snapshot = { ...snapshot, places: [...snapshot.places, newRow()] };
+      return applied(snapshot) ? "applied" : "missing";
+    });
+    const r = await mount();
+    await addPlace(r, searched, true);
+    const popup = () => dialogs(r, "폴더에 저장할까요?").at(-1)!;
+    await act(async () => { buttons(popup(), "확인하고 저장")[0].props.onClick(); await Promise.resolve(); });
+    await act(async () => { buttons(popup(), "목록 다시 확인")[0].props.onClick(); await Promise.resolve(); });
+    expect(write.mock.calls.map((call) => call[0].rpc)).toEqual(["add_shared_place"]);
+    expect(dialogs(r, "폴더에 저장할까요?")).toHaveLength(0);
+    expect(dialogs(r, "이미 폴더에 있는 장소예요")).toHaveLength(1);
+  });
+
+  it("delta B: one re-check at a time, a stale answer is ignored, and starring the place elsewhere clears the card", async () => {
+    write
+      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; })
+      .mockResolvedValueOnce({ ok: false, reason: "unknown", checked: false, title: "", message: "" });
+    const r = await mount();
+    await addPlace(r, searched, true);
+    await act(async () => { buttons(dialogs(r, "폴더에 저장할까요?").at(-1)!, "확인하고 저장")[0].props.onClick(); await Promise.resolve(); });
+    let release!: (value: SharedSnapshot | null) => void;
+    refresh.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const before = refresh.mock.calls.length;
+    await act(async () => { void buttons(r, "목록 다시 확인")[0].props.onClick(); });
+    expect(buttons(r, "목록 다시 확인").concat(buttons(r, "확인하는 중…"))[0].props.disabled).toBe(true);
+    await act(async () => { void (buttons(r, "목록 다시 확인")[0] ?? buttons(r, "확인하는 중…")[0]).props.onClick(); });
+    expect(refresh.mock.calls.length - before).toBe(1);
+    // Meanwhile the star shows up (another screen starred it); the late null is not a failure.
+    snapshot = { ...snapshot, places: snapshot.places.map((p) => (p.id === newRow().id ? { ...p, starred: true } : p)) };
+    await act(async () => r.update(<SharedFolderDetail folderId={F1} wide={false} disabled={false} onBack={vi.fn()} onAddWaypoint={vi.fn()} />));
+    expect(text(r.root)).not.toContain("별표가 반영됐는지 확인하지 못했어요");
+    await act(async () => { release(null); await Promise.resolve(); });
+    expect(text(r.root)).not.toContain("목록을 확인하지 못했어요");
+    expect(text(r.root)).not.toContain("별표가 반영됐는지 확인하지 못했어요");
+  });
+
+  it("delta B: a star-limit card goes away once the place is starred", async () => {
+    write
+      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; })
+      .mockResolvedValueOnce({ ok: false, reason: "star_limit", title: "", message: "" });
+    const r = await mount();
+    await addPlace(r, searched, true);
+    await act(async () => { buttons(dialogs(r, "폴더에 저장할까요?").at(-1)!, "확인하고 저장")[0].props.onClick(); await Promise.resolve(); });
+    expect(text(r.root)).toContain("자주 찾는 장소에는 추가하지 못했어요");
+    snapshot = { ...snapshot, places: snapshot.places.map((p) => (p.id === newRow().id ? { ...p, starred: true } : p)) };
+    await act(async () => r.update(<SharedFolderDetail folderId={F1} wide={false} disabled={false} onBack={vi.fn()} onAddWaypoint={vi.fn()} />));
+    expect(text(r.root)).not.toContain("자주 찾는 장소에는 추가하지 못했어요");
+  });
+
   it("V3-10: the duplicate-place popup closes with 닫기 and with 기존 장소 열기", async () => {
     const existing = { ...searched, kakaoPlaceId: "k-f1", name: "문호리 강변 쉼터" };
     const r = await mount();

@@ -344,6 +344,15 @@ export function addSharedPopup(
   const name = draft.alias.trim();
   const count = starCount(shared);
   const region = isRegionOnlyPlace(draft.place);
+  // Kept until a later read-only re-check finishes, so "already_exists" never turns into a new save.
+  let receiptRow: SharedPlace | null = null;
+  let duplicate = false;
+  const finish = () => {
+    const saved = receiptRow ?? shared.current().snapshot.places.find((p) => p.folderId === folderId && p.place.kakaoPlaceId === draft.place.kakaoPlaceId) ?? null;
+    if (duplicate && saved) { done.onExisting(saved); return false; }
+    done.onSaved(saved);
+    return true;
+  };
   return {
     title: `${folder} 폴더에 저장할까요?`,
     card: { eyebrow: `${kindLabel(draft.kind)} · ${region ? "지도에서 선택" : "검색 결과"}`, region, name: draft.place.name, line: placeAddress(draft.place) },
@@ -365,8 +374,8 @@ export function addSharedPopup(
         if (shared.current().status !== "ready") return unreadable;
         const existing = shared.current().snapshot.places.find((p) => p.folderId === folderId && p.place.kakaoPlaceId === draft.place.kakaoPlaceId);
         if (existing) { done.onExisting(existing); return { ok: false, reason: "blocked", title: "", message: "" }; }
-        let receiptRow: SharedPlace | null = null;
-        let duplicate = false;
+        receiptRow = null;
+        duplicate = false;
         const applied = (s: SharedSnapshot) => s.places.some((p) => p.folderId === folderId && p.place.kakaoPlaceId === draft.place.kakaoPlaceId);
         const write = await shared.write({
           rpc: "add_shared_place",
@@ -385,13 +394,10 @@ export function addSharedPopup(
           refusal: (code) => sharedPlaceRefusal(code, "저장"),
         });
         if (!write.ok) return write;
-        const saved = (receiptRow as SharedPlace | null) ?? shared.current().snapshot.places.find((p) => p.folderId === folderId && p.place.kakaoPlaceId === draft.place.kakaoPlaceId) ?? null;
-        if (duplicate && saved) { done.onExisting(saved); return { ok: false, reason: "blocked", title: "", message: "" }; }
-        done.onSaved(saved);
-        return write;
+        return finish() ? write : { ok: false, reason: "blocked", title: "", message: "" };
       },
-      // An unknown reply later shown by a read-only re-check: the place is saved, so the star follows.
-      onApplied: () => done.onSaved(shared.current().snapshot.places.find((p) => p.folderId === folderId && p.place.kakaoPlaceId === draft.place.kakaoPlaceId) ?? null),
+      // A reply or an unknown result shown later by a read-only re-check ends the same way.
+      onApplied: () => { finish(); },
       finalOnRefusal: (write): PopupButton[] | null => (write.title === FORBIDDEN_TITLE ? [
         { label: "폴더로 돌아가기", primary: true, onClick: done.onBackToFolder },
         { label: "닫기", onClick: done.onBackToFolder },

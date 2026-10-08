@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LineIcon, StarMark } from "@/components/line-icon";
 import { KakaoMapCanvas, type MapDisplayState } from "./kakao-map-canvas";
 import { SavedDialog } from "./saved-dialog";
@@ -63,6 +63,9 @@ export function SharedFolderDetail({
   // V3-6: the place was saved but its star failed or is unknown; shown until it is resolved.
   const [starIssue, setStarIssue] = useState<{ placeId: string | null; saved: string; title: string; message: string; unknown: boolean } | null>(null);
   const [starDone, setStarDone] = useState("");
+  // One star re-check at a time; an answer for an older card or check is ignored.
+  const [starChecking, setStarChecking] = useState(false);
+  const starRun = useRef(0);
   // Success text from a write made on this screen replaces the entry notice.
   const [baseline] = useState(shared.message);
   // Opening a folder re-reads it (memo G10: entry, refresh and right after a save).
@@ -79,9 +82,12 @@ export function SharedFolderDetail({
   async function starNewPlace(row: SharedPlace | null, label: string) {
     // G18a–c: "장소를 폴더에 저장했어요 · <place> · <folder>" stays above the star result card.
     const saved = `${label} · ${folder?.name ?? ""}`;
+    const run = ++starRun.current;
     setStarDone("");
+    setStarChecking(false);
     if (!row) { setStarIssue({ placeId: null, saved, title: "자주 찾는 장소에는 추가하지 못했어요", message: "장소는 폴더에 저장했어요. 별표할 장소를 목록에서 찾지 못했어요. 장소 상세에서 다시 추가해 주세요.", unknown: false }); return; }
     const result = await starAfterAdd(shared, row);
+    if (run !== starRun.current) return;
     if (result.ok) { setStarIssue(null); return; }
     const unknown = result.reason === "unknown" || result.reason === "mismatch";
     setStarIssue({
@@ -97,11 +103,20 @@ export function SharedFolderDetail({
     });
   }
   async function recheckStar(placeId: string) {
-    const fresh = await shared.refresh();
+    if (starChecking) return;
+    const run = ++starRun.current;
+    setStarChecking(true);
+    const read = await shared.refresh();
+    if (run !== starRun.current) return;
+    setStarChecking(false);
+    // A read superseded by another one still leaves a ready list to judge from.
+    const now = shared.current();
+    const fresh = read ?? (now.status === "ready" ? now.snapshot : null);
     if (!fresh) { setStarIssue((current) => current && { ...current, placeId, unknown: true, title: "목록을 확인하지 못했어요", message: "장소는 폴더에 저장했어요. 별표가 반영됐는지 아직 몰라요. 잠시 뒤 다시 확인해 주세요." }); return; }
     if (fresh.places.some((p) => p.id === placeId && p.starred)) { setStarIssue(null); setStarDone("폴더에 저장하고 자주 찾는 장소에도 추가했어요."); return; }
     setStarIssue((current) => current && { ...current, placeId, unknown: false, title: "자주 찾는 장소에는 추가되지 않았어요", message: "장소는 폴더에 저장했어요. 별표는 없어요. 장소 상세에서 다시 추가할 수 있어요." });
   }
+  const starIssueShown = starIssue && !(starIssue.placeId && snapshot.places.some((p) => p.id === starIssue.placeId && p.starred)) ? starIssue : null;
   const members = snapshot.members.filter((row) => row.folderId === folderId);
   const role = members.find((row) => row.memberId === me)?.role;
   const editable = canEditPlaces(role);
@@ -173,14 +188,14 @@ export function SharedFolderDetail({
         <button type="button" className={styles.iconButton} aria-label="폴더 메뉴" aria-haspopup="dialog" onClick={() => setMenuOpen(true)}><LineIcon name="more-vertical" /></button>
       </header>
       <div className={`${styles.mobileRegion} ${styles.mobileOnly}`}>{regionSelect("large")}</div>
-      {starIssue ? (
-        <div className={styles.noticeCard} role="status"><strong>장소를 폴더에 저장했어요</strong><p>{starIssue.saved}</p></div>
+      {starIssueShown ? (
+        <div className={styles.noticeCard} role="status"><strong>장소를 폴더에 저장했어요</strong><p>{starIssueShown.saved}</p></div>
       ) : starDone ? <p className={styles.noticeCard} role="status">{starDone}</p> : shared.message !== baseline ? <p className={styles.noticeCard} role="status">{shared.message}</p> : status ? <p className={styles.noticeCard} role="status">{status}</p> : null}
-      {starIssue ? (
+      {starIssueShown ? (
         <div className={styles.errorCard} role="alert">
-          <strong>{starIssue.title}</strong>
-          <p>{starIssue.message}</p>
-          {starIssue.unknown && starIssue.placeId ? <button type="button" className={styles.secondaryButton} disabled={shared.busy} onClick={() => void recheckStar(starIssue.placeId!)}>목록 다시 확인</button> : null}
+          <strong>{starIssueShown.title}</strong>
+          <p>{starIssueShown.message}</p>
+          {starIssueShown.unknown && starIssueShown.placeId ? <button type="button" className={styles.secondaryButton} disabled={shared.busy || starChecking} onClick={() => void recheckStar(starIssueShown.placeId!)}>{starChecking ? "확인하는 중…" : "목록 다시 확인"}</button> : null}
         </div>
       ) : null}
       <div className={styles.columns}>

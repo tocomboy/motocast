@@ -92,11 +92,19 @@ describe("apply-time re-check (contract §7.4)", () => {
 
   it("V3-5: ends as unreadable when a read never answers, and ignores its late answer", async () => {
     vi.useFakeTimers();
-    let settled: unknown = "pending";
-    const hanging = { from: () => { const builder = { select: () => builder, in: () => builder, limit: () => new Promise<never>(() => undefined) }; return builder; } };
-    void recheckRecommendationSources(hanging, [savedSource, sharedSource]).then((value) => { settled = value; });
+    const settled: unknown[] = [];
+    // Healthy rows that answer only after the deadline: the late success must not change the result.
+    const { api } = client(healthy());
+    const late: RecheckClient = { from: (table) => {
+      const inner = api.from(table);
+      const builder = { select: (columns: string) => { inner.select(columns); return builder; }, in: (name: string, values: string[]) => { inner.in(name, values); return builder; }, limit: (count: number) => new Promise<{ data: unknown; error: unknown }>((resolve) => { setTimeout(() => resolve(inner.limit(count)), RECOMMENDATION_RECHECK_TIMEOUT_MS + 5_000); }) };
+      return builder;
+    } };
+    void recheckRecommendationSources(late, [savedSource, sharedSource]).then((value) => { settled.push(value); });
     await vi.advanceTimersByTimeAsync(RECOMMENDATION_RECHECK_TIMEOUT_MS + 1);
-    expect(settled).toEqual({ ok: false, reason: "unreadable" });
+    expect(settled).toEqual([{ ok: false, reason: "unreadable" }]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(settled).toEqual([{ ok: false, reason: "unreadable" }]);
   });
 
   it("refuses after I was removed from the folder (the row is no longer visible)", async () => {
