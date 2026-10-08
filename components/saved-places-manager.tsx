@@ -20,7 +20,7 @@ import { useSharedFolders } from "./shared-folders-provider";
 import { avoidedFor, avoidPopup, folderNameOf, folderPickerPopup, unavoidPopup, sharedStarPopup, useSharedPopup } from "./shared-place-actions";
 import { SharedPlaceDetail } from "./shared-place-detail";
 import { FolderCreate, SharedFolderList } from "./shared-folder-list";
-import type { PendingCreate } from "@/lib/places/shared-folders";
+import { PENDING_CREATE_SETTLE_MS, type PendingCreate } from "@/lib/places/shared-folders";
 import { SharedFolderDetail } from "./shared-folder-detail";
 import { AvoidedPlacesView } from "./avoided-places";
 import {
@@ -106,7 +106,7 @@ function SavedPlacesManagerContent({
   const [listNotice, setListNotice] = useState("");
   // A create kept with an unknown result (account-wide, shared folders provider): new creates wait.
   const unresolvedCreate = shared.pendingCreate;
-  const [createCheck, setCreateCheck] = useState<"idle" | "checking" | "unreadable">("idle");
+  const [createCheck, setCreateCheck] = useState<"idle" | "checking" | "unreadable" | "waiting">("idle");
   /** Read only: the folder carrying the kept request id opens; otherwise the same confirmation reopens. */
   async function recheckCreate(pending: PendingCreate) {
     setCreateCheck("checking");
@@ -119,6 +119,12 @@ function SavedPlacesManagerContent({
     if (folder) {
       shared.setPendingCreate(null);
       setOpenFolder({ id: folder.id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." });
+      return;
+    }
+    if (pending.refused) {
+      // A retry was refused while the first send's result is unknown: only time and a read settle it.
+      if (Date.now() - pending.firstSentAt >= PENDING_CREATE_SETTLE_MS) shared.setPendingCreate(null);
+      else setCreateCheck("waiting");
       return;
     }
     // Not there: the same confirmation reopens with the same id and input.
@@ -595,9 +601,15 @@ function SavedPlacesManagerContent({
           {listNotice ? <p className={styles.noticeCard} role="status">{listNotice}</p> : null}
           {unresolvedCreate && !creatingFolder ? (
             <div className={styles.noticeCard} role="status">
-              <strong>폴더를 만들었는지 확인하고 있어요</strong>
-              <p>응답을 받지 못한 만들기 요청이 있어요. 확인이 끝날 때까지 새 폴더 만들기를 잠시 막아 둘게요.</p>
+              {unresolvedCreate.refused ? <>
+                <strong>이전 요청 결과를 확인하고 있어요</strong>
+                <p>다시 만들기는 거절됐지만, 응답을 받지 못한 이전 요청이 늦게 처리될 수 있어요. 확인이 끝날 때까지 새 폴더 만들기를 잠시 막아 둘게요.</p>
+              </> : <>
+                <strong>폴더를 만들었는지 확인하고 있어요</strong>
+                <p>응답을 받지 못한 만들기 요청이 있어요. 확인이 끝날 때까지 새 폴더 만들기를 잠시 막아 둘게요.</p>
+              </>}
               {createCheck === "unreadable" ? <p role="alert">목록을 확인하지 못했어요. 잠시 뒤 다시 확인해 주세요.</p> : null}
+              {createCheck === "waiting" ? <p role="status">아직 이전 요청이 처리될 수 있어요. 1분쯤 뒤에 다시 확인해 주세요.</p> : null}
               <button type="button" className={styles.secondaryButton} disabled={createCheck === "checking" || shared.busy} onClick={() => void recheckCreate(unresolvedCreate)}>{createCheck === "checking" ? "확인하는 중…" : "다시 확인"}</button>
             </div>
           ) : null}

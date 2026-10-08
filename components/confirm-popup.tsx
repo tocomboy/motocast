@@ -24,8 +24,11 @@ export type ConfirmWrite<T> =
       checked?: boolean;
       stale?: boolean;
       recheck?: (list: T) => boolean;
-      /** Read-only until `recheck` is applied: a "missing" re-read shows this and never unlocks a resend. */
-      stillMissing?: { title: string; message: string };
+      /**
+       * Read-only until `recheck` is applied: a "missing" re-read shows this and never unlocks a resend.
+       * With `settle`, that read ends the write instead (called once, then a single close button).
+       */
+      stillMissing?: { title: string; message: string; settle?: () => void };
     };
 /** Outcome of a read-only recheck of an earlier write. */
 export type Recheck = "applied" | "missing" | "unreadable";
@@ -108,7 +111,7 @@ export function ConfirmPopup<T>({
   const [error, setError] = useState<{ title: string; message: string; retry?: boolean; again?: boolean } | null>(pending.error ?? null);
   const [final, setFinal] = useState<PopupButton[] | null>(null);
   // Unknown without a readable list, or a receipt the list does not show yet: only reading is allowed.
-  const [readOnly, setReadOnly] = useState<{ check: (list: T) => boolean; mismatch: boolean; stillMissing?: { title: string; message: string } } | null>(null);
+  const [readOnly, setReadOnly] = useState<{ check: (list: T) => boolean; mismatch: boolean; stillMissing?: { title: string; message: string; settle?: () => void } } | null>(null);
   const [rechecking, setRechecking] = useState(false);
   useEffect(() => {
     mounted.current = true;
@@ -165,6 +168,12 @@ export function ConfirmPopup<T>({
       if (result === "applied") {
         onClose();
         action.onApplied?.();
+      } else if (result === "missing" && readOnly.stillMissing?.settle) {
+        // A successful read proves the end state: settle it, resend nothing, offer only closing.
+        readOnly.stillMissing.settle();
+        setReadOnly(null);
+        setError({ title: readOnly.stillMissing.title, message: readOnly.stillMissing.message });
+        setFinal([{ label: "닫기", primary: true, onClick: () => undefined }]);
       } else if (result === "missing" && !readOnly.mismatch) {
         // The list now proves the change is missing, so one new request may be confirmed.
         setReadOnly(null);

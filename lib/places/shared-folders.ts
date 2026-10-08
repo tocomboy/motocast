@@ -13,8 +13,19 @@ export const FOLDER_DISPLAY_NAME_LIMIT = 20;
 export const SHARED_PLACE_PAGE_SIZE = 1000;
 
 export type FolderRole = "owner" | "editor" | "viewer";
-/** A create whose result is unknown: its id and exact input are kept so only the same request is resent. */
-export type PendingCreate = { requestId: string; folderName: string; displayName: string; ids: string[] };
+/**
+ * A create whose result is unknown: its id and exact input are kept so only the same request is resent.
+ * `firstSentAt` (ms) is the first send of this id; `refused` says the latest try was clearly refused
+ * while an earlier try's result is still unknown (V3 delta 6).
+ */
+export type PendingCreate = { requestId: string; folderName: string; displayName: string; ids: string[]; firstSentAt: number; refused: boolean };
+
+/**
+ * An unanswered create can still run on the server for at most the PostgREST statement_timeout and
+ * the gateway limit (about 60 s). After 90 s from its first send it can no longer make a folder, so a
+ * read without that request's folder settles it (contract §8, V3 delta 6).
+ */
+export const PENDING_CREATE_SETTLE_MS = 90_000;
 
 /** `createRequestId`: the create_place_folder request_id that made it (contract §6), null if unknown. */
 export type PlaceFolder = { id: string; ownerId: string; name: string; revision: number; createRequestId: string | null; createdAt: string; updatedAt: string };

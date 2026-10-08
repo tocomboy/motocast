@@ -181,7 +181,7 @@ describe("SharedFoldersProvider", () => {
 
   it("delta 5-3: keeps a pending create for the same account and drops it for another or none", async () => {
     await mount();
-    const pending = { requestId: "95000000-0000-0000-0000-000000000001", folderName: "새 폴더", displayName: "바람개비", ids: [] };
+    const pending = { requestId: "95000000-0000-0000-0000-000000000001", folderName: "새 폴더", displayName: "바람개비", ids: [], firstSentAt: 1, refused: false };
     await act(async () => controls.setPendingCreate(pending));
     await act(async () => { mocks.listener?.("INITIAL_SESSION", { user: { id: ME } }); });
     await act(async () => { mocks.listener?.("TOKEN_REFRESHED", { user: { id: ME } }); });

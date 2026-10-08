@@ -250,7 +250,9 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
     // One request id per confirmation: every try in it (FP39 re-check, "확인하고 만들기") reuses it,
     // so a resent or browser-retried request makes one folder (contract §6, idempotent create).
     const requestId = resume?.requestId ?? crypto.randomUUID();
-    const request: PendingCreate = { requestId, folderName, displayName: mine, ids };
+    // Mutable for this confirmation: the first send time and whether a try's result was unknown.
+    const request: PendingCreate = resume ? { ...resume } : { requestId, folderName, displayName: mine, ids, firstSentAt: 0, refused: false };
+    let uncertain = Boolean(resume);
     const createdBy = (s: SharedSnapshot) => s.folders.find((f) => f.ownerId === me && f.createRequestId === requestId);
     const deletedSince: SharedWrite = { ok: false, reason: "rejected", title: "이 요청으로 만든 폴더는 이미 삭제됐어요", message: "같은 요청으로 만든 폴더가 그사이 삭제돼 다시 만들지 않았어요. 새로 만들려면 \"폴더 만들기\"를 다시 눌러 주세요." };
     open({
@@ -273,6 +275,7 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
         notApplied: { title: "폴더가 만들어지지 않았어요", message: "폴더 목록을 다시 확인했지만 새 폴더가 없어요. 입력 내용은 그대로예요. 다시 만들려면 \"확인하고 만들기\"를 눌러 주세요." },
         run: async () => {
           created.current = null;
+          if (!request.firstSentAt) request.firstSentAt = Date.now();
           const write = await shared.write({
             rpc: "create_place_folder",
             args: { folder_name: folderName, display_name: mine, saved_place_ids: ids, request_id: requestId },
@@ -306,14 +309,26 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
           if (write.reason === "mismatch" && write.checked && created.current) { shared.setPendingCreate(null); return deletedSince; }
           // Unknown, or a receipt the list does not show yet: kept for this account until a read settles it.
           if (write.reason === "unknown" || write.reason === "mismatch") {
-            shared.setPendingCreate(request);
-            return write.reason === "mismatch" && created.current ? { ...write, stillMissing: { title: deletedSince.title, message: deletedSince.message } } : write;
+            uncertain = true;
+            request.refused = false;
+            shared.setPendingCreate({ ...request });
+            // A receipt whose folder a later successful read still does not show was deleted since.
+            return write.reason === "mismatch" && created.current
+              ? { ...write, stillMissing: { title: deletedSince.title, message: deletedSince.message, settle: () => shared.setPendingCreate(null) } }
+              : write;
           }
-          // A clear refusal answers this id: it made nothing, so a new create may follow.
-          if (write.reason === "rejected" || write.reason === "star_limit") shared.setPendingCreate(null);
+          if (write.reason === "rejected" || write.reason === "star_limit") {
+            // A clear refusal of this try. Without an unknown try before it, nothing was made: release.
+            // After an unknown try, the timed-out first send may still land (a timeout does not cancel
+            // it), so the request stays kept until PENDING_CREATE_SETTLE_MS and a read without it.
+            if (!uncertain) shared.setPendingCreate(null);
+            else { request.refused = true; shared.setPendingCreate({ ...request }); return { ...write, stale: false }; }
+          }
           return write;
         },
-        finalOnRefusal: (write) => (write.title === deletedSince.title ? [{ label: "닫기", primary: true, onClick: () => undefined }] : null),
+        finalOnRefusal: (write) => (write.title === deletedSince.title || request.refused
+          ? [{ label: "닫기", primary: true, onClick: () => undefined }]
+          : null),
         onApplied: () => {
           shared.setPendingCreate(null);
           const id = created.current ?? createdBy(shared.current().snapshot)?.id;
