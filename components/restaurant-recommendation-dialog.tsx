@@ -405,13 +405,18 @@ export function ResultView({ view, selection, input, settingsChanged, refused, a
   // Source line (SRC02): "내 장소" or "공유 · <folder>" with "외 n" for the other enabled folders.
   // The source line shows only while I belong to a shared folder (web = Android).
   const showSources = Boolean(onFolderSettings) || view.response.coverage.sharedRestaurants > 0;
+  // SRC02b/06/07 notices sit above the results: a new one scrolls the list back to the top so it is
+  // seen even after a footer action (memo 384:12617). The status/alert role still announces it.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const notice = refused ?? (settingsChanged ? "settings" : null);
+  useEffect(() => { if (notice) bodyRef.current?.scrollTo?.({ top: 0 }); }, [notice]);
   const sourceOf = (key: string) => {
     const entry = view.sources.get(key);
     if (!entry || entry.source.type === "saved") return { icon: "pin" as const, text: "내 장소" };
     return { icon: "folder" as const, text: `공유 · ${folderName(entry.source.folderId)}${entry.otherFolderIds.length ? ` 외 ${entry.otherFolderIds.length}` : ""}` };
   };
   return <>
-    <div className={styles.body}>
+    <div ref={bodyRef} className={styles.body}>
       {refused ? <section className={styles.changedBanner} data-tone="danger" role="alert">
         <strong>{refused === "changed" ? "추천 결과가 바뀌었어요" : "고른 식당을 확인하지 못했어요"}</strong>
         <p>{refused === "changed"

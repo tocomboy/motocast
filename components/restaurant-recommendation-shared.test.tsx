@@ -42,6 +42,7 @@ function text(node: ReactTestInstance | string): string {
 }
 const buttons = (r: ReactTestRenderer, label: string) => r.root.findAll((node) => node.type === "button" && text(node) === label);
 
+const scrollTo = vi.fn();
 let request: ReturnType<typeof vi.fn<() => Promise<RecommendationOutcome>>>;
 let confirm: ReturnType<typeof vi.fn<() => Promise<RecommendationConfirmResult>>>;
 async function mount(response: RecommendationResponseV2, currentInputs: string | null = "inputs-1") {
@@ -49,7 +50,7 @@ async function mount(response: RecommendationResponseV2, currentInputs: string |
   confirm = vi.fn(async (): Promise<RecommendationConfirmResult> => "changed");
   const props = { stale: false, routeLabel: "팔당역 → 양평역", departureAt: DEPARTURE, returnAt: RETURN, waypointCount: 0, request, currentInputs, confirm, onClose: vi.fn(), onEditRoute: vi.fn(), onOpenFavorites: vi.fn(), onOpenAvoided: vi.fn() };
   let r!: ReactTestRenderer;
-  await act(async () => { r = create(<RestaurantRecommendationDialog {...props} />, { createNodeMock: () => ({ showModal: vi.fn(), close: vi.fn(), focus: vi.fn(), open: false }) }); });
+  await act(async () => { r = create(<RestaurantRecommendationDialog {...props} />, { createNodeMock: () => ({ showModal: vi.fn(), close: vi.fn(), focus: vi.fn(), open: false, scrollTo }) }); });
   await act(async () => buttons(r, "추천 받기")[0].props.onClick());
   return { r, props, rerender: (inputs: string | null) => act(async () => r.update(<RestaurantRecommendationDialog {...props} currentInputs={inputs} />)) };
 }
@@ -176,6 +177,22 @@ describe("restaurant recommendation with shared folders (SRC02, SRC02b, SRC03)",
     expect(text(r.root)).toContain("고른 식당이 없어요");
     expect(text(r.root)).toContain("다른 식당을 고르거나 다시 추천을 받아 주세요.");
     expect(buttons(r, "선택한 식당 일정에 추가")[0].props.disabled).toBe(true);
+  });
+
+  it("SRC02b/06/07: a new notice scrolls the result back to the top so it is seen (memo 384:12617)", async () => {
+    const { r, rerender } = await mount(v2());
+    const rows = () => r.root.findAll((node) => node.type === "button" && node.props["aria-pressed"] !== undefined);
+    await act(async () => rows()[1].props.onClick());
+    scrollTo.mockClear();
+    confirm.mockResolvedValueOnce("unreadable");
+    await act(async () => buttons(r, "선택한 식당 1곳 일정에 추가")[0].props.onClick());
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0 });
+    scrollTo.mockClear();
+    // Choosing another restaurant clears the notice and does not jump.
+    await act(async () => rows()[0].props.onClick());
+    expect(scrollTo).not.toHaveBeenCalled();
+    await rerender("inputs-2");
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0 });
   });
 
   it("SRC07: an unreadable re-check keeps the choice and offers one more try from the footer", async () => {
