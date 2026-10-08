@@ -54,6 +54,7 @@ export type InvitePreview = {
   folderName: string;
   ownerDisplayName: string;
   memberCount: number;
+  placeCount: number;
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -216,6 +217,7 @@ export function parseInvitePreview(value: unknown): InvitePreview {
     folderName: text(row.folder_name, "INVALID_INVITE_PREVIEW", FOLDER_NAME_LIMIT),
     ownerDisplayName: text(row.owner_display_name, "INVALID_INVITE_PREVIEW", FOLDER_DISPLAY_NAME_LIMIT),
     memberCount: count(row.member_count, "INVALID_INVITE_PREVIEW"),
+    placeCount: count(row.place_count, "INVALID_INVITE_PREVIEW"),
   };
 }
 

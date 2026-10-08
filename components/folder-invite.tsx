@@ -170,7 +170,7 @@ export function FolderInvite() {
   const summary = (preview: InvitePreview) => (
     <div className={styles.folderCard}>
       <p className={styles.folderName}><LineIcon name="folder" /><strong>{preview.folderName}</strong></p>
-      <p className={styles.meta}>회원 <b className={styles.number}>{preview.memberCount} / {PLACE_FOLDER_MEMBER_LIMIT}</b></p>
+      <p className={styles.meta}>장소 <b className={styles.number}>{preview.placeCount.toLocaleString()}</b> · 회원 <b className={styles.number}>{preview.memberCount} / {PLACE_FOLDER_MEMBER_LIMIT}</b></p>
       <p className={styles.meta}>주인 · {preview.ownerDisplayName}</p>
     </div>
   );

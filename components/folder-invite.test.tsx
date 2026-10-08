@@ -56,7 +56,7 @@ async function mount() {
 const text = (node: ReactTestRenderer) => JSON.stringify(node.toJSON());
 const button = (r: ReactTestRenderer, label: string) => r.root.findAll((n) => n.type === "button" && JSON.stringify(n.props.children ?? "").includes(label))[0];
 const preview = (status: "joinable" | "already_member", extra: Record<string, unknown> = {}) => ({
-  data: { status, folder_name: "주말 라이더", owner_display_name: "바람개비", member_count: 5, ...(status === "already_member" ? { folder_id: "00000000-0000-4000-8000-0000000000f1" } : {}), ...extra },
+  data: { status, folder_name: "주말 라이더", owner_display_name: "바람개비", member_count: 5, place_count: 34, ...(status === "already_member" ? { folder_id: "00000000-0000-4000-8000-0000000000f1" } : {}), ...extra },
   error: null,
 });
 const member = { folder_id: "00000000-0000-4000-8000-0000000000f1", member_id: "00000000-0000-4000-8000-0000000000a2", role: "editor", display_name: "초록헬멧", joined_at: "2026-10-09T00:00:00Z", revision: 1 };
@@ -114,6 +114,7 @@ describe("folder invite page", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("preview_place_folder_invite", { token: TOKEN });
     expect(text(r)).toContain("주말 라이더");
     expect(text(r)).toContain("바람개비");
+    expect(text(r)).toContain("34");
     expect(button(r, "참여하기").props.disabled).toBe(true);
   });
 

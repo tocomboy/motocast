@@ -480,7 +480,8 @@ begin
     || jsonb_build_object('folder_name', folder.name,
       'owner_display_name', (select member.display_name from public.place_folder_members member
         where member.folder_id = folder.id and member.role = 'owner'),
-      'member_count', (select count(*) from public.place_folder_members member where member.folder_id = folder.id));
+      'member_count', (select count(*) from public.place_folder_members member where member.folder_id = folder.id),
+      'place_count', (select count(*) from public.shared_places shared where shared.folder_id = folder.id));
 end;
 $$;
 

@@ -34,6 +34,7 @@ create function pg_temp.shared_rev(id uuid) returns bigint language sql stable s
 create function pg_temp.member_rev(folder uuid, n integer) returns bigint language sql stable security definer as $$
   select revision from public.place_folder_members where folder_id=folder and member_id=pg_temp.u(n)
 $$;
+create function pg_temp.place_total(folder uuid) returns bigint language sql stable security definer as $$ select count(*) from public.shared_places where folder_id=folder $$;
 create function pg_temp.folder_rev(folder uuid) returns bigint language sql stable security definer as $$ select revision from public.place_folders where id=folder $$;
 create function pg_temp.star_total(n integer) returns bigint language sql stable security definer as $$
   select (select count(*) from public.place_stars where owner_id=pg_temp.u(n))+(select count(*) from public.shared_place_stars where owner_id=pg_temp.u(n))
@@ -97,7 +98,7 @@ insert into tap_results values
 select pg_temp.sub(2); set local role authenticated;
 insert into res select 'P1', public.preview_place_folder_invite(pg_temp.r('I1')->>'token');
 insert into tap_results values
-(pg_temp.r('P1')=jsonb_build_object('status','joinable','folder_name','우리 폴더','owner_display_name','Ace','member_count',1),'a non-member preview shows the folder name, the owner folder name and the count only');
+(pg_temp.r('P1')=jsonb_build_object('status','joinable','folder_name','우리 폴더','owner_display_name','Ace','member_count',1,'place_count',pg_temp.place_total(pg_temp.fid('F1'))) and (pg_temp.r('P1')->>'place_count')::int>0,'a non-member preview shows the folder name, the owner folder name and the member and place counts only');
 insert into res select 'A1', public.accept_place_folder_invite(pg_temp.r('I1')->>'token','Bee');
 insert into tap_results values
 ((pg_temp.r('A1')->>'status')='joined' and (pg_temp.r('A1')->'member'->>'role')='editor' and (pg_temp.r('A1')->'member'->>'display_name')='Bee'
@@ -107,7 +108,7 @@ insert into tap_results values
 ((pg_temp.r('A1b')->>'status')='already_member' and (pg_temp.r('A1b')->'member'->>'display_name')='Bee' and (pg_temp.r('A1b')->'member'->>'revision')='1','a repeated accept succeeds unchanged without renaming');
 insert into res select 'P2', public.preview_place_folder_invite(pg_temp.r('I1')->>'token');
 insert into tap_results values
-(pg_temp.r('P2')=jsonb_build_object('status','already_member','folder_id',pg_temp.fid('F1'),'folder_name','우리 폴더','owner_display_name','Ace','member_count',2),'a member preview says already_member and gives the folder id');
+(pg_temp.r('P2')=jsonb_build_object('status','already_member','folder_id',pg_temp.fid('F1'),'folder_name','우리 폴더','owner_display_name','Ace','member_count',2,'place_count',pg_temp.place_total(pg_temp.fid('F1'))),'a member preview says already_member and gives the folder id');
 reset role;
 select pg_temp.sub(3); set local role authenticated;
 select pg_temp.expect_error($q$select public.accept_place_folder_invite(pg_temp.r('I1')->>'token','ACE')$q$,'FOLDER_DISPLAY_NAME_TAKEN','a display name taken case-insensitively is rejected');

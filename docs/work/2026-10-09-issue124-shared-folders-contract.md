@@ -77,7 +77,7 @@
 - `create_place_folder_invite(folder_id)` 주인 → `{ id, token, expires_at }`(token은 이 응답에서만).
 - `list_place_folder_invites(folder_id)` 주인 → 사용 중 링크만(회수·만료 제외, SHARE-002 목록 규칙과 같음).
 - `revoke_place_folder_invite(invite_id)` 주인. 이미 회수면 성공(멱등).
-- `preview_place_folder_invite(token text)` 활성 회원 → `{ status: 'joinable'|'already_member', folder_id?, folder_name, owner_display_name, member_count }` 또는 `PLACE_FOLDER_INVITE_INVALID`.
+- `preview_place_folder_invite(token text)` 활성 회원 → `{ status: 'joinable'|'already_member', folder_id?, folder_name, owner_display_name, member_count, place_count }` 또는 `PLACE_FOLDER_INVITE_INVALID`.
 - `accept_place_folder_invite(token text, display_name text)` → 회원 행(role editor) + 설정 행(enabled true). 순서는 5절.
 - `set_place_folder_display_name(folder_id, expected_revision, display_name)` 본인 회원 행.
 - `set_place_folder_member_role(folder_id, member_id, expected_revision, role)` 주인, owner 행 변경 불가, role in (editor, viewer).
@@ -101,7 +101,7 @@ JSON 키는 열 이름 그대로 snake_case다. 예외는 계약이 정한 `set_
 - `create_place_folder` → `{folder, member, preference}`. `accept_place_folder_invite` → `{status: 'joined'|'already_member', folder, member, preference}`(이미 회원이면 기존 행, 이름 변경 없음).
 - `rename_place_folder` → `setof place_folders`(1행). `set_place_folder_display_name`·`set_place_folder_member_role` → `member` 객체. 같은 역할로 바꾸면 revision을 올리지 않고 현재 행을 돌려준다.
 - `create_place_folder_invite` → `{id, token, expires_at}`(정확히 3개). `list_place_folder_invites`·`revoke_place_folder_invite` → `table(id, created_at, expires_at, revoked_at)`; 목록은 `revoked_at is null and expires_at > now`만, `(created_at, id)` 순서.
-- `preview_place_folder_invite` → `{status, folder_name, owner_display_name, member_count}`; `folder_id`는 `status='already_member'`일 때만 들어간다. 이미 회원이면 회수·만료된 링크로도 `already_member`(수락 순서 (1)과 같음).
+- `preview_place_folder_invite` → `{status, folder_name, owner_display_name, member_count, place_count}`(`place_count` = 그 폴더의 공유 장소 수, 결정 2026-10-09: 수락 화면 G24·G27·G28 "장소 n"); `folder_id`는 `status='already_member'`일 때만 들어간다. 이미 회원이면 회수·만료된 링크로도 `already_member`(수락 순서 (1)과 같음).
 - `set_place_folders_enabled` → `setof place_folder_preferences`(내 전체 설정, `folder_id` 순서). 값이 같으면 `updated_at`도 바꾸지 않는다. `folderId`는 대소문자 무관 uuid 문자열.
 - `add_shared_place(folder_id, place, place_alias default null, place_kind default 'riding_spot')` → `{status: 'added'|'already_exists', shared_place}`; `shared_place`는 `shared_place_entries` 행. `import_saved_places_to_folder` → `{added, skipped_existing}`(정수 개수).
 - `update_shared_place`·`set_shared_place_star` → `setof shared_place_entries`(1행). `add_avoided_place` → `setof avoided_places`(같은 장소면 기존 행). 삭제 계열(`delete_place_folder`, `remove_place_folder_member`, `leave_place_folder`, `delete_shared_place`, `remove_avoided_place`)은 `void`이며 영향 행 수가 1이 아니면 오류다.
