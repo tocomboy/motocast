@@ -29,6 +29,12 @@ type Lookup =
   | { status: "empty"; point: Point }
   | { status: "error"; point: Point };
 type Step = "search" | "map" | "form";
+/** Where the chosen place goes (#123 my places; #124 G13 folder, folder edit, AV03 avoided). */
+export type RegistrationVariant =
+  | { kind: "saved" }
+  | { kind: "folder-add"; folderName: string; members: number }
+  | { kind: "folder-edit" }
+  | { kind: "avoid" };
 
 const ALIAS_LIMIT = 80;
 const PICKER_LEVEL = 4;
@@ -47,6 +53,7 @@ export function SavedPlaceRegistration({
   stars,
   blocked,
   startView,
+  variant = { kind: "saved" },
   onClose,
   onSave,
 }: {
@@ -55,6 +62,7 @@ export function SavedPlaceRegistration({
   stars: number;
   blocked: boolean;
   startView: Point;
+  variant?: RegistrationVariant;
   onClose: () => void;
   onSave: (place: PlaceSearchResult, alias: string, kind: SavedPlaceKind, starred: boolean) => void;
 }) {
@@ -64,7 +72,16 @@ export function SavedPlaceRegistration({
   // Kept here so returning from the map picker shows the same query and results.
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState<Search>({ status: "idle" });
-  const title = step === "search" ? "장소 등록" : step === "map" ? "지도에서 지점 고르기" : existing ? "별명·분류 수정" : "내 장소로 저장";
+  const title = step === "map" ? "지도에서 지점 고르기"
+    : variant.kind === "avoid" ? "기피 장소 등록"
+    : variant.kind === "folder-add" ? "폴더에 장소 추가"
+    : step === "search" ? "장소 등록" : existing ? "별명·분류 수정" : "내 장소로 저장";
+  // AV03: an avoided place has no alias or kind, so the choice goes straight to the confirmation.
+  const choose = (chosen: PlaceSearchResult) => {
+    if (variant.kind === "avoid") { onSave(chosen, "", "restaurant", false); return; }
+    setPlace(chosen);
+    setStep("form");
+  };
   const back = existing ? undefined : step === "search" ? undefined : () => setStep("search");
   return (
     <SavedDialog title={title} accessibleTitle={title} onClose={onClose} onBack={back} fullScreen wide={step !== "form"}>
@@ -76,15 +93,15 @@ export function SavedPlaceRegistration({
           setSearch={setSearch}
           onClose={onClose}
           onPickOnMap={() => setStep("map")}
-          onChoose={(chosen) => { setPlace(chosen); setStep("form"); }}
+          onChoose={choose}
         />
       ) : step === "map" ? (
         <MapStep
           startView={pickerView}
-          onChoose={(chosen) => { setPlace(chosen); setPickerView({ latitude: chosen.latitude, longitude: chosen.longitude }); setStep("form"); }}
+          onChoose={(chosen) => { setPickerView({ latitude: chosen.latitude, longitude: chosen.longitude }); choose(chosen); }}
         />
       ) : place ? (
-        <FormStep place={place} existing={existing} stars={stars} blocked={blocked} onSave={onSave} />
+        <FormStep place={place} existing={existing} stars={stars} blocked={blocked} variant={variant} onSave={onSave} />
       ) : null}
     </SavedDialog>
   );
@@ -367,11 +384,12 @@ function MapStep({ startView, onChoose }: {
   );
 }
 
-function FormStep({ place, existing, stars, blocked, onSave }: {
+function FormStep({ place, existing, stars, blocked, variant, onSave }: {
   place: PlaceSearchResult;
   existing?: SavedPlace;
   stars: number;
   blocked: boolean;
+  variant: RegistrationVariant;
   onSave: (place: PlaceSearchResult, alias: string, kind: SavedPlaceKind, starred: boolean) => void;
 }) {
   const aliasId = useId();
@@ -405,6 +423,7 @@ function FormStep({ place, existing, stars, blocked, onSave }: {
           <strong>{place.name}</strong>
           <span>{address(place)}</span>
         </div>
+        {variant.kind === "folder-add" ? <p className={styles.helper}>저장 위치 · {variant.folderName} (회원 {variant.members}명에게 보여요)</p> : null}
         <div role="group" aria-labelledby={`${aliasId}-kind`} className={styles.choiceGroup}>
           <p id={`${aliasId}-kind`} className={styles.choiceLabel}>분류</p>
           <div className={styles.choiceButtons}>
@@ -428,7 +447,7 @@ function FormStep({ place, existing, stars, blocked, onSave }: {
           <p id={`${aliasId}-hint`} className={aliasMissing ? styles.fieldError : styles.helper} role={aliasMissing ? "alert" : undefined}>
             {aliasMissing
               ? "별명을 입력해 주세요. 상세 주소가 없는 지점은 별명이 있어야 저장할 수 있어요."
-              : `${length} / ${ALIAS_LIMIT} · 목록과 지도에 이 이름으로 보여요.`}
+              : `${length} / ${ALIAS_LIMIT} · ${variant.kind === "saved" ? "목록과 지도에 이 이름으로 보여요." : "회원 모두에게 이 이름으로 보여요."}`}
           </p>
         </div>
         {!existing ? (
@@ -437,14 +456,15 @@ function FormStep({ place, existing, stars, blocked, onSave }: {
               // FP27b: on — tint, ink border, filled star and the count it will reach.
               <button type="button" className={styles.starSaved} aria-pressed onClick={() => setStarred(false)}>
                 <StarMark filled />
-                <span>자주 찾는 장소에 추가</span>
+                <span>{variant.kind === "folder-add" ? "내 자주 찾는 장소에도 추가" : "자주 찾는 장소에 추가"}</span>
                 <b className={styles.countNumber}>· {stars} → {stars + 1} / {FREQUENT_PLACE_LIMIT}</b>
               </button>
             ) : (
               <button type="button" className={styles.starToggle} aria-pressed={false} disabled={full} onClick={() => setStarred(true)}>
-                {`☆ 자주 찾는 장소에 추가 · ${stars} / ${FREQUENT_PLACE_LIMIT}${full ? " 가득 참" : ""}`}
+                {`☆ ${variant.kind === "folder-add" ? "내 자주 찾는 장소에도 추가" : "자주 찾는 장소에 추가"} · ${stars} / ${FREQUENT_PLACE_LIMIT}${full ? " 가득 참" : ""}`}
               </button>
             )}
+            {variant.kind === "folder-add" ? <p className={styles.helper}>별표는 나에게만 적용돼요. 다른 회원에게는 보이지 않아요.</p> : null}
             {full ? <p className={styles.helper}>자주 찾는 장소 {FREQUENT_PLACE_LIMIT}곳이 모두 찼어요. 이 장소는 별표 없이 저장되고, 나중에 다른 별표를 빼고 추가할 수 있어요.</p>
               : starred ? <p className={styles.helper}>저장하면 자주 찾는 장소에도 들어가요. 다시 누르면 별표 없이 저장해요.</p> : null}
           </>
@@ -453,7 +473,7 @@ function FormStep({ place, existing, stars, blocked, onSave }: {
       <div className={styles.waypointFooter}>
         {/* Product rule UI-001: the save still asks for a centered confirmation. */}
         <button type="button" className="primary-button" disabled={blocked || unchanged} onClick={submit}>
-          {existing ? "수정 내용 확인" : "장소 저장"}
+          {existing ? "수정 내용 확인" : variant.kind === "folder-add" ? "폴더에 저장" : "장소 저장"}
         </button>
         <p className={styles.footerHint}>닫기·취소 시 입력 내용은 저장되지 않아요.</p>
       </div>

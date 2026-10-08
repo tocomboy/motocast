@@ -11,6 +11,7 @@ import { KakaoMapCanvas, MapMarkerLegend } from "@/components/kakao-map-canvas";
 import { OrderedWaypointEditor } from "@/components/ordered-waypoint-editor";
 import { SavedPlacesProvider, useSavedPlaces } from "@/components/saved-places-provider";
 import { SavedPlacesManager } from "@/components/saved-places-manager";
+import { SharedFoldersProvider, useSharedFolders } from "@/components/shared-folders-provider";
 import { MapPointConfirmation, type MapPlacePickerHandle } from "@/components/map-point-confirmation";
 import { RouteFailureDialog } from "@/components/route-failure-dialog";
 import { RestaurantRecommendationDialog, type RecommendationOutcome } from "@/components/restaurant-recommendation-dialog";
@@ -23,7 +24,7 @@ import { ShareManager } from "@/components/share-manager";
 import { prepareCollectionApplication } from "@/lib/collections/application";
 import type { CollectionCourse, CollectionPoint } from "@/lib/collections/contracts";
 import type { PlaceSearchResult } from "@/lib/places/search";
-import { favoriteAsSearchResult } from "@/lib/places/favorites";
+import { favoriteAsSearchResult, type PlaceFavorite } from "@/lib/places/favorites";
 import { FREQUENT_PLACE_LIMIT } from "@/lib/places/saved";
 import {
   demoRoute,
@@ -219,11 +220,26 @@ export function buildPlannerDisplayTimeline(input: {
 }
 
 export function PlannerDashboard(props: PlannerDashboardProps) {
-  return <SavedPlacesProvider enabled={props.connected}><PlannerDashboardContent {...props} /></SavedPlacesProvider>;
+  return <SavedPlacesProvider enabled={props.connected}><SharedFoldersProvider enabled={props.connected}><PlannerDashboardContent {...props} /></SharedFoldersProvider></SavedPlacesProvider>;
 }
 
 function PlannerDashboardContent({ connected, initialCourse = null, initialTitle = "공유받은 경로", navigationMode = "browser", onExit }: PlannerDashboardProps) {
-  const favoriteControls = useSavedPlaces();
+  const savedControls = useSavedPlaces();
+  const sharedFolders = useSharedFolders();
+  // SRC01: frequent places are every star, personal and shared, ordered by when they were
+  // starred and shown with their source; folder toggles never hide them.
+  const favoriteControls = useMemo(() => {
+    if (!sharedFolders.enabled || sharedFolders.status !== "ready") return { ...savedControls, favorites: savedControls.favorites.map((favorite) => ({ ...favorite, sourceLabel: "내 장소" })) };
+    const { stars, folders } = sharedFolders.snapshot;
+    const favorites = stars.map((star, index): PlaceFavorite => ({
+      slot: (index + 1) as PlaceFavorite["slot"],
+      place: star.place,
+      createdAt: star.starredAt,
+      displayName: star.alias ?? star.place.name,
+      sourceLabel: star.source === "saved" ? "내 장소" : `공유 · ${folders.find((folder) => folder.id === star.folderId)?.name ?? "공유 폴더"}`,
+    }));
+    return { ...savedControls, favorites };
+  }, [savedControls, sharedFolders.enabled, sharedFolders.status, sharedFolders.snapshot]);
   const [view, setView] = useState<PlannerView>(initialCourse ? "editor" : connected ? "home" : "summary");
   const [draft, setDraft] = useState(defaultDraft);
   const [places, setPlaces] = useState<PlannerPlaces>({
@@ -1025,7 +1041,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
             </section>
             <fieldset className="planner-fields" disabled={calculating} aria-busy={calculating}>
             <section className="planner-stop is-origin">
-              {connected ? <PlaceSearchField key={`origin-${placeSelectionRevision}`} label="출발" accessibleLabel="출발지" placeholder="예: 팔당역" required selected={places.origin} favorites={favoriteControls} onActivate={() => setFavoriteTarget("origin")} onSelect={(place) => selectEndpoint("origin", place)} /> : <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>}
+              {connected ? <PlaceSearchField key={`origin-${placeSelectionRevision}`} label="출발" accessibleLabel="출발지" placeholder="예: 팔당역" required selected={places.origin} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("origin")} onSelect={(place) => selectEndpoint("origin", place)} /> : <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>}
             </section>
             <section className="planner-waypoint-stops">
               <OrderedWaypointEditor
@@ -1043,7 +1059,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
               <p className="sr-only" role="status" aria-live="polite">{waypointStatus}</p>
             </section>
             <section className="planner-stop is-destination">
-              {connected ? <PlaceSearchField key={`destination-${placeSelectionRevision}`} label="도착" accessibleLabel="도착지" placeholder="예: 양평역" required selected={places.destination} favorites={favoriteControls} onActivate={() => setFavoriteTarget("destination")} onSelect={(place) => selectEndpoint("destination", place)} /> : <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>}
+              {connected ? <PlaceSearchField key={`destination-${placeSelectionRevision}`} label="도착" accessibleLabel="도착지" placeholder="예: 양평역" required selected={places.destination} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("destination")} onSelect={(place) => selectEndpoint("destination", place)} /> : <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>}
             </section>
             <button className="route-reset-button" type="button" disabled={calculating} onClick={startNewRoute}>경로 초기화</button>
             </fieldset>

@@ -3,7 +3,7 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import { designTokens } from "@/packages/shared-ui/src/design-tokens";
 import { LineIcon } from "@/components/line-icon";
-import { CENTER_TARGET, clusterPinImage, numberedPinImage, savedPinImage, type PinImage } from "@/components/map-pin-images";
+import { avoidedPinImage, CENTER_TARGET, clusterPinImage, numberedPinImage, savedPinImage, type PinImage } from "@/components/map-pin-images";
 import { bindMapLongPress } from "@/lib/places/map-long-press";
 import {
   CLUSTER_FIT_PADDING,
@@ -16,7 +16,8 @@ import {
 export type MapMarkerRole = "origin" | "destination" | "meal" | "lunch" | "dinner" | "rest" | "waypoint";
 export type MapPoint = { label: string; latitude: number; longitude: number; role?: MapMarkerRole; nonTraversed?: boolean };
 type PathPoint = { latitude: number; longitude: number };
-export type SavedMapPin = PathPoint & { id: string; label: string; kind: "riding_spot" | "restaurant"; starred?: boolean };
+/** `avoided` pins (#124 AV05) are always drawn on their own and never join a cluster. */
+export type SavedMapPin = PathPoint & { id: string; label: string; kind: "riding_spot" | "restaurant"; starred?: boolean; avoided?: boolean };
 /** Registration search result pin; never clustered. */
 export type NumberedMapPin = PathPoint & { id: string; number: number; label: string };
 export type MapCenterHandle = { getCenter(): PathPoint | null };
@@ -457,13 +458,26 @@ export function KakaoMapCanvas({
       detach();
       if (overlayCleanupFailedRef.current) throw new Error("OVERLAY_CLEANUP_FAILED");
       const projection = map.getProjection();
-      const inputs = pins.map((pin) => {
+      const inputs = pins.filter((pin) => !pin.avoided).map((pin) => {
         const point = projection.containerPointFromCoords(new maps.LatLng(pin.latitude, pin.longitude));
         return { id: pin.id, x: point.x, y: point.y, latitude: pin.latitude, longitude: pin.longitude, starred: Boolean(pin.starred) };
       });
       const selected = selectedSavedPinId && byId.has(selectedSavedPinId) ? new Set([selectedSavedPinId]) : undefined;
       const groups = clusterPins(inputs, map.getLevel(), selected);
       clustersRef.current?.(groups.some((group) => group.kind === "cluster"));
+      for (const pin of pins.filter((candidate) => candidate.avoided)) {
+        const isSelected = pin.id === selectedSavedPinId;
+        const marker = new maps.Marker({
+          map,
+          position: new maps.LatLng(pin.latitude, pin.longitude),
+          title: `기피 · ${pin.kind === "restaurant" ? "식당" : "라이딩 스팟"} · ${pin.label}`,
+          image: markerImageFrom(maps, avoidedPinImage({ kind: pin.kind, starred: Boolean(pin.starred) })),
+          zIndex: isSelected ? 3 : 1,
+        });
+        const select = () => { if (active && !overlayCleanupFailedRef.current) savedSelectRef.current?.(pin.id); };
+        owned.push({ marker, select });
+        maps.event.addListener(marker, "click", select);
+      }
       for (const group of groups) {
         let marker: { setMap(map: unknown): void };
         let select: () => void;

@@ -6,6 +6,7 @@ import { designTokens } from "@/packages/shared-ui/src/design-tokens";
 
 import { ReleaseFooter } from "@/components/release-footer";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
+import { InviteTokenSweeper } from "@/components/invite-token-sweeper";
 
 import "./globals.css";
 
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         {children}
         <ReleaseFooter />
         <ServiceWorkerRegistration />
+        <InviteTokenSweeper />
       </body>
     </html>
   );

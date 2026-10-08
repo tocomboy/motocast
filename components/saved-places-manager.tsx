@@ -3,29 +3,37 @@
 import { LineIcon, StarMark } from "@/components/line-icon";
 import {
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { KakaoMapCanvas, type MapDisplayState, type MapPoint } from "./kakao-map-canvas";
+import { KakaoMapCanvas, type MapDisplayState, type MapPoint, type SavedMapPin } from "./kakao-map-canvas";
 import {
   MapPointConfirmation,
   type MapPlacePickerHandle,
 } from "./map-point-confirmation";
+import { ConfirmPopup, type Pending as PopupContent } from "./confirm-popup";
 import { SavedDialog } from "./saved-dialog";
 import { SavedPlaceRegistration } from "./saved-place-registration";
-import { useSavedPlaces, type SavedPlaceRecheck, type SavedPlaceWrite } from "./saved-places-provider";
+import { useSavedPlaces, type SavedPlaceWrite } from "./saved-places-provider";
+import { useSharedFolders, type SharedSnapshot } from "./shared-folders-provider";
+import { avoidedFor, avoidPopup, folderNameOf, unavoidPopup, sharedStarPopup, useSharedPopup } from "./shared-place-actions";
+import { SharedPlaceDetail } from "./shared-place-detail";
+import { FolderCreate, SharedFolderList } from "./shared-folder-list";
+import { SharedFolderDetail } from "./shared-folder-detail";
+import { AvoidedPlacesView } from "./avoided-places";
 import {
   FREQUENT_PLACE_LIMIT,
   isRegionOnlyPlace,
   PROVINCES,
   savedPlaceName,
-  type SavedPlace,
   type SavedPlaceEntry,
   type SavedPlaceKind,
 } from "@/lib/places/saved";
 import type { PlaceSearchResult } from "@/lib/places/search";
+import { mergePlaces, sourceLabel } from "@/lib/places/place-merge";
+import type { SharedPlace } from "@/lib/places/shared-folders";
+import { OPEN_FOLDER_STORAGE_KEY } from "@/lib/places/folder-invite-token";
 import {
   defaultDwellMinutes,
   dwellError,
@@ -37,47 +45,31 @@ import {
 } from "@/lib/planner/ordered-waypoints";
 import styles from "./saved-places-manager.module.css";
 
-/** Centered confirmation popup content (Figma FP29, FP29b, FP34–FP37, memo 392:10916). */
-type Pending = {
-  key: number;
-  title: string;
-  card: { eyebrow?: string; region?: boolean; name?: string; line: string; line2?: string };
-  rows?: Array<{ label: string; value: string; count?: string }>;
-  /** FP38: only the changed values, as before → after. */
-  changes?: Array<{ label: string; before: string; after: string }>;
-  count?: { label: string; value: string };
-  note?: string;
-  /** Confirm action that sends one request; absent for information-only popups. */
-  confirm?: {
-    label: string;
-    busyLabel: string;
-    danger?: boolean;
-    /** FP39a title while an unknown result is checked, e.g. "저장됐는지 확인하고 있어요". */
-    checking: string;
-    /** FP39b text when the re-read list does not show the change. */
-    notApplied: { title: string; message: string };
-    run: () => Promise<SavedPlaceWrite>;
-    /** Effects of a confirmed change, also used when a read-only recheck finds it applied. */
-    onApplied?: () => void;
-  };
-  /** Information-only popups (FP36, duplicate save) replace confirm/cancel with these buttons. */
-  buttons?: Array<{ label: string; primary?: boolean; onClick: () => void }>;
-  error?: { title: string; message: string };
-};
+type Pending = PopupContent<SavedPlaceEntry[]>;
+/** One row of the merged "장소" view: my place, or a shared place standing for every enabled folder that holds it. */
+type Item =
+  | { key: string; source: "saved"; row: SavedPlaceEntry; label: string; starred: boolean }
+  | { key: string; source: "shared"; row: SharedPlace; label: string; starred: boolean };
+type Section = "places" | "folders" | "avoided";
+/** A place ready for the waypoint form, from my places or a folder. */
+type WaypointCandidate = { name: string; placeName: string; kind: SavedPlaceKind; province: string | null; starred: boolean; place: PlaceSearchResult; current: () => boolean };
+
 
 const kindLabel = (kind: SavedPlaceKind) => (kind === "restaurant" ? "식당" : "라이딩 스팟");
 /** Address line; a region-only map point says it has no detail address. */
-const placeLine = (p: SavedPlace) =>
+const placeLine = (p: { alias: string | null; place: PlaceSearchResult }) =>
   isRegionOnlyPlace(p.place)
     ? `${p.place.name} · 상세 주소 없음`
     : p.alias
       ? `${p.place.name} · ${p.place.roadAddress ?? p.place.address}`
       : p.place.roadAddress ?? p.place.address;
+const itemName = (item: Item) => item.row.alias ?? item.row.place.name;
 const starLabel = (starred: boolean) => (starred ? "자주 찾는 장소에서 빼기" : "자주 찾는 장소에 추가");
 
 export function SavedPlacesManager(props: SavedPlacesManagerProps) {
   const { accountEpoch } = useSavedPlaces();
-  return <SavedPlacesManagerContent key={accountEpoch} {...props} />;
+  const shared = useSharedFolders();
+  return <SavedPlacesManagerContent key={`${accountEpoch}:${shared.accountEpoch}`} {...props} />;
 }
 
 type SavedPlacesManagerProps = {
@@ -102,12 +94,19 @@ function SavedPlacesManagerContent({
   initialWaypoint,
 }: SavedPlacesManagerProps) {
   const saved = useSavedPlaces();
+  const shared = useSharedFolders();
+  const sharedPopup = useSharedPopup();
+  const [section, setSection] = useState<Section>("places");
+  const [openFolder, setOpenFolder] = useState<{ id: string; notice?: string } | null>(null);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [listNotice, setListNotice] = useState("");
   const [tab, setTab] = useState<"starred" | SavedPlaceKind>("riding_spot");
   const [province, setProvince] = useState("");
   const [spots, setSpots] = useState(true);
   const [restaurants, setRestaurants] = useState(true);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sharedSelectedId, setSharedSelectedId] = useState<string | null>(null);
   const [savedSelection, setSavedSelection] = useState<string | null>(null);
   const [form, setForm] = useState<{
     place: PlaceSearchResult | null;
@@ -126,7 +125,7 @@ function SavedPlacesManagerContent({
   // Runs read the provider's state at the moment they run: a list that failed to load is empty
   // but proves nothing, and a re-read list is used before the next render.
   const statusRef = { get current() { return saved.current().status; } };
-  const [adding, setAdding] = useState<SavedPlaceEntry | null>(null);
+  const [adding, setAdding] = useState<WaypointCandidate | null>(null);
   const [mapAttempt, setMapAttempt] = useState(0);
   const [wide, setWide] = useState(false);
   useEffect(() => {
@@ -137,56 +136,116 @@ function SavedPlacesManagerContent({
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
+  // "폴더 열기" from the invite page: read once, then forget.
+  useEffect(() => {
+    let id: string | null = null;
+    try {
+      id = window.sessionStorage.getItem(OPEN_FOLDER_STORAGE_KEY);
+      window.sessionStorage.removeItem(OPEN_FOLDER_STORAGE_KEY);
+    } catch {
+      id = null;
+    }
+    if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return;
+    const folderId = id;
+    const task = window.setTimeout(() => { setSection("folders"); setOpenFolder({ id: folderId }); }, 0);
+    return () => window.clearTimeout(task);
+  }, []);
+  // A personal star change re-reads my combined star list (personal + shared).
+  const { reloadStars } = shared;
+  useEffect(() => { if (saved.status === "ready") void reloadStars(); }, [saved.places, saved.status, reloadStars]);
   const picker = useRef<MapPlacePickerHandle>(null);
   const addButton = useRef<HTMLButtonElement>(null);
+  const snapshot = shared.snapshot;
+  const sharedReady = shared.enabled && shared.status === "ready";
+  const enabledFolderIds = useMemo(
+    () => (sharedReady ? snapshot.preferences.filter((row) => row.enabled && snapshot.folders.some((f) => f.id === row.folderId)).map((row) => row.folderId) : []),
+    [sharedReady, snapshot.preferences, snapshot.folders],
+  );
+  // Contract §1: my place wins; among folders the earliest (created_at, id) row stands for the rest.
+  const merged = useMemo<Item[]>(() => {
+    const byId = new Map(snapshot.places.map((row) => [row.id, row]));
+    return mergePlaces(
+      saved.places.map((row) => ({ id: row.id, kakaoPlaceId: row.place.kakaoPlaceId })),
+      sharedReady ? snapshot.places.map((row) => ({ id: row.id, folderId: row.folderId, kakaoPlaceId: row.place.kakaoPlaceId, createdAt: row.createdAt })) : [],
+      enabledFolderIds,
+    ).flatMap((entry): Item[] => {
+      const label = sourceLabel(entry, (id) => folderNameOf(snapshot, id));
+      if (entry.source === "saved") {
+        const row = saved.places.find((p) => p.id === entry.id)!;
+        return [{ key: row.id, source: "saved", row, label, starred: row.starPosition !== null }];
+      }
+      const row = byId.get(entry.id)!;
+      return [{ key: `shared:${row.id}`, source: "shared", row, label, starred: row.starred }];
+    });
+  }, [saved.places, snapshot, sharedReady, enabledFolderIds]);
+  // Frequent places ignore folder toggles: every star, ordered by when it was starred.
+  const starredItems = useMemo<Item[]>(() => {
+    if (!sharedReady) return saved.places.filter((p) => p.starPosition !== null).sort((a, b) => a.starPosition! - b.starPosition!).map((row) => ({ key: row.id, source: "saved", row, label: "내 장소", starred: true }));
+    return snapshot.stars.flatMap((star): Item[] => {
+      if (star.source === "saved") {
+        const row = saved.places.find((p) => p.id === star.id);
+        return row ? [{ key: row.id, source: "saved", row, label: "내 장소", starred: true }] : [];
+      }
+      const row = snapshot.places.find((p) => p.id === star.id);
+      return row ? [{ key: `shared:${row.id}`, source: "shared", row, label: `공유 · ${folderNameOf(snapshot, row.folderId)}`, starred: true }] : [];
+    });
+  }, [sharedReady, saved.places, snapshot]);
   const selected = saved.places.find((p) => savedSelection ? p.place.kakaoPlaceId === savedSelection : p.id === selectedId);
-  const preview = selected ? undefined : saved.places.find((p) => p.id === previewId);
-  function selectPlace(id: string | null) { setSavedSelection(null); setSelectedId(id); }
+  const sharedSelected = sharedSelectedId ? snapshot.places.find((p) => p.id === sharedSelectedId) : undefined;
+  const preview = selected || sharedSelected ? undefined : merged.find((item) => item.key === previewId);
+  function selectPlace(id: string | null) { setSavedSelection(null); setSharedSelectedId(null); setSelectedId(id); }
+  function selectItem(item: Item) { if (item.source === "saved") selectPlace(item.row.id); else { selectPlace(null); setSharedSelectedId(item.row.id); } }
   const blocked = saved.busy || saved.status !== "ready";
   const inRegion = useMemo(
     () =>
-      saved.places.filter(
+      merged.filter(
         (p) =>
           !province ||
-          (province === "unknown" ? p.province === null : p.province === province),
+          (province === "unknown" ? p.row.province === null : p.row.province === province),
       ),
-    [saved.places, province],
+    [merged, province],
   );
+  const matchesQuery = (p: Item) =>
+    !query.trim() ||
+    `${itemName(p)} ${p.row.place.name} ${p.row.place.address}`
+      .toLocaleLowerCase()
+      .includes(query.trim().toLocaleLowerCase());
   // The saved-place search narrows only the list and its count; map pins follow region and layers.
-  const filtered = useMemo(
-    () =>
-      inRegion.filter(
-        (p) =>
-          !query.trim() ||
-          `${savedPlaceName(p)} ${p.place.name} ${p.place.address}`
-            .toLocaleLowerCase()
-            .includes(query.trim().toLocaleLowerCase()),
-      ),
-    [inRegion, query],
-  );
-  const starredCount = saved.favorites.length;
+  const starredCount = sharedReady ? snapshot.stars.length : saved.favorites.length;
   const full = starredCount >= FREQUENT_PLACE_LIMIT;
-  const list = filtered
-    .filter((p) => (tab === "starred" ? p.starPosition !== null : p.kind === tab))
-    .sort((a, b) => (tab === "starred" ? a.starPosition! - b.starPosition! : 0));
-  // Map pins = region + layer toggles (FP01); list tabs and search never change them.
-  // Only the visible layers reach the map, so cluster counts match what is shown.
-  const pins = inRegion
-    .filter((p) => (p.kind === "restaurant" ? restaurants : spots))
-    .map((p) => ({
-      id: p.id,
-      label: savedPlaceName(p),
-      kind: p.kind,
-      starred: p.starPosition !== null,
-      latitude: p.place.latitude,
-      longitude: p.place.longitude,
-    }));
-  const clusterPlaces = clusterIds ? saved.places.filter((p) => clusterIds.includes(p.id)) : [];
+  const list = tab === "starred"
+    ? starredItems.filter((p) => (!province || (province === "unknown" ? p.row.province === null : p.row.province === province)) && matchesQuery(p))
+    : inRegion.filter((p) => p.row.kind === tab && matchesQuery(p));
+  const sharedInList = tab === "starred" ? 0 : list.filter((p) => p.source === "shared").length;
+  const avoidedOf = (place: PlaceSearchResult) => (sharedReady ? avoidedFor(snapshot.avoided, place) : undefined);
+  // Map pins = region + layer toggles (FP01); list tabs and search never change them. Avoided
+  // places are always drawn on their own (AV05) and a matching place uses the avoided pin.
+  const pins = useMemo<SavedMapPin[]>(() => {
+    const matched = new Set<string>();
+    const regular = inRegion.flatMap((p): SavedMapPin[] => {
+      const avoided = sharedReady ? avoidedFor(snapshot.avoided, p.row.place) : undefined;
+      if (avoided) matched.add(avoided.id);
+      if (!avoided && !(p.row.kind === "restaurant" ? restaurants : spots)) return [];
+      return [{ id: p.key, label: itemName(p), kind: p.row.kind, starred: p.starred, avoided: Boolean(avoided), latitude: p.row.place.latitude, longitude: p.row.place.longitude }];
+    });
+    const avoidedOnly = sharedReady
+      ? snapshot.avoided.filter((row) => !matched.has(row.id)).map((row): SavedMapPin => ({ id: `avoid:${row.id}`, label: row.place.name, kind: "restaurant", avoided: true, latitude: row.place.latitude, longitude: row.place.longitude }))
+      : [];
+    return [...regular, ...avoidedOnly];
+  }, [inRegion, sharedReady, snapshot.avoided, spots, restaurants]);
+  const clusterPlaces = clusterIds ? merged.filter((p) => clusterIds.includes(p.key)) : [];
   const failure = saved.failureTitle && saved.status === "ready" ? (
     <div className={styles.errorCard} role="alert"><strong>{saved.failureTitle}</strong><p>{saved.message}</p></div>
   ) : null;
   const startView = selected?.place ?? routePoints[0] ?? saved.places[0]?.place ?? { latitude: 37.5665, longitude: 126.978 };
-  function manageStars() { selectPlace(null); setTab("starred"); setProvince(""); setQuery(""); }
+  function manageStars() { selectPlace(null); setSection("places"); setTab("starred"); setProvince(""); setQuery(""); }
+  function selectPin(id: string) {
+    if (id.startsWith("avoid:")) return;
+    const item = merged.find((p) => p.key === id);
+    if (!item) return;
+    if (wide) selectItem(item);
+    else setPreviewId(id);
+  }
 
   const latest = (id: string) => saved.current().places.find((row) => row.id === id);
   const placeCard = (p: SavedPlaceEntry, withProvince = true) => ({
@@ -266,6 +325,10 @@ function SavedPlacesManagerContent({
         },
       },
     });
+  }
+  function confirmItemStar(item: Item) {
+    if (item.source === "saved") confirm(item.row, "star");
+    else sharedPopup.open(sharedStarPopup(shared, item.row, () => { sharedPopup.close(); manageStars(); }));
   }
 
   /** FP38. `edits` holds only the fields the rider changed; the others always follow the newest row. */
@@ -381,6 +444,30 @@ function SavedPlacesManagerContent({
     });
   }
 
+  function savedCandidate(p: SavedPlaceEntry): WaypointCandidate {
+    return { name: savedPlaceName(p), placeName: p.place.name, kind: p.kind, province: p.province, starred: p.starPosition !== null, place: p.place, current: () => saved.places.some((row) => row.id === p.id && row.revision === p.revision) };
+  }
+  function sharedCandidate(p: SharedPlace): WaypointCandidate {
+    // The shared place's original place, signature included, is used unchanged.
+    return { name: p.alias ?? p.place.name, placeName: p.place.name, kind: p.kind, province: p.province, starred: p.starred, place: p.place, current: () => shared.current().snapshot.places.some((row) => row.id === p.id && row.revision === p.revision) };
+  }
+  /** Avoid status for my own place (memo: "내 장소 상세에도 같은 버튼"). */
+  function avoidButton(p: SavedPlaceEntry) {
+    if (!sharedReady) return null;
+    const avoided = avoidedOf(p.place);
+    const source = { icon: "pin" as const, text: "내 장소" };
+    return avoided ? (
+      <>
+        <button type="button" className={styles.avoidSaved} aria-label="기피 장소로 표시됨, 눌러서 해제" disabled={shared.busy} onClick={() => sharedPopup.open(unavoidPopup(shared, avoided, { eyebrow: `${kindLabel(p.kind)} · ${p.province ?? "지역 미확인"}`, name: savedPlaceName(p), source, note: "식당 추천 후보에 다시 들어가요. 내 장소는 그대로예요." }))}>
+          <LineIcon name="ban" /><span>기피 장소로 표시됨 · 나에게만</span>
+        </button>
+        <p className={styles.helper}>누르면 기피를 해제할지 다시 확인해요. 식당 추천에서 빠져요.</p>
+      </>
+    ) : (
+      <button type="button" className={styles.secondaryButton} disabled={shared.busy} onClick={() => sharedPopup.open(avoidPopup(shared, p.place, { kind: p.kind, province: p.province, name: savedPlaceName(p), source }))}>⊘ 기피 장소로 표시 · 나에게만</button>
+    );
+  }
+
   const provinceLabel = !province ? "전국" : province === "unknown" ? "지역 미확인" : province;
   const regionSelect = (variant: "large" | "compact") => (
     <label className={variant === "large" ? styles.regionLarge : styles.regionCompact}>
@@ -405,9 +492,52 @@ function SavedPlacesManagerContent({
       <span aria-hidden="true">{checked ? label : `${label} 숨김`}</span>
     </label>
   );
+  const folderCount = sharedReady ? snapshot.folders.length : 0;
+  // G00/G00b: hidden without folders; "공유 폴더 n / m" when any is on, "공유 폴더 끔" otherwise.
+  const folderToggle = folderCount ? (
+    <button
+      type="button"
+      className={`${styles.folderToggle}${enabledFolderIds.length ? ` ${styles.folderToggleOn}` : ""}`}
+      aria-haspopup="dialog"
+      aria-label={`공유 폴더 ${enabledFolderIds.length} / ${folderCount} 켬, 고르기`}
+      disabled={shared.busy}
+      onClick={() => sharedPopup.open(folderPickerPopup(shared, enabledFolderIds))}
+    >
+      {enabledFolderIds.length ? <LineIcon name="check" /> : null}
+      <span aria-hidden="true">{enabledFolderIds.length ? <>공유 폴더 <b className={styles.countNumber}>{enabledFolderIds.length} / {folderCount}</b></> : "공유 폴더 끔"}</span>
+      <LineIcon name="chevron-down" />
+    </button>
+  ) : null;
+  const sourceLine = (item: Item) => <span className={styles.sourceLine}><LineIcon name={item.source === "saved" ? "pin" : "folder"} />{item.label}</span>;
+  const switcher = (
+    <nav className={styles.sectionSwitch} aria-label="즐겨찾기 보기">
+      {([["places", "장소"], ["folders", "공유 폴더"], ["avoided", "기피 장소"]] as const).map(([key, label]) => (
+        <button type="button" key={key} aria-pressed={section === key} onClick={() => { setSection(key); selectPlace(null); setPreviewId(null); }}>
+          {section === key ? <LineIcon name="check" /> : null}{label}
+        </button>
+      ))}
+    </nav>
+  );
+
+  if (openFolder) {
+    return (
+      <>
+        <SharedFolderDetail
+          key={openFolder.id}
+          folderId={openFolder.id}
+          wide={wide}
+          disabled={disabled}
+          notice={openFolder.notice}
+          onBack={() => setOpenFolder(null)}
+          onAddWaypoint={(row) => setAdding(sharedCandidate(row))}
+        />
+        {adding ? <WaypointDialog candidate={adding} initial={initialWaypoint} disabled={disabled} onClose={() => setAdding(null)} onAddWaypoint={onAddWaypoint} onAdded={() => setAdding(null)} /> : null}
+      </>
+    );
+  }
 
   return (
-    <section className={styles.page} aria-labelledby="saved-places-title">
+    <section className={`${styles.page}${section !== "places" ? ` ${styles.sectionPage}` : ""}`} aria-labelledby="saved-places-title">
       <header className={styles.heading}>
         <button type="button" className={`${styles.iconButton} ${styles.desktopOnly}`} aria-label="뒤로" onClick={onBack}>
           <LineIcon name="chevron-left" />
@@ -418,14 +548,25 @@ function SavedPlacesManagerContent({
         <button type="button" className={`${styles.iconButton} ${styles.mobileOnly}`} aria-label="즐겨찾기 닫기" onClick={onBack}>
           <LineIcon name="close" />
         </button>
-        <button type="button" className={`primary-button ${styles.desktopOnly}`} disabled={blocked || saved.places.length >= 1000} onClick={() => setForm({ place: null })}>장소 등록하기</button>
+        {section === "places" ? <button type="button" className={`primary-button ${styles.desktopOnly}`} disabled={blocked || saved.places.length >= 1000} onClick={() => setForm({ place: null })}>장소 등록하기</button> : null}
       </header>
+      {shared.enabled ? switcher : null}
+      {section === "folders" ? (
+        <div className={styles.sectionBody}>
+          {listNotice ? <p className={styles.noticeCard} role="status">{listNotice}</p> : null}
+          <SharedFolderList onOpen={(id) => { setListNotice(""); setOpenFolder({ id }); }} onCreate={() => setCreatingFolder(true)} />
+          {creatingFolder ? <FolderCreate onClose={() => setCreatingFolder(false)} onCreated={(id) => { setCreatingFolder(false); setOpenFolder({ id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." }); }} /> : null}
+        </div>
+      ) : section === "avoided" ? (
+        <div className={styles.sectionBody}><AvoidedPlacesView startView={startView} /></div>
+      ) : <>
       <div className={`${styles.mobileRegion} ${styles.mobileOnly}`}>{regionSelect("large")}</div>
       <div className={styles.columns}>
         <div className={styles.mapColumn}>
-          <div className={styles.layers} role="group" aria-label="지도 핀 표시">
+          <div className={`${styles.layers}${folderToggle ? ` ${styles.layersWithFolders}` : ""}`} role="group" aria-label="지도 핀 표시">
             {layerToggle("라이딩 스팟", spots, setSpots)}
             {layerToggle("식당", restaurants, setRestaurants)}
+            {folderToggle}
           </div>
           {/* FP41: a failed map keeps its place with an error card; lists and search stay usable. */}
           {mapStatus === "error" ? (
@@ -462,8 +603,8 @@ function SavedPlacesManagerContent({
               allowEmptyMap
               savedPins={pins}
               savedViewportKey={province}
-              onSelectSavedPin={(id) => (wide ? selectPlace(id) : setPreviewId(id))}
-              selectedSavedPinId={selected?.id ?? preview?.id ?? null}
+              onSelectSavedPin={selectPin}
+              selectedSavedPinId={selected?.id ?? (sharedSelected ? `shared:${sharedSelected.id}` : preview?.key ?? null)}
               onSelectSavedCluster={setClusterIds}
               showLegend={false}
               onSelectCoordinate={
@@ -484,20 +625,23 @@ function SavedPlacesManagerContent({
           {!spots && !restaurants ? <p className={styles.notice} role="status">저장 장소 핀을 모두 숨겼어요. 현재 일정의 지점과 지도는 유지돼요.</p> : null}
           {preview && !wide ? (
             <div className={styles.previewCard}>
-              <button type="button" aria-label={`${savedPlaceName(preview)} 상세 보기`} onClick={() => { setPreviewId(null); selectPlace(preview.id); }}>
-                <span className={styles.placeKind}>{kindLabel(preview.kind)} · {preview.province ?? "지역 미확인"}{preview.starPosition !== null ? " · 자주 찾는 장소" : ""}</span>
-                <strong>{savedPlaceName(preview)}</strong>
-                <span>{placeLine(preview)}</span>
+              <button type="button" aria-label={`${itemName(preview)} 상세 보기`} onClick={() => { setPreviewId(null); selectItem(preview); }}>
+                <span className={styles.placeKind}>{kindLabel(preview.row.kind)} · {preview.row.province ?? "지역 미확인"}{preview.starred ? " · 자주 찾는 장소" : ""}</span>
+                <strong>{itemName(preview)}</strong>
+                <span>{placeLine(preview.row)}</span>
+                {shared.enabled ? sourceLine(preview) : null}
               </button>
-              <StarIconButton place={preview} disabled={blocked} onClick={() => confirm(preview, "star")} />
+              <StarIconButton starred={preview.starred} disabled={preview.source === "saved" ? blocked : shared.busy} onClick={() => confirmItemStar(preview)} />
             </div>
           ) : null}
         </div>
         <section
           className={styles.listColumn}
-          aria-label={selected && wide ? "장소 상세" : `${tab === "starred" ? "자주 찾는 장소" : kindLabel(tab)} 목록`}
+          aria-label={(selected || sharedSelected) && wide ? "장소 상세" : `${tab === "starred" ? "자주 찾는 장소" : kindLabel(tab)} 목록`}
         >
-          {selected && wide ? (
+          {sharedSelected && wide ? (
+            <SharedPlaceDetail placeId={sharedSelected.id} wide disabled={disabled} onClose={() => setSharedSelectedId(null)} onAddWaypoint={(row) => setAdding(sharedCandidate(row))} onManageStars={manageStars} />
+          ) : selected && wide ? (
             <div className={styles.pcDetail}>
               <div className={styles.pcDetailHeading}>
                 <button type="button" className={styles.iconButton} aria-label="장소 상세 뒤로" onClick={() => selectPlace(null)}><LineIcon name="chevron-left" /></button>
@@ -507,12 +651,13 @@ function SavedPlacesManagerContent({
                 <span className={styles.placeKind}>{kindLabel(selected.kind)} · {selected.province ?? "지역 미확인"}{selected.starPosition !== null ? " · 자주 찾는 장소" : ""}</span>
                 <strong>{savedPlaceName(selected)}</strong>
                 <span>{placeLine(selected)}</span>
-                <StarIconButton place={selected} disabled={blocked} onClick={() => confirm(selected, "star")} />
+                <StarIconButton starred={selected.starPosition !== null} disabled={blocked} onClick={() => confirm(selected, "star")} />
               </div>
               {failure}
               <StarButton place={selected} full={full} count={starredCount} disabled={blocked} onClick={() => confirm(selected, "star")} />
               {selected.starPosition === null && full ? <p className={styles.helper}>자주 찾는 장소 {FREQUENT_PLACE_LIMIT}곳이 모두 찼어요. 다른 장소의 별표를 빼면 추가할 수 있어요.</p> : null}
-              <button type="button" className={styles.secondaryButton} disabled={blocked || disabled} onClick={() => setAdding(selected)}>경유지에 추가</button>
+              {avoidButton(selected)}
+              <button type="button" className={styles.secondaryButton} disabled={blocked || disabled} onClick={() => setAdding(savedCandidate(selected))}>경유지에 추가</button>
               <button type="button" className={styles.secondaryButton} disabled={blocked} onClick={() => setForm({ place: selected.place, existing: selected })}>별명·분류 수정</button>
               <button type="button" className={styles.dangerButton} disabled={blocked} onClick={() => confirm(selected, "delete")}>장소 삭제</button>
             </div>
@@ -533,16 +678,16 @@ function SavedPlacesManagerContent({
             </label>
             <div className={styles.desktopOnly}>{regionSelect("compact")}</div>
           </div>
-          {/* FP01/FP04: starred "7 / 10"; kind tabs "34곳 · 저장 장소 전체 46 / 1,000" (counts follow the filters). */}
+          {/* FP01/FP04 + G00a: starred "8 / 10"; kind tabs "41곳 (공유 12) · 내 저장 장소 46 / 1,000". */}
           <p className={styles.listCount}>
             <strong>{tab === "starred" ? "자주 찾는 장소" : kindLabel(tab)}</strong>
             {tab === "starred" ? <b className={styles.countNumber}>{starredCount} / {FREQUENT_PLACE_LIMIT}</b> : <>
               <b className={styles.countNumber}>{list.length.toLocaleString()}</b>
-              <span>곳 · 저장 장소 전체</span>
+              <span>곳{sharedInList ? ` (공유 ${sharedInList.toLocaleString()})` : ""} · 내 저장 장소</span>
               <b className={styles.countNumber}>{saved.places.length.toLocaleString()} / 1,000</b>
             </>}
           </p>
-          {tab === "starred" ? <p className={`${styles.helper} ${styles.mobileOnly}`}>라이딩 스팟과 식당을 합쳐 최대 {FREQUENT_PLACE_LIMIT}곳까지 별표할 수 있어요.</p> : null}
+          {tab === "starred" ? <p className={`${styles.helper} ${styles.mobileOnly}`}>{folderCount ? `라이딩 스팟·식당과 공유 폴더 장소를 합쳐 최대 ${FREQUENT_PLACE_LIMIT}곳까지 별표할 수 있어요. 공유 폴더를 꺼 둬도 별표한 장소는 이 탭에 모두 보여요.` : `라이딩 스팟과 식당을 합쳐 최대 ${FREQUENT_PLACE_LIMIT}곳까지 별표할 수 있어요.`}</p> : null}
           {saved.status === "loading" ? (
             <div className={styles.stateCard} role="status"><strong>장소를 불러오고 있어요</strong><p>저장한 장소를 불러오는 중이에요. 잠시만 기다려 주세요.</p></div>
           ) : saved.status === "error" ? (
@@ -558,22 +703,25 @@ function SavedPlacesManagerContent({
           ) : (
             <ul className={styles.list}>
               {list.map((p) => (
-                <li key={p.id} className={styles.placeCard}>
+                <li key={p.key} className={styles.placeCard}>
                   <button
                     type="button"
-                    onClick={() => selectPlace(p.id)}
-                    aria-label={`${savedPlaceName(p)} 상세 보기`}
+                    onClick={() => selectItem(p)}
+                    aria-label={`${itemName(p)} 상세 보기`}
                   >
-                    <span className={styles.placeKind}>{kindLabel(p.kind)} · {p.province ?? "지역 미확인"}</span>
-                    <strong>{savedPlaceName(p)}</strong>
-                    <span>{placeLine(p)}</span>
+                    <span className={styles.placeKind}>{kindLabel(p.row.kind)} · {p.row.province ?? "지역 미확인"}{avoidedOf(p.row.place) ? <span className={styles.chip}>기피</span> : null}</span>
+                    <strong>{itemName(p)}</strong>
+                    <span>{placeLine(p.row)}</span>
+                    {shared.enabled ? sourceLine(p) : null}
                   </button>
-                  <StarIconButton place={p} disabled={blocked} onClick={() => confirm(p, "star")} />
+                  <StarIconButton starred={p.starred} disabled={p.source === "saved" ? blocked : shared.busy} onClick={() => confirmItemStar(p)} />
                 </li>
               ))}
             </ul>
           )}
-          {tab === "starred" && list.length ? <p className={`${styles.notice} ${styles.mobileOnly}`}>별표를 빼도 라이딩 스팟·식당 목록에는 그대로 남아 있어요.</p> : null}
+          {tab === "starred" && list.length ? <p className={`${styles.notice} ${styles.mobileOnly}`}>{folderCount ? "별표를 빼도 라이딩 스팟·식당 목록과 공유 폴더에는 그대로 남아 있어요." : "별표를 빼도 라이딩 스팟·식당 목록에는 그대로 남아 있어요."}</p> : null}
+          {tab !== "starred" && folderCount ? <p className={`${styles.notice} ${styles.mobileOnly}`}>{enabledFolderIds.length ? "같은 장소가 내 장소와 공유 폴더에 함께 있으면 내 장소 하나만 보여요. 여러 폴더에만 있으면 하나로 묶고 \"외 n\"으로 표시해요." : "공유 폴더를 모두 꺼서 내 장소만 보여요. 별표한 공유 장소는 자주 찾는 장소 탭에서 계속 볼 수 있어요."}</p> : null}
+          {shared.enabled && shared.status === "error" ? <div className={styles.errorCard} role="alert"><strong>공유 폴더 장소를 불러오지 못했어요</strong><p>내 장소만 보여요. 공유 폴더 칸에서 다시 시도할 수 있어요.</p></div> : null}
           {saved.places.length >= 1000 ? (
             <p role="status">
               저장 한도에 도달했어요. 기존 장소를 정리한 뒤 등록해 주세요.
@@ -585,20 +733,23 @@ function SavedPlacesManagerContent({
       <footer className={styles.registerFooter}>
         <button ref={addButton} aria-label="＋ 장소 등록" className="primary-button" type="button" disabled={blocked || saved.places.length >= 1000} onClick={() => setForm({ place: null })}>＋ 장소 등록</button>
       </footer>
+      </>}
       {saved.message && saved.status === "ready" && !saved.failureTitle ? (
         <p role="status" aria-live="polite">
           {saved.message}
         </p>
       ) : !selected ? failure : null}
+      {shared.message && section !== "folders" ? <p className={styles.srOnly} role="status" aria-live="polite">{shared.message}</p> : null}
       {clusterIds ? (
         <SavedDialog title={`이 위치의 장소 ${clusterPlaces.length}곳`} onClose={() => setClusterIds(null)}>
           <ul className={styles.list}>
             {clusterPlaces.map((p) => (
-              <li key={p.id} className={styles.placeCard}>
-                <button type="button" aria-label={`${savedPlaceName(p)} 상세 보기`} onClick={() => { setClusterIds(null); selectPlace(p.id); }}>
-                  <span className={styles.placeKind}>{kindLabel(p.kind)} · {p.province ?? "지역 미확인"}</span>
-                  <strong>{savedPlaceName(p)}</strong>
-                  <span>{placeLine(p)}</span>
+              <li key={p.key} className={styles.placeCard}>
+                <button type="button" aria-label={`${itemName(p)} 상세 보기`} onClick={() => { setClusterIds(null); selectItem(p); }}>
+                  <span className={styles.placeKind}>{kindLabel(p.row.kind)} · {p.row.province ?? "지역 미확인"}</span>
+                  <strong>{itemName(p)}</strong>
+                  <span>{placeLine(p.row)}</span>
+                  {shared.enabled ? sourceLine(p) : null}
                 </button>
               </li>
             ))}
@@ -613,9 +764,9 @@ function SavedPlacesManagerContent({
             <span className={styles.placeKind}>{kindLabel(selected.kind)} · {selected.province ?? "지역 미확인"}{selected.starPosition !== null ? " · 자주 찾는 장소" : ""}</span>
             <strong>{savedPlaceName(selected)}</strong>
             <span>{placeLine(selected)}</span>
-            <StarIconButton place={selected} disabled={blocked} onClick={() => confirm(selected, "star")} />
+            <StarIconButton starred={selected.starPosition !== null} disabled={blocked} onClick={() => confirm(selected, "star")} />
           </div>
-          <div className={styles.detailMap}><KakaoMapCanvas points={[]} allowEmptyMap savedPins={[{ id: selected.id, label: savedPlaceName(selected), kind: selected.kind, starred: selected.starPosition !== null, latitude: selected.place.latitude, longitude: selected.place.longitude }]} selectedSavedPinId={selected.id} showLegend={false} allowFullscreen={false} /></div>
+          <div className={styles.detailMap}><KakaoMapCanvas points={[]} allowEmptyMap savedPins={[{ id: selected.id, label: savedPlaceName(selected), kind: selected.kind, starred: selected.starPosition !== null, avoided: Boolean(avoidedOf(selected.place)), latitude: selected.place.latitude, longitude: selected.place.longitude }]} selectedSavedPinId={selected.id} showLegend={false} allowFullscreen={false} /></div>
           {failure}
           <StarButton place={selected} full={full} count={starredCount} disabled={blocked} onClick={() => confirm(selected, "star")} />
           {selected.starPosition === null && full ? (
@@ -624,29 +775,16 @@ function SavedPlacesManagerContent({
               <button type="button" className={styles.textButton} onClick={manageStars}>자주 찾는 장소 관리</button>
             </>
           ) : null}
-          <button type="button" className={styles.secondaryButton} disabled={blocked || disabled} onClick={() => setAdding(selected)}>경유지에 추가</button>
+          {avoidButton(selected)}
+          <button type="button" className={styles.secondaryButton} disabled={blocked || disabled} onClick={() => setAdding(savedCandidate(selected))}>경유지에 추가</button>
           <button type="button" className={styles.secondaryButton} disabled={blocked} onClick={() => setForm({ place: selected.place, existing: selected })}>별명·분류 수정</button>
           <button type="button" className={styles.dangerButton} disabled={blocked} onClick={() => confirm(selected, "delete")}>장소 삭제</button>
           </div>
+          {sharedPopup.popup}
         </SavedDialog>
       ) : null}
-      {adding ? (
-        <SavedWaypointForm
-          place={adding}
-          initial={initialWaypoint}
-          disabled={blocked || disabled}
-          onClose={() => setAdding(null)}
-          onAdd={(role, dwell) => {
-            if (blocked || disabled || !saved.places.some((p) => p.id === adding.id && p.revision === adding.revision)) return "장소가 변경되었습니다. 목록에서 다시 선택해 주세요.";
-            const failure = onAddWaypoint(adding.place, role, dwell);
-            if (!failure) {
-              setAdding(null);
-              selectPlace(null);
-            }
-            return failure;
-          }}
-        />
-      ) : null}
+      {sharedSelected && !wide ? <SharedPlaceDetail placeId={sharedSelected.id} wide={false} disabled={disabled} onClose={() => setSharedSelectedId(null)} onAddWaypoint={(row) => setAdding(sharedCandidate(row))} onManageStars={manageStars} /> : null}
+      {adding ? <WaypointDialog candidate={adding} initial={initialWaypoint} disabled={disabled || blocked} onClose={() => setAdding(null)} onAddWaypoint={onAddWaypoint} onAdded={() => { setAdding(null); selectPlace(null); }} /> : null}
       <MapPointConfirmation
         pickerRef={picker}
         purpose="saved-place"
@@ -668,7 +806,7 @@ function SavedPlacesManagerContent({
         />
       ) : null}
       {pending ? (
-        <ConfirmPopup
+        <ConfirmPopup<SavedPlaceEntry[]>
           key={pending.key}
           pending={pending}
           busy={saved.busy}
@@ -678,7 +816,78 @@ function SavedPlacesManagerContent({
           onClose={() => setPending(null)}
         />
       ) : null}
+      {selected && !wide ? null : sharedPopup.popup}
     </section>
+  );
+}
+
+/** G00b / G00c / GW03b: choose which folders show; only the changed folders are sent (desired state). */
+function folderPickerPopup(shared: ReturnType<typeof useSharedFolders>, enabledNow: readonly string[]): Omit<PopupContent<SharedSnapshot>, "key"> {
+  const snapshot = shared.current().snapshot;
+  let draft = new Set(enabledNow);
+  const changes = () => snapshot.folders
+    .filter((folder) => enabledNow.includes(folder.id) !== draft.has(folder.id))
+    .map((folder) => ({ folderId: folder.id, enabled: draft.has(folder.id) }));
+  return {
+    title: "지도와 목록에 보일 공유 폴더",
+    body: <FolderChoices snapshot={snapshot} initial={enabledNow} onChange={(next) => { draft = next; }} />,
+    note: "끈 폴더의 장소는 지도·목록과 식당 추천에서 빠져요. 별표한 장소는 자주 찾는 장소에 그대로 보여요. 설정은 내 계정에 저장돼 웹·앱 어디서나 같아요.",
+    confirm: {
+      label: "적용",
+      busyLabel: "적용하는 중…",
+      retryLabel: "확인하고 적용",
+      checking: "적용됐는지 확인하고 있어요",
+      notApplied: { title: "적용되지 않았어요", message: "설정을 다시 확인했지만 바뀌지 않았어요. 다시 적용하려면 \"확인하고 적용\"을 눌러 주세요." },
+      run: async () => {
+        const changed = changes();
+        if (!changed.length) return { ok: true };
+        const applied = (s: SharedSnapshot) => changed.every((change) => s.preferences.some((row) => row.folderId === change.folderId && row.enabled === change.enabled) || !s.folders.some((f) => f.id === change.folderId));
+        return shared.write({
+          rpc: "set_place_folders_enabled",
+          args: { changes: changed },
+          success: "공유 폴더 설정을 적용했어요.",
+          receipt: (data) => { if (!Array.isArray(data)) throw new Error("NO_RECEIPT"); return applied; },
+          applied,
+          unknownMessage: "설정이 적용됐는지 확인하지 못했어요.",
+          refusal: (code) => code === "PLACE_FOLDER_NOT_FOUND"
+            ? { reason: "rejected", stale: true, title: "폴더 목록이 바뀌었어요", message: "나간 폴더가 있어요. 최신 목록을 불러왔어요. 닫고 다시 골라 주세요." }
+            : null,
+        });
+      },
+    },
+  };
+}
+
+/** Nothing changes until "적용"; X, 취소, the backdrop and back close without a request (G00c). */
+function FolderChoices({ snapshot, initial, onChange }: { snapshot: SharedSnapshot; initial: readonly string[]; onChange: (next: Set<string>) => void }) {
+  const [draft, setDraft] = useState(() => new Set(initial));
+  const set = (next: Set<string>) => { setDraft(next); onChange(next); };
+  const me = snapshot.userId;
+  return (
+    <div className={styles.folderChoices}>
+      <div className={styles.folderChoiceTools}>
+        <button type="button" onClick={() => set(new Set(snapshot.folders.map((f) => f.id)))}>모두 켜기</button>
+        <button type="button" onClick={() => set(new Set())}>모두 끄기</button>
+      </div>
+      <p className={styles.popupCount}><span>켜 둔 폴더</span><b className={styles.countNumber}>{draft.size} / {snapshot.folders.length}</b></p>
+      <ul className={styles.checkList}>
+        {snapshot.folders.map((folder) => {
+          const owner = folder.ownerId === me;
+          const on = draft.has(folder.id);
+          return (
+            <li key={folder.id}>
+              <label className={`${styles.checkRow}${on ? ` ${styles.checkRowOn}` : ""}`}>
+                <input type="checkbox" checked={on} onChange={(e) => { const next = new Set(draft); if (e.target.checked) next.add(folder.id); else next.delete(folder.id); set(next); }} />
+                <span>
+                  <strong>{folder.name} <span className={owner ? styles.ownerChip : styles.memberChip}>{owner ? "주인" : "회원"}</span></strong>
+                  <span>장소 {snapshot.places.filter((p) => p.folderId === folder.id).length.toLocaleString()}</span>
+                </span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -717,12 +926,11 @@ function StarButton({ place, full, count, disabled, onClick }: {
 }
 
 /** In a full list an empty star opens the FP36 explanation instead of being disabled. */
-function StarIconButton({ place, disabled, onClick }: {
-  place: SavedPlaceEntry;
+function StarIconButton({ starred, disabled, onClick }: {
+  starred: boolean;
   disabled: boolean;
   onClick: () => void;
 }) {
-  const starred = place.starPosition !== null;
   return (
     <button
       type="button"
@@ -737,6 +945,30 @@ function StarIconButton({ place, disabled, onClick }: {
   );
 }
 
+function WaypointDialog({ candidate, initial, disabled, onClose, onAddWaypoint, onAdded }: {
+  candidate: WaypointCandidate;
+  initial?: { role: WaypointRole; dwellMinutes: number };
+  disabled: boolean;
+  onClose: () => void;
+  onAddWaypoint: SavedPlacesManagerProps["onAddWaypoint"];
+  onAdded: () => void;
+}) {
+  return (
+    <SavedWaypointForm
+      place={candidate}
+      initial={initial}
+      disabled={disabled}
+      onClose={onClose}
+      onAdd={(role, dwell) => {
+        if (disabled || !candidate.current()) return "장소가 변경되었습니다. 목록에서 다시 선택해 주세요.";
+        const failure = onAddWaypoint(candidate.place, role, dwell);
+        if (!failure) onAdded();
+        return failure;
+      }}
+    />
+  );
+}
+
 function SavedWaypointForm({
   place,
   initial,
@@ -744,7 +976,7 @@ function SavedWaypointForm({
   onClose,
   onAdd,
 }: {
-  place: SavedPlaceEntry;
+  place: WaypointCandidate;
   initial?: { role: WaypointRole; dwellMinutes: number };
   disabled: boolean;
   onClose: () => void;
@@ -758,9 +990,9 @@ function SavedWaypointForm({
       <div className={styles.waypointBody}>
       <h3>어떻게 들를까요?</h3>
       <div className={styles.placeSummary}>
-        <span className={styles.placeKind}>{kindLabel(place.kind)}{place.starPosition !== null ? <span aria-label="자주 찾는 장소"><StarMark filled /></span> : null}</span>
-        <strong>{savedPlaceName(place)}</strong>
-        <span>{place.place.name} · {place.province ?? "지역 미확인"}</span>
+        <span className={styles.placeKind}>{kindLabel(place.kind)}{place.starred ? <span aria-label="자주 찾는 장소"><StarMark filled /></span> : null}</span>
+        <strong>{place.name}</strong>
+        <span>{place.placeName} · {place.province ?? "지역 미확인"}</span>
       </div>
       <fieldset className={styles.roleField}>
         <legend>방문 종류</legend>
@@ -814,162 +1046,3 @@ function SavedWaypointForm({
   );
 }
 
-function ConfirmPopup({
-  pending,
-  busy,
-  verifying,
-  recheck,
-  capture,
-  onClose,
-}: {
-  pending: Pending;
-  busy: boolean;
-  verifying: boolean;
-  recheck: (applied: (list: SavedPlaceEntry[]) => boolean) => Promise<SavedPlaceRecheck>;
-  capture: () => () => boolean;
-  onClose: () => void;
-}) {
-  const titleId = useId();
-  const ref = useRef<HTMLDialogElement>(null);
-  const started = useRef(false);
-  const mounted = useRef(false);
-  const [snapshot, setSnapshot] = useState(() => capture());
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState<{ title: string; message: string; retry?: boolean } | null>(pending.error ?? null);
-  // Unknown without a readable list, or a receipt the list does not show yet: only reading is allowed.
-  const [readOnly, setReadOnly] = useState<{ check: (list: SavedPlaceEntry[]) => boolean; mismatch: boolean } | null>(null);
-  const [rechecking, setRechecking] = useState(false);
-  useEffect(() => {
-    mounted.current = true;
-    const focus = document.activeElement;
-    ref.current?.showModal();
-    return () => {
-      mounted.current = false;
-      if (focus instanceof HTMLElement && focus.isConnected) focus.focus();
-    };
-  }, []);
-  const valid = snapshot();
-  function close() { if (!running) onClose(); }
-  async function confirm() {
-    const action = pending.confirm;
-    if (!action || started.current || busy || !snapshot()) return;
-    started.current = true;
-    setRunning(true);
-    setError(null);
-    try {
-      const write = await action.run();
-      if (!mounted.current) return;
-      if (write.ok) onClose();
-      else if ((write.reason === "unknown" && !write.checked) || write.reason === "mismatch") {
-        setError({ title: write.title, message: write.message });
-        setReadOnly(write.recheck ? { check: write.recheck, mismatch: write.reason === "mismatch" } : null);
-      } else if (write.reason !== "blocked" || write.message) {
-        // FP39b: the list was re-read without the change, so the same confirm sends one new
-        // request with the newest revision. FP39c: a clear refusal can be retried right away.
-        setError(write.reason === "unknown" ? action.notApplied : { title: write.title, message: write.message, retry: true });
-        setSnapshot(() => capture());
-      }
-    } catch {
-      if (mounted.current) setError({ title: "변경을 확인하지 못했어요", message: "목록을 확인한 뒤 다시 시도해 주세요." });
-    } finally {
-      started.current = false;
-      if (mounted.current) setRunning(false);
-    }
-  }
-  async function readAgain() {
-    const action = pending.confirm;
-    if (!action || !readOnly || started.current || busy) return;
-    started.current = true;
-    setRunning(true);
-    setRechecking(true);
-    try {
-      const result = await recheck(readOnly.check);
-      if (!mounted.current) return;
-      if (result === "applied") {
-        action.onApplied?.();
-        onClose();
-      } else if (result === "missing" && !readOnly.mismatch) {
-        // The list now proves the change is missing, so one new request may be confirmed.
-        setReadOnly(null);
-        setError(action.notApplied);
-        setSnapshot(() => capture());
-      } else {
-        setError(result === "missing"
-          ? { title: "목록에서 변경을 확인하지 못했어요", message: "변경 요청은 접수됐지만 최신 목록에 아직 보이지 않아요. 같은 요청은 다시 보내지 않아요. 잠시 뒤 목록을 다시 확인해 주세요." }
-          : { title: "목록을 확인하지 못했어요", message: "변경됐는지 아직 몰라요. 목록을 다시 확인한 뒤에 다시 시도할 수 있어요." });
-      }
-    } finally {
-      started.current = false;
-      if (mounted.current) { setRunning(false); setRechecking(false); }
-    }
-  }
-  return (
-    <dialog
-      ref={ref}
-      className={styles.popup}
-      aria-labelledby={titleId}
-      onCancel={(e) => { e.preventDefault(); e.stopPropagation(); close(); }}
-      onClick={(e) => { if (e.target === e.currentTarget) close(); }}
-      onKeyDown={(e) => e.stopPropagation()}
-    >
-      <div className={styles.popupHeader}>
-        <h2 id={titleId}>{pending.title}</h2>
-        {/* UI-001: popups show a close X; it only closes, and is locked while a request runs. */}
-        <button type="button" className={styles.popupClose} aria-label="닫기" disabled={running} onClick={close}><LineIcon name="close" /></button>
-      </div>
-      <div className={styles.popupCard}>
-        {pending.card.eyebrow ? <span className={styles.placeKind}>{pending.card.eyebrow}{pending.card.region ? <span className={styles.chip}>상세 주소 없음</span> : null}</span> : null}
-        {pending.card.name ? <strong>{pending.card.name}</strong> : null}
-        <span>{pending.card.line}</span>
-        {pending.card.line2 ? <span>{pending.card.line2}</span> : null}
-      </div>
-      {pending.changes?.map((change) => (
-        <div key={change.label} className={styles.popupChange}>
-          <span>{change.label}</span>
-          <p><del>{change.before}</del><span aria-hidden="true"> → </span><span className={styles.srOnly}>에서 </span><b>{change.after}</b></p>
-        </div>
-      ))}
-      {pending.rows ? (
-        <dl className={styles.popupRows}>
-          {pending.rows.map((row) => (
-            <div key={row.label}><dt>{row.label}</dt><dd>{row.value}{row.count ? <b className={styles.countNumber}>{row.count}</b> : null}</dd></div>
-          ))}
-        </dl>
-      ) : null}
-      {pending.count ? <p className={styles.popupCount}><span>{pending.count.label}</span><b className={styles.countNumber}>{pending.count.value}</b></p> : null}
-      {/* FP39a–c replace the note with the checking or failure card. */}
-      {pending.note && !error && !(running && (verifying || rechecking)) ? <p className={styles.helper}>{pending.note}</p> : null}
-      {!valid && !running && pending.confirm ? <p role="alert" className={styles.fieldError}>목록이나 계정이 바뀌었어요. 닫고 최신 장소를 다시 선택해 주세요.</p> : null}
-      {running && (verifying || rechecking) && pending.confirm ? (
-        <div className={styles.popupChecking} role="status">
-          <strong>{pending.confirm.checking}</strong>
-          <p>{rechecking ? "목록을 다시 읽는 중이에요. 같은 요청을 다시 보내지 않아요." : "응답을 받지 못해 목록을 다시 읽는 중이에요. 같은 요청을 다시 보내지 않아요."}</p>
-          <span className={styles.progress} aria-hidden="true"><span /></span>
-        </div>
-      ) : error ? <div className={styles.errorCard} role="alert"><strong>{error.title}</strong><p>{error.message}</p></div> : null}
-      <div className={styles.popupActions}>
-        {pending.confirm ? (
-          <>
-            {readOnly ? (
-              <button type="button" className="primary-button" disabled={busy || running} onClick={() => void readAgain()}>
-                {running ? "확인 중…" : "목록 다시 확인"}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className={pending.confirm.danger ? styles.destructiveButton : "primary-button"}
-                disabled={busy || running || !valid}
-                onClick={() => void confirm()}
-              >
-                {running ? (verifying ? "확인 중…" : pending.confirm.busyLabel) : error?.retry ? "다시 시도" : pending.confirm.label}
-              </button>
-            )}
-            <button type="button" className={styles.secondaryButton} disabled={running} onClick={close}>취소</button>
-          </>
-        ) : (pending.buttons ?? []).map((button) => (
-          <button key={button.label} type="button" className={button.primary ? "primary-button" : styles.secondaryButton} onClick={button.onClick}>{button.label}</button>
-        ))}
-      </div>
-    </dialog>
-  );
-}

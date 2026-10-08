@@ -8,6 +8,11 @@ import {
   isKakaoOidcHandoff,
   KakaoOidcCallbackLifecycle,
 } from "@/lib/auth/kakao-oidc";
+import { clearPendingInvite, hasPendingInvite, INVITE_PATH } from "@/lib/places/folder-invite-token";
+
+const sessionStore = () => window.sessionStorage;
+/** A folder invite waiting for this login continues on the invite page (same tab, no token in the URL). */
+const afterLogin = (redirect: string) => (redirect === "/" && hasPendingInvite(sessionStore) ? INVITE_PATH : redirect);
 
 const COMPLETION_TIMEOUT_MS = 10_000;
 
@@ -23,6 +28,7 @@ export function KakaoOidcCallback() {
     if (!clearKakaoOidcHandoffFragment(window)) {
       lifecycle.complete();
       void clearBrowserBinding();
+      clearPendingInvite(sessionStore);
       queueMicrotask(() => {
         if (lifecycle.isAttached()) setStatus("error");
       });
@@ -31,6 +37,7 @@ export function KakaoOidcCallback() {
     if (!isKakaoOidcHandoff(handoff)) {
       lifecycle.complete();
       void clearBrowserBinding();
+      clearPendingInvite(sessionStore);
       queueMicrotask(() => {
         if (lifecycle.isAttached()) setStatus("error");
       });
@@ -47,12 +54,13 @@ export function KakaoOidcCallback() {
         });
         const body = await response.json() as { redirect?: unknown };
         if (typeof body.redirect === "string" && body.redirect.startsWith("/") && !body.redirect.startsWith("//")) {
-          if (lifecycle.isAttached()) window.location.replace(body.redirect);
+          if (lifecycle.isAttached()) window.location.replace(afterLogin(body.redirect));
           return;
         }
         throw new Error("OIDC_COMPLETION_FAILED");
       } catch {
         void clearBrowserBinding();
+        clearPendingInvite(sessionStore);
         if (lifecycle.isAttached()) setStatus("error");
       } finally {
         lifecycle.complete();
@@ -82,6 +90,7 @@ export function KakaoOidcCallback() {
                 onNavigate={() => {
                   lifecycle.leave();
                   void clearBrowserBinding();
+                  clearPendingInvite(sessionStore);
                 }}
               >로그인 화면으로 이동</Link>
             : null}

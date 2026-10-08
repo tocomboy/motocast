@@ -2,6 +2,7 @@ import Link from "next/link";
 import { MotorcycleIllustration } from "@/components/motorcycle-illustration";
 
 import { KakaoLoginButton } from "@/components/kakao-login-button";
+import { InviteTokenSweeper } from "@/components/invite-token-sweeper";
 
 export default async function LoginPage({
   searchParams,
@@ -36,6 +37,8 @@ export default async function LoginPage({
           </div>
         </div>
         {params.error ? <p className="login-error" role="alert">{messages[params.error] ?? messages.callback}</p> : null}
+        {/* A failed or refused login drops a folder invite waiting for the login return. */}
+        {params.error ? <InviteTokenSweeper clearOnMount /> : null}
         <KakaoLoginButton />
         <p className="login-footnote">카카오 이메일은 수집하지 않습니다.</p>
       </section>

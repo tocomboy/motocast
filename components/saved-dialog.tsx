@@ -13,6 +13,7 @@ export function SavedDialog({
   fullScreen = false,
   accessibleTitle = title,
   wide = false,
+  sheet = false,
 }: {
   title: string;
   onClose: () => void;
@@ -24,6 +25,8 @@ export function SavedDialog({
   accessibleTitle?: string;
   /** Two-column registration layout on desktop (Figma FPW02, FPW03). */
   wide?: boolean;
+  /** Bottom sheet for a short list of choices (#124 G11, G12, GI01). */
+  sheet?: boolean;
 }) {
   const id = useId();
   const ref = useRef<HTMLDialogElement>(null);
@@ -37,7 +40,7 @@ export function SavedDialog({
   return (
     <dialog
       ref={ref}
-      className={`${styles.dialog}${fullScreen ? ` ${styles.fullScreen}` : ""}${wide ? ` ${styles.wideDialog}` : ""}`}
+      className={`${styles.dialog}${fullScreen ? ` ${styles.fullScreen}` : ""}${wide ? ` ${styles.wideDialog}` : ""}${sheet ? ` ${styles.sheet}` : ""}`}
       aria-labelledby={fullScreen ? undefined : id}
       aria-label={fullScreen ? accessibleTitle : undefined}
       onCancel={(e) => {
@@ -48,6 +51,7 @@ export function SavedDialog({
         else onClose();
       }}
       onKeyDown={(e) => e.stopPropagation()}
+      onClick={sheet ? (e) => { if (e.target === e.currentTarget && !locked) onClose(); } : undefined}
     >
       <header>
         {onBack ? (

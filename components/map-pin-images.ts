@@ -37,6 +37,16 @@ export function savedPinImage({ kind, starred, selected }: { kind: "riding_spot"
   return { svg: wrap(48, 48, 8, 5, drawing), width: 48, height: 48, offsetX: 24, offsetY: 43 };
 }
 
+/** v2/MapPin state=avoided (367:10979, 367:11014): white body, dashed muted border and a slash. */
+export function avoidedPinImage({ kind, starred }: { kind: "riding_spot" | "restaurant"; starred: boolean }): PinImage {
+  const muted = designTokens["text-secondary"];
+  const body = kind === "restaurant"
+    ? `<rect x="3" y="7" width="26" height="26" rx="6" fill="${card}" stroke="${muted}" stroke-width="2" stroke-dasharray="3 2"/>`
+    : `<circle cx="16" cy="20" r="13" fill="${card}" stroke="${muted}" stroke-width="2" stroke-dasharray="3 2"/>`;
+  const drawing = `<path d="M11 32H21L16 38Z" fill="${muted}"/>${body}${svgText(16, 20, 13, muted, kind === "restaurant" ? "식" : "S")}<path d="M6 10L26 30" stroke="${muted}" stroke-width="2" stroke-linecap="round"/>${starred ? starBadge(20, 0) : ""}`;
+  return { svg: wrap(48, 48, 8, 5, drawing), width: 48, height: 48, offsetX: 24, offsetY: 43 };
+}
+
 /** Cluster S44 / M50 / L56: 18% ink ring and an ink circle (32 / 38 / 44) centered on the cluster. */
 export function clusterPinImage({ size, label, starred }: { size: 44 | 50 | 56; label: string; starred: boolean }): PinImage {
   const c = size / 2;
