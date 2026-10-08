@@ -204,15 +204,18 @@ export async function abandonCreate(shared: ReturnType<typeof useSharedFolders>,
   if (result.status !== "created") return token.clear() ? { kind: result.status } : { kind: "stale" };
   // Only a result made by this very request counts, like a create receipt.
   if (result.folder.createRequestId === null || result.folder.createRequestId !== pending.requestId) return token.keep(pending) ? { kind: "unknown" } : { kind: "stale" };
-  // The same follow-up as a create receipt: a successful read decides whether the folder is still there.
-  const read = await shared.refresh();
+  // The same follow-up as a create receipt, decided only by a read this step itself completed: a
+  // read skipped for another write, or failed, leaves it kept (V3 delta 9).
+  const folderId = result.folder.id;
+  const seen = await shared.recheck((list) => list.folders.some((row) => row.id === folderId));
   if (!token.live()) return { kind: "stale" };
-  const now = shared.current();
-  const list = read ?? (now.status === "ready" ? now.snapshot : null);
-  if (!list) return token.keep(pending) ? { kind: "unread" } : { kind: "stale" };
+  if (seen === "unreadable") return token.keep(pending) ? { kind: "unread" } : { kind: "stale" };
   if (!token.clear()) return { kind: "stale" };
-  return list.folders.some((row) => row.id === result.folder.id) ? { kind: "created", folderId: result.folder.id } : { kind: "created_gone" };
+  return seen === "applied" ? { kind: "created", folderId } : { kind: "created_gone" };
 }
+
+/** A keep or clear was refused: another step changed this request's state; nothing more is sent. */
+export const CREATE_STATE_CHANGED = { title: "목록을 다시 확인해 주세요", message: "다른 화면에서 이 만들기 요청의 상태가 바뀌었어요. 폴더 목록에서 다시 확인해 주세요." };
 
 /**
  * G04–G08 folder create. While the account has a kept create with an unknown result
@@ -289,7 +292,71 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
     // The confirmation ends with a single close button (deleted since, abandoned, abandon unknown).
     let ended = false;
     const createdBy = (s: SharedSnapshot) => s.folders.find((f) => f.ownerId === me && f.createRequestId === requestId);
-    const deletedSince: SharedWrite = { ok: false, reason: "rejected", title: "이 요청으로 만든 폴더는 이미 삭제됐어요", message: "같은 요청으로 만든 폴더가 그사이 삭제돼 다시 만들지 않았어요. 새로 만들려면 \"폴더 만들기\"를 다시 눌러 주세요." };
+    const deletedSince = { ok: false as const, reason: "rejected" as const, title: "이 요청으로 만든 폴더는 이미 삭제됐어요", message: "같은 요청으로 만든 폴더가 그사이 삭제돼 다시 만들지 않았어요. 새로 만들려면 \"폴더 만들기\"를 다시 눌러 주세요." };
+    // A refused keep or clear: another step changed this request; end here without any write.
+    const changed: SharedWrite = { ok: false, reason: "rejected", ...CREATE_STATE_CHANGED };
+    async function tryOnce(): Promise<SharedWrite> {
+      created.current = null;
+      const write = await shared.write({
+        rpc: "create_place_folder",
+        args: { folder_name: folderName, display_name: mine, saved_place_ids: ids, request_id: requestId },
+        success: "공유 폴더를 만들었어요. 초대 링크를 만들어 회원을 불러 보세요.",
+        receipt: (data) => {
+          const folder = parsePlaceFolder((data as { folder?: unknown })?.folder);
+          created.current = folder.id;
+          return (s) => s.folders.some((f) => f.id === folder.id);
+        },
+        // A lost reply is confirmed only by the folder carrying this request id, never by its name.
+        applied: (s) => Boolean(createdBy(s)),
+        unknownMessage: "만들어졌는지 확인했는데 새 폴더가 없어요. 입력 내용은 그대로예요.",
+        refusal: (code) => code === "PLACE_FOLDER_LIMIT"
+          ? { reason: "rejected", title: "폴더를 만들지 못했어요", message: `공유 폴더 ${PLACE_FOLDER_LIMIT}개가 모두 찼어요. 쓰지 않는 폴더를 삭제하거나 나간 뒤 만들 수 있어요.` }
+          : code === "SAVED_PLACE_NOT_FOUND"
+            ? { reason: "rejected", stale: true, title: "고른 장소가 바뀌었어요", message: "고른 내 장소 중 삭제된 것이 있어요. 선택을 확인한 뒤 다시 만들어 주세요." }
+            : code === "PLACE_FOLDER_REQUEST_ABANDONED"
+              ? { reason: "rejected", title: "이 요청은 이미 정리됐어요", message: "응답을 받지 못한 이 만들기 요청은 정리돼 다시 만들지 않았어요. 새로 만들려면 \"폴더 만들기\"를 다시 눌러 주세요." }
+            : code === "PLACE_FOLDER_REQUEST_MISMATCH"
+              ? { reason: "rejected", title: "폴더를 만들지 못했어요", message: "같은 요청으로 다른 내용을 보낼 수 없어요. 닫고 다시 만들어 주세요." }
+            : code === "INVALID_FOLDER_DISPLAY_NAME" || code === "INVALID_PLACE_FOLDER"
+              ? { reason: "rejected", title: "이름을 확인해 주세요", message: "폴더 이름은 1~40자, 내 이름은 1~20자로 입력해 주세요." }
+              : null,
+      });
+      if (!token.live()) return changed;
+      if (write.ok) {
+        if (!token.clear()) return changed;
+        const id = created.current ?? createdBy(shared.current().snapshot)?.id;
+        if (id) onCreated(id);
+        return write;
+      }
+      // The server replayed this request's receipt, but the readable list has no such folder:
+      // it was deleted since. This id is settled: nothing is kept or resent under it.
+      if (write.reason === "mismatch" && write.checked && created.current) return token.clear() ? deletedSince : changed;
+      // Unknown, or a receipt the list does not show yet: kept for this account until a read settles it.
+      if (write.reason === "unknown" || write.reason === "mismatch") {
+        uncertain = true;
+        if (!token.keep({ ...request })) return changed;
+        // A receipt whose folder a later successful read still does not show was deleted since.
+        return write.reason === "mismatch" && created.current
+          ? { ...write, stillMissing: { title: deletedSince.title, message: deletedSince.message, settle: () => { token.clear(); } } }
+          : write;
+      }
+      if (write.reason === "rejected" || write.reason === "star_limit") {
+        // A clear refusal of this try. Without an unknown try before it, nothing was made: release.
+        if (!uncertain) return token.clear() ? write : changed;
+        // After an unknown try, that send may still arrive (a timeout cancels nothing): the server
+        // ends this id instead, returning its folder if it was made, or blocking a late copy.
+        ended = true;
+        const outcome = await abandonCreate(shared, token, { ...request, abandoning: { title: write.title, message: write.message } });
+        if (outcome.kind === "stale") return changed;
+        if (outcome.kind === "created") { onCreated(outcome.folderId); return { ok: true }; }
+        if (outcome.kind === "created_gone") return deletedSince;
+        if (outcome.kind === "abandoned") return { ...write, stale: false };
+        if (outcome.kind === "unread") return { ok: false, reason: "rejected", title: write.title, message: `${write.message} 이전 요청으로 폴더가 만들어졌지만 목록을 확인하지 못했어요. 목록에서 다시 확인해 주세요.` };
+        // The abandon's own result is unknown: still kept and blocked; the list retries it.
+        return { ok: false, reason: "rejected", title: write.title, message: `${write.message} 응답을 받지 못한 이전 요청을 정리했는지 확인하지 못했어요. 목록에서 다시 확인해 주세요.` };
+      }
+      return write;
+    }
     open({
       title: "이 공유 폴더를 만들까요?",
       card: { eyebrow: "새 공유 폴더", name: folderName, line: `이 폴더에서 쓸 내 이름 · ${mine}` },
@@ -309,73 +376,20 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
         checkingMessage: "응답을 받지 못해 폴더 목록을 다시 읽는 중이에요. 같은 요청을 다시 보내지 않아요.",
         notApplied: { title: "폴더가 만들어지지 않았어요", message: "폴더 목록을 다시 확인했지만 새 폴더가 없어요. 입력 내용은 그대로예요. 다시 만들려면 \"확인하고 만들기\"를 눌러 주세요." },
         run: async () => {
-          created.current = null;
-          const write = await shared.write({
-            rpc: "create_place_folder",
-            args: { folder_name: folderName, display_name: mine, saved_place_ids: ids, request_id: requestId },
-            success: "공유 폴더를 만들었어요. 초대 링크를 만들어 회원을 불러 보세요.",
-            receipt: (data) => {
-              const folder = parsePlaceFolder((data as { folder?: unknown })?.folder);
-              created.current = folder.id;
-              return (s) => s.folders.some((f) => f.id === folder.id);
-            },
-            // A lost reply is confirmed only by the folder carrying this request id, never by its name.
-            applied: (s) => Boolean(createdBy(s)),
-            unknownMessage: "만들어졌는지 확인했는데 새 폴더가 없어요. 입력 내용은 그대로예요.",
-            refusal: (code) => code === "PLACE_FOLDER_LIMIT"
-              ? { reason: "rejected", title: "폴더를 만들지 못했어요", message: `공유 폴더 ${PLACE_FOLDER_LIMIT}개가 모두 찼어요. 쓰지 않는 폴더를 삭제하거나 나간 뒤 만들 수 있어요.` }
-              : code === "SAVED_PLACE_NOT_FOUND"
-                ? { reason: "rejected", stale: true, title: "고른 장소가 바뀌었어요", message: "고른 내 장소 중 삭제된 것이 있어요. 선택을 확인한 뒤 다시 만들어 주세요." }
-                : code === "PLACE_FOLDER_REQUEST_ABANDONED"
-                  ? { reason: "rejected", title: "이 요청은 이미 정리됐어요", message: "응답을 받지 못한 이 만들기 요청은 정리돼 다시 만들지 않았어요. 새로 만들려면 \"폴더 만들기\"를 다시 눌러 주세요." }
-                : code === "PLACE_FOLDER_REQUEST_MISMATCH"
-                  ? { reason: "rejected", title: "폴더를 만들지 못했어요", message: "같은 요청으로 다른 내용을 보낼 수 없어요. 닫고 다시 만들어 주세요." }
-                : code === "INVALID_FOLDER_DISPLAY_NAME" || code === "INVALID_PLACE_FOLDER"
-                  ? { reason: "rejected", title: "이름을 확인해 주세요", message: "폴더 이름은 1~40자, 내 이름은 1~20자로 입력해 주세요." }
-                  : null,
-          });
-          if (!token.live()) return write;
-          if (write.ok) {
-            token.clear();
-            const id = created.current ?? createdBy(shared.current().snapshot)?.id;
-            if (id) onCreated(id);
-            return write;
+          // One create-work step per account at a time (V3 delta 9): the list cannot re-check or
+          // abandon this request while this try runs.
+          if (!token.begin()) return { ok: false, reason: "blocked", title: "잠시 뒤 다시 시도해 주세요", message: "이 만들기 요청을 확인하고 있어요." };
+          try {
+            return await tryOnce();
+          } finally {
+            token.end();
           }
-          // The server replayed this request's receipt, but the readable list has no such folder:
-          // it was deleted since. This id is settled: nothing is kept or resent under it.
-          if (write.reason === "mismatch" && write.checked && created.current) { token.clear(); return deletedSince; }
-          // Unknown, or a receipt the list does not show yet: kept for this account until a read settles it.
-          if (write.reason === "unknown" || write.reason === "mismatch") {
-            uncertain = true;
-            token.keep({ ...request });
-            // A receipt whose folder a later successful read still does not show was deleted since.
-            return write.reason === "mismatch" && created.current
-              ? { ...write, stillMissing: { title: deletedSince.title, message: deletedSince.message, settle: () => { token.clear(); } } }
-              : write;
-          }
-          if (write.reason === "rejected" || write.reason === "star_limit") {
-            // A clear refusal of this try. Without an unknown try before it, nothing was made: release.
-            if (!uncertain) { token.clear(); return write; }
-            // After an unknown try, that send may still arrive (a timeout cancels nothing): the server
-            // ends this id instead, returning its folder if it was made, or blocking a late copy.
-            ended = true;
-            const outcome = await abandonCreate(shared, token, { ...request, abandoning: { title: write.title, message: write.message } });
-            if (outcome.kind === "stale") return write;
-            if (outcome.kind === "created") { onCreated(outcome.folderId); return { ok: true }; }
-            if (outcome.kind === "created_gone") return deletedSince;
-            if (outcome.kind === "abandoned") return { ...write, stale: false };
-            if (outcome.kind === "unread") return { ok: false, reason: "rejected", title: write.title, message: `${write.message} 이전 요청으로 폴더가 만들어졌지만 목록을 확인하지 못했어요. 목록에서 다시 확인해 주세요.` };
-            // The abandon's own result is unknown: still kept and blocked; the list retries it.
-            return { ok: false, reason: "rejected", title: write.title, message: `${write.message} 응답을 받지 못한 이전 요청을 정리했는지 확인하지 못했어요. 목록에서 다시 확인해 주세요.` };
-          }
-          return write;
         },
-        finalOnRefusal: (write) => (write.title === deletedSince.title || ended
+        finalOnRefusal: (write) => (write.title === deletedSince.title || write.title === CREATE_STATE_CHANGED.title || ended
           ? [{ label: "닫기", primary: true, onClick: () => undefined }]
           : null),
         onApplied: () => {
-          if (!token.live()) return;
-          token.clear();
+          if (!token.clear()) return;
           const id = created.current ?? createdBy(shared.current().snapshot)?.id;
           if (id) onCreated(id);
         },

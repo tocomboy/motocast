@@ -38,6 +38,14 @@ function snapshotFrom(tables = sampleTables()): SharedSnapshot {
     avoided: tables.avoided_places.map(parseAvoidedPlace),
   };
 }
+/** The re-reads a step owns (provider `recheck`) and plain refreshes both answer with `read`. */
+function readsAs(read: () => Promise<SharedSnapshot | null>) {
+  (mocks.shared as Record<string, unknown>).recheck = vi.fn(async (applied: (list: SharedSnapshot) => boolean) => {
+    const list = await read();
+    return list ? (applied(list) ? "applied" : "missing") : "unreadable";
+  });
+  (mocks.shared as Record<string, unknown>).refresh = vi.fn(read);
+}
 function text(node: unknown): string {
   if (typeof node === "string") return node;
   if (!node || typeof node !== "object") return "";
@@ -81,8 +89,11 @@ beforeEach(() => {
     captureSnapshot: () => () => true, recheck: vi.fn(async () => "unreadable"), write, call: vi.fn(async () => ({ data: [] })),
     // Like the provider: account-wide, outside the favorites screen.
     pendingCreate: null,
+    createBusy: false,
     captureCreate: (requestId: string) => ({
       live: () => true,
+      begin: () => !mocks.shared.createBusy,
+      end: () => undefined,
       keep: (next: { requestId: string }) => {
         const current = mocks.shared.pendingCreate as { requestId: string } | null;
         if (next.requestId !== requestId || (current && current.requestId !== requestId)) return false;
@@ -425,7 +436,7 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
     expect(text(r.root)).toContain("응답을 받지 못한 만들기 요청이 있어요. 확인이 끝날 때까지 새 폴더 만들기를 잠시 막아 둘게요.");
     expect(button(r, "＋ 공유 폴더 만들기").props.disabled).toBe(true);
     // Re-read: no folder with that id, so the same confirmation opens again with the same id.
-    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => snapshot);
+    readsAs(async () => snapshot);
     await act(async () => r.update(<SavedPlacesManager onBack={vi.fn()} onAddWaypoint={vi.fn(() => null)} routePoints={[]} />));
     await act(async () => { button(r, "다시 확인").props.onClick(); await Promise.resolve(); });
     await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
@@ -444,7 +455,7 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
   }
   const rerenderManager = (r: ReactTestRenderer) => act(async () => r.update(<SavedPlacesManager onBack={vi.fn()} onAddWaypoint={vi.fn(() => null)} routePoints={[]} />));
   async function resume(r: ReactTestRenderer) {
-    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => snapshot);
+    readsAs(async () => snapshot);
     await rerenderManager(r);
     await act(async () => { button(r, "다시 확인").props.onClick(); await Promise.resolve(); });
     await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
@@ -535,7 +546,7 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
   it("delta 7: an abandon answering 'created' opens the folder the late first send made", async () => {
     const r = await mount();
     const id = "00000000-0000-4000-8000-0000000000f9";
-    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => {
+    readsAs(async () => {
       reload({
         ...snapshot,
         folders: [...snapshot.folders, { ...snapshot.folders[0], id, name: "새 폴더" }],
@@ -552,7 +563,7 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
 
   it("delta 8b: an abandon 'created' whose folder a successful read no longer shows ends with the deleted notice", async () => {
     const r = await mount();
-    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => snapshot);
+    readsAs(async () => snapshot);
     const { popup } = await refusedAfterUnknown(r, (requestId) => ({ data: { status: "created", result: { folder: { id: "00000000-0000-4000-8000-0000000000f9", owner_id: ME, name: "새 폴더", revision: 1, create_request_id: requestId, created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z" } } }, code: null, lost: false }));
     expect(text(popup())).toContain("이 요청으로 만든 폴더는 이미 삭제됐어요");
     expect(mocks.shared.pendingCreate).toBeNull();
@@ -562,7 +573,7 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
 
   it("delta 8b: an abandon 'created' whose folder list cannot be read stays kept and blocked", async () => {
     const r = await mount();
-    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => null);
+    readsAs(async () => null);
     mocks.shared.current = () => ({ status: "error", snapshot });
     const { popup, requestId } = await refusedAfterUnknown(r, (id) => ({ data: { status: "created", result: { folder: { id: "00000000-0000-4000-8000-0000000000f9", owner_id: ME, name: "새 폴더", revision: 1, create_request_id: id, created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z" } } }, code: null, lost: false }));
     expect(text(popup())).toContain("이전 요청으로 폴더가 만들어졌지만 목록을 확인하지 못했어요.");
@@ -642,7 +653,7 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
     await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
     const requestId = write.mock.calls[0][0].args.request_id as string;
     const id = "00000000-0000-4000-8000-0000000000f9";
-    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => {
+    readsAs(async () => {
       reload({
         ...snapshot,
         folders: [...snapshot.folders, { ...snapshot.folders[0], id, name: "새 폴더", createRequestId: requestId }],

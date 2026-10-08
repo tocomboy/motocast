@@ -220,6 +220,54 @@ describe("SharedFoldersProvider", () => {
     });
   }
 
+  it("delta 9: two re-checks of R1 finishing in reverse order with R2 kept in between never revive R1", async () => {
+    await mount();
+    const pending = (n: string) => ({ requestId: `95000000-0000-0000-0000-0000000000${n}`, folderName: n, displayName: "에이", ids: [], abandoning: null });
+    const r1 = pending("a1");
+    await act(async () => { controls.captureCreate(r1.requestId).keep(r1); });
+    // Two re-checks of R1 start from the same kept state.
+    const first = controls.captureCreate(r1.requestId);
+    const second = controls.captureCreate(r1.requestId);
+    let results: boolean[] = [];
+    // The second finishes first and settles R1; then R2 is kept.
+    await act(async () => { results.push(second.clear()); });
+    const r2 = pending("b2");
+    await act(async () => { results.push(controls.captureCreate(r2.requestId).keep(r2)); });
+    // The first finishes last: it can neither revive nor clear anything.
+    await act(async () => { results.push(first.keep(r1), first.clear()); });
+    expect(results).toEqual([true, true, false, false]);
+    expect(controls.pendingCreate).toEqual(r2);
+    // Same order without R2: the late first token still cannot bring R1 back.
+    await act(async () => { controls.captureCreate(r2.requestId).clear(); });
+    const third = controls.captureCreate(r1.requestId);
+    await act(async () => { controls.captureCreate(r1.requestId).keep(r1); });
+    await act(async () => { controls.captureCreate(r1.requestId).clear(); });
+    results = [];
+    await act(async () => { results.push(third.keep(r1)); });
+    expect(results).toEqual([false]);
+    expect(controls.pendingCreate).toBeNull();
+  });
+
+  it("delta 9: an abandon 'created' whose read was skipped by another write does not settle as deleted", async () => {
+    await mount();
+    const kept = { requestId: "95000000-0000-0000-0000-0000000000c1", folderName: "새 폴더", displayName: "에이", ids: [], abandoning: { title: "폴더를 만들지 못했어요", message: "" } };
+    const token = controls.captureCreate(kept.requestId);
+    await act(async () => { token.keep(kept); });
+    // Another write holds the list read while the abandon answers "created".
+    let releaseWrite!: (value: unknown) => void;
+    mocks.rpc
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseWrite = resolve; }))
+      .mockResolvedValueOnce({ data: { status: "created", result: { folder: { id: "00000000-0000-4000-8000-0000000000f9", owner_id: ME, name: "새 폴더", revision: 1, create_request_id: kept.requestId, created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z" } } }, error: null });
+    let writing!: Promise<SharedWrite>;
+    await act(async () => { writing = controls.write({ rpc: "x", args: {}, success: "", receipt: () => () => true, applied: () => true, unknownMessage: "" }); });
+    let outcome!: { kind: string };
+    await act(async () => { outcome = await abandonCreate(controls, token, kept); });
+    expect(outcome.kind).not.toBe("created_gone");
+    expect(outcome.kind).toBe("unread");
+    expect(controls.pendingCreate).toMatchObject({ requestId: kept.requestId });
+    await act(async () => { releaseWrite({ data: [{}], error: null }); await writing; });
+  });
+
   it("drops the former account's folders when another account signs in", async () => {
     await mount();
     expect(controls.snapshot.folders).toHaveLength(3);

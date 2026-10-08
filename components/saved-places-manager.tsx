@@ -21,6 +21,7 @@ import { avoidedFor, avoidPopup, folderNameOf, folderPickerPopup, unavoidPopup, 
 import { SharedPlaceDetail } from "./shared-place-detail";
 import { abandonCreate, FolderCreate, SharedFolderList } from "./shared-folder-list";
 import type { PendingCreate } from "@/lib/places/shared-folders";
+import type { CreateToken, SharedSnapshot } from "./shared-folders-provider";
 import { SharedFolderDetail } from "./shared-folder-detail";
 import { AvoidedPlacesView } from "./avoided-places";
 import {
@@ -106,16 +107,24 @@ function SavedPlacesManagerContent({
   const [listNotice, setListNotice] = useState("");
   // A create kept with an unknown result (account-wide, shared folders provider): new creates wait.
   const unresolvedCreate = shared.pendingCreate;
-  const [createCheck, setCreateCheck] = useState<"idle" | "checking" | "unreadable" | "abandon-unknown">("idle");
+  const [createCheck, setCreateCheck] = useState<"idle" | "checking" | "unreadable" | "abandon-unknown" | "changed">("idle");
   /** Read only: the folder carrying the kept request id opens; otherwise the same confirmation reopens. */
   async function recheckCreate(pending: PendingCreate) {
-    setCreateCheck("checking");
-    // Bound to this account and id: a reply after an account change changes nothing.
+    // Bound to this account, this id and the kept slot as it is now; one create-work step at a time.
     const token = shared.captureCreate(pending.requestId);
+    if (!token.begin()) return;
+    setCreateCheck("checking");
+    try {
+      await recheckCreateWith(token, pending);
+    } finally {
+      token.end();
+    }
+  }
+  async function recheckCreateWith(token: CreateToken, pending: PendingCreate) {
     if (pending.abandoning) {
       // The abandon of this id is not confirmed: send it again (same id, same answer).
       const outcome = await abandonCreate(shared, token, pending);
-      if (outcome.kind === "stale") return;
+      if (outcome.kind === "stale") { setCreateCheck("changed"); return; }
       if (outcome.kind === "unknown") { setCreateCheck("abandon-unknown"); return; }
       if (outcome.kind === "unread") { setCreateCheck("unreadable"); return; }
       setCreateCheck("idle");
@@ -124,15 +133,15 @@ function SavedPlacesManagerContent({
       else setListNotice(`${pending.abandoning.title}. ${pending.abandoning.message}`);
       return;
     }
-    const read = await shared.refresh();
-    if (!token.live()) return;
-    const now = shared.current();
-    const list = read ?? (now.status === "ready" ? now.snapshot : null);
-    if (!list) { setCreateCheck("unreadable"); return; }
+    // Decided only by a read this step itself completed; a skipped or failed read decides nothing.
+    const madeBy = (list: SharedSnapshot) => list.folders.find((row) => row.ownerId === list.userId && row.createRequestId === pending.requestId);
+    const seen = await shared.recheck((list) => Boolean(madeBy(list)));
+    if (!token.live()) { setCreateCheck("changed"); return; }
+    if (seen === "unreadable") { setCreateCheck("unreadable"); return; }
     setCreateCheck("idle");
-    const folder = list.folders.find((row) => row.ownerId === list.userId && row.createRequestId === pending.requestId);
-    if (folder) {
-      if (!token.clear()) return;
+    if (seen === "applied") {
+      const folder = madeBy(shared.current().snapshot);
+      if (!folder || !token.clear()) { setCreateCheck("changed"); return; }
       setOpenFolder({ id: folder.id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." });
       return;
     }
@@ -619,11 +628,12 @@ function SavedPlacesManagerContent({
                 <p>응답을 받지 못한 만들기 요청이 있어요. 확인이 끝날 때까지 새 폴더 만들기를 잠시 막아 둘게요.</p>
               </>}
               {createCheck === "unreadable" ? <p role="alert">목록을 확인하지 못했어요. 잠시 뒤 다시 확인해 주세요.</p> : null}
+              {createCheck === "changed" ? <p role="alert">목록을 다시 확인해 주세요. 다른 화면에서 이 만들기 요청의 상태가 바뀌었어요.</p> : null}
               {createCheck === "abandon-unknown" ? <p role="alert">정리됐는지 확인하지 못했어요. 잠시 뒤 다시 확인해 주세요.</p> : null}
-              <button type="button" className={styles.secondaryButton} disabled={createCheck === "checking" || shared.busy} onClick={() => void recheckCreate(unresolvedCreate)}>{createCheck === "checking" ? "확인하는 중…" : "다시 확인"}</button>
+              <button type="button" className={styles.secondaryButton} disabled={createCheck === "checking" || shared.busy || shared.createBusy} onClick={() => void recheckCreate(unresolvedCreate)}>{createCheck === "checking" ? "확인하는 중…" : "다시 확인"}</button>
             </div>
           ) : null}
-          <SharedFolderList onOpen={(id) => { setListNotice(""); setOpenFolder({ id }); }} onCreate={() => setCreatingFolder(true)} createBlocked={Boolean(unresolvedCreate)} />
+          <SharedFolderList onOpen={(id) => { setListNotice(""); setOpenFolder({ id }); }} onCreate={() => setCreatingFolder(true)} createBlocked={Boolean(unresolvedCreate) || shared.createBusy} />
           {creatingFolder ? <FolderCreate
             onClose={() => { setCreatingFolder(false); setCreateCheck("idle"); }}
             onCreated={(id) => { setCreatingFolder(false); setOpenFolder({ id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." }); }} /> : null}

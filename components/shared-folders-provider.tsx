@@ -90,15 +90,22 @@ type Controls = {
    * reloads): new creates wait until a read settles it; only the same request may be resent.
    */
   pendingCreate: PendingCreate | null;
+  /** One create-work step (create write, abandon, re-check) runs at a time per account. */
+  createBusy: boolean;
   /**
-   * Binds one create request to this account: every async step that keeps or clears it goes through
-   * the token, which refuses once the account changed or another request is kept (V3 delta 8).
+   * Binds one create request to this account and to the kept slot as it is now (V3 delta 8, 9).
+   * Every keep or clear moves the slot to a new epoch, so a token captured before it can no longer
+   * keep or clear anything; the token that did it moves with it.
    */
   captureCreate: (requestId: string) => CreateToken;
 };
 
-/** `live`: same account as when captured. `keep` / `clear` return whether they applied. */
-export type CreateToken = { live: () => boolean; keep: (pending: PendingCreate) => boolean; clear: () => boolean };
+/**
+ * `live`: same account, and no keep or clear happened since this token last acted.
+ * `begin` / `end`: take and give back the account's single create-work slot.
+ * `keep` / `clear` return whether they applied; a refusal means another step changed the slot.
+ */
+export type CreateToken = { live: () => boolean; begin: () => boolean; end: () => void; keep: (pending: PendingCreate) => boolean; clear: () => boolean };
 const Context = createContext<Controls | null>(null);
 
 async function readAll(): Promise<SharedSnapshot> {
@@ -160,6 +167,9 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
   const [accountEpoch, setAccountEpoch] = useState(0);
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null);
   const pendingRef = useRef<PendingCreate | null>(null);
+  const pendingEpoch = useRef(0);
+  const createWork = useRef<symbol | null>(null);
+  const [createBusy, setCreateBusy] = useState(false);
   const mounted = useRef(false);
   const generation = useRef(0);
   const session = useRef(0);
@@ -218,9 +228,12 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
           setAccountEpoch(session.current);
           snapshotRef.current = empty;
           setSnapshot(empty);
-          // Another account (or none) never inherits a kept create.
+          // Another account (or none) never inherits a kept create or its running step.
           pendingRef.current = null;
+          pendingEpoch.current += 1;
+          createWork.current = null;
           setPendingCreate(null);
+          setCreateBusy(false);
           setBusy(false);
           setVerifying(false);
           setMessage("");
@@ -373,23 +386,41 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
   }, []);
 
   const captureCreate = useCallback((requestId: string): CreateToken => {
-    const epoch = session.current;
-    const live = () => mounted.current && epoch === session.current;
-    const set = (next: PendingCreate | null) => { pendingRef.current = next; setPendingCreate(next); };
+    const account = session.current;
+    let epoch = pendingEpoch.current;
+    const id = Symbol(requestId);
+    const live = () => mounted.current && account === session.current && epoch === pendingEpoch.current;
+    // A change moves the slot to a new epoch; only the token that made it follows.
+    const set = (next: PendingCreate | null) => {
+      pendingEpoch.current += 1;
+      epoch = pendingEpoch.current;
+      pendingRef.current = next;
+      setPendingCreate(next);
+    };
     return {
       live,
+      begin: () => {
+        if (!live() || createWork.current) return false;
+        createWork.current = id;
+        setCreateBusy(true);
+        return true;
+      },
+      end: () => {
+        if (createWork.current !== id) return;
+        createWork.current = null;
+        if (mounted.current) setCreateBusy(false);
+      },
       keep: (next) => {
         if (!live() || next.requestId !== requestId) return false;
         if (pendingRef.current && pendingRef.current.requestId !== requestId) return false;
         set(next);
         return true;
       },
-      // Nothing kept is already clear; another kept request is never touched.
+      // Another kept request is never touched; an already empty slot needs no change.
       clear: () => {
         if (!live()) return false;
-        if (!pendingRef.current) return true;
-        if (pendingRef.current.requestId !== requestId) return false;
-        set(null);
+        if (pendingRef.current && pendingRef.current.requestId !== requestId) return false;
+        if (pendingRef.current) set(null);
         return true;
       },
     };
@@ -412,8 +443,9 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
     write,
     call,
     pendingCreate,
+    createBusy,
     captureCreate,
-  }), [accountEpoch, enabled, status, snapshot, busy, verifying, message, load, refresh, reloadStars, captureSnapshot, recheck, write, call, pendingCreate, captureCreate]);
+  }), [accountEpoch, enabled, status, snapshot, busy, verifying, message, load, refresh, reloadStars, captureSnapshot, recheck, write, call, pendingCreate, createBusy, captureCreate]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
