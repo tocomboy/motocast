@@ -25,6 +25,8 @@ type Props = {
   connected: boolean;
   disabled?: boolean;
   favorites?: PlaceFavoritesControls;
+  /** Each time a waypoint place picker opens. */
+  onPickerOpen?: () => void;
   selectionRevision: number;
   waypoints: EditableWaypoint[];
   onChange: (waypoints: EditableWaypoint[]) => void;
@@ -37,6 +39,7 @@ export function OrderedWaypointEditor({
   connected,
   disabled = false,
   favorites,
+  onPickerOpen,
   selectionRevision,
   waypoints,
   onChange,
@@ -201,6 +204,7 @@ export function OrderedWaypointEditor({
                   presentation="waypoint"
                   favorites={favorites}
                   onActivate={() => onPlaceTarget?.(waypoint.id)}
+                  onOpen={onPickerOpen}
                   onSelect={(place) => onChange(waypoints.map((item) => item.id === waypoint.id ? { ...item, place } : item))}
                 />
                 <div className="waypoint-actions">

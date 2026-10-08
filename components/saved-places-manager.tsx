@@ -19,7 +19,7 @@ import { useSavedPlaces, type SavedPlaceWrite } from "./saved-places-provider";
 import { useSharedFolders } from "./shared-folders-provider";
 import { avoidedFor, avoidPopup, folderNameOf, folderPickerPopup, unavoidPopup, sharedStarPopup, useSharedPopup } from "./shared-place-actions";
 import { SharedPlaceDetail } from "./shared-place-detail";
-import { FolderCreate, SharedFolderList } from "./shared-folder-list";
+import { FolderCreate, SharedFolderList, type PendingCreate } from "./shared-folder-list";
 import { SharedFolderDetail } from "./shared-folder-detail";
 import { AvoidedPlacesView } from "./avoided-places";
 import {
@@ -103,6 +103,27 @@ function SavedPlacesManagerContent({
   const [openFolder, setOpenFolder] = useState<{ id: string; notice?: string } | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [listNotice, setListNotice] = useState("");
+  // A create closed with an unknown result: new creates wait until a re-read settles it.
+  const [unresolvedCreate, setUnresolvedCreate] = useState<PendingCreate | null>(null);
+  const [resumeCreate, setResumeCreate] = useState(false);
+  const [createCheck, setCreateCheck] = useState<"idle" | "checking" | "unreadable">("idle");
+  /** Read only: the folder carrying the kept request id opens; otherwise the same confirmation reopens. */
+  async function recheckCreate(pending: PendingCreate) {
+    setCreateCheck("checking");
+    const read = await shared.refresh();
+    const now = shared.current();
+    const list = read ?? (now.status === "ready" ? now.snapshot : null);
+    if (!list) { setCreateCheck("unreadable"); return; }
+    setCreateCheck("idle");
+    const folder = list.folders.find((row) => row.ownerId === list.userId && row.createRequestId === pending.requestId);
+    if (folder) {
+      setUnresolvedCreate(null);
+      setOpenFolder({ id: folder.id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." });
+      return;
+    }
+    setResumeCreate(true);
+    setCreatingFolder(true);
+  }
   const [tab, setTab] = useState<"starred" | SavedPlaceKind>("riding_spot");
   const [province, setProvince] = useState("");
   const [spots, setSpots] = useState(true);
@@ -572,8 +593,20 @@ function SavedPlacesManagerContent({
       {section === "folders" ? (
         <div className={styles.sectionBody}>
           {listNotice ? <p className={styles.noticeCard} role="status">{listNotice}</p> : null}
-          <SharedFolderList onOpen={(id) => { setListNotice(""); setOpenFolder({ id }); }} onCreate={() => setCreatingFolder(true)} />
-          {creatingFolder ? <FolderCreate onClose={() => setCreatingFolder(false)} onCreated={(id) => { setCreatingFolder(false); setOpenFolder({ id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." }); }} /> : null}
+          {unresolvedCreate && !creatingFolder ? (
+            <div className={styles.noticeCard} role="status">
+              <strong>폴더를 만들었는지 확인하고 있어요</strong>
+              <p>응답을 받지 못한 만들기 요청이 있어요. 확인이 끝날 때까지 새 폴더 만들기를 잠시 막아 둘게요.</p>
+              {createCheck === "unreadable" ? <p role="alert">목록을 확인하지 못했어요. 잠시 뒤 다시 확인해 주세요.</p> : null}
+              <button type="button" className={styles.secondaryButton} disabled={createCheck === "checking" || shared.busy} onClick={() => void recheckCreate(unresolvedCreate)}>{createCheck === "checking" ? "확인하는 중…" : "다시 확인"}</button>
+            </div>
+          ) : null}
+          <SharedFolderList onOpen={(id) => { setListNotice(""); setOpenFolder({ id }); }} onCreate={() => setCreatingFolder(true)} createBlocked={Boolean(unresolvedCreate)} />
+          {creatingFolder ? <FolderCreate
+            resume={resumeCreate ? unresolvedCreate : null}
+            onUnresolved={(pending) => { setCreatingFolder(false); setResumeCreate(false); setCreateCheck("idle"); setUnresolvedCreate(pending); }}
+            onClose={() => { setCreatingFolder(false); setResumeCreate(false); }}
+            onCreated={(id) => { setUnresolvedCreate(null); setResumeCreate(false); setCreatingFolder(false); setOpenFolder({ id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." }); }} /> : null}
         </div>
       ) : section === "avoided" ? (
         <div className={styles.sectionBody}><AvoidedPlacesView startView={startView} /></div>

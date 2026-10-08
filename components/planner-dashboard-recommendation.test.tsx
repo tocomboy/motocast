@@ -6,6 +6,7 @@ import type { CollectionCourse } from "@/lib/collections/contracts";
 import { mealTargetAt, type RecommendationRequest } from "@/lib/planner/restaurant-recommendation";
 
 const mocks = vi.hoisted(() => ({
+  reads: [] as string[],
   invoke: vi.fn(),
   rpc: vi.fn(),
   savedRows: [] as unknown[],
@@ -50,6 +51,7 @@ vi.mock("@/lib/supabase/browser", () => ({
     rpc: mocks.rpc,
     // Table-aware reads: my saved places, and nothing shared or avoided (§7.4 re-check reads too).
     from: (table: string) => {
+      mocks.reads.push(table);
       const rows = () => (table === "saved_place_entries" ? mocks.savedRows : []);
       const builder = {
         select() { return builder; },
@@ -61,7 +63,7 @@ vi.mock("@/lib/supabase/browser", () => ({
       };
       return builder;
     },
-    auth: { onAuthStateChange: (listener: (event: string, session: { user: { id: string } } | null) => void) => { mocks.authListeners.push(listener); return { data: { subscription: { unsubscribe: vi.fn() } } }; } },
+    auth: { getSession: async () => ({ data: { session: { user: { id: "00000000-0000-4000-8000-0000000000a1" } } } }), onAuthStateChange: (listener: (event: string, session: { user: { id: string } } | null) => void) => { mocks.authListeners.push(listener); return { data: { subscription: { unsubscribe: vi.fn() } } }; } },
   }),
 }));
 
@@ -308,6 +310,19 @@ describe("PlannerDashboard restaurant recommendation", () => {
     // The summary without a calculated route has no entry at all.
     expect(buttons(renderer.root, "음식점 추천 받기")).toHaveLength(0);
     await act(async () => renderer.unmount());
+  });
+
+  it("parity 4: opening the recommendation re-reads the folder settings", async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(<PlannerDashboard connected initialCourse={course} navigationMode="memory" />, { createNodeMock }); });
+    await flush();
+    await chooseSchedule(renderer);
+    await act(async () => renderer.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }));
+    await flush();
+    const before = mocks.reads.filter((table) => table === "place_folder_preferences").length;
+    await act(async () => buttons(renderer.root, "음식점 추천 받기")[0].props.onClick());
+    await flush();
+    expect(mocks.reads.filter((table) => table === "place_folder_preferences").length).toBe(before + 1);
   });
 
   it("requests with the displayed basis, then adds the chosen restaurant as a meal without any further call", async () => {

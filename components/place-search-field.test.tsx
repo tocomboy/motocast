@@ -84,6 +84,25 @@ describe("PlaceSearchField collection application", () => {
     await act(async () => renderer.unmount());
   });
 
+  it("parity 4: calls onOpen each time the picker opens, not on focus", async () => {
+    vi.stubGlobal("window", { scrollTo: vi.fn(), setTimeout, location: { href: "http://localhost/" } });
+    const onOpen = vi.fn();
+    const onActivate = vi.fn();
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<PlaceSearchField label="출발" accessibleLabel="출발지" placeholder="검색" selected={null} onSelect={vi.fn()} onActivate={onActivate} onOpen={onOpen} favorites={favoriteControls([])} />, { createNodeMock: () => ({ showModal: vi.fn(), close: vi.fn(), focus: vi.fn() }) });
+    });
+    const trigger = renderer.root.findAllByType("button").find((button) => button.props["aria-haspopup"] === "dialog")!;
+    await act(async () => trigger.props.onFocus());
+    expect(onActivate).toHaveBeenCalledTimes(1);
+    expect(onOpen).not.toHaveBeenCalled();
+    await act(async () => trigger.props.onClick());
+    await act(async () => trigger.props.onClick());
+    expect(onOpen).toHaveBeenCalledTimes(2);
+    await act(async () => renderer.unmount());
+    vi.unstubAllGlobals();
+  });
+
   it("offers favorite selection without any management or registration controls", async () => {
     vi.stubGlobal("window", { scrollTo: vi.fn(), setTimeout, location: { href: "http://localhost/" } });
     const controls = favoriteControls([favorite(1, "a", "첫 장소")]);

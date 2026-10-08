@@ -48,7 +48,8 @@ let write: ReturnType<typeof vi.fn>;
 let refresh: ReturnType<typeof vi.fn>;
 let recheck: ReturnType<typeof vi.fn>;
 const searched: PlaceSearchResult = { ...place("k-new", "양서 손두부"), roadAddress: "경기 양평군 양서면 1", category: "음식점", phone: null, placeUrl: null } as PlaceSearchResult;
-const newRow = () => parseSharedPlace(sharedRow(40, F1, "k-new", "양서 손두부", { kind: "restaurant" }));
+const newRaw = () => sharedRow(40, F1, "k-new", "양서 손두부", { kind: "restaurant" });
+const newRow = () => parseSharedPlace(newRaw());
 
 async function mount() {
   let r!: ReactTestRenderer;
@@ -89,7 +90,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("adding a place to a shared folder (G13b)", () => {
   it("V3-6: shows a saved place whose star hit the limit as a partial result", async () => {
     write
-      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; })
+      .mockImplementationOnce(async (spec: { receipt: (data: unknown) => unknown }) => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; spec.receipt({ status: "added", shared_place: newRaw() }); return { ok: true }; })
       .mockResolvedValueOnce({ ok: false, reason: "star_limit", title: "자주 찾는 장소에 추가하지 못했어요", message: "이미 10곳이 별표돼 있어요." });
     const r = await mount();
     await addPlace(r, searched, true);
@@ -104,7 +105,7 @@ describe("adding a place to a shared folder (G13b)", () => {
 
   it("V3-6: an unknown star is shown as unknown and resolved by a re-read, never by sending it again", async () => {
     write
-      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; })
+      .mockImplementationOnce(async (spec: { receipt: (data: unknown) => unknown }) => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; spec.receipt({ status: "added", shared_place: newRaw() }); return { ok: true }; })
       .mockResolvedValueOnce({ ok: false, reason: "unknown", checked: false, title: "", message: "" });
     const r = await mount();
     await addPlace(r, searched, true);
@@ -116,7 +117,7 @@ describe("adding a place to a shared folder (G13b)", () => {
     expect(write).toHaveBeenCalledTimes(2);
   });
 
-  it("V3-6: a save confirmed only by the read-only re-check still sends the star", async () => {
+  it("parity 3: a save confirmed only by a re-read sends no star and says so", async () => {
     write.mockImplementationOnce(async () => ({ ok: false, reason: "unknown", checked: false, title: "목록을 확인하지 못했어요", message: "", recheck: () => true }));
     recheck.mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return "applied"; });
     const r = await mount();
@@ -124,7 +125,18 @@ describe("adding a place to a shared folder (G13b)", () => {
     const popup = () => dialogs(r, "폴더에 저장할까요?").at(-1)!;
     await act(async () => { buttons(popup(), "확인하고 저장")[0].props.onClick(); await Promise.resolve(); });
     await act(async () => { buttons(popup(), "목록 다시 확인")[0].props.onClick(); await Promise.resolve(); });
-    expect(write.mock.calls.map((call) => call[0].rpc)).toEqual(["add_shared_place", "set_shared_place_star"]);
+    expect(write.mock.calls.map((call) => call[0].rpc)).toEqual(["add_shared_place"]);
+    expect(text(r.root)).toContain("자주 찾는 장소에는 추가하지 않았어요");
+    expect(text(r.root)).toContain("장소는 폴더에 저장했어요. 응답을 받지 못해 별표 요청은 보내지 않았어요. 장소 상세에서 다시 추가할 수 있어요.");
+  });
+
+  it("parity 3: a save whose reply was lost but the provider's re-read shows it sends no star", async () => {
+    write.mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; });
+    const r = await mount();
+    await addPlace(r, searched, true);
+    await act(async () => { buttons(dialogs(r, "폴더에 저장할까요?").at(-1)!, "확인하고 저장")[0].props.onClick(); await Promise.resolve(); });
+    expect(write.mock.calls.map((call) => call[0].rpc)).toEqual(["add_shared_place"]);
+    expect(text(r.root)).toContain("자주 찾는 장소에는 추가하지 않았어요");
   });
 
   it("delta A: an already_exists reply confirmed only by a later re-read shows the duplicate notice and stars nothing", async () => {
@@ -149,7 +161,7 @@ describe("adding a place to a shared folder (G13b)", () => {
 
   it("delta B: one re-check at a time, a stale answer is ignored, and starring the place elsewhere clears the card", async () => {
     write
-      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; })
+      .mockImplementationOnce(async (spec: { receipt: (data: unknown) => unknown }) => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; spec.receipt({ status: "added", shared_place: newRaw() }); return { ok: true }; })
       .mockResolvedValueOnce({ ok: false, reason: "unknown", checked: false, title: "", message: "" });
     const r = await mount();
     await addPlace(r, searched, true);
@@ -172,7 +184,7 @@ describe("adding a place to a shared folder (G13b)", () => {
 
   it("delta B: a star-limit card goes away once the place is starred", async () => {
     write
-      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; })
+      .mockImplementationOnce(async (spec: { receipt: (data: unknown) => unknown }) => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; spec.receipt({ status: "added", shared_place: newRaw() }); return { ok: true }; })
       .mockResolvedValueOnce({ ok: false, reason: "star_limit", title: "", message: "" });
     const r = await mount();
     await addPlace(r, searched, true);
@@ -185,7 +197,7 @@ describe("adding a place to a shared folder (G13b)", () => {
 
   it("delta 2-2: a resolved star issue stays resolved after unstarring, and a later change replaces the success notice", async () => {
     write
-      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; })
+      .mockImplementationOnce(async (spec: { receipt: (data: unknown) => unknown }) => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; spec.receipt({ status: "added", shared_place: newRaw() }); return { ok: true }; })
       .mockResolvedValueOnce({ ok: false, reason: "star_limit", title: "", message: "" });
     const r = await mount();
     const rerender = () => act(async () => r.update(<SharedFolderDetail folderId={F1} wide={false} disabled={false} onBack={vi.fn()} onAddWaypoint={vi.fn()} />));
@@ -201,7 +213,7 @@ describe("adding a place to a shared folder (G13b)", () => {
 
   it("delta 2-2: the re-check success notice gives way once the place is unstarred or deleted", async () => {
     write
-      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; })
+      .mockImplementationOnce(async (spec: { receipt: (data: unknown) => unknown }) => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; spec.receipt({ status: "added", shared_place: newRaw() }); return { ok: true }; })
       .mockResolvedValueOnce({ ok: false, reason: "unknown", checked: false, title: "", message: "" });
     const r = await mount();
     const rerender = () => act(async () => r.update(<SharedFolderDetail folderId={F1} wide={false} disabled={false} onBack={vi.fn()} onAddWaypoint={vi.fn()} />));
@@ -221,9 +233,9 @@ describe("adding a place to a shared folder (G13b)", () => {
     const second = { ...searched, kakaoPlaceId: "k-second", name: "두번째 식당" };
     const secondRow = () => parseSharedPlace(sharedRow(41, F1, "k-second", "두번째 식당", { kind: "restaurant" }));
     write
-      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; return { ok: true }; })
+      .mockImplementationOnce(async (spec: { receipt: (data: unknown) => unknown }) => { snapshot = { ...snapshot, places: [...snapshot.places, newRow()] }; spec.receipt({ status: "added", shared_place: newRaw() }); return { ok: true }; })
       .mockResolvedValueOnce({ ok: false, reason: "unknown", checked: false, title: "", message: "" })
-      .mockImplementationOnce(async () => { snapshot = { ...snapshot, places: [...snapshot.places, secondRow()] }; return { ok: true }; });
+      .mockImplementationOnce(async (spec: { receipt: (data: unknown) => unknown }) => { snapshot = { ...snapshot, places: [...snapshot.places, secondRow()] }; spec.receipt({ status: "added", shared_place: sharedRow(41, F1, "k-second", "두번째 식당", { kind: "restaurant" }) }); return { ok: true }; });
     const r = await mount();
     await addPlace(r, searched, true);
     await act(async () => { buttons(dialogs(r, "폴더에 저장할까요?").at(-1)!, "확인하고 저장")[0].props.onClick(); await Promise.resolve(); });

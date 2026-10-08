@@ -80,12 +80,14 @@ export function SharedFolderDetail({
   const me = snapshot.userId;
 
   /** The star asked for in G13b, sent once after the save; its own result is kept apart (V3-6). */
-  async function starNewPlace(row: SharedPlace | null, label: string) {
+  async function starNewPlace(row: SharedPlace | null, label: string, unconfirmed: boolean) {
     // G18a–c: "장소를 폴더에 저장했어요 · <place> · <folder>" stays above the star result card.
     const saved = `${label} · ${folder?.name ?? ""}`;
     const run = ++starRun.current;
     setStarDone(null);
     setStarChecking(false);
+    // Saved without a reply: which row the server kept is not known, so no star is sent.
+    if (unconfirmed) { setStarIssue({ placeId: null, saved, title: "자주 찾는 장소에는 추가하지 않았어요", message: "장소는 폴더에 저장했어요. 응답을 받지 못해 별표 요청은 보내지 않았어요. 장소 상세에서 다시 추가할 수 있어요.", unknown: false }); return; }
     if (!row) { setStarIssue({ placeId: null, saved, title: "자주 찾는 장소에는 추가하지 못했어요", message: "장소는 폴더에 저장했어요. 별표할 장소를 목록에서 찾지 못했어요. 장소 상세에서 다시 추가해 주세요.", unknown: false }); return; }
     const result = await starAfterAdd(shared, row);
     if (run !== starRun.current) return;
@@ -291,14 +293,14 @@ export function SharedFolderDetail({
           variant={{ kind: "folder-add", folderName: folder.name, members: members.length }}
           onClose={() => setAdding(null)}
           onSave={(place, alias, kind, starred) => open(addSharedPopup(shared, folderId, { place, alias, kind, starred }, {
-            onSaved: (row) => {
+            onSaved: (row, unconfirmed) => {
               setAdding(null);
               // A new save ends the previous save's star result and success notice.
               setStarIssue(null);
               setStarDone(null);
               starRun.current += 1;
               if (row) setTab(row.kind);
-              if (starred) void starNewPlace(row, row ? sharedName(row) : alias.trim() || place.name);
+              if (starred) void starNewPlace(row, row ? sharedName(row) : alias.trim() || place.name, unconfirmed);
             },
             onBackToFolder: () => setAdding(null),
             onExisting: (row) => open({

@@ -395,6 +395,54 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
     });
   }
 
+  it("parity 1: closing an unknown create keeps its request id, blocks new creates, and a re-read resumes it", async () => {
+    const r = await mount();
+    await startCreate(r);
+    write.mockImplementationOnce(async () => ({ ok: false, reason: "unknown", checked: false, title: "목록을 확인하지 못했어요", message: "", recheck: () => false }));
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "폴더 만들기").props.onClick());
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "취소").props.onClick());
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+    // Back on the list, with the notice and no new create.
+    expect(r.root.findAll((n) => n.type === "input" && n.props.placeholder === "예: 주말 라이더")).toHaveLength(0);
+    expect(text(r.root)).toContain("폴더를 만들었는지 확인하고 있어요");
+    expect(text(r.root)).toContain("응답을 받지 못한 만들기 요청이 있어요. 확인이 끝날 때까지 새 폴더 만들기를 잠시 막아 둘게요.");
+    expect(button(r, "＋ 공유 폴더 만들기").props.disabled).toBe(true);
+    // Re-read: no folder with that id, so the same confirmation opens again with the same id.
+    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => snapshot);
+    await act(async () => r.update(<SavedPlacesManager onBack={vi.fn()} onAddWaypoint={vi.fn(() => null)} routePoints={[]} />));
+    await act(async () => { button(r, "다시 확인").props.onClick(); await Promise.resolve(); });
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "폴더 만들기").props.onClick());
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(write.mock.calls[1][0].args).toEqual(write.mock.calls[0][0].args);
+    await act(async () => r.unmount());
+  });
+
+  it("parity 1: a re-read that finds the folder made by the kept request id opens it", async () => {
+    const r = await mount();
+    await startCreate(r);
+    write.mockImplementationOnce(async () => ({ ok: false, reason: "unknown", checked: false, title: "목록을 확인하지 못했어요", message: "", recheck: () => false }));
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "폴더 만들기").props.onClick());
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "취소").props.onClick());
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+    const requestId = write.mock.calls[0][0].args.request_id as string;
+    const id = "00000000-0000-4000-8000-0000000000f9";
+    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => {
+      reload({
+        ...snapshot,
+        folders: [...snapshot.folders, { ...snapshot.folders[0], id, name: "새 폴더", createRequestId: requestId }],
+        members: [...snapshot.members, { ...snapshot.members[0], folderId: id, memberId: ME, role: "owner", displayName: "바람개비" }],
+        preferences: [...snapshot.preferences, { ...snapshot.preferences[0], folderId: id, enabled: true }],
+      });
+      return snapshot;
+    });
+    await act(async () => r.update(<SavedPlacesManager onBack={vi.fn()} onAddWaypoint={vi.fn(() => null)} routePoints={[]} />));
+    await act(async () => { button(r, "다시 확인").props.onClick(); await Promise.resolve(); });
+    expect(text(r.root)).toContain("공유 폴더를 만들었어요.");
+    expect(write).toHaveBeenCalledTimes(1);
+    await act(async () => r.unmount());
+  });
+
   it("delta 3-3: a replayed receipt for a folder deleted since ends with its own notice and resends nothing", async () => {
     const r = await mount();
     await startCreate(r);

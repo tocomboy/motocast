@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { LineIcon } from "@/components/line-icon";
 import { ConfirmPopup, type Pending } from "./confirm-popup";
 import { SavedDialog } from "./saved-dialog";
@@ -23,7 +23,7 @@ import styles from "./saved-places-manager.module.css";
 const savedAddress = (row: SavedPlaceEntry) => (isRegionOnlyPlace(row.place) ? `${row.place.name} · 상세 주소 없음` : row.place.roadAddress ?? row.place.address);
 
 /** G01 / G02 / G03 / GW04: the folders I own or joined, at most 20. */
-export function SharedFolderList({ onOpen, onCreate }: { onOpen: (folderId: string) => void; onCreate: () => void }) {
+export function SharedFolderList({ onOpen, onCreate, createBlocked = false }: { onOpen: (folderId: string) => void; onCreate: () => void; createBlocked?: boolean }) {
   const shared = useSharedFolders();
   const { snapshot } = shared;
   const me = snapshot.userId;
@@ -77,7 +77,7 @@ export function SharedFolderList({ onOpen, onCreate }: { onOpen: (folderId: stri
         </ul>
       )}
       <footer className={styles.registerFooter}>
-        <button type="button" className="primary-button" disabled={!ready || shared.busy || full} onClick={onCreate}>＋ 공유 폴더 만들기</button>
+        <button type="button" className="primary-button" disabled={!ready || shared.busy || full || createBlocked} onClick={onCreate}>＋ 공유 폴더 만들기</button>
         {!ready ? <p className={styles.footerHint}>목록을 확인한 뒤 만들 수 있어요.</p> : full ? <p className={styles.footerHint}>폴더 한도가 차서 만들 수 없어요.</p> : null}
       </footer>
     </>
@@ -180,17 +180,43 @@ export function leavingWhat(name: string, displayName: string, places: number) {
 }
 
 /** G04–G08: name, my folder name, optional copies of my places, then the final confirmation. */
-export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCreated: (folderId: string) => void }) {
+/** A create whose result is unknown: its id and exact input are kept so only the same request is resent. */
+export type PendingCreate = { requestId: string; folderName: string; displayName: string; ids: string[] };
+
+export function FolderCreate({ onClose, onCreated, resume = null, onUnresolved }: {
+  onClose: () => void;
+  onCreated: (folderId: string) => void;
+  /** Reopens the confirmation of a kept unknown create with the same id and input. */
+  resume?: PendingCreate | null;
+  /** The confirmation was closed while its result was unknown. */
+  onUnresolved: (pending: PendingCreate) => void;
+}) {
   const shared = useSharedFolders();
   const saved = useSavedPlaces();
   const { open, close, popup } = useSharedPopup();
   const [leaving, setLeaving] = useState<Pending<SharedSnapshot> | null>(null);
-  const [name, setName] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [name, setName] = useState(resume?.folderName ?? "");
+  const [displayName, setDisplayName] = useState(resume?.displayName ?? "");
   const [touched, setTouched] = useState({ name: false, displayName: false });
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(resume?.ids ?? []));
   const nameId = useId();
   const created = useRef<string | null>(null);
+  // Set while the latest try's result is unknown; closing the confirmation then hands it to the list.
+  const unresolved = useRef<PendingCreate | null>(null);
+  const popupOpen = popup !== null;
+  useEffect(() => {
+    if (popupOpen || !unresolved.current) return;
+    const pending = unresolved.current;
+    unresolved.current = null;
+    onUnresolved(pending);
+  }, [popupOpen, onUnresolved]);
+  useEffect(() => {
+    if (!resume) return;
+    const task = window.setTimeout(() => submit(resume), 0);
+    return () => window.clearTimeout(task);
+    // Opens once for the kept request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const { snapshot } = shared;
   const full = snapshot.folders.length >= PLACE_FOLDER_LIMIT;
   const blocked = shared.busy || shared.status !== "ready" || saved.status !== "ready";
@@ -212,17 +238,18 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
       ],
     });
   }
-  function submit() {
+  function submit(kept: PendingCreate | null = null) {
     setTouched({ name: true, displayName: true });
-    if (nameIssue || displayIssue || full) return;
-    const folderName = name.trim();
-    const mine = displayName.trim();
-    const ids = saved.places.filter((row) => selected.has(row.id)).map((row) => row.id);
+    if (!kept && (nameIssue || displayIssue || full)) return;
+    const folderName = kept?.folderName ?? name.trim();
+    const mine = kept?.displayName ?? displayName.trim();
+    const ids = kept?.ids ?? saved.places.filter((row) => selected.has(row.id)).map((row) => row.id);
     const me = snapshot.userId;
     const count = snapshot.folders.length;
     // One request id per confirmation: every try in it (FP39 re-check, "확인하고 만들기") reuses it,
     // so a resent or browser-retried request makes one folder (contract §6, idempotent create).
-    const requestId = crypto.randomUUID();
+    const requestId = kept?.requestId ?? crypto.randomUUID();
+    const request: PendingCreate = { requestId, folderName, displayName: mine, ids };
     const createdBy = (s: SharedSnapshot) => s.folders.find((f) => f.ownerId === me && f.createRequestId === requestId);
     const deletedSince: SharedWrite = { ok: false, reason: "rejected", title: "이 요청으로 만든 폴더는 이미 삭제됐어요", message: "같은 요청으로 만든 폴더가 그사이 삭제돼 다시 만들지 않았어요. 새로 만들려면 \"폴더 만들기\"를 다시 눌러 주세요." };
     open({
@@ -245,6 +272,7 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
         notApplied: { title: "폴더가 만들어지지 않았어요", message: "폴더 목록을 다시 확인했지만 새 폴더가 없어요. 입력 내용은 그대로예요. 다시 만들려면 \"확인하고 만들기\"를 눌러 주세요." },
         run: async () => {
           created.current = null;
+          unresolved.current = null;
           const write = await shared.write({
             rpc: "create_place_folder",
             args: { folder_name: folderName, display_name: mine, saved_place_ids: ids, request_id: requestId },
@@ -267,6 +295,8 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
                   ? { reason: "rejected", title: "이름을 확인해 주세요", message: "폴더 이름은 1~40자, 내 이름은 1~20자로 입력해 주세요." }
                   : null,
           });
+          // Unknown or a receipt the list does not show yet: closing now keeps this request.
+          if (!write.ok && (write.reason === "unknown" || write.reason === "mismatch")) unresolved.current = request;
           if (write.ok) {
             const id = created.current ?? createdBy(shared.current().snapshot)?.id;
             if (id) onCreated(id);
@@ -279,6 +309,7 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
         },
         finalOnRefusal: (write) => (write.title === deletedSince.title ? [{ label: "닫기", primary: true, onClick: () => undefined }] : null),
         onApplied: () => {
+          unresolved.current = null;
           const id = created.current ?? createdBy(shared.current().snapshot)?.id;
           if (id) onCreated(id);
         },
@@ -313,7 +344,7 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
       </div>
       <div className={styles.waypointFooter}>
         <p className={styles.selectionSummary}>라이딩 스팟 <b className={styles.countNumber}>{spots}</b> · 식당 <b className={styles.countNumber}>{restaurants}</b> 선택</p>
-        <button type="button" className="primary-button" disabled={blocked || full || Boolean(nameIssue) || Boolean(displayIssue)} onClick={submit}>
+        <button type="button" className="primary-button" disabled={blocked || full || Boolean(nameIssue) || Boolean(displayIssue)} onClick={() => submit()}>
           {total ? `폴더 만들기 · 장소 ${total}곳` : "빈 폴더로 만들기"}
         </button>
         {full ? <p className={styles.footerHint}>폴더 한도가 차서 만들 수 없어요.</p> : nameIssue || displayIssue ? <p className={styles.footerHint}>폴더 이름과 내 이름을 입력하면 만들 수 있어요. 장소는 고르지 않아도 돼요.</p> : null}

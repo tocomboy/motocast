@@ -915,6 +915,13 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     recommendationResultRef.current = null;
     setRecommendationStale(false);
     setRecommendationOpen(true);
+    // Folders switched off on another device show here (names, SRC02b basis); the server reads its own.
+    if (sharedFolders.enabled) void sharedFolders.refresh();
+  }
+
+  // Stars changed on another device show each time a place picker opens (SRC01 favorites).
+  function reloadPickerStars() {
+    if (sharedFolders.enabled) void sharedFolders.reloadStars();
   }
 
   function closeRecommendation() {
@@ -1069,10 +1076,11 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
             </section>
             <fieldset className="planner-fields" disabled={calculating} aria-busy={calculating}>
             <section className="planner-stop is-origin">
-              {connected ? <PlaceSearchField key={`origin-${placeSelectionRevision}`} label="출발" accessibleLabel="출발지" placeholder="예: 팔당역" required selected={places.origin} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("origin")} onSelect={(place) => selectEndpoint("origin", place)} /> : <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>}
+              {connected ? <PlaceSearchField key={`origin-${placeSelectionRevision}`} label="출발" accessibleLabel="출발지" placeholder="예: 팔당역" required selected={places.origin} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("origin")} onOpen={reloadPickerStars} onSelect={(place) => selectEndpoint("origin", place)} /> : <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>}
             </section>
             <section className="planner-waypoint-stops">
               <OrderedWaypointEditor
+                onPickerOpen={reloadPickerStars}
                 key={favoriteControls.accountEpoch}
                 connected={connected}
                 disabled={calculating}
@@ -1087,7 +1095,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
               <p className="sr-only" role="status" aria-live="polite">{waypointStatus}</p>
             </section>
             <section className="planner-stop is-destination">
-              {connected ? <PlaceSearchField key={`destination-${placeSelectionRevision}`} label="도착" accessibleLabel="도착지" placeholder="예: 양평역" required selected={places.destination} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("destination")} onSelect={(place) => selectEndpoint("destination", place)} /> : <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>}
+              {connected ? <PlaceSearchField key={`destination-${placeSelectionRevision}`} label="도착" accessibleLabel="도착지" placeholder="예: 양평역" required selected={places.destination} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("destination")} onOpen={reloadPickerStars} onSelect={(place) => selectEndpoint("destination", place)} /> : <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>}
             </section>
             <button className="route-reset-button" type="button" disabled={calculating} onClick={startNewRoute}>경로 초기화</button>
             </fieldset>

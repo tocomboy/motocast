@@ -335,7 +335,8 @@ export function addSharedPopup(
   shared: Actions,
   folderId: string,
   draft: { place: PlaceSearchResult; alias: string; kind: SavedPlaceKind; starred: boolean },
-  done: { onSaved: (row: SharedPlace | null) => void; onBackToFolder: () => void; onExisting: (row: SharedPlace) => void },
+  /** `unconfirmed`: no reply was read, only the re-read list shows the place; the star is not sent. */
+  done: { onSaved: (row: SharedPlace | null, unconfirmed: boolean) => void; onBackToFolder: () => void; onExisting: (row: SharedPlace) => void },
 ): SharedPending {
   const snapshot = shared.current().snapshot;
   const folder = folderNameOf(snapshot, folderId);
@@ -350,7 +351,7 @@ export function addSharedPopup(
   const finish = () => {
     const saved = receiptRow ?? shared.current().snapshot.places.find((p) => p.folderId === folderId && p.place.kakaoPlaceId === draft.place.kakaoPlaceId) ?? null;
     if (duplicate && saved) { done.onExisting(saved); return false; }
-    done.onSaved(saved);
+    done.onSaved(saved, receiptRow === null);
     return true;
   };
   return {

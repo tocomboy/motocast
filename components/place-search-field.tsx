@@ -28,6 +28,8 @@ type Props = {
   selected: PlaceSearchResult | null;
   onSelect: (place: PlaceSearchResult | null) => void;
   onActivate?: () => void;
+  /** Each time the picker opens (not on focus): e.g. re-read stars changed on another device. */
+  onOpen?: () => void;
   favorites?: Pick<PlaceFavoritesControls, "favorites" | "status" | "message" | "retry">;
   presentation?: "default" | "waypoint";
   selectionActionLabel?: string;
@@ -35,7 +37,7 @@ type Props = {
   onOpenSavedPlaces?: () => void;
 };
 
-export function PlaceSearchField({ label, accessibleLabel, placeholder, required = false, autoFocus = false, selected, onSelect, onActivate, favorites, presentation = "default", selectionActionLabel, onOpenSavedPlaces }: Props) {
+export function PlaceSearchField({ label, accessibleLabel, placeholder, required = false, autoFocus = false, selected, onSelect, onActivate, favorites, presentation = "default", selectionActionLabel, onOpenSavedPlaces, onOpen }: Props) {
   const titleId = useId();
   const statusId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -58,6 +60,7 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
 
   function openPicker() {
     onActivate?.();
+    onOpen?.();
     setQuery(selected?.name ?? "");
     setResults([]);
     setShowResults(false);
