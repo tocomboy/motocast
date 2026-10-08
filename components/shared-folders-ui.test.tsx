@@ -504,12 +504,14 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
 
   // The first send times out (its result unknown, the list without it), then the retry is refused,
   // so the request is abandoned on the server with `abandon` as the answer.
-  async function refusedAfterUnknown(r: ReactTestRenderer, abandon: { data: unknown; code: string | null; lost: boolean }) {
+  type AbandonReply = { data: unknown; code: string | null; lost: boolean };
+  // The abandon's answer may depend on the request id it was sent with.
+  async function refusedAfterUnknown(r: ReactTestRenderer, reply: AbandonReply | ((requestId: string) => AbandonReply)) {
     await startCreate(r);
     write
       .mockImplementationOnce(async () => ({ ok: false, reason: "unknown", checked: true, title: "변경을 확인하지 못했어요", message: "" }))
       .mockImplementationOnce(async () => ({ ok: false, reason: "rejected", title: "폴더를 만들지 못했어요", message: "공유 폴더 20개가 모두 찼어요." }));
-    const call = vi.fn<(rpc: string, args: Record<string, unknown>) => Promise<typeof abandon>>(async () => abandon);
+    const call = vi.fn<(rpc: string, args: Record<string, unknown>) => Promise<AbandonReply>>(async (_rpc, args) => (typeof reply === "function" ? reply(args.request_id as string) : reply));
     (mocks.shared as { call: typeof call }).call = call;
     await rerenderManager(r);
     const popup = () => dialogWith(r, "이 공유 폴더를 만들까요?");
@@ -542,9 +544,40 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
       });
       return snapshot;
     });
-    await refusedAfterUnknown(r, { data: { status: "created", result: { folder: { id, owner_id: ME, name: "새 폴더", revision: 1, create_request_id: null, created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z" } } }, code: null, lost: false });
+    await refusedAfterUnknown(r, (requestId) => ({ data: { status: "created", result: { folder: { id: id, owner_id: ME, name: "새 폴더", revision: 1, create_request_id: requestId, created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z" } } }, code: null, lost: false }));
     expect(text(r.root)).toContain("공유 폴더를 만들었어요.");
     expect(mocks.shared.pendingCreate).toBeNull();
+    await act(async () => r.unmount());
+  });
+
+  it("delta 8b: an abandon 'created' whose folder a successful read no longer shows ends with the deleted notice", async () => {
+    const r = await mount();
+    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => snapshot);
+    const { popup } = await refusedAfterUnknown(r, (requestId) => ({ data: { status: "created", result: { folder: { id: "00000000-0000-4000-8000-0000000000f9", owner_id: ME, name: "새 폴더", revision: 1, create_request_id: requestId, created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z" } } }, code: null, lost: false }));
+    expect(text(popup())).toContain("이 요청으로 만든 폴더는 이미 삭제됐어요");
+    expect(mocks.shared.pendingCreate).toBeNull();
+    expect(text(r.root)).not.toContain("공유 폴더를 만들었어요.");
+    await act(async () => r.unmount());
+  });
+
+  it("delta 8b: an abandon 'created' whose folder list cannot be read stays kept and blocked", async () => {
+    const r = await mount();
+    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => null);
+    mocks.shared.current = () => ({ status: "error", snapshot });
+    const { popup, requestId } = await refusedAfterUnknown(r, (id) => ({ data: { status: "created", result: { folder: { id: "00000000-0000-4000-8000-0000000000f9", owner_id: ME, name: "새 폴더", revision: 1, create_request_id: id, created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z" } } }, code: null, lost: false }));
+    expect(text(popup())).toContain("이전 요청으로 폴더가 만들어졌지만 목록을 확인하지 못했어요.");
+    expect(mocks.shared.pendingCreate).toMatchObject({ requestId });
+    await act(async () => button(popup(), "닫기").props.onClick());
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+    expect(button(r, "＋ 공유 폴더 만들기").props.disabled).toBe(true);
+    await act(async () => r.unmount());
+  });
+
+  it("delta 8b: an abandon 'created' carrying another request id is not accepted", async () => {
+    const r = await mount();
+    const { requestId } = await refusedAfterUnknown(r, () => ({ data: { status: "created", result: { folder: { id: "00000000-0000-4000-8000-0000000000f9", owner_id: ME, name: "새 폴더", revision: 1, create_request_id: "00000000-0000-4000-8000-00000000ffff", created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z" } } }, code: null, lost: false }));
+    expect(text(r.root)).not.toContain("공유 폴더를 만들었어요.");
+    expect(mocks.shared.pendingCreate).toMatchObject({ requestId, abandoning: { title: "폴더를 만들지 못했어요" } });
     await act(async () => r.unmount());
   });
 

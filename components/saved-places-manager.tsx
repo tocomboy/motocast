@@ -117,6 +117,7 @@ function SavedPlacesManagerContent({
       const outcome = await abandonCreate(shared, token, pending);
       if (outcome.kind === "stale") return;
       if (outcome.kind === "unknown") { setCreateCheck("abandon-unknown"); return; }
+      if (outcome.kind === "unread") { setCreateCheck("unreadable"); return; }
       setCreateCheck("idle");
       if (outcome.kind === "created") setOpenFolder({ id: outcome.folderId, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." });
       else if (outcome.kind === "created_gone") setListNotice("이 요청으로 만든 폴더는 이미 삭제됐어요. 새로 만들려면 \"＋ 공유 폴더 만들기\"를 눌러 주세요.");

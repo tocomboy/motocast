@@ -185,8 +185,11 @@ export function leavingWhat(name: string, displayName: string, places: number) {
 /** G04–G08: name, my folder name, optional copies of my places, then the final confirmation. */
 export type { PendingCreate };
 
-/** `stale`: the account changed (or another request is kept) meanwhile; nothing was applied. */
-export type AbandonOutcome = { kind: "created"; folderId: string } | { kind: "created_gone" } | { kind: "abandoned" } | { kind: "unknown" } | { kind: "stale" };
+/**
+ * `stale`: the account changed (or another request is kept) meanwhile; nothing was applied.
+ * `unread`: the server says it was made, but the folder list could not be read to confirm it; kept.
+ */
+export type AbandonOutcome = { kind: "created"; folderId: string } | { kind: "created_gone" } | { kind: "abandoned" } | { kind: "unknown" } | { kind: "unread" } | { kind: "stale" };
 /**
  * Ends a kept create on the server (contract §6): its stored result or a tombstone that stops a late
  * copy of it. A write, but the same id may be sent again with the same answer. The kept request is
@@ -199,10 +202,16 @@ export async function abandonCreate(shared: ReturnType<typeof useSharedFolders>,
   if (!code && !lost) { try { result = parseAbandonResult(data); } catch { result = null; } }
   if (!result) return token.keep(pending) ? { kind: "unknown" } : { kind: "stale" };
   if (result.status !== "created") return token.clear() ? { kind: result.status } : { kind: "stale" };
-  // The folder made by that request: read the list so it can open.
-  await shared.refresh();
-  if (!token.live() || !token.clear()) return { kind: "stale" };
-  return { kind: "created", folderId: result.folder.id };
+  // Only a result made by this very request counts, like a create receipt.
+  if (result.folder.createRequestId === null || result.folder.createRequestId !== pending.requestId) return token.keep(pending) ? { kind: "unknown" } : { kind: "stale" };
+  // The same follow-up as a create receipt: a successful read decides whether the folder is still there.
+  const read = await shared.refresh();
+  if (!token.live()) return { kind: "stale" };
+  const now = shared.current();
+  const list = read ?? (now.status === "ready" ? now.snapshot : null);
+  if (!list) return token.keep(pending) ? { kind: "unread" } : { kind: "stale" };
+  if (!token.clear()) return { kind: "stale" };
+  return list.folders.some((row) => row.id === result.folder.id) ? { kind: "created", folderId: result.folder.id } : { kind: "created_gone" };
 }
 
 /**
@@ -355,6 +364,7 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
             if (outcome.kind === "created") { onCreated(outcome.folderId); return { ok: true }; }
             if (outcome.kind === "created_gone") return deletedSince;
             if (outcome.kind === "abandoned") return { ...write, stale: false };
+            if (outcome.kind === "unread") return { ok: false, reason: "rejected", title: write.title, message: `${write.message} 이전 요청으로 폴더가 만들어졌지만 목록을 확인하지 못했어요. 목록에서 다시 확인해 주세요.` };
             // The abandon's own result is unknown: still kept and blocked; the list retries it.
             return { ok: false, reason: "rejected", title: write.title, message: `${write.message} 응답을 받지 못한 이전 요청을 정리했는지 확인하지 못했어요. 목록에서 다시 확인해 주세요.` };
           }
