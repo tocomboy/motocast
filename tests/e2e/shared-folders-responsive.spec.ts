@@ -40,11 +40,12 @@ test.beforeAll(() => {
  * back to "name" and adds the same module stylesheet with plain names. Global styles come from
  * the production build.
  */
-const moduleCss = readFileSync(path.join(process.cwd(), "components", "saved-places-manager.module.css"), "utf8")
-  .replace(/:global\(([^)]+)\)/g, "$1");
+const moduleSource = (file: string) => readFileSync(path.join(process.cwd(), "components", file), "utf8").replace(/:global\(([^)]+)\)/g, "$1");
+const favoritesCss = moduleSource("saved-places-manager.module.css");
+const recommendationCss = moduleSource("restaurant-recommendation-dialog.module.css");
 const plainClasses = (html: string) => html.replace(/\b_([A-Za-z][A-Za-z0-9]*)_[0-9a-f]{6}\b/g, "$1");
 
-async function setProductionMarkup(page: Page, rawBody: string) {
+async function setProductionMarkup(page: Page, rawBody: string, moduleCss = favoritesCss) {
   const body = `<style>${moduleCss}</style>${plainClasses(rawBody)}`;
   await page.goto("/#home");
   const stylesheetUrls = await page.locator('link[rel="stylesheet"][href]').evaluateAll((links) => links.map((link) => (link as HTMLLinkElement).href));
@@ -122,6 +123,25 @@ for (const viewport of [
       await expect(page.getByRole("button", { name: /새벽바이크님 권한 편집 가능/ })).toBeVisible();
       expect(await page.locator("dialog[open]").evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth)).toBe(true);
       await page.screenshot({ path: testInfo.outputPath(`members-${viewport.width}.png`) });
+    });
+
+    test("restaurant recommendations show sources, exclusions and the settings-changed notice (SRC02, SRC02b, SRC03)", async ({ page }, testInfo) => {
+      for (const name of ["recommendResult", "recommendChanged", "recommendNone"]) {
+        await setProductionMarkup(page, markup[name], recommendationCss);
+        await textScale(page);
+        await openLastDialog(page);
+        expect(await page.locator("dialog[open]").evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth), `${name} overflows`).toBe(true);
+        await page.screenshot({ path: testInfo.outputPath(`${name}-${viewport.width}.png`) });
+      }
+      await setProductionMarkup(page, markup.recommendResult, recommendationCss);
+      await openLastDialog(page);
+      await expect(page.getByText("공유 · 주말 라이더 외 1")).toBeVisible();
+      await expect(page.getByText("기피 장소 2곳과 꺼 둔 공유 폴더 1개(동호회 정모 코스)의 식당은 후보에서 뺐어요.")).toBeVisible();
+      await expect(page.getByRole("button", { name: "공유 폴더 설정" })).toBeVisible();
+      await setProductionMarkup(page, markup.recommendChanged, recommendationCss);
+      await openLastDialog(page);
+      await expect(page.getByText("공유 폴더 설정이 바뀌었어요")).toBeVisible();
+      await expect(page.getByRole("button", { name: "다시 추천 받기" })).toBeVisible();
     });
 
     test("an invite opened before login hides the folder and removes the token from the address", async ({ page }, testInfo) => {

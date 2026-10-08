@@ -311,7 +311,7 @@ function InputView(viewProps: {
 }
 
 /** SRC02/SRC03: what was left out (avoided places, folders switched off) and the folder settings link. */
-function Exclusions({ view, names, ending = "후보에서 뺐어요.", onFolderSettings }: { view: RecommendationView; names: string[]; ending?: string; onFolderSettings: (() => void) | null }) {
+export function Exclusions({ view, names, ending = "후보에서 뺐어요.", onFolderSettings }: { view: RecommendationView; names: string[]; ending?: string; onFolderSettings: (() => void) | null }) {
   const text = exclusionText(view.response, names, ending);
   const truncated = view.response.coverage.sharedReadTruncated;
   if (!text && !truncated && !onFolderSettings) return null;
@@ -322,7 +322,7 @@ function Exclusions({ view, names, ending = "후보에서 뺐어요.", onFolderS
   </div>;
 }
 
-function StatusView({ stateTitleRef, tone, role, icon, title, text, note, extra, conditions, actions }: {
+export function StatusView({ stateTitleRef, tone, role, icon, title, text, note, extra, conditions, actions }: {
   stateTitleRef: RefObject<HTMLHeadingElement | null>;
   tone: "neutral" | "danger" | "tint";
   role: "status" | "alert";
@@ -349,7 +349,7 @@ function StatusView({ stateTitleRef, tone, role, icon, title, text, note, extra,
   </>;
 }
 
-function ResultView({ view, selection, input, settingsChanged, refused, applying, disabledFolderNames, folderName, onFolderSettings, onRecommendAgain, onSelect, onChangeConditions, onConfirm }: {
+export function ResultView({ view, selection, input, settingsChanged, refused, applying, disabledFolderNames, folderName, onFolderSettings, onRecommendAgain, onSelect, onChangeConditions, onConfirm }: {
   view: RecommendationView;
   selection: RecommendationSelection;
   input: RecommendationInput;
