@@ -39,6 +39,26 @@ export function captureInviteFragment(browser: Browser): InviteCapture {
   return INVITE_TOKEN_PATTERN.test(token) ? { status: "token", token } : { status: "invalid" };
 }
 
+/**
+ * Runs inline in the document head, before the Next.js runtime reads `window.location`
+ * (it would otherwise put the fragment back when it records the first URL). It moves the
+ * fragment into a short-lived, non-enumerable property that the invite page takes once.
+ */
+export const BOOT_CAPTURE_KEY = "__motocastFolderInviteFragment";
+export const FOLDER_INVITE_BOOT_SCRIPT = `(function(){try{var l=window.location;if(l.pathname!==${JSON.stringify(INVITE_PATH)}||!l.hash||l.hash==="#")return;var h=l.hash,c=true;try{window.history.replaceState(window.history.state,"",l.pathname+l.search)}catch(e){c=false}Object.defineProperty(window,${JSON.stringify(BOOT_CAPTURE_KEY)},{value:{hash:h,cleaned:c},configurable:true})}catch(e){}})();`;
+
+/** Takes what the boot script captured (once), or captures now when it did not run. */
+export function takeInviteCapture(browser: Browser & Record<string, unknown>): InviteCapture {
+  const early = browser[BOOT_CAPTURE_KEY] as { hash?: unknown; cleaned?: unknown } | undefined;
+  if (early) {
+    try { delete browser[BOOT_CAPTURE_KEY]; } catch { /* configurable; nothing else to do */ }
+    if (early.cleaned !== true) return { status: "cleanup-failed" };
+    const token = typeof early.hash === "string" && early.hash.startsWith("#t=") ? early.hash.slice(3) : "";
+    return INVITE_TOKEN_PATTERN.test(token) ? { status: "token", token } : { status: "invalid" };
+  }
+  return captureInviteFragment(browser);
+}
+
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
 
 /** Stores the token for the same-tab login return. `false` means storage failed: nothing was stored. */

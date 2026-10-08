@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { LineIcon, StarMark } from "@/components/line-icon";
 import { KakaoMapCanvas, type MapDisplayState } from "./kakao-map-canvas";
 import { SavedDialog } from "./saved-dialog";
@@ -62,6 +62,12 @@ export function SharedFolderDetail({
   const [status, setStatus] = useState(notice ?? "");
   // Success text from a write made on this screen replaces the entry notice.
   const [baseline] = useState(shared.message);
+  // Opening a folder re-reads it (memo G10: entry, refresh and right after a save).
+  const { refresh } = shared;
+  useEffect(() => {
+    const task = window.setTimeout(() => void refresh(), 0);
+    return () => window.clearTimeout(task);
+  }, [refresh, folderId]);
   const { snapshot } = shared;
   const folder = snapshot.folders.find((row) => row.id === folderId);
   const me = snapshot.userId;

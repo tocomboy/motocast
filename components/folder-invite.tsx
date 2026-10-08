@@ -9,6 +9,7 @@ import { withClientTimeout } from "@/lib/planner/client-timeout";
 import {
   captureInviteFragment,
   consumePendingInvite,
+  takeInviteCapture,
   INVITE_PATH,
   OPEN_FOLDER_STORAGE_KEY,
   savePendingInvite,
@@ -31,7 +32,7 @@ import styles from "./folder-invite.module.css";
  * A later `#t=` on the same page (hashchange) is captured the same way.
  */
 let captured: InviteCapture | null =
-  typeof window !== "undefined" && window.location.pathname === INVITE_PATH ? captureInviteFragment(window) : null;
+  typeof window !== "undefined" && window.location.pathname === INVITE_PATH ? takeInviteCapture(window as unknown as Parameters<typeof takeInviteCapture>[0]) : null;
 const listeners = new Set<() => void>();
 function subscribe(listener: () => void) {
   const onHash = () => {

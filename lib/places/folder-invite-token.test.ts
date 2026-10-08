@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  BOOT_CAPTURE_KEY,
   captureInviteFragment,
   clearPendingInvite,
   consumePendingInvite,
@@ -7,6 +8,8 @@ import {
   PENDING_INVITE_KEY,
   PENDING_INVITE_TTL_MS,
   savePendingInvite,
+  FOLDER_INVITE_BOOT_SCRIPT,
+  takeInviteCapture,
 } from "./folder-invite-token";
 
 const TOKEN = "A".repeat(20) + "-_" + "b".repeat(21);
@@ -85,5 +88,37 @@ describe("login return storage", () => {
     const storage = memoryStorage();
     expect(savePendingInvite(() => storage, "short")).toBe(false);
     expect(storage.setItem).not.toHaveBeenCalled();
+  });
+});
+
+describe("boot capture before the app runtime", () => {
+  const run = (hash: string, replaceThrows = false) => {
+    const win: Record<string, unknown> & { location: { hash: string; pathname: string; search: string }; history: { state: null; replaceState: (s: unknown, t: string, url: string) => void } } = {
+      location: { hash, pathname: "/folder-invite", search: "" },
+      history: { state: null, replaceState: (_s, _t, url) => { if (replaceThrows) throw new Error("SecurityError"); win.location.hash = url.includes("#") ? url.slice(url.indexOf("#")) : ""; } },
+    };
+    new Function("window", FOLDER_INVITE_BOOT_SCRIPT)(win);
+    return win;
+  };
+
+  it("removes the fragment and hands the token to the page once", () => {
+    const win = run(`#t=${TOKEN}`);
+    expect(win.location.hash).toBe("");
+    expect(Object.keys(win)).not.toContain(BOOT_CAPTURE_KEY);
+    expect(takeInviteCapture(win as never)).toEqual({ status: "token", token: TOKEN });
+    expect(win[BOOT_CAPTURE_KEY]).toBeUndefined();
+    expect(takeInviteCapture(win as never)).toEqual({ status: "none" });
+  });
+
+  it("reports a failed removal so the page sends nothing", () => {
+    const win = run(`#t=${TOKEN}`, true);
+    expect(takeInviteCapture(win as never)).toEqual({ status: "cleanup-failed" });
+  });
+
+  it("ignores other pages", () => {
+    const win = run(`#t=${TOKEN}`);
+    const other = { ...win, location: { hash: `#t=${TOKEN}`, pathname: "/share", search: "" } };
+    new Function("window", FOLDER_INVITE_BOOT_SCRIPT)(other);
+    expect(other.location.hash).toBe(`#t=${TOKEN}`);
   });
 });

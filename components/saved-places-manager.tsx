@@ -50,7 +50,7 @@ type Pending = PopupContent<SavedPlaceEntry[]>;
 type Item =
   | { key: string; source: "saved"; row: SavedPlaceEntry; label: string; starred: boolean }
   | { key: string; source: "shared"; row: SharedPlace; label: string; starred: boolean };
-type Section = "places" | "folders" | "avoided";
+export type Section = "places" | "folders" | "avoided";
 /** A place ready for the waypoint form, from my places or a folder. */
 type WaypointCandidate = { name: string; placeName: string; kind: SavedPlaceKind; province: string | null; starred: boolean; place: PlaceSearchResult; current: () => boolean };
 
@@ -83,6 +83,8 @@ type SavedPlacesManagerProps = {
   routePath?: { latitude: number; longitude: number }[];
   disabled?: boolean;
   initialWaypoint?: { role: WaypointRole; dwellMinutes: number };
+  /** Which of "장소 / 공유 폴더 / 기피 장소" opens first. */
+  initialSection?: Section;
 };
 
 function SavedPlacesManagerContent({
@@ -92,11 +94,12 @@ function SavedPlacesManagerContent({
   routePath,
   disabled = false,
   initialWaypoint,
+  initialSection = "places",
 }: SavedPlacesManagerProps) {
   const saved = useSavedPlaces();
   const shared = useSharedFolders();
   const sharedPopup = useSharedPopup();
-  const [section, setSection] = useState<Section>("places");
+  const [section, setSection] = useState<Section>(initialSection);
   const [openFolder, setOpenFolder] = useState<{ id: string; notice?: string } | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [listNotice, setListNotice] = useState("");
@@ -150,6 +153,13 @@ function SavedPlacesManagerContent({
     const task = window.setTimeout(() => { setSection("folders"); setOpenFolder({ id: folderId }); }, 0);
     return () => window.clearTimeout(task);
   }, []);
+  // Entering 즐겨찾기 re-reads folders: other members' and other devices' changes appear here.
+  const { refresh, enabled: sharedEnabled } = shared;
+  useEffect(() => {
+    if (!sharedEnabled) return;
+    const task = window.setTimeout(() => void refresh(), 0);
+    return () => window.clearTimeout(task);
+  }, [refresh, sharedEnabled]);
   // A personal star change re-reads my combined star list (personal + shared).
   const { reloadStars } = shared;
   useEffect(() => { if (saved.status === "ready") void reloadStars(); }, [saved.places, saved.status, reloadStars]);
@@ -822,7 +832,7 @@ function SavedPlacesManagerContent({
 }
 
 /** G00b / G00c / GW03b: choose which folders show; only the changed folders are sent (desired state). */
-function folderPickerPopup(shared: ReturnType<typeof useSharedFolders>, enabledNow: readonly string[]): Omit<PopupContent<SharedSnapshot>, "key"> {
+export function folderPickerPopup(shared: ReturnType<typeof useSharedFolders>, enabledNow: readonly string[]): Omit<PopupContent<SharedSnapshot>, "key"> {
   const snapshot = shared.current().snapshot;
   let draft = new Set(enabledNow);
   const changes = () => snapshot.folders
