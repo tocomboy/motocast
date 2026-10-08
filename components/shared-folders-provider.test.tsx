@@ -161,7 +161,7 @@ describe("SharedFoldersProvider", () => {
     await act(async () => {
       result = await controls.write({ rpc: "x", args: {}, success: "", receipt: () => () => false, applied: () => false, unknownMessage: "" });
     });
-    expect(result).toMatchObject({ ok: false, reason: "mismatch", checked: true });
+    expect(result).toMatchObject({ ok: false, reason: "mismatch", checked: true, title: "변경이 목록에 아직 보이지 않아요", message: "변경은 저장됐지만 목록에 아직 반영되지 않았어요. 변경은 다시 보내지 않아요. 잠시 뒤 목록을 다시 확인해 주세요.", stillMissing: { title: "변경이 목록에 아직 보이지 않아요", message: "변경은 저장됐지만 목록에 아직 반영되지 않았어요. 변경은 다시 보내지 않아요. 잠시 뒤 목록을 다시 확인해 주세요." } });
   });
 
   it("refuses a second write while one runs and blocks writes before the first read", async () => {

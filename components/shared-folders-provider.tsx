@@ -279,9 +279,11 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
         ok: false,
         reason: "mismatch",
         checked: readable,
-        title: "목록에서 변경을 확인하지 못했어요",
-        message: "변경 요청은 접수됐지만 최신 목록에 아직 보이지 않아요. 같은 요청은 다시 보내지 않아요. 목록을 다시 확인해 주세요.",
+        // Memo 379:12472: the same words after each read-only re-check that still does not show it.
+        title: MISMATCH_COPY.title,
+        message: MISMATCH_COPY.message,
         recheck: shows,
+        stillMissing: MISMATCH_COPY,
       };
     } finally {
       finish();
@@ -381,6 +383,9 @@ const KNOWN_CODES = new Set([
 ]);
 
 /** Fallback wording for a clear refusal; screens pass their own text for the codes they expect. */
+/** A committed change the re-read list does not show yet (memo 379:12472). */
+export const MISMATCH_COPY = { title: "변경이 목록에 아직 보이지 않아요", message: "변경은 저장됐지만 목록에 아직 반영되지 않았어요. 변경은 다시 보내지 않아요. 잠시 뒤 목록을 다시 확인해 주세요." };
+
 function defaultRefusal(code: string): Refusal | null {
   if (!KNOWN_CODES.has(code)) return null;
   if (code === "SAVED_PLACE_STAR_LIMIT")

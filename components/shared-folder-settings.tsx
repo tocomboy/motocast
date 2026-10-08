@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { LineIcon } from "@/components/line-icon";
 import { ConfirmPopup, type ConfirmWrite, type Pending, type Recheck } from "./confirm-popup";
 import { SavedDialog } from "./saved-dialog";
-import { useSharedFolders, type SharedSnapshot, type SharedWrite } from "./shared-folders-provider";
+import { MISMATCH_COPY, useSharedFolders, type SharedSnapshot, type SharedWrite } from "./shared-folders-provider";
 import { useSharedPopup } from "./shared-place-actions";
 import { FREQUENT_PLACE_LIMIT } from "@/lib/places/saved";
 import {
@@ -247,7 +247,7 @@ function InviteLinks({ folderId, onClose }: { folderId: string; onClose: () => v
           const rows = await load();
           if (rows && gone(rows)) return { ok: true };
           return rows
-            ? lost ? { ok: false, reason: "unknown", checked: true, title: "회수되지 않았어요", message: "", recheck: gone } : { ok: false, reason: "mismatch", checked: true, title: "목록에서 변경을 확인하지 못했어요", message: "회수 요청은 접수됐지만 목록에 아직 보여요.", recheck: gone }
+            ? lost ? { ok: false, reason: "unknown", checked: true, title: "회수되지 않았어요", message: "", recheck: gone } : { ok: false, reason: "mismatch", checked: true, ...MISMATCH_COPY, recheck: gone, stillMissing: MISMATCH_COPY }
             : { ok: false, reason: "unknown", checked: false, title: "목록을 확인하지 못했어요", message: "회수됐는지 아직 몰라요. 목록을 다시 확인해 주세요.", recheck: gone };
         },
       },
