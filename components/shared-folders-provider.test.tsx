@@ -220,32 +220,122 @@ describe("SharedFoldersProvider", () => {
     });
   }
 
-  it("delta 9: two re-checks of R1 finishing in reverse order with R2 kept in between never revive R1", async () => {
+  const pendingOf = (n: string, abandoning: { title: string; message: string } | null = null) => ({ requestId: `95000000-0000-0000-0000-0000000000${n}`, folderName: n, displayName: "에이", ids: [], abandoning });
+
+  it("delta 9: two abandon re-checks of R1 answered in reverse order, with R2 kept in between, never revive R1", async () => {
     await mount();
-    const pending = (n: string) => ({ requestId: `95000000-0000-0000-0000-0000000000${n}`, folderName: n, displayName: "에이", ids: [], abandoning: null });
-    const r1 = pending("a1");
+    const r1 = pendingOf("a1", { title: "폴더를 만들지 못했어요", message: "" });
     await act(async () => { controls.captureCreate(r1.requestId).keep(r1); });
-    // Two re-checks of R1 start from the same kept state.
-    const first = controls.captureCreate(r1.requestId);
-    const second = controls.captureCreate(r1.requestId);
-    let results: boolean[] = [];
-    // The second finishes first and settles R1; then R2 is kept.
-    await act(async () => { results.push(second.clear()); });
-    const r2 = pending("b2");
-    await act(async () => { results.push(controls.captureCreate(r2.requestId).keep(r2)); });
-    // The first finishes last: it can neither revive nor clear anything.
-    await act(async () => { results.push(first.keep(r1), first.clear()); });
-    expect(results).toEqual([true, true, false, false]);
-    expect(controls.pendingCreate).toEqual(r2);
-    // Same order without R2: the late first token still cannot bring R1 back.
-    await act(async () => { controls.captureCreate(r2.requestId).clear(); });
-    const third = controls.captureCreate(r1.requestId);
-    await act(async () => { controls.captureCreate(r1.requestId).keep(r1); });
-    await act(async () => { controls.captureCreate(r1.requestId).clear(); });
-    results = [];
-    await act(async () => { results.push(third.keep(r1)); });
-    expect(results).toEqual([false]);
+    // Two re-checks of R1 send their abandon from the same kept state; both replies are held.
+    const replies: Array<(value: unknown) => void> = [];
+    const failures: Array<(reason: unknown) => void> = [];
+    mocks.rpc.mockImplementation(() => new Promise((resolve, reject) => { replies.push(resolve); failures.push(reject); }));
+    let first!: Promise<{ kind: string }>;
+    let second!: Promise<{ kind: string }>;
+    await act(async () => {
+      first = abandonCreate(controls, controls.captureCreate(r1.requestId), r1);
+      second = abandonCreate(controls, controls.captureCreate(r1.requestId), r1);
+    });
+    expect(replies).toHaveLength(2);
+    // The second answers first and settles R1; then R2 is kept.
+    let secondResult!: { kind: string };
+    await act(async () => { replies[1]({ data: { status: "abandoned" }, error: null }); secondResult = await second; });
+    expect(secondResult.kind).toBe("abandoned");
     expect(controls.pendingCreate).toBeNull();
+    const r2 = pendingOf("b2");
+    await act(async () => { expect(controls.captureCreate(r2.requestId).keep(r2)).toBe(true); });
+    // The first answers last, lost: it would keep R1 again, and must not.
+    let firstResult!: { kind: string };
+    await act(async () => { failures[0](new TypeError("Failed to fetch")); firstResult = await first; });
+    expect(firstResult.kind).toBe("stale");
+    expect(controls.pendingCreate).toEqual(r2);
+    mocks.rpc.mockReset();
+  });
+
+  describe("createWork lock lifetime (delta 10)", () => {
+    it("lets only one step start at a time", async () => {
+      await mount();
+      const one = controls.captureCreate(pendingOf("c1").requestId);
+      const two = controls.captureCreate(pendingOf("c1").requestId);
+      let started: boolean[] = [];
+      await act(async () => { started = [one.begin(), two.begin()]; });
+      expect(started).toEqual([true, false]);
+      expect(controls.createBusy).toBe(true);
+      await act(async () => { one.end(); });
+      expect(controls.createBusy).toBe(false);
+      await act(async () => { started = [two.begin()]; });
+      expect(started).toEqual([true]);
+      await act(async () => { two.end(); });
+    });
+
+    it("gives the slot back when a step throws and ends in finally", async () => {
+      await mount();
+      const token = controls.captureCreate(pendingOf("c2").requestId);
+      const step = async () => {
+        if (!token.begin()) return "not started";
+        try {
+          throw new Error("boom");
+        } finally {
+          token.end();
+        }
+      };
+      await act(async () => { await expect(step()).rejects.toThrow("boom"); });
+      expect(controls.createBusy).toBe(false);
+      let again = false;
+      await act(async () => { again = controls.captureCreate(pendingOf("c2").requestId).begin(); });
+      expect(again).toBe(true);
+    });
+
+    it("releases the slot when a step finishes after the screen that started it closed", async () => {
+      let token!: ReturnType<typeof controls.captureCreate>;
+      function Screen() {
+        const shared = useSharedFolders();
+        // Starts one step when the screen opens.
+        // After the provider is mounted (its effect runs after this child's), like a tap on the screen.
+        useEffect(() => { const task = setTimeout(() => { if (token) return; token = shared.captureCreate(pendingOf("c3").requestId); token.begin(); }, 0); return () => clearTimeout(task); }, [shared]);
+        return null;
+      }
+      let r!: ReactTestRenderer;
+      await act(async () => { r = create(<SharedFoldersProvider enabled><Harness /><Screen /></SharedFoldersProvider>); });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(controls.createBusy).toBe(true);
+      // The screen goes away (another tab of favorites); the provider stays.
+      await act(async () => r.update(<SharedFoldersProvider enabled><Harness /></SharedFoldersProvider>));
+      expect(controls.createBusy).toBe(true);
+      await act(async () => { token.end(); });
+      expect(controls.createBusy).toBe(false);
+    });
+
+    it("never lets account A's late end() release account B's step", async () => {
+      await mount();
+      await act(async () => { mocks.listener?.("INITIAL_SESSION", { user: { id: ME } }); });
+      const a = controls.captureCreate(pendingOf("d1").requestId);
+      await act(async () => { a.begin(); });
+      await act(async () => { mocks.listener?.("SIGNED_IN", { user: { id: "00000000-0000-4000-8000-0000000000b9" } }); });
+      expect(controls.createBusy).toBe(false);
+      const b = controls.captureCreate(pendingOf("d2").requestId);
+      let startedB = false;
+      await act(async () => { startedB = b.begin(); });
+      expect(startedB).toBe(true);
+      await act(async () => { a.end(); });
+      expect(controls.createBusy).toBe(true);
+      await act(async () => { b.end(); });
+      expect(controls.createBusy).toBe(false);
+    });
+
+    it("keeps a token valid for its own next steps after its own keep", async () => {
+      await mount();
+      const kept = pendingOf("e1");
+      const token = controls.captureCreate(kept.requestId);
+      const results: boolean[] = [];
+      await act(async () => { results.push(token.keep(kept)); });
+      await act(async () => { results.push(token.live(), token.begin()); });
+      await act(async () => { results.push(token.keep({ ...kept, abandoning: { title: "t", message: "m" } })); });
+      await act(async () => { token.end(); results.push(token.clear()); });
+      expect(results).toEqual([true, true, true, true, true]);
+      expect(controls.pendingCreate).toBeNull();
+      expect(controls.createBusy).toBe(false);
+    });
   });
 
   it("delta 9: an abandon 'created' whose read was skipped by another write does not settle as deleted", async () => {
