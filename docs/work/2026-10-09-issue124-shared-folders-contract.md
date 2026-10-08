@@ -93,6 +93,26 @@
 - `remove_avoided_place(avoided_place_id)` 본인.
 - 읽기 view(security_invoker): `my_star_entries`(개인+공유 별표를 한 번에, 정렬 3절), `shared_place_entries`(폴더 장소 + 마지막 수정자 폴더용 이름/나간 회원 여부). 클라이언트는 `(folder_id, created_at, id)` 순서로 1,000행씩 페이지를 넘겨 모두 읽는다(잘라 버리지 않음).
 
+### 6.1 확정한 반환 형태와 오류 코드 (DB slice, migration `20261009120000_shared_place_folders.sql`)
+
+JSON 키는 열 이름 그대로 snake_case다. 예외는 계약이 정한 `set_place_folders_enabled` 입력(`folderId`, `enabled`)과 7.2의 `recommendation_shared_restaurants` 바깥 키(`rows`, `truncated`, `enabledTotal`, `disabledFolders`)뿐이다.
+
+- 공통 객체: `folder` = `place_folders` 행 `{id, owner_id, name, revision, created_at, updated_at}`. `member` = `{folder_id, member_id, role, display_name, joined_at, revision}`(정확히 이 6개). `preference` = `{member_id, folder_id, enabled, updated_at}`.
+- `create_place_folder` → `{folder, member, preference}`. `accept_place_folder_invite` → `{status: 'joined'|'already_member', folder, member, preference}`(이미 회원이면 기존 행, 이름 변경 없음).
+- `rename_place_folder` → `setof place_folders`(1행). `set_place_folder_display_name`·`set_place_folder_member_role` → `member` 객체. 같은 역할로 바꾸면 revision을 올리지 않고 현재 행을 돌려준다.
+- `create_place_folder_invite` → `{id, token, expires_at}`(정확히 3개). `list_place_folder_invites`·`revoke_place_folder_invite` → `table(id, created_at, expires_at, revoked_at)`; 목록은 `revoked_at is null and expires_at > now`만, `(created_at, id)` 순서.
+- `preview_place_folder_invite` → `{status, folder_name, owner_display_name, member_count}`; `folder_id`는 `status='already_member'`일 때만 들어간다. 이미 회원이면 회수·만료된 링크로도 `already_member`(수락 순서 (1)과 같음).
+- `set_place_folders_enabled` → `setof place_folder_preferences`(내 전체 설정, `folder_id` 순서). 값이 같으면 `updated_at`도 바꾸지 않는다. `folderId`는 대소문자 무관 uuid 문자열.
+- `add_shared_place(folder_id, place, place_alias default null, place_kind default 'riding_spot')` → `{status: 'added'|'already_exists', shared_place}`; `shared_place`는 `shared_place_entries` 행. `import_saved_places_to_folder` → `{added, skipped_existing}`(정수 개수).
+- `update_shared_place`·`set_shared_place_star` → `setof shared_place_entries`(1행). `add_avoided_place` → `setof avoided_places`(같은 장소면 기존 행). 삭제 계열(`delete_place_folder`, `remove_place_folder_member`, `leave_place_folder`, `delete_shared_place`, `remove_avoided_place`)은 `void`이며 영향 행 수가 1이 아니면 오류다.
+- `shared_place_entries` 열: `id, folder_id, place, alias, kind, province, revision, created_by, updated_by, created_at, updated_at, updated_by_display_name`(나간 회원이면 null), `updated_by_left`(boolean), `starred`(내 공유 별표 여부).
+- `my_star_entries` 열: `owner_id, source('saved'|'shared'), id, folder_id`(개인은 null), `place, alias, kind, province, revision, starred_at, star_slot`(공유는 null). 정렬은 클라이언트가 `(starred_at, id)`.
+- `place_folder_members`는 열 단위로 `folder_id, member_id, role, display_name, joined_at, revision`만 SELECT할 수 있다(`select *` 불가).
+- `recommendation_shared_restaurants`의 `rows` 원소: `{id, folder_id, place, alias, revision, created_at}`(정확히 6개, 식당만, `(created_at, id)` 순서). 경계 값이 null·NaN·무한대이거나 min > max면 `INVALID_RECOMMENDATION_REQUEST`.
+- 이 절에서 더한 오류 코드: `PLACE_FOLDER_STALE`(폴더 revision), `PLACE_FOLDER_MEMBER_STALE`(회원 행 revision), `SHARED_PLACE_STALE`, `PLACE_FOLDER_MEMBER_NOT_FOUND`(주인이 지정한 회원이 없음), `INVALID_PLACE_FOLDER_ROLE`(editor·viewer 외), `INVALID_PLACE_FOLDER_PREFERENCES`(배열 아님·0개·21개 이상·키 오류·uuid 아님·같은 폴더 반복), `AVOIDED_PLACE_NOT_FOUND`, `PLACE_FOLDER_WRITE_CONFLICT`(가져오기 영향 행 불일치, 정상 경로에서는 나오지 않음). 장소 형식 오류는 기존 `INVALID_SAVED_PLACE`, 별명·종류·지역 지점 별명 누락은 `INVALID_SAVED_PLACE_METADATA`, 남의/없는 저장 장소 id는 기존 `SAVED_PLACE_NOT_FOUND`, id 목록의 null·중복은 `INVALID_PLACE_FOLDER`, 1,000개 초과 목록은 `PLACE_FOLDER_PLACE_LIMIT`. 주인 행 변경·주인 내보내기는 `PLACE_FOLDER_FORBIDDEN`.
+- 커밋 시 불변식 위반(우회 쓰기에서만 가능): 별표 합계·비회원 공유 별표는 `SAVED_PLACE_STAR_INVARIANT`, 주인 행 1개·주인 일치·회원별 설정 행은 `PLACE_FOLDER_INVARIANT`.
+- 잠금: 별표 추가·`set_place_folders_enabled`는 폴더 lock 공유 모드, 나머지 폴더 쓰기는 배타 모드. 사용자 lock을 잡는 RPC는 `create_place_folder`, `accept_place_folder_invite`, `import_saved_places_to_folder`(폴더 lock 다음), `set_shared_place_star`(폴더 lock 다음), `add_avoided_place`, `remove_avoided_place`와 기존 개인 RPC다.
+
 ## 7. 식당 추천 (`recommend-restaurants`, 비용 영역) (V1 #6·#7)
 
 ### 7.1 요청

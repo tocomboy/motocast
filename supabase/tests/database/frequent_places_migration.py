@@ -54,8 +54,9 @@ identity = subprocess.run(['docker', 'inspect', CONTAINER, '--format',
                           capture_output=True, text=True, check=True).stdout.strip()
 assert identity == 'motocast|public.ecr.aws/supabase/postgres:17.6.1.166', identity
 assert run('postgres', f"select count(*) from pg_database where datname='{DATABASE}';") == '0'
+# Later migrations are proven by their own harness; this one stops at its target.
 migrations = sorted(MIGRATIONS.glob('*.sql'))
-assert migrations[-1] == TARGET, 'the frequent-places migration must be the latest'
+migrations = migrations[:migrations.index(TARGET) + 1]
 target_text = TARGET.read_text(encoding='utf-8')
 assert target_text.rstrip().endswith('commit;') and '$mig$' not in target_text
 
