@@ -7,9 +7,12 @@ import {
   prepareStoredRoute,
   recommendationFailure,
   recommendRestaurants,
+  recommendRestaurantsV2,
   runPool,
+  sharedReadBounds,
   type RecommendationDependencies,
 } from "./restaurant-recommendation";
+import { parseAvoidedPlaces, parseSharedRestaurantRead, type SharedRestaurantRead } from "./restaurant-candidates";
 import type { RouteChunkRequest, RouteOperation } from "./route-orchestration";
 
 // --- Fixture route: straight east-west legs at latitude 37 -----------------
@@ -760,5 +763,244 @@ describe("fixed 45-minute meal dwell", () => {
     expect(recommendationFailure(new Error("MEAL_DWELL_FIXED"))).toEqual({
       status: 400, code: "MEAL_DWELL_FIXED", message: "식사 시간은 45분으로 바뀌었어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.",
     });
+  });
+});
+
+// --- Contract v2: shared folders and avoided places (issue #124 contract §7) ---
+
+describe("contract v2 candidates", () => {
+  const FOLDER_A = "aaaaaaaa-0000-4000-8000-000000000001";
+  const FOLDER_B = "aaaaaaaa-0000-4000-8000-000000000002";
+  const METERS_PER_LATITUDE_DEGREE = 111_195.08;
+  const twoMeals = { mealCount: 2, meals: [{ desiredTime: "11:30", dwellMinutes: 45 }, { desiredTime: "13:30", dwellMinutes: 45 }] };
+
+  function sharedRow(folderId: string, longitude: number, latitude: number, kakaoPlaceId?: string) {
+    const id = `00000000-0000-4000-a000-${String(++rowNumber).padStart(12, "0")}`;
+    return {
+      id, folder_id: folderId, alias: null, revision: 5, created_at: "2026-10-09T00:00:00+00:00",
+      place: {
+        kakaoPlaceId: kakaoPlaceId ?? `kakao-${id}`, verificationToken: "a".repeat(43), name: `공유식당${rowNumber}`,
+        address: "공개 주소", roadAddress: null, longitude, latitude,
+      },
+    };
+  }
+  const avoidedRow = (kakaoPlaceId: string, longitude: number, latitude: number) => ({
+    id: `00000000-0000-4000-b000-${String(++rowNumber).padStart(12, "0")}`,
+    place: { kakaoPlaceId, verificationToken: "a".repeat(43), name: "기피", address: "공개 주소", roadAddress: null, longitude, latitude },
+  });
+  const read = (rows: unknown[], overrides: Record<string, unknown> = {}): SharedRestaurantRead => (
+    parseSharedRestaurantRead({ rows, truncated: false, enabledTotal: rows.length, disabledFolders: 0, ...overrides })
+  );
+
+  async function runV2(
+    overrides: Record<string, unknown>,
+    savedRows: unknown[],
+    shared: SharedRestaurantRead,
+    avoidedRows: unknown[] = [],
+    options: Parameters<typeof harness>[1] = {},
+  ) {
+    const summary = storedSummary();
+    const request = requestFor(summary, { ...overrides, contractVersion: 2 });
+    const h = harness(summary, options);
+    const result = await recommendRestaurantsV2({
+      request, targets: mealTargets(request), route: prepareStoredRoute(request, summary),
+      savedRows, avoided: parseAvoidedPlaces(avoidedRows), shared,
+    }, h.dependencies);
+    return { result, ...h };
+  }
+  const evaluatedIds = (requestProvider: ReturnType<typeof harness>["requestProvider"]) => (
+    [...new Set(requestProvider.mock.calls.flatMap(([input]) => input.waypoints.map((point) => point.id)))].sort()
+  );
+
+  it("merges mine and enabled shared restaurants by exact kakaoPlaceId: mine first, then the earliest shared row", async () => {
+    const mine = restaurant(127.75, 37.001);
+    const s1 = sharedRow(FOLDER_A, 127.76, 37.002);
+    const sameAsMine = sharedRow(FOLDER_B, 127.7505, 37.0012, mine.place.kakaoPlaceId);
+    const sameAsS1 = sharedRow(FOLDER_B, 127.7605, 37.0021, s1.place.kakaoPlaceId);
+    const { result, requestProvider } = await runV2({}, [mine], read([s1, sameAsMine, sameAsS1], { disabledFolders: 1 }));
+
+    expect(result.contractVersion).toBe(2);
+    expect(result.status).toBe("OK");
+    expect(evaluatedIds(requestProvider)).toEqual([mine.id, s1.id].sort());
+    const candidates = result.meals[0].candidates;
+    expect(candidates.map((candidate) => [candidate.source, candidate.otherFolderIds])).toEqual([
+      [{ type: "saved", id: mine.id, revision: 3 }, [FOLDER_B]],
+      [{ type: "shared", id: s1.id, revision: 5, folderId: FOLDER_A }, [FOLDER_B]],
+    ]);
+    expect(Object.keys(candidates[0])).toEqual([
+      "source", "displayName", "placeName", "address", "longitude", "latitude", "insertion", "single", "otherFolderIds",
+    ]);
+    // The representative keeps its own snapshot, not the merged duplicate one.
+    expect(candidates[0]).toMatchObject({ longitude: 127.75, latitude: 37.001 });
+    expect(result.coverage).toEqual({
+      savedRestaurants: 1, invalidSaved: 0, alreadyInRoute: 0, nearRoute: 2, evaluated: 2, unreachable: 0,
+      notEvaluated: 0, providerRequests: 2,
+      sharedRestaurants: 3, duplicateMerged: 2, avoidedExcluded: 0, disabledFolders: 1, sharedReadTruncated: false,
+    });
+  });
+
+  it("excludes avoided POIs by exact ID only, and avoided map points by ID or within 30 m", async () => {
+    const byId = restaurant(127.75, 37.001);
+    const sameSpotOtherPoi = restaurant(127.7, 37.001);
+    const inside = sharedRow(FOLDER_A, 127.8, 37.001 + 29 / METERS_PER_LATITUDE_DEGREE);
+    const outside = sharedRow(FOLDER_A, 127.85, 37.001 + 31 / METERS_PER_LATITUDE_DEGREE);
+    const mapPointById = sharedRow(FOLDER_B, 127.65, 37.005, "map:37.0050000:127.6500000");
+    const { result, requestProvider } = await runV2({}, [byId, sameSpotOtherPoi], read([inside, outside, mapPointById]), [
+      avoidedRow(byId.place.kakaoPlaceId, 127.0, 33.0),
+      avoidedRow("kakao-some-other-poi", 127.7, 37.001),
+      avoidedRow("map:37.0010000:127.8000000", 127.8, 37.001),
+      avoidedRow("map:37.0010000:127.8500000", 127.85, 37.001),
+      avoidedRow("map:37.0050000:127.6500000", 127.0, 33.0),
+    ]);
+    expect(evaluatedIds(requestProvider)).toEqual([sameSpotOtherPoi.id, outside.id].sort());
+    expect(result.coverage).toMatchObject({ savedRestaurants: 2, sharedRestaurants: 3, avoidedExcluded: 3, nearRoute: 2 });
+  });
+
+  it("reports ALL_EXCLUDED without any budget or provider work when every read candidate is avoided", async () => {
+    const mine = restaurant(127.75, 37.001);
+    const shared = sharedRow(FOLDER_A, 127.8, 37.001);
+    const { result, requestProvider, consumeBudget, limitFor } = await runV2({}, [mine], read([shared], { enabledTotal: 4 }), [
+      avoidedRow(mine.place.kakaoPlaceId, 127.75, 37.001),
+      avoidedRow(shared.place.kakaoPlaceId, 127.8, 37.001),
+    ]);
+    expect(result.status).toBe("ALL_EXCLUDED");
+    expect(result.meals[0].candidates).toEqual([]);
+    expect(result.pairs).toEqual([]);
+    expect(result.coverage).toMatchObject({ avoidedExcluded: 2, nearRoute: 0, providerRequests: 0, sharedReadTruncated: false });
+    expect(requestProvider).not.toHaveBeenCalled();
+    expect(consumeBudget).not.toHaveBeenCalled();
+    expect(limitFor).not.toHaveBeenCalled();
+  });
+
+  it("answers OK with no candidates instead of ALL_EXCLUDED when the shared read was truncated", async () => {
+    // 2,000 read rows (1,000 per folder) all sit on one avoided map point; more rows exist past the read.
+    const rows = Array.from({ length: 2000 }, (_, index) => sharedRow(index < 1000 ? FOLDER_A : FOLDER_B, 127.8, 37.001));
+    const { result, requestProvider, consumeBudget } = await runV2({}, [], read(rows, { truncated: true, enabledTotal: 2400 }), [
+      avoidedRow("map:37.0010000:127.8000000", 127.8, 37.001),
+    ]);
+    expect(result.status).toBe("OK");
+    expect(result.meals[0].candidates).toEqual([]);
+    expect(result.coverage).toMatchObject({ sharedRestaurants: 2000, avoidedExcluded: 2000, providerRequests: 0, sharedReadTruncated: true });
+    expect(requestProvider).not.toHaveBeenCalled();
+    expect(consumeBudget).not.toHaveBeenCalled();
+  });
+
+  it("returns NO_SAVED_RESTAURANTS only when I have no restaurant and enabled folders hold none", async () => {
+    const none = await runV2({}, [], read([], { enabledTotal: 0, disabledFolders: 2 }));
+    expect(none.result.status).toBe("NO_SAVED_RESTAURANTS");
+    expect(none.result.coverage).toMatchObject({ savedRestaurants: 0, sharedRestaurants: 0, disabledFolders: 2, providerRequests: 0 });
+    expect(none.consumeBudget).not.toHaveBeenCalled();
+
+    // Enabled folders hold restaurants, but none inside the route box: an ordinary empty OK.
+    const far = await runV2({}, [], read([], { enabledTotal: 3 }));
+    expect(far.result.status).toBe("OK");
+    expect(far.result.coverage).toMatchObject({ nearRoute: 0, providerRequests: 0 });
+    expect(far.requestProvider).not.toHaveBeenCalled();
+  });
+
+  it("keeps one budgeted runner and the six-call cap over the combined pool", async () => {
+    const mine = Array.from({ length: 5 }, (_, index) => restaurant(127.7 + index * 0.01, 37.001 + index * 0.0001));
+    const shared = Array.from({ length: 5 }, (_, index) => sharedRow(FOLDER_A, 127.705 + index * 0.01, 37.0012 + index * 0.0001));
+    const { result, requestProvider, consumeBudget } = await runV2({}, mine, read(shared));
+    expect(requestProvider).toHaveBeenCalledTimes(6);
+    expect(consumeBudget).toHaveBeenCalledTimes(6);
+    expect(result.coverage).toMatchObject({ nearRoute: 10, evaluated: 6, notEvaluated: 4, providerRequests: 6 });
+  });
+
+  it("keeps the 14-call two-meal cap and names pair members by source", async () => {
+    const firsts = Array.from({ length: 6 }, (_, index) => (
+      index % 2 === 0
+        ? restaurant(127.625 + index * 0.002, 37.03 + index * 0.004)
+        : sharedRow(FOLDER_A, 127.625 + index * 0.002, 37.03 + index * 0.004)
+    ));
+    const seconds = Array.from({ length: 6 }, (_, index) => (
+      index % 2 === 0
+        ? sharedRow(FOLDER_B, 127.875 + index * 0.002, 37.002 + index * 0.002)
+        : restaurant(127.875 + index * 0.002, 37.002 + index * 0.002)
+    ));
+    const mineRows = [...firsts, ...seconds].filter((row) => !("folder_id" in row));
+    const sharedRows = [...firsts, ...seconds].filter((row) => "folder_id" in row);
+    const { result, requestProvider, consumeBudget } = await runV2(twoMeals, mineRows, read(sharedRows));
+    expect(requestProvider).toHaveBeenCalledTimes(14);
+    expect(consumeBudget).toHaveBeenCalledTimes(14);
+    expect(result.pairs.length).toBeGreaterThan(0);
+    const listed = new Set(result.meals.flatMap((meal) => meal.candidates.map((candidate) => JSON.stringify(candidate.source))));
+    for (const pair of result.pairs) {
+      expect(Object.keys(pair)).toEqual(["first", "second", "firstArrivalAt", "secondArrivalAt", "extraDriveSeconds", "returnAt"]);
+      expect(listed.has(JSON.stringify(pair.first))).toBe(true);
+      expect(listed.has(JSON.stringify(pair.second))).toBe(true);
+    }
+  });
+
+  it("stops starting calls after budget exhaustion over the combined pool", async () => {
+    const summary = storedSummary();
+    const mine = Array.from({ length: 3 }, (_, index) => restaurant(127.7 + index * 0.01, 37.001));
+    const shared = Array.from({ length: 3 }, (_, index) => sharedRow(FOLDER_A, 127.705 + index * 0.01, 37.001));
+    const request = requestFor(summary, { contractVersion: 2 });
+    const pending: Array<{ resolve: (value: number) => void; reject: (error: Error) => void }> = [];
+    const h = harness(summary, { consume: () => new Promise<number>((resolve, reject) => pending.push({ resolve, reject })) });
+    const outcome = recommendRestaurantsV2({
+      request, targets: mealTargets(request), route: prepareStoredRoute(request, summary),
+      savedRows: mine, avoided: [], shared: read(shared),
+    }, h.dependencies).catch((error: Error) => error);
+    await vi.waitFor(() => expect(pending).toHaveLength(4));
+    pending[0].reject(new Error("API_DAILY_BUDGET_EXHAUSTED"));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    pending.slice(1).forEach((entry, index) => entry.resolve(index + 2));
+    expect(((await outcome) as Error).message).toBe("API_DAILY_BUDGET_EXHAUSTED");
+    expect(h.consumeBudget).toHaveBeenCalledTimes(4);
+    expect(h.requestProvider).not.toHaveBeenCalled();
+  });
+
+  it("fails the whole request on a fatal provider error for a shared candidate", async () => {
+    const shared = Array.from({ length: 6 }, (_, index) => sharedRow(FOLDER_A, 127.7 + index * 0.01, 37.001 + index * 0.0001));
+    const fatal = new Error("PROVIDER_UNAVAILABLE");
+    const outcome = await runV2({}, [], read(shared), [], { overrides: { [shared[0].id]: fatal } }).catch((error: Error) => error);
+    expect(outcome).toBe(fatal);
+  });
+
+  it("v1 also excludes avoided places, keeps its response shape, and counts only the remaining restaurants", async () => {
+    const summary = storedSummary();
+    const avoidedMine = restaurant(127.75, 37.001);
+    const kept = restaurant(127.76, 37.002);
+    const request = requestFor(summary);
+    const avoided = parseAvoidedPlaces([avoidedRow(avoidedMine.place.kakaoPlaceId, 127.75, 37.001)]);
+    const h = harness(summary);
+    const result = await recommendRestaurants({
+      request, targets: mealTargets(request), route: prepareStoredRoute(request, summary),
+      savedRows: [avoidedMine, kept], avoided,
+    }, h.dependencies);
+    expect(Object.keys(result)).toEqual(["status", "basis", "settings", "meals", "pairs", "coverage"]);
+    expect(Object.keys(result.coverage)).toEqual([
+      "savedRestaurants", "invalidSaved", "alreadyInRoute", "nearRoute", "evaluated", "unreachable", "notEvaluated", "providerRequests",
+    ]);
+    expect(Object.keys(result.meals[0].candidates[0])).toEqual([
+      "savedPlaceId", "savedPlaceRevision", "displayName", "placeName", "address", "longitude", "latitude", "insertion", "single",
+    ]);
+    expect(ids(result.meals[0].candidates)).toEqual([kept.id]);
+    expect(result.coverage).toMatchObject({ savedRestaurants: 1, nearRoute: 1, providerRequests: 1 });
+
+    const allAvoided = harness(summary);
+    const none = await recommendRestaurants({
+      request, targets: mealTargets(request), route: prepareStoredRoute(request, summary),
+      savedRows: [avoidedMine], avoided,
+    }, allAvoided.dependencies);
+    expect(none.status).toBe("NO_SAVED_RESTAURANTS");
+    expect(none.coverage).toMatchObject({ savedRestaurants: 0, providerRequests: 0 });
+    expect(allAvoided.consumeBudget).not.toHaveBeenCalled();
+    expect(allAvoided.requestProvider).not.toHaveBeenCalled();
+  });
+
+  it("reads shared restaurants inside the whole route widened by the 30 km pre-screen padding", () => {
+    const summary = storedSummary();
+    const bounds = sharedReadBounds(prepareStoredRoute(requestFor(summary), summary));
+    const latitudePad = 30 / 110 + 0.001;
+    const longitudePad = 30 / (111.32 * Math.cos(39 * Math.PI / 180)) + 0.001;
+    expect(bounds.minLatitude).toBeCloseTo(37 - latitudePad, 9);
+    expect(bounds.maxLatitude).toBeCloseTo(37 + latitudePad, 9);
+    expect(bounds.minLongitude).toBeCloseTo(127 - longitudePad, 9);
+    expect(bounds.maxLongitude).toBeCloseTo(128 + longitudePad, 9);
+    // A restaurant 29.9 km off the route still lies inside the read box.
+    expect(37 + 29.9 / 111.195).toBeLessThan(bounds.maxLatitude);
   });
 });

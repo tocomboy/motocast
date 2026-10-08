@@ -67,6 +67,43 @@ export type RecommendationResponse = {
   coverage: RecommendationCoverage;
 };
 
+// Contract v2 (issue #124 §7.3): candidates and pairs name their source row,
+// my saved place or a place of a shared folder I keep enabled.
+export type RecommendationSourceRef =
+  | { type: "saved"; id: string; revision: number }
+  | { type: "shared"; id: string; revision: number; folderId: string };
+
+export type RecommendationCandidateV2 = Omit<RecommendationCandidate, "savedPlaceId" | "savedPlaceRevision"> & {
+  source: RecommendationSourceRef;
+  // Other enabled folders holding the same place (display only).
+  otherFolderIds: string[];
+};
+
+export type RecommendationMealV2 = Omit<RecommendationMeal, "candidates"> & { candidates: RecommendationCandidateV2[] };
+
+export type RecommendationPairV2 = Omit<RecommendationPair, "firstSavedPlaceId" | "secondSavedPlaceId"> & {
+  first: RecommendationSourceRef;
+  second: RecommendationSourceRef;
+};
+
+export type RecommendationCoverageV2 = RecommendationCoverage & {
+  sharedRestaurants: number;
+  duplicateMerged: number;
+  avoidedExcluded: number;
+  disabledFolders: number;
+  sharedReadTruncated: boolean;
+};
+
+export type RecommendationResponseV2 = {
+  contractVersion: 2;
+  status: "OK" | "NO_SAVED_RESTAURANTS" | "ALL_EXCLUDED";
+  basis: RecommendationResponse["basis"];
+  settings: RecommendationResponse["settings"];
+  meals: RecommendationMealV2[];
+  pairs: RecommendationPairV2[];
+  coverage: RecommendationCoverageV2;
+};
+
 export type RecommendationRequest = {
   tripId: string;
   basis: { departureAt: string; returnAt: string; pointIds: string[]; arrivalAts: string[] };
@@ -115,6 +152,11 @@ const DESIRED_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const REJECT_REASONS: ReadonlyArray<SingleRejectReason> = ["WINDOW", "DETOUR", "RETURN_24H"];
 const SEOUL_OFFSET_MS = 9 * 60 * 60_000;
 const DAY_MS = 24 * 60 * 60_000;
+// Candidate pool limits (issue #124 §2, §7.2): my 1,000 saved places, up to
+// 2,000 shared rows read in the route box, and at most 20 folders per member.
+const MAX_SAVED_RESTAURANTS = 1000;
+const MAX_SHARED_RESTAURANTS_READ = 2000;
+const MAX_MEMBER_FOLDERS = 20;
 
 // The server's judgement rules (§3.2 step 8, contracts README): seconds,
 // inclusive bounds, return strictly within 24 hours of departure.
@@ -149,11 +191,21 @@ function ms(value: string) {
   return new Date(value).getTime();
 }
 
-function parseCandidate(value: unknown, pointIds: string[]): RecommendationCandidate {
-  const raw = record(value);
+type CandidateCore = Omit<RecommendationCandidate, "savedPlaceId" | "savedPlaceRevision">;
+type PairCore = Omit<RecommendationPair, "firstSavedPlaceId" | "secondSavedPlaceId">;
+type ParsedMeal<C> = Omit<RecommendationMeal, "candidates"> & { candidates: C[] };
+type ParsedPair<C> = { first: C; second: C; core: PairCore };
+
+// How one contract version names a candidate and the two candidates of a pair.
+type CandidateIdentity<C extends CandidateCore> = {
+  parse: (raw: Record<string, unknown>, core: () => CandidateCore) => C;
+  key: (candidate: C) => string;
+  pairKeys: (raw: Record<string, unknown>) => [unknown, unknown];
+};
+
+function parseCandidateCore(raw: Record<string, unknown>, pointIds: string[]): CandidateCore {
   const insertion = record(raw.insertion);
   const single = record(raw.single);
-  if (typeof raw.savedPlaceId !== "string" || !SAVED_PLACE_ID.test(raw.savedPlaceId)) fail();
   if (
     typeof raw.longitude !== "number" || typeof raw.latitude !== "number" ||
     !Number.isFinite(raw.longitude) || !Number.isFinite(raw.latitude) ||
@@ -167,8 +219,6 @@ function parseCandidate(value: unknown, pointIds: string[]): RecommendationCandi
   const reason = single.reason;
   if (single.feasible ? reason !== null : !REJECT_REASONS.includes(reason as SingleRejectReason)) fail();
   return {
-    savedPlaceId: raw.savedPlaceId,
-    savedPlaceRevision: integer(raw.savedPlaceRevision, 1, Number.MAX_SAFE_INTEGER),
     displayName: text(raw.displayName, 160),
     placeName: text(raw.placeName, 160),
     address: text(raw.address, 300),
@@ -185,7 +235,13 @@ function parseCandidate(value: unknown, pointIds: string[]): RecommendationCandi
   };
 }
 
-function parseMeal(value: unknown, position: number, toleranceMinutes: number, pointIds: string[]): RecommendationMeal {
+function parseMeal<C extends CandidateCore>(
+  value: unknown,
+  position: number,
+  toleranceMinutes: number,
+  pointIds: string[],
+  identity: CandidateIdentity<C>,
+): ParsedMeal<C> {
   const raw = record(value);
   if (raw.index !== position + 1 || !Array.isArray(raw.candidates)) fail();
   const targetAt = instant(raw.targetAt);
@@ -195,8 +251,11 @@ function parseMeal(value: unknown, position: number, toleranceMinutes: number, p
   if (ms(windowStartAt) !== ms(targetAt) - tolerance || ms(windowEndAt) !== ms(targetAt) + tolerance) {
     fail("INVALID_RECOMMENDATION_WINDOW");
   }
-  const candidates = raw.candidates.map((candidate) => parseCandidate(candidate, pointIds));
-  if (new Set(candidates.map((candidate) => candidate.savedPlaceId)).size !== candidates.length) fail();
+  const candidates = raw.candidates.map((candidate) => {
+    const rawCandidate = record(candidate);
+    return identity.parse(rawCandidate, () => parseCandidateCore(rawCandidate, pointIds));
+  });
+  if (new Set(candidates.map(identity.key)).size !== candidates.length) fail();
   return {
     index: (position + 1) as MealIndex,
     targetAt,
@@ -208,7 +267,7 @@ function parseMeal(value: unknown, position: number, toleranceMinutes: number, p
   };
 }
 
-function withinWindow(arrivalAt: string, meal: RecommendationMeal) {
+function withinWindow(arrivalAt: string, meal: { windowStartAt: string; windowEndAt: string }) {
   const arrival = ms(arrivalAt);
   return arrival >= ms(meal.windowStartAt) && arrival <= ms(meal.windowEndAt);
 }
@@ -220,7 +279,7 @@ function within24Hours(returnAt: string, judge: Judge) {
 // A candidate must state the server's own verdict: return = base return +
 // extra drive + dwell, and `reason` names the first violated rule
 // (WINDOW, DETOUR, RETURN_24H) or is null when none is violated.
-function checkCandidate(candidate: RecommendationCandidate, meal: RecommendationMeal, judge: Judge) {
+function checkCandidate(candidate: CandidateCore, meal: ParsedMeal<CandidateCore>, judge: Judge) {
   const { single } = candidate;
   if (ms(single.returnAt) !== judge.baseReturnMs + (single.extraDriveSeconds + meal.dwellMinutes * 60) * 1000) {
     fail("INVALID_RECOMMENDATION_CANDIDATE");
@@ -236,7 +295,7 @@ function checkCandidate(candidate: RecommendationCandidate, meal: Recommendation
 // A pair is listed only when both arrivals fit their windows, the combined
 // extra drive fits the limit and the return (base + extra + both dwells) is
 // within 24 hours.
-function checkPair(pair: RecommendationPair, meals: RecommendationMeal[], judge: Judge) {
+function checkPair({ first, second, core: pair }: ParsedPair<CandidateCore>, meals: ParsedMeal<CandidateCore>[], judge: Judge) {
   const expectedReturn = judge.baseReturnMs + (pair.extraDriveSeconds + (meals[0].dwellMinutes + meals[1].dwellMinutes) * 60) * 1000;
   if (
     !withinWindow(pair.firstArrivalAt, meals[0]) || !withinWindow(pair.secondArrivalAt, meals[1]) ||
@@ -247,8 +306,6 @@ function checkPair(pair: RecommendationPair, meals: RecommendationMeal[], judge:
   // meal 1 arrives as alone; meal 2 is delayed by meal 1's extra drive and dwell;
   // the extra drive adds up. A same-leg pair is its own provider route, so its
   // values are not derived from the singles.
-  const first = meals[0].candidates.find((candidate) => candidate.savedPlaceId === pair.firstSavedPlaceId)!;
-  const second = meals[1].candidates.find((candidate) => candidate.savedPlaceId === pair.secondSavedPlaceId)!;
   if (first.insertion.legIndex < second.insertion.legIndex && (
     ms(pair.firstArrivalAt) !== ms(first.single.arrivalAt) ||
     ms(pair.secondArrivalAt) !== ms(second.single.arrivalAt) + (first.single.extraDriveSeconds + meals[0].dwellMinutes * 60) * 1000 ||
@@ -256,26 +313,29 @@ function checkPair(pair: RecommendationPair, meals: RecommendationMeal[], judge:
   )) fail("INVALID_RECOMMENDATION_PAIR");
 }
 
-function parsePair(value: unknown, meals: RecommendationMeal[]): RecommendationPair {
+function parsePair<C extends CandidateCore>(value: unknown, meals: ParsedMeal<C>[], identity: CandidateIdentity<C>): ParsedPair<C> {
   const raw = record(value);
-  const first = meals[0].candidates.find((candidate) => candidate.savedPlaceId === raw.firstSavedPlaceId);
-  const second = meals[1]?.candidates.find((candidate) => candidate.savedPlaceId === raw.secondSavedPlaceId);
+  const [firstKey, secondKey] = identity.pairKeys(raw);
+  const first = meals[0].candidates.find((candidate) => identity.key(candidate) === firstKey);
+  const second = meals[1]?.candidates.find((candidate) => identity.key(candidate) === secondKey);
   // A pair must name listed candidates in visiting order (same leg or a later leg).
-  if (!first || !second || first.savedPlaceId === second.savedPlaceId ||
+  if (!first || !second || identity.key(first) === identity.key(second) ||
     first.insertion.legIndex > second.insertion.legIndex) fail("INVALID_RECOMMENDATION_PAIR");
   return {
-    firstSavedPlaceId: first.savedPlaceId,
-    secondSavedPlaceId: second.savedPlaceId,
-    firstArrivalAt: instant(raw.firstArrivalAt),
-    secondArrivalAt: instant(raw.secondArrivalAt),
-    extraDriveSeconds: integer(raw.extraDriveSeconds, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-    returnAt: instant(raw.returnAt),
+    first,
+    second,
+    core: {
+      firstArrivalAt: instant(raw.firstArrivalAt),
+      secondArrivalAt: instant(raw.secondArrivalAt),
+      extraDriveSeconds: integer(raw.extraDriveSeconds, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+      returnAt: instant(raw.returnAt),
+    },
   };
 }
 
-export function parseRecommendationResponse(value: unknown): RecommendationResponse {
-  const raw = record(value);
-  if (raw.status !== "OK" && raw.status !== "NO_SAVED_RESTAURANTS") fail();
+// Everything both contract versions share: basis, settings, meals, pairs and
+// the server-verdict checks. Status and coverage are checked by the caller.
+function parseResponseBody<C extends CandidateCore>(raw: Record<string, unknown>, identity: CandidateIdentity<C>) {
   const basis = record(raw.basis);
   const settings = record(raw.settings);
   const coverage = record(raw.coverage);
@@ -300,22 +360,49 @@ export function parseRecommendationResponse(value: unknown): RecommendationRespo
   if (settings.detourLimitMinutes !== SERVER_DETOUR_CAP_MINUTES) fail("INVALID_RECOMMENDATION_SETTINGS");
   const detourLimitMinutes = SERVER_DETOUR_CAP_MINUTES;
   if (!Array.isArray(raw.meals) || raw.meals.length !== mealCount || !Array.isArray(raw.pairs)) fail();
-  const meals = raw.meals.map((meal, index) => parseMeal(meal, index, toleranceMinutes, pointIds));
+  const meals = raw.meals.map((meal, index) => parseMeal(meal, index, toleranceMinutes, pointIds, identity));
   if (meals.length === 2 && ms(meals[1].targetAt) <= ms(meals[0].targetAt)) fail("INVALID_RECOMMENDATION_WINDOW");
   if (mealCount === 1 && raw.pairs.length > 0) fail("INVALID_RECOMMENDATION_PAIR");
-  const pairs = raw.pairs.map((pair) => parsePair(pair, meals));
+  const pairs = raw.pairs.map((pair) => parsePair(pair, meals, identity));
   const judge: Judge = { departureMs: ms(departureAt), baseReturnMs: ms(returnAt), limitSeconds: detourLimitMinutes * 60 };
   meals.forEach((meal) => meal.candidates.forEach((candidate) => checkCandidate(candidate, meal, judge)));
   pairs.forEach((pair) => checkPair(pair, meals, judge));
-  if (new Set(pairs.map((pair) => `${pair.firstSavedPlaceId}|${pair.secondSavedPlaceId}`)).size !== pairs.length) {
-    fail("INVALID_RECOMMENDATION_PAIR");
-  }
+  const pairKeys = pairs.map((pair) => [identity.key(pair.first), identity.key(pair.second)]);
+  if (new Set(pairKeys.map((keys) => keys.join("|"))).size !== pairs.length) fail("INVALID_RECOMMENDATION_PAIR");
   // Every listed candidate is usable alone or as a member of a listed pair (§3.3).
   meals.forEach((meal) => meal.candidates.forEach((candidate) => {
     if (candidate.single.feasible) return;
-    const key = meal.index === 1 ? "firstSavedPlaceId" : "secondSavedPlaceId";
-    if (!pairs.some((pair) => pair[key] === candidate.savedPlaceId)) fail("INVALID_RECOMMENDATION_CANDIDATE");
+    const key = identity.key(candidate);
+    if (!pairKeys.some((keys) => keys[meal.index - 1] === key)) fail("INVALID_RECOMMENDATION_CANDIDATE");
   }));
+  return {
+    basis: { tripId: basis.tripId, departureAt, returnAt, pointIds, arrivalAts },
+    settings: { mealCount, toleranceMinutes, detourLimitMinutes },
+    meals,
+    pairs,
+    coverage,
+  };
+}
+
+const v1Identity: CandidateIdentity<RecommendationCandidate> = {
+  parse: (raw, core) => {
+    if (typeof raw.savedPlaceId !== "string" || !SAVED_PLACE_ID.test(raw.savedPlaceId)) fail();
+    const savedPlaceId = raw.savedPlaceId;
+    const { displayName, placeName, address, longitude, latitude, insertion, single } = core();
+    return {
+      savedPlaceId,
+      savedPlaceRevision: integer(raw.savedPlaceRevision, 1, Number.MAX_SAFE_INTEGER),
+      displayName, placeName, address, longitude, latitude, insertion, single,
+    };
+  },
+  key: (candidate) => candidate.savedPlaceId,
+  pairKeys: (raw) => [raw.firstSavedPlaceId, raw.secondSavedPlaceId],
+};
+
+export function parseRecommendationResponse(value: unknown): RecommendationResponse {
+  const raw = record(value);
+  if (raw.status !== "OK" && raw.status !== "NO_SAVED_RESTAURANTS") fail();
+  const { basis, settings, meals, pairs, coverage } = parseResponseBody(raw, v1Identity);
   const counts = {
     savedRestaurants: integer(coverage.savedRestaurants, 0, 1000),
     invalidSaved: integer(coverage.invalidSaved, 0, 1000),
@@ -331,10 +418,87 @@ export function parseRecommendationResponse(value: unknown): RecommendationRespo
   )) fail();
   return {
     status: raw.status,
-    basis: { tripId: basis.tripId, departureAt, returnAt, pointIds, arrivalAts },
-    settings: { mealCount, toleranceMinutes, detourLimitMinutes },
+    basis,
+    settings,
     meals,
-    pairs,
+    pairs: pairs.map(({ first, second, core }) => ({
+      firstSavedPlaceId: first.savedPlaceId,
+      secondSavedPlaceId: second.savedPlaceId,
+      ...core,
+    })),
+    coverage: counts,
+  };
+}
+
+function parseSourceRef(value: unknown): RecommendationSourceRef {
+  const raw = record(value);
+  if (typeof raw.id !== "string" || !SAVED_PLACE_ID.test(raw.id)) fail();
+  const revision = integer(raw.revision, 1, Number.MAX_SAFE_INTEGER);
+  if (raw.type === "saved" && Object.keys(raw).length === 3) return { type: "saved", id: raw.id, revision };
+  if (raw.type === "shared" && Object.keys(raw).length === 4 && typeof raw.folderId === "string" && SAVED_PLACE_ID.test(raw.folderId)) {
+    return { type: "shared", id: raw.id, revision, folderId: raw.folderId };
+  }
+  return fail();
+}
+
+// The selection key of a v2 candidate: unique across my and shared places.
+export function recommendationSourceKey(source: RecommendationSourceRef) {
+  return `${source.type}:${source.id}`;
+}
+
+const v2Identity: CandidateIdentity<RecommendationCandidateV2> = {
+  parse: (raw, core) => {
+    const source = parseSourceRef(raw.source);
+    if (!Array.isArray(raw.otherFolderIds) || raw.otherFolderIds.length > MAX_MEMBER_FOLDERS) fail();
+    const otherFolderIds = raw.otherFolderIds.map((folderId) => {
+      if (typeof folderId !== "string" || !SAVED_PLACE_ID.test(folderId)) fail();
+      return folderId;
+    });
+    // The representative's own folder is never listed again, nor any folder twice.
+    if (new Set(otherFolderIds).size !== otherFolderIds.length ||
+      (source.type === "shared" && otherFolderIds.includes(source.folderId))) fail();
+    return { source, ...core(), otherFolderIds };
+  },
+  key: (candidate) => recommendationSourceKey(candidate.source),
+  pairKeys: (raw) => [recommendationSourceKey(parseSourceRef(raw.first)), recommendationSourceKey(parseSourceRef(raw.second))],
+};
+
+// Contract v2 (issue #124 §7.3). Coverage bounds follow the candidate pool:
+// up to 1,000 of mine plus up to 2,000 shared rows read in the route box.
+export function parseRecommendationResponseV2(value: unknown): RecommendationResponseV2 {
+  const raw = record(value);
+  if (raw.contractVersion !== 2) fail();
+  if (raw.status !== "OK" && raw.status !== "NO_SAVED_RESTAURANTS" && raw.status !== "ALL_EXCLUDED") fail();
+  const { basis, settings, meals, pairs, coverage } = parseResponseBody(raw, v2Identity);
+  if (typeof coverage.sharedReadTruncated !== "boolean") fail();
+  const pool = MAX_SAVED_RESTAURANTS + MAX_SHARED_RESTAURANTS_READ;
+  const counts = {
+    savedRestaurants: integer(coverage.savedRestaurants, 0, MAX_SAVED_RESTAURANTS),
+    invalidSaved: integer(coverage.invalidSaved, 0, pool),
+    alreadyInRoute: integer(coverage.alreadyInRoute, 0, pool),
+    nearRoute: integer(coverage.nearRoute, 0, pool),
+    evaluated: integer(coverage.evaluated, 0, pool),
+    unreachable: integer(coverage.unreachable, 0, pool),
+    notEvaluated: integer(coverage.notEvaluated, 0, pool),
+    providerRequests: integer(coverage.providerRequests, 0, 14),
+    sharedRestaurants: integer(coverage.sharedRestaurants, 0, MAX_SHARED_RESTAURANTS_READ),
+    duplicateMerged: integer(coverage.duplicateMerged, 0, MAX_SHARED_RESTAURANTS_READ),
+    avoidedExcluded: integer(coverage.avoidedExcluded, 0, pool),
+    disabledFolders: integer(coverage.disabledFolders, 0, MAX_MEMBER_FOLDERS),
+    sharedReadTruncated: coverage.sharedReadTruncated,
+  };
+  if (raw.status !== "OK" && (
+    meals.some((meal) => meal.candidates.length > 0) || pairs.length > 0 || counts.providerRequests !== 0
+  )) fail();
+  // A truncated read may hide candidates, so the server never reports ALL_EXCLUDED for it.
+  if (raw.status === "ALL_EXCLUDED" && counts.sharedReadTruncated) fail();
+  return {
+    contractVersion: 2,
+    status: raw.status,
+    basis,
+    settings,
+    meals,
+    pairs: pairs.map(({ first, second, core }) => ({ first: { ...first.source }, second: { ...second.source }, ...core })),
     coverage: counts,
   };
 }
@@ -353,7 +517,12 @@ export function sameBasis(left: BasisLike, right: BasisLike) {
 
 // The response must answer exactly the request that was sent, including each
 // meal's target (same rule as the server) and its ± tolerance window.
-export function responseMatchesRequest(response: RecommendationResponse, request: RecommendationRequest) {
+export function responseMatchesRequest(
+  response: Pick<RecommendationResponse, "basis" | "settings"> & {
+    meals: Array<Pick<RecommendationMeal, "targetAt" | "windowStartAt" | "windowEndAt" | "dwellMinutes">>;
+  },
+  request: RecommendationRequest,
+) {
   const toleranceMs = request.toleranceMinutes * 60_000;
   return response.basis.tripId === request.tripId &&
     sameBasis(response.basis, request.basis) &&

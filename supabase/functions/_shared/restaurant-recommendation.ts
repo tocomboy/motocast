@@ -1,6 +1,15 @@
 import { executeBudgetedProviderCall } from "./budgeted-call.ts";
 import { isRoutePointErrorCode, routeResponseDiagnostic, type NormalizedKakaoRoute } from "./kakao-route.ts";
 import { MEAL_DWELL_FIXED, MEAL_DWELL_FIXED_MESSAGE } from "./meal-dwell.ts";
+import {
+  buildCandidatePool,
+  haversineKm,
+  inKorea,
+  type AvoidedPlace,
+  type CandidateRestaurant,
+  type SharedRestaurantRead,
+  type SourceRef,
+} from "./restaurant-candidates.ts";
 import type { MealTarget, RecommendationRequest } from "./restaurant-recommendation-request.ts";
 import { isFutureDeparture, type RoutablePoint, type RouteChunkRequest, type RouteOperation } from "./route-orchestration.ts";
 import { parseStrictRfc3339 } from "./strict-time.ts";
@@ -66,6 +75,38 @@ export type RecommendationResponse = {
   coverage: RecommendationCoverage;
 };
 
+// v2 (issue #124 contract §7.3): candidates and pairs name their source row
+// (my saved place or a shared folder place) instead of a saved place ID.
+export type RecommendationCandidateV2 = Omit<RecommendationCandidate, "savedPlaceId" | "savedPlaceRevision"> & {
+  source: SourceRef;
+  otherFolderIds: string[];
+};
+
+export type RecommendationMealV2 = Omit<RecommendationMeal, "candidates"> & { candidates: RecommendationCandidateV2[] };
+
+export type RecommendationPairV2 = Omit<RecommendationPair, "firstSavedPlaceId" | "secondSavedPlaceId"> & {
+  first: SourceRef;
+  second: SourceRef;
+};
+
+export type RecommendationCoverageV2 = RecommendationCoverage & {
+  sharedRestaurants: number;
+  duplicateMerged: number;
+  avoidedExcluded: number;
+  disabledFolders: number;
+  sharedReadTruncated: boolean;
+};
+
+export type RecommendationResponseV2 = {
+  contractVersion: 2;
+  status: "OK" | "NO_SAVED_RESTAURANTS" | "ALL_EXCLUDED";
+  basis: RecommendationResponse["basis"];
+  settings: RecommendationResponse["settings"];
+  meals: RecommendationMealV2[];
+  pairs: RecommendationPairV2[];
+  coverage: RecommendationCoverageV2;
+};
+
 export type RecommendationDependencies = {
   now: () => number;
   limitFor: (operation: RouteOperation) => number;
@@ -88,7 +129,6 @@ const MAX_PROVIDER_CALLS = { 1: SINGLE_MEAL_EVALUATIONS, 2: 2 * TWO_MEAL_EVALUAT
 const DAY_MS = 24 * 60 * 60_000;
 const SCREEN_MARGIN_MS = 15 * 60_000;
 const SAME_POINT_DEGREES = 0.000001 + 1e-9;
-const EARTH_RADIUS_KM = 6371.0088;
 // Straight-line detour estimates: 60 km/h round trip for exclusion, 40 km/h for ranking/arrival.
 const SECONDS_PER_KM_AT_40 = 90;
 
@@ -121,11 +161,6 @@ function storedRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function inKorea(longitude: unknown, latitude: unknown): boolean {
-  return typeof longitude === "number" && Number.isFinite(longitude) && longitude >= 124.5 && longitude <= 132 &&
-    typeof latitude === "number" && Number.isFinite(latitude) && latitude >= 32.8 && latitude <= 38.7;
-}
-
 function storedPoint(value: unknown): StoredPoint & { dwellMinutes: number } {
   const point = storedRecord(value);
   if (
@@ -154,15 +189,6 @@ function planarKm(aLongitude: number, aLatitude: number, bLongitude: number, bLa
   const dx = (bLongitude - aLongitude) * cosLatitude * 111.32;
   const dy = (bLatitude - aLatitude) * 110.574;
   return Math.sqrt(dx * dx + dy * dy);
-}
-
-export function haversineKm(aLongitude: number, aLatitude: number, bLongitude: number, bLatitude: number) {
-  const toRadians = Math.PI / 180;
-  const dLatitude = (bLatitude - aLatitude) * toRadians;
-  const dLongitude = (bLongitude - aLongitude) * toRadians;
-  const h = Math.sin(dLatitude / 2) ** 2 +
-    Math.cos(aLatitude * toRadians) * Math.cos(bLatitude * toRadians) * Math.sin(dLongitude / 2) ** 2;
-  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 type StoredRoad = { duration: number; vertexes: number[] };
@@ -285,65 +311,6 @@ export function prepareStoredRoute(request: RecommendationRequest, summary: unkn
 }
 
 // ---------------------------------------------------------------------------
-// Saved restaurants (owner RLS rows of saved_places kind='restaurant')
-
-export type SavedRestaurant = {
-  id: string;
-  revision: number;
-  displayName: string;
-  placeName: string;
-  address: string;
-  longitude: number;
-  latitude: number;
-};
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function cleanText(value: unknown, max: number): string | null {
-  if (typeof value !== "string" || value.length < 1 || value.length > max || value.trim() !== value) return null;
-  return value;
-}
-
-function savedRestaurant(value: unknown): SavedRestaurant | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const row = value as Record<string, unknown>;
-  const place = row.place;
-  if (!place || typeof place !== "object" || Array.isArray(place)) return null;
-  const raw = place as Record<string, unknown>;
-  const name = cleanText(raw.name, 160);
-  const address = cleanText(raw.address, 300);
-  const roadAddress = raw.roadAddress === null || raw.roadAddress === "" ? null : cleanText(raw.roadAddress, 300);
-  const alias = row.alias === null || row.alias === undefined ? null : cleanText(row.alias, 80);
-  if (
-    typeof row.id !== "string" || !UUID.test(row.id) ||
-    !Number.isSafeInteger(row.revision) || Number(row.revision) <= 0 ||
-    !name || !address || (raw.roadAddress !== null && raw.roadAddress !== "" && !roadAddress) ||
-    (row.alias !== null && row.alias !== undefined && !alias) ||
-    !inKorea(raw.longitude, raw.latitude)
-  ) return null;
-  return {
-    id: row.id,
-    revision: row.revision as number,
-    displayName: alias ?? name,
-    placeName: name,
-    address: roadAddress ?? address,
-    longitude: raw.longitude as number,
-    latitude: raw.latitude as number,
-  };
-}
-
-export function parseSavedRestaurants(rows: unknown[]): { restaurants: SavedRestaurant[]; invalid: number } {
-  const restaurants: SavedRestaurant[] = [];
-  let invalid = 0;
-  for (const row of rows) {
-    const restaurant = savedRestaurant(row);
-    if (restaurant) restaurants.push(restaurant);
-    else invalid += 1;
-  }
-  return { restaurants, invalid };
-}
-
-// ---------------------------------------------------------------------------
 // Pre-screening (no provider calls)
 
 type MealWindow = {
@@ -357,7 +324,7 @@ type MealWindow = {
 };
 
 export type ScreenedCandidate = {
-  restaurant: SavedRestaurant;
+  restaurant: CandidateRestaurant;
   legIndex: number;
   distanceKm: number;
   estimatedExtraSeconds: number;
@@ -386,7 +353,7 @@ function gapToTarget(start: number, end: number, target: number) {
   return 0;
 }
 
-function nearestVertex(leg: StoredLeg, restaurant: SavedRestaurant) {
+function nearestVertex(leg: StoredLeg, restaurant: CandidateRestaurant) {
   let best: TimedVertex | null = null;
   let bestKm = Number.POSITIVE_INFINITY;
   for (const vertex of leg.vertices) {
@@ -399,7 +366,7 @@ function nearestVertex(leg: StoredLeg, restaurant: SavedRestaurant) {
   return best!;
 }
 
-function samePoint(restaurant: SavedRestaurant, point: StoredPoint) {
+function samePoint(restaurant: CandidateRestaurant, point: StoredPoint) {
   return Math.abs(restaurant.longitude - point.longitude) <= SAME_POINT_DEGREES &&
     Math.abs(restaurant.latitude - point.latitude) <= SAME_POINT_DEGREES;
 }
@@ -429,9 +396,21 @@ function legBox(leg: StoredLeg, radiusKm: number): LegBox {
   };
 }
 
+// Box of the shared-folder read: the whole stored route widened by the same padding
+// as the 30 km pre-screen, so it holds every restaurant screenCandidates could keep.
+export function sharedReadBounds(route: StoredRoute) {
+  const boxes = route.legs.map((leg) => legBox(leg, DETOUR_LIMIT_MINUTES / 2));
+  return {
+    minLatitude: Math.min(...boxes.map((box) => box.minLatitude)),
+    maxLatitude: Math.max(...boxes.map((box) => box.maxLatitude)),
+    minLongitude: Math.min(...boxes.map((box) => box.minLongitude)),
+    maxLongitude: Math.max(...boxes.map((box) => box.maxLongitude)),
+  };
+}
+
 export function screenCandidates(
   route: StoredRoute,
-  restaurants: SavedRestaurant[],
+  restaurants: CandidateRestaurant[],
   targets: MealTarget[],
   detourLimitMinutes: number,
 ) {
@@ -512,7 +491,7 @@ export function screenCandidates(
       left.estimatedExtraSeconds - right.estimatedExtraSeconds ||
       left.gapMs - right.gapMs ||
       compareText(left.restaurant.displayName, right.restaurant.displayName) ||
-      compareText(left.restaurant.id, right.restaurant.id)
+      compareText(left.restaurant.key, right.restaurant.key)
     ));
   }
   return { perMeal, alreadyInRoute, nearRoute };
@@ -629,9 +608,9 @@ function routePoint(point: StoredPoint): RoutablePoint {
   };
 }
 
-function restaurantPoint(restaurant: SavedRestaurant, dwellMinutes: number): RoutablePoint {
+function restaurantPoint(restaurant: CandidateRestaurant, dwellMinutes: number): RoutablePoint {
   return {
-    id: restaurant.id,
+    id: restaurant.source.id,
     label: restaurant.displayName,
     name: restaurant.placeName,
     longitude: restaurant.longitude,
@@ -645,7 +624,7 @@ function restaurantPoint(restaurant: SavedRestaurant, dwellMinutes: number): Rou
 }
 
 type SingleEvaluation = {
-  restaurant: SavedRestaurant;
+  restaurant: CandidateRestaurant;
   legIndex: number;
   reachable: boolean;
   arrivalMs: number;
@@ -693,7 +672,7 @@ function sameLegPairChoices(
   const choices: Array<{ first: SingleEvaluation; second: SingleEvaluation; estimate: number; gap: number }> = [];
   for (const a of first) {
     for (const b of second) {
-      if (!a.reachable || !b.reachable || a.legIndex !== b.legIndex || a.restaurant.id === b.restaurant.id) continue;
+      if (!a.reachable || !b.reachable || a.legIndex !== b.legIndex || a.restaurant.key === b.restaurant.key) continue;
       // Keep the visiting order along the leg and drop pairs no combined route can satisfy:
       // the combined detour is at least the larger single detour, and meal 2 cannot
       // arrive before its single arrival plus the meal-1 dwell.
@@ -715,8 +694,8 @@ function sameLegPairChoices(
   }
   choices.sort((left, right) => (
     left.estimate - right.estimate || left.gap - right.gap ||
-    compareText(left.first.restaurant.id, right.first.restaurant.id) ||
-    compareText(left.second.restaurant.id, right.second.restaurant.id)
+    compareText(left.first.restaurant.key, right.first.restaurant.key) ||
+    compareText(left.second.restaurant.key, right.second.restaurant.key)
   ));
   return choices.slice(0, SAME_LEG_PAIR_EVALUATIONS);
 }
@@ -725,15 +704,44 @@ function iso(ms: number) {
   return new Date(ms).toISOString();
 }
 
-export async function recommendRestaurants(
-  input: {
-    request: RecommendationRequest;
-    targets: MealTarget[];
-    route: StoredRoute;
-    savedRows: unknown[];
-  },
+type ComputedCandidate = {
+  restaurant: CandidateRestaurant;
+  insertion: RecommendationCandidate["insertion"];
+  single: RecommendationCandidate["single"];
+};
+
+type ComputedPair = {
+  first: CandidateRestaurant;
+  second: CandidateRestaurant;
+  firstArrivalAt: string;
+  secondArrivalAt: string;
+  extraDriveSeconds: number;
+  returnAt: string;
+};
+
+type RouteCounts = Omit<RecommendationCoverage, "savedRestaurants" | "invalidSaved">;
+
+type Computed = {
+  base: Pick<RecommendationResponse, "basis" | "settings">;
+  meals: Array<{ shell: Omit<RecommendationMeal, "candidates">; candidates: ComputedCandidate[] }>;
+  pairs: ComputedPair[];
+  counts: RouteCounts;
+};
+
+type RecommendationInput = {
+  request: RecommendationRequest;
+  targets: MealTarget[];
+  route: StoredRoute;
+  savedRows: unknown[];
+};
+
+// Screens and evaluates one candidate pool with a single budgeted provider runner,
+// whatever sources the pool came from. An empty pool makes no provider work.
+async function computeRecommendation(
+  input: RecommendationInput,
+  restaurants: CandidateRestaurant[],
   dependencies: RecommendationDependencies,
-): Promise<RecommendationResponse> {
+): Promise<Computed> {
   const { request, targets, route } = input;
   const windows = mealWindows(targets);
   const judge: Judge = {
@@ -742,10 +750,7 @@ export async function recommendRestaurants(
     toleranceMs: request.toleranceMinutes * 60_000,
     limitSeconds: DETOUR_LIMIT_MINUTES * 60,
   };
-  const { restaurants, invalid } = parseSavedRestaurants(input.savedRows);
-  const coverage: RecommendationCoverage = {
-    savedRestaurants: restaurants.length,
-    invalidSaved: invalid,
+  const counts: RouteCounts = {
     alreadyInRoute: 0,
     nearRoute: 0,
     evaluated: 0,
@@ -775,25 +780,19 @@ export async function recommendRestaurants(
     dwellMinutes: window.dwellMinutes,
   });
   if (restaurants.length === 0) {
-    return {
-      status: "NO_SAVED_RESTAURANTS",
-      ...base,
-      meals: windows.map((window) => ({ ...mealShell(window), candidates: [] })),
-      pairs: [],
-      coverage,
-    };
+    return { base, meals: windows.map((window) => ({ shell: mealShell(window), candidates: [] })), pairs: [], counts };
   }
 
   const screened = screenCandidates(route, restaurants, targets, DETOUR_LIMIT_MINUTES);
-  coverage.alreadyInRoute = screened.alreadyInRoute;
-  coverage.nearRoute = screened.nearRoute;
+  counts.alreadyInRoute = screened.alreadyInRoute;
+  counts.nearRoute = screened.nearRoute;
   const perMealLimit = request.mealCount === 1 ? SINGLE_MEAL_EVALUATIONS : TWO_MEAL_EVALUATIONS_PER_MEAL;
   const chosen = screened.perMeal.map((list) => list.slice(0, perMealLimit));
 
   const singles = new Map<string, SingleEvaluation>();
   for (const list of chosen) {
     for (const candidate of list) {
-      const key = singleKey(candidate.restaurant.id, candidate.legIndex);
+      const key = singleKey(candidate.restaurant.key, candidate.legIndex);
       if (!singles.has(key)) {
         singles.set(key, { restaurant: candidate.restaurant, legIndex: candidate.legIndex, reachable: false, arrivalMs: 0, extraSeconds: 0 });
       }
@@ -819,7 +818,7 @@ export async function recommendRestaurants(
   }, abort);
 
   const evaluationsByMeal = chosen.map((list) => list.map((candidate) => (
-    singles.get(singleKey(candidate.restaurant.id, candidate.legIndex))!
+    singles.get(singleKey(candidate.restaurant.key, candidate.legIndex))!
   )));
 
   const pairResults = new Map<string, PairEvaluation>();
@@ -833,7 +832,7 @@ export async function recommendRestaurants(
         restaurantPoint(second.restaurant, windows[1].dwellMinutes),
         routePoint(leg.to),
       ], leg.departureMs);
-      const key = `${first.restaurant.id}|${second.restaurant.id}`;
+      const key = `${first.restaurant.key}|${second.restaurant.key}`;
       if (!result) {
         pairResults.set(key, { reachable: false, firstArrivalMs: 0, secondArrivalMs: 0, extraSeconds: 0 });
         return;
@@ -849,24 +848,24 @@ export async function recommendRestaurants(
     }, abort);
   }
 
-  const evaluatedIds = new Set<string>();
-  const reachableIds = new Set<string>();
+  const evaluatedKeys = new Set<string>();
+  const reachableKeys = new Set<string>();
   for (const evaluation of singles.values()) {
-    evaluatedIds.add(evaluation.restaurant.id);
-    if (evaluation.reachable) reachableIds.add(evaluation.restaurant.id);
+    evaluatedKeys.add(evaluation.restaurant.key);
+    if (evaluation.reachable) reachableKeys.add(evaluation.restaurant.key);
   }
-  coverage.evaluated = evaluatedIds.size;
-  coverage.unreachable = [...evaluatedIds].filter((id) => !reachableIds.has(id)).length;
-  coverage.notEvaluated = coverage.nearRoute - coverage.evaluated;
-  coverage.providerRequests = runner.calls;
+  counts.evaluated = evaluatedKeys.size;
+  counts.unreachable = [...evaluatedKeys].filter((key) => !reachableKeys.has(key)).length;
+  counts.notEvaluated = counts.nearRoute - counts.evaluated;
+  counts.providerRequests = runner.calls;
 
-  const pairs: Array<RecommendationPair & { gapMs: number }> = [];
+  const pairs: Array<ComputedPair & { gapMs: number }> = [];
   const inPair = [new Set<string>(), new Set<string>()];
   if (request.mealCount === 2) {
     const [meal1, meal2] = windows;
     for (const a of evaluationsByMeal[0]) {
       for (const b of evaluationsByMeal[1]) {
-        if (!a.reachable || !b.reachable || a.restaurant.id === b.restaurant.id || a.legIndex > b.legIndex) continue;
+        if (!a.reachable || !b.reachable || a.restaurant.key === b.restaurant.key || a.legIndex > b.legIndex) continue;
         let combined: PairEvaluation | undefined;
         if (a.legIndex < b.legIndex) {
           combined = {
@@ -876,7 +875,7 @@ export async function recommendRestaurants(
             extraSeconds: a.extraSeconds + b.extraSeconds,
           };
         } else {
-          combined = pairResults.get(`${a.restaurant.id}|${b.restaurant.id}`);
+          combined = pairResults.get(`${a.restaurant.key}|${b.restaurant.key}`);
         }
         if (!combined?.reachable) continue;
         const returnMs = judge.baseReturnMs +
@@ -887,11 +886,11 @@ export async function recommendRestaurants(
           combined.extraSeconds > judge.limitSeconds ||
           !returnWithin24Hours(returnMs, judge)
         ) continue;
-        inPair[0].add(a.restaurant.id);
-        inPair[1].add(b.restaurant.id);
+        inPair[0].add(a.restaurant.key);
+        inPair[1].add(b.restaurant.key);
         pairs.push({
-          firstSavedPlaceId: a.restaurant.id,
-          secondSavedPlaceId: b.restaurant.id,
+          first: a.restaurant,
+          second: b.restaurant,
           firstArrivalAt: iso(combined.firstArrivalMs),
           secondArrivalAt: iso(combined.secondArrivalMs),
           extraDriveSeconds: combined.extraSeconds,
@@ -902,8 +901,8 @@ export async function recommendRestaurants(
     }
     pairs.sort((left, right) => (
       left.extraDriveSeconds - right.extraDriveSeconds || left.gapMs - right.gapMs ||
-      compareText(left.firstSavedPlaceId, right.firstSavedPlaceId) ||
-      compareText(left.secondSavedPlaceId, right.secondSavedPlaceId)
+      compareText(left.first.key, right.first.key) ||
+      compareText(left.second.key, right.second.key)
     ));
   }
 
@@ -911,17 +910,10 @@ export async function recommendRestaurants(
     const candidates = evaluationsByMeal[mealIndex].flatMap((evaluation) => {
       if (!evaluation.reachable) return [];
       const single = judgeSingle(evaluation, window, judge);
-      if (!single.feasible && !inPair[mealIndex].has(evaluation.restaurant.id)) return [];
-      const restaurant = evaluation.restaurant;
+      if (!single.feasible && !inPair[mealIndex].has(evaluation.restaurant.key)) return [];
       return [{
         candidate: {
-          savedPlaceId: restaurant.id,
-          savedPlaceRevision: restaurant.revision,
-          displayName: restaurant.displayName,
-          placeName: restaurant.placeName,
-          address: restaurant.address,
-          longitude: restaurant.longitude,
-          latitude: restaurant.latitude,
+          restaurant: evaluation.restaurant,
           insertion: {
             legIndex: evaluation.legIndex,
             afterPointId: route.pointIds[evaluation.legIndex],
@@ -934,25 +926,106 @@ export async function recommendRestaurants(
             returnAt: iso(single.returnMs),
             reason: single.reason,
           },
-        } satisfies RecommendationCandidate,
+        } satisfies ComputedCandidate,
         gapMs: Math.abs(evaluation.arrivalMs - window.targetMs),
       }];
     });
     candidates.sort((left, right) => (
       left.candidate.single.extraDriveSeconds - right.candidate.single.extraDriveSeconds ||
       left.gapMs - right.gapMs ||
-      compareText(left.candidate.displayName, right.candidate.displayName) ||
-      compareText(left.candidate.savedPlaceId, right.candidate.savedPlaceId)
+      compareText(left.candidate.restaurant.displayName, right.candidate.restaurant.displayName) ||
+      compareText(left.candidate.restaurant.key, right.candidate.restaurant.key)
     ));
-    return { ...mealShell(window), candidates: candidates.map(({ candidate }) => candidate) };
+    return { shell: mealShell(window), candidates: candidates.map(({ candidate }) => candidate) };
   });
 
+  return { base, meals, pairs: pairs.map(({ gapMs: _gapMs, ...pair }) => pair), counts };
+}
+
+function restaurantFields(restaurant: CandidateRestaurant) {
   return {
-    status: "OK",
-    ...base,
-    meals,
-    pairs: pairs.map(({ gapMs: _gapMs, ...pair }) => pair),
-    coverage,
+    displayName: restaurant.displayName,
+    placeName: restaurant.placeName,
+    address: restaurant.address,
+    longitude: restaurant.longitude,
+    latitude: restaurant.latitude,
+  };
+}
+
+// Contract v1 (unchanged shape): my saved restaurants minus my avoided places.
+// `savedRestaurants` counts the restaurants left after that exclusion.
+export async function recommendRestaurants(
+  input: RecommendationInput & { avoided?: AvoidedPlace[] },
+  dependencies: RecommendationDependencies,
+): Promise<RecommendationResponse> {
+  const pool = buildCandidatePool(input.savedRows, input.avoided ?? []);
+  const computed = await computeRecommendation(input, pool.restaurants, dependencies);
+  return {
+    status: pool.restaurants.length === 0 ? "NO_SAVED_RESTAURANTS" : "OK",
+    ...computed.base,
+    meals: computed.meals.map(({ shell, candidates }) => ({
+      ...shell,
+      candidates: candidates.map(({ restaurant, insertion, single }) => ({
+        savedPlaceId: restaurant.source.id,
+        savedPlaceRevision: restaurant.source.revision,
+        ...restaurantFields(restaurant),
+        insertion,
+        single,
+      })),
+    })),
+    pairs: computed.pairs.map(({ first, second, ...pair }) => ({
+      firstSavedPlaceId: first.source.id,
+      secondSavedPlaceId: second.source.id,
+      ...pair,
+    })),
+    coverage: { savedRestaurants: pool.restaurants.length, invalidSaved: pool.invalid, ...computed.counts },
+  };
+}
+
+// Contract v2 (§7.2–7.3): my restaurants + enabled shared folder restaurants read
+// inside the route box, de-duplicated, minus my avoided places.
+export async function recommendRestaurantsV2(
+  input: RecommendationInput & { avoided: AvoidedPlace[]; shared: SharedRestaurantRead },
+  dependencies: RecommendationDependencies,
+): Promise<RecommendationResponseV2> {
+  const { shared } = input;
+  const pool = buildCandidatePool(input.savedRows, input.avoided, shared.rows);
+  const read = pool.savedRestaurants + pool.sharedRestaurants;
+  // A truncated shared read may hide candidates past the rows it returned, so it
+  // never reports that everything was excluded.
+  const status = pool.savedRestaurants + shared.enabledTotal === 0
+    ? "NO_SAVED_RESTAURANTS"
+    : pool.restaurants.length === 0 && read > 0 && !shared.truncated ? "ALL_EXCLUDED" : "OK";
+  const computed = await computeRecommendation(input, pool.restaurants, dependencies);
+  return {
+    contractVersion: 2,
+    status,
+    ...computed.base,
+    meals: computed.meals.map(({ shell, candidates }) => ({
+      ...shell,
+      candidates: candidates.map(({ restaurant, insertion, single }) => ({
+        source: { ...restaurant.source },
+        ...restaurantFields(restaurant),
+        insertion,
+        single,
+        otherFolderIds: [...restaurant.otherFolderIds],
+      })),
+    })),
+    pairs: computed.pairs.map(({ first, second, ...pair }) => ({
+      first: { ...first.source },
+      second: { ...second.source },
+      ...pair,
+    })),
+    coverage: {
+      savedRestaurants: pool.savedRestaurants,
+      invalidSaved: pool.invalid,
+      ...computed.counts,
+      sharedRestaurants: pool.sharedRestaurants,
+      duplicateMerged: pool.duplicateMerged,
+      avoidedExcluded: pool.avoidedExcluded,
+      disabledFolders: shared.disabledFolders,
+      sharedReadTruncated: shared.truncated,
+    },
   };
 }
 

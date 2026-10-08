@@ -66,3 +66,22 @@ describe("meal target time", () => {
     expect(targets[1].targetAt.getTime() - targets[0].targetAt.getTime()).toBe(60_000);
   });
 });
+
+describe("contract v2 request", () => {
+  const v1 = () => structuredClone((cases.find((item) => item.expected)!).input as Record<string, unknown>);
+
+  it("accepts the v1 key set plus contractVersion 2 and marks only that request as v2", () => {
+    expect(parseRecommendationRequest({ ...v1(), contractVersion: 2 }).contractVersion).toBe(2);
+    expect("contractVersion" in parseRecommendationRequest(v1())).toBe(false);
+  });
+
+  it.each([1, 3, "2", null, 2.5])("rejects contractVersion %s", (contractVersion) => {
+    expect(() => parseRecommendationRequest({ ...v1(), contractVersion })).toThrow("INVALID_RECOMMENDATION_REQUEST");
+  });
+
+  it("keeps the exact key check for v2", () => {
+    expect(() => parseRecommendationRequest({ ...v1(), contractVersion: 2, folders: [] })).toThrow("INVALID_RECOMMENDATION_REQUEST");
+    const { tripId: _tripId, ...missing } = v1();
+    expect(() => parseRecommendationRequest({ ...missing, contractVersion: 2 })).toThrow("INVALID_RECOMMENDATION_REQUEST");
+  });
+});

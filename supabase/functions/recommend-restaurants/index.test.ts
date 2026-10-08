@@ -97,11 +97,18 @@ function body(overrides: Record<string, unknown> = {}) {
 
 // --- Member JWT client stub (owner RLS reads only) ------------------------------
 
-type Store = { trip: unknown; cache: unknown; saved: unknown[]; savedError?: unknown };
-type Query = { table: string; filters: Array<[string, unknown]> };
+type Store = {
+  trip: unknown; cache: unknown; saved: unknown[]; savedError?: unknown;
+  avoided?: unknown; avoidedError?: unknown; shared?: unknown; sharedError?: unknown;
+};
+type Query = { table: string; filters: Array<[string, unknown]>; args?: unknown };
 
 function memberClient(store: Store, queries: Query[]) {
   return {
+    async rpc(name: string, args: unknown) {
+      queries.push({ table: `rpc:${name}`, filters: [], args });
+      return { data: store.sharedError ? null : store.shared, error: store.sharedError ?? null };
+    },
     from(table: string) {
       const entry: Query = { table, filters: [] };
       queries.push(entry);
@@ -111,9 +118,11 @@ function memberClient(store: Store, queries: Query[]) {
         order: () => query,
         limit: () => query,
         maybeSingle: async () => ({ data: table === "trips" ? store.trip : store.cache, error: null }),
-        then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve({
-          data: store.savedError ? null : store.saved, error: store.savedError ?? null,
-        }).then(resolve, reject),
+        then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(
+          table === "avoided_places"
+            ? { data: store.avoidedError ? null : store.avoided ?? [], error: store.avoidedError ?? null }
+            : { data: store.savedError ? null : store.saved, error: store.savedError ?? null },
+        ).then(resolve, reject),
       };
       return query;
     },
@@ -420,5 +429,115 @@ describe("recommend-restaurants handler", () => {
     expect((await call(null, { method: "OPTIONS", origin: "http://localhost:3000" })).status).toBe(204);
     expect((await call(null, { method: "GET" })).status).toBe(405);
     expect(auth.requireMember).not.toHaveBeenCalled();
+  });
+
+  // --- Contract v2 and avoided places (issue #124 contract §7) ---------------------
+
+  const FOLDER_ID = "44444444-4444-4444-8444-444444444444";
+  const SHARED_ID = "55555555-5555-4555-8555-555555555555";
+  const sharedRow = (kakaoPlaceId = "kakao-shared") => ({
+    ...savedRow(SHARED_ID), folder_id: FOLDER_ID, created_at: "2026-10-09T00:00:00+00:00",
+    place: { ...savedRow(SHARED_ID).place, kakaoPlaceId },
+  });
+  const avoidedRow = (kakaoPlaceId: string) => ({ id: "fixture-avoided", place: { ...savedRow(ROW_ID).place, kakaoPlaceId } });
+  const sharedRead = (rows: unknown[], overrides: Record<string, unknown> = {}) => (
+    { rows, truncated: false, enabledTotal: rows.length, disabledFolders: 0, ...overrides }
+  );
+  const tables = () => queries.map((query) => query.table);
+
+  it("v1 reads my avoided places through the member client, excludes them and never reads shared folders", async () => {
+    store.avoided = [avoidedRow(`kakao-${ROW_ID}`)];
+    const response = await call(body());
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result.status).toBe("NO_SAVED_RESTAURANTS");
+    expect(result.coverage.savedRestaurants).toBe(0);
+    expect(tables()).toEqual(["trips", "route_cache", "saved_places", "avoided_places"]);
+    expect(queries.find((query) => query.table === "avoided_places")?.filters).toEqual([["owner_id", "fixture-member"]]);
+    expectNoProviderWork();
+  });
+
+  it("v1 keeps exactly its previous response keys", async () => {
+    const result = await (await call(body())).json();
+    expect(Object.keys(result)).toEqual(["status", "basis", "settings", "meals", "pairs", "coverage"]);
+    expect(Object.keys(result.meals[0].candidates[0])).toEqual([
+      "savedPlaceId", "savedPlaceRevision", "displayName", "placeName", "address", "longitude", "latitude", "insertion", "single",
+    ]);
+    expect(Object.keys(result.coverage)).toEqual([
+      "savedRestaurants", "invalidSaved", "alreadyInRoute", "nearRoute", "evaluated", "unreachable", "notEvaluated", "providerRequests",
+    ]);
+  });
+
+  it("v2 reads enabled shared restaurants inside the widened route box and names candidates by source", async () => {
+    store.saved = [];
+    store.shared = sharedRead([sharedRow()], { disabledFolders: 2 });
+    const response = await call(body({ contractVersion: 2 }));
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result.contractVersion).toBe(2);
+    expect(result.status).toBe("OK");
+    expect(result.meals[0].candidates).toHaveLength(1);
+    expect(result.meals[0].candidates[0]).toMatchObject({
+      source: { type: "shared", id: SHARED_ID, revision: 4, folderId: FOLDER_ID }, otherFolderIds: [], displayName: SECRET_ALIAS,
+    });
+    expect(result.coverage).toMatchObject({ sharedRestaurants: 1, disabledFolders: 2, sharedReadTruncated: false, providerRequests: 1 });
+    expect(tables()).toEqual(["trips", "route_cache", "saved_places", "avoided_places", "rpc:recommendation_shared_restaurants"]);
+    const args = queries.at(-1)!.args as Record<string, number>;
+    expect(Object.keys(args).sort()).toEqual(["max_lat", "max_lng", "min_lat", "min_lng"]);
+    expect(args.min_lat).toBeCloseTo(37 - (30 / 110 + 0.001), 9);
+    expect(args.max_lat).toBeCloseTo(37 + (30 / 110 + 0.001), 9);
+    expect(args.min_lng).toBeLessThan(127 - 0.34);
+    expect(args.max_lng).toBeGreaterThan(128 + 0.34);
+    expect(auth.consumeBudget).toHaveBeenCalledTimes(1);
+    expect(infoLog).toHaveBeenCalledTimes(1);
+    expect(logs()).toContain("shared=1");
+    expect(logs()).not.toMatch(/fixture-secret|127\.75|37\.001|fixture-provider-key/);
+  });
+
+  it("v2 answers ALL_EXCLUDED with zero budget or provider work", async () => {
+    store.shared = sharedRead([sharedRow("kakao-shared")]);
+    store.avoided = [avoidedRow(`kakao-${ROW_ID}`), avoidedRow("kakao-shared")];
+    const response = await call(body({ contractVersion: 2 }));
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result.status).toBe("ALL_EXCLUDED");
+    expect(result.coverage).toMatchObject({ avoidedExcluded: 2, providerRequests: 0 });
+    expectNoProviderWork();
+  });
+
+  it("v2 answers NO_SAVED_RESTAURANTS when neither I nor my enabled folders hold a restaurant", async () => {
+    store.saved = [];
+    store.shared = sharedRead([], { disabledFolders: 3 });
+    env.delete("KAKAO_REST_API_KEY");
+    const result = await (await call(body({ contractVersion: 2 }))).json();
+    expect(result.status).toBe("NO_SAVED_RESTAURANTS");
+    expect(result.coverage.disabledFolders).toBe(3);
+    expectNoProviderWork();
+  });
+
+  it.each([
+    ["avoided read error (v1)", () => { store.avoidedError = { message: "fixture-private-db-detail" }; return body(); }],
+    ["avoided read error (v2)", () => { store.avoidedError = { message: "fixture-private-db-detail" }; return body({ contractVersion: 2 }); }],
+    ["more avoided rows than the limit", () => {
+      store.avoided = Array.from({ length: 201 }, (_, index) => avoidedRow(`kakao-other-${index}`));
+      return body();
+    }],
+    ["shared read error", () => { store.sharedError = { message: "fixture-private-db-detail" }; return body({ contractVersion: 2 }); }],
+    ["shared read without data", () => { store.shared = null; return body({ contractVersion: 2 }); }],
+    ["shared read as a row set", () => { store.shared = [sharedRow()]; return body({ contractVersion: 2 }); }],
+  ])("fails as a storage failure on %s, never as an empty list, with zero provider work", async (_name, prepare) => {
+    const response = await call(prepare());
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "추천을 계산하지 못했습니다. 잠시 후 다시 시도해 주세요.", code: "RECOMMENDATION_FAILED" });
+    expect(logs()).not.toContain("fixture-private-db-detail");
+    expectNoProviderWork();
+  });
+
+  it.each([1, 3, "2"])("rejects contractVersion %s before any storage, budget or provider work", async (contractVersion) => {
+    const response = await call(body({ contractVersion }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe("RECOMMENDATION_INPUT_INVALID");
+    expect(queries).toEqual([]);
+    expectNoProviderWork();
   });
 });
