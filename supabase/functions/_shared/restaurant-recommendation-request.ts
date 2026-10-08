@@ -9,6 +9,8 @@ export type RecommendationRequest = {
   mealCount: 1 | 2;
   meals: RecommendationMealRequest[];
   toleranceMinutes: 30 | 60 | 90;
+  // Present only on a v2 request (shared folders, issue #124 contract §7.1).
+  contractVersion?: 2;
 };
 
 export type MealTarget = {
@@ -20,6 +22,7 @@ export type MealTarget = {
 };
 
 const REQUEST_KEYS = ["basis", "mealCount", "meals", "toleranceMinutes", "tripId"];
+const REQUEST_V2_KEYS = ["basis", "contractVersion", "mealCount", "meals", "toleranceMinutes", "tripId"];
 // Meal-time window choices (minutes before/after the desired time), PLAN-005 amendment.
 export const TOLERANCE_CHOICES = [30, 60, 90] as const;
 const BASIS_KEYS = ["arrivalAts", "departureAt", "pointIds", "returnAt"];
@@ -61,7 +64,10 @@ function firstSeoulTimeAtOrAfter(reference: Date, desiredTime: string): Date {
 }
 
 export function parseRecommendationRequest(value: unknown): RecommendationRequest {
-  const body = exactRecord(value, REQUEST_KEYS);
+  // v2 is the v1 key set plus `contractVersion: 2`; any other version value is invalid.
+  const isV2 = !!value && typeof value === "object" && !Array.isArray(value) && "contractVersion" in value;
+  const body = exactRecord(value, isV2 ? REQUEST_V2_KEYS : REQUEST_KEYS);
+  if (isV2 && body.contractVersion !== 2) invalid();
   if (typeof body.tripId !== "string" || !TRIP_ID.test(body.tripId)) invalid();
 
   const basis = exactRecord(body.basis, BASIS_KEYS);
@@ -95,6 +101,7 @@ export function parseRecommendationRequest(value: unknown): RecommendationReques
     mealCount,
     meals,
     toleranceMinutes: toleranceChoice(body.toleranceMinutes),
+    ...(isV2 ? { contractVersion: 2 as const } : {}),
   };
   // Every format, range and meal-order error wins over the dwell policy, so only an
   // otherwise valid request from an outdated client gets the update guidance.

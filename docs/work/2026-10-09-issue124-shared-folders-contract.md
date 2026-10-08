@@ -157,6 +157,16 @@ type ResponseV2 = { contractVersion: 2; status: "OK" | "NO_SAVED_RESTAURANTS" | 
 - 꺼 둔 폴더는 처음부터 후보가 아니므로 `coverage.disabledFolders`로만 안내한다.
 - 클라이언트 쿼리 파서의 coverage 상한(현재 1,000)은 v2 값에 맞게 넓힌다.
 
+확정한 세부(Edge slice, `supabase/functions/_shared/restaurant-candidates.ts`·`restaurant-recommendation.ts`):
+
+- v2 후보 키 순서: `source, displayName, placeName, address, longitude, latitude, insertion, single, otherFolderIds`. 조합: `first, second, firstArrivalAt, secondArrivalAt, extraDriveSeconds, returnAt`. 응답 첫 키는 `contractVersion`. 후보 값(이름·주소·좌표)은 대표 행의 스냅샷이다.
+- 중복 제거: 내 장소는 모두 남긴다(내 장소끼리 같은 kakaoPlaceId여도 v1처럼 둘 다). 공유 행은 같은 kakaoPlaceId 대표(내 장소 또는 먼저 온 공유 행)가 있으면 합쳐지고, 그 폴더 id가 대표의 `otherFolderIds`에 합쳐진 순서대로 한 번씩 들어간다(대표 자신의 폴더 제외). 기피는 합친 뒤 대표에 적용한다. 지도 지점 기피는 `map:`로 시작하는 모든 id(`:region` 포함)이며 30 m는 경계 포함(haversine).
+- v2 coverage 의미: `savedRestaurants` 형식이 유효한 내 식당(기피 전), `sharedRestaurants` 형식이 유효한 공유 행(읽은 범위, 중복·기피 전), `invalidSaved` 내 행 + 공유 행의 형식 오류(kakaoPlaceId 없음 포함), `duplicateMerged` 대표에 합쳐진 공유 행 수, `avoidedExcluded` 기피로 빠진 대표 수. 후보 수 = saved + shared − merged − avoided이고 `alreadyInRoute`~`notEvaluated`는 이 후보 기준이다. 파서 상한: saved ≤ 1,000, shared·merged ≤ 2,000, 나머지 식당 수 ≤ 3,000, `disabledFolders` ≤ 20, 호출 ≤ 14.
+- v1 coverage `savedRestaurants`는 기피를 뺀 뒤 남은 내 식당 수다(0이면 `NO_SAVED_RESTAURANTS`). 키 구성은 바뀌지 않는다.
+- 상태 우선순위: `NO_SAVED_RESTAURANTS`(유효한 내 식당 + `enabledTotal` = 0) → `ALL_EXCLUDED` → `OK`. `NO_SAVED_RESTAURANTS`·`ALL_EXCLUDED`는 후보·조합 없음, 호출 0.
+- 읽기: `avoided_places`는 회원 JWT로 `id,place`를 201행까지 읽어 200 초과·형식 오류면 실패, 공유 읽기 상자는 경로 구간별 사전 필터 상자(위도 ±(30/110 + 0.001)°, 경도 ±(30/(111.32·cos 39°) + 0.001)°)의 합집합이다. 기피·공유 읽기 실패와 함수 응답 형태 오류는 내부 `RECOMMENDATION_STORAGE_FAILED`, 외부 응답은 기존 저장 읽기 실패와 같은 HTTP 500 `RECOMMENDATION_FAILED`다.
+- 웹 파서: `parseRecommendationResponseV2`, 선택 키 `recommendationSourceKey(source)` = `<type>:<id>`(같은 id라도 내 장소와 공유 장소는 다른 후보). v1 `parseRecommendationResponse`는 그대로다.
+
 ### 7.4 선택 적용과 늦은 결과
 
 - **적용 직전 재검사(V1 R2-1)**: 후보를 일정에 추가하는 버튼을 누르면 클라이언트는 서버에서 다시 읽은 현재 상태로 다음을 모두 확인하고, 하나라도 어긋나면 추가하지 않고 "추천 결과가 바뀌었어요 · 다시 추천 받기"를 보인다.
