@@ -177,7 +177,7 @@ type ResponseV2 = { contractVersion: 2; status: "OK" | "NO_SAVED_RESTAURANTS" | 
     - `window.open`으로 새 창을 열어 저장소가 복제되는 경로를 만들지 않는다(로그인은 같은 탭 이동).
   - Android: App Link `android:path="/folder-invite"`. 토큰은 프로세스 메모리에만 두고 로그인 후 같은 메모리 토큰으로 수락 화면을 연다. 프로세스가 종료되면 "링크를 다시 열어 주세요". 로그에 토큰·URL 전체를 남기지 않는다.
 - 폴더 켜기/끄기는 서버 설정을 읽고 `set_place_folders_enabled`로 저장한다(기기 저장 금지). 다른 기기에서 바꾼 값은 화면 진입·새로고침 때 반영.
-- 합쳐 보기 중복 제거·출처 표시 규칙은 웹·Android 공용 테스트 픽스처(같은 입력 → 같은 출력)로 증명한다.
+- 합쳐 보기 중복 제거·출처 표시 규칙은 웹·Android 공용 테스트 픽스처(같은 입력 → 같은 출력)로 증명한다. 픽스처 정본: `contracts/android/shared-folders/merge-fixtures.json`(설명 `README.md`, 웹 실행기 `lib/places/place-merge.test.ts`). 합쳐 보기 대표·`otherFolderIds`·출처 줄과 7.2절 기피 일치(POI id, 지도 지점 30 m)를 함께 담는다.
 - Android는 기존 `SavedPlaceClient` 계층을 확장한다. 구버전(0.13.0) Android는 공유 폴더를 모르며, 서버 변경 후에도 기존 기능이 그대로 동작해야 한다(v1 추천 계약, saved_places·place_stars 읽기, 기존 별표 RPC — 단 3절의 합계 한도 차이).
 
 ## 9. 제품 정본 갱신 (같은 PR)
