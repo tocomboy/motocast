@@ -159,7 +159,7 @@ def blocked_migration(blocker_sql, relation):
 
 
 NOT_APPLIED = ("select to_regclass('public.place_folders') is null and to_regclass('public.shared_place_stars') is null "
-               "and to_regprocedure('public.create_place_folder(text,text,uuid[])') is null "
+               "and to_regprocedure('public.create_place_folder(text,text,uuid[],uuid)') is null and to_regclass('public.place_folder_create_requests') is null "
                "and to_regprocedure('public.place_star_total(uuid)') is null "
                "and not exists(select 1 from pg_trigger where tgname='place_stars_z_check_star_total') "
                "and not exists(select 1 from pg_locks l join pg_stat_activity a on a.pid=l.pid where a.datname=current_database() "
@@ -239,7 +239,7 @@ check(after_rpcs == before_rpcs, 'legacy star RPCs keep definer rights and their
 
 # Rerun with folder data present: nothing changes.
 sql("""set role authenticated; set "request.jwt.claim.sub"='92000000-0000-0000-0000-000000000007';
-select public.create_place_folder('검증 폴더','칠',(select array_agg(id) from public.saved_places where owner_id='92000000-0000-0000-0000-000000000007' and place->>'kakaoPlaceId' in ('o7-1','o7-2')));
+select public.create_place_folder('검증 폴더','칠',(select array_agg(id) from public.saved_places where owner_id='92000000-0000-0000-0000-000000000007' and place->>'kakaoPlaceId' in ('o7-1','o7-2')),'95000000-0000-0000-0000-000000000007');
 select public.set_shared_place_star((select id from public.shared_places limit 1),true);
 select public.add_avoided_place((select place from public.saved_places where place->>'kakaoPlaceId'='o7-3'));
 select public.create_place_folder_invite((select id from public.place_folders limit 1));""")
@@ -247,7 +247,7 @@ EVERYTHING = '\n'.join([
     ROWS.format('true'),
     STAR_ROWS.format('true'),
     *[f"select md5(coalesce(string_agg(row_to_json(t)::text,'|' order by row_to_json(t)::text),'')) from public.{table} t;" for table in
-      ('place_folders', 'place_folder_members', 'place_folder_preferences', 'shared_places', 'place_folder_invites', 'avoided_places', 'shared_place_stars')],
+      ('place_folders', 'place_folder_members', 'place_folder_preferences', 'shared_places', 'place_folder_invites', 'avoided_places', 'shared_place_stars', 'place_folder_create_requests')],
     "select md5(string_agg(pg_get_functiondef(p.oid)||coalesce(p.proacl::text,''),'' order by p.oid::regprocedure::text)) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind in ('f','p');",
     "select md5(string_agg(pg_get_triggerdef(t.oid),'' order by t.tgrelid::regclass::text,t.tgname)) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal;",
     "select md5(string_agg(c.relname||coalesce(c.relacl::text,'')||c.relrowsecurity||coalesce(pg_get_viewdef(c.oid),''),'|' order by c.relname)) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','v');",

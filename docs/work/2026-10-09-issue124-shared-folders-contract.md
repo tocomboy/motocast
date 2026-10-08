@@ -33,7 +33,8 @@
 
 ## 3. 데이터 (migration 하나, 운영 데이터 보존)
 
-- `place_folders(id uuid pk, owner_id uuid not null → auth.users on delete cascade, name text, revision bigint >0, created_at, updated_at)`.
+- `place_folders(id uuid pk, owner_id uuid not null → auth.users on delete cascade, name text, revision bigint >0, create_request_id uuid, created_at, updated_at)`, `unique(owner_id, create_request_id) where create_request_id is not null`. `create_request_id`는 만든 요청의 `request_id`로, 회원이 읽어 응답 유실 뒤 생성 여부를 확인한다.
+- `place_folder_create_requests(owner_id → auth.users on delete cascade, request_id uuid, payload_hash text(sha256 hex), result jsonb, created_at, pk(owner_id, request_id))`: 만들기 요청 기록. RLS 켜고 클라이언트·service_role 권한 없음(정의자 RPC만 사용).
 - `place_folder_members(folder_id → place_folders on delete cascade, member_id → auth.users on delete cascade, role text check in ('owner','editor','viewer'), display_name text, revision bigint, joined_at, updated_at, pk(folder_id, member_id))`. 폴더마다 owner 행 정확히 1개(부분 unique index), `unique(folder_id, lower(display_name))`.
 - `place_folder_preferences(member_id, folder_id, enabled boolean not null default true, updated_at, pk(member_id, folder_id), fk (folder_id, member_id) → place_folder_members on delete cascade)`. 회원 행 생성과 같은 트랜잭션에서 `enabled=true`로 만든다. **본인 행만 SELECT**. 다른 회원의 켜기/끄기는 어떤 경로로도 읽을 수 없다(V1 #4).
 - `shared_places(id uuid pk, folder_id → place_folders on delete cascade, place jsonb check is_valid_saved_place, alias, kind riding_spot|restaurant, province, revision, created_by uuid, updated_by uuid, created_at, updated_at, unique(folder_id, (place->>'kakaoPlaceId')))`. `created_by`/`updated_by`는 FK 없이 user id만 저장(나간 회원 표시용). 화면 표시는 현재 회원이면 그 폴더용 이름, 아니면 "나간 회원". 원래 place jsonb(서명 포함)는 바꾸지 않고 복사한다.
@@ -71,7 +72,9 @@
 
 공통: 반환은 바뀐 결과 행(영수증). 영향 행 수가 기대와 다르면 예외(쓰기 누락 숨기지 않음). 수정 RPC는 `expected_revision` 불일치 시 `*_STALE`. 클라이언트는 결과를 모르는 실패(응답 유실·시간 초과)에서 자동 재전송하지 않고 다시 읽어 반영 여부를 판단한다(UI-001, FP39).
 
-- `create_place_folder(folder_name text, display_name text, saved_place_ids uuid[])` → 폴더·내 회원 행. 내 saved_places만 복사(place·서명·alias·kind·province 그대로), 남의 id·없는 id·중복 id가 섞이면 전체 거부, 1,000 초과 거부, 내 폴더 20 한도. 원자적.
+- `create_place_folder(folder_name text, display_name text, saved_place_ids uuid[], request_id uuid)` → 폴더·내 회원 행. 내 saved_places만 복사(place·서명·alias·kind·province 그대로), 남의 id·없는 id·중복 id가 섞이면 전체 거부, 1,000 초과 거부, 내 폴더 20 한도. 원자적.
+  - 멱등(결정 2026-10-09, 브라우저의 POST 자동 재전송 대비): `request_id` 필수(null이면 `INVALID_PLACE_FOLDER`). 클라이언트는 확인 팝업 하나에 한 번 만들고 그 팝업의 모든 시도(결과 불명 뒤 재확인·재시도 포함)에 재사용한다. 같은 사용자·같은 `request_id`·같은 입력(폴더 이름, 폴더용 이름, 장소 id 집합 — 순서 무관)이면 새 폴더 없이 처음 결과를 그대로 돌려준다(한도 재검사 없음, 그 사이 폴더 이름이 바뀌어도 저장된 결과). 같은 `request_id`에 다른 입력이면 `PLACE_FOLDER_REQUEST_MISMATCH`. 다른 사용자의 같은 `request_id`는 서로 독립. 같은 요청의 동시 2건은 사용자 lock으로 직렬화되어 폴더 1개.
+  - 응답 유실 확인: `place_folders.create_request_id`가 이번 `request_id`인 폴더가 목록에 있으면 만들어진 것으로 확정한다(이름 일치로는 확정하지 않음). 없으면 FP39b로 같은 `request_id`를 다시 보낼 수 있다(멱등).
 - `rename_place_folder(folder_id, expected_revision, folder_name)` 주인.
 - `delete_place_folder(folder_id, expected_revision)` 주인.
 - `create_place_folder_invite(folder_id)` 주인 → `{ id, token, expires_at }`(token은 이 응답에서만).
@@ -97,7 +100,7 @@
 
 JSON 키는 열 이름 그대로 snake_case다. 예외는 계약이 정한 `set_place_folders_enabled` 입력(`folderId`, `enabled`)과 7.2의 `recommendation_shared_restaurants` 바깥 키(`rows`, `truncated`, `enabledTotal`, `disabledFolders`)뿐이다.
 
-- 공통 객체: `folder` = `place_folders` 행 `{id, owner_id, name, revision, created_at, updated_at}`. `member` = `{folder_id, member_id, role, display_name, joined_at, revision}`(정확히 이 6개). `preference` = `{member_id, folder_id, enabled, updated_at}`.
+- 공통 객체: `folder` = `place_folders` 행 `{id, owner_id, name, revision, create_request_id, created_at, updated_at}`. `member` = `{folder_id, member_id, role, display_name, joined_at, revision}`(정확히 이 6개). `preference` = `{member_id, folder_id, enabled, updated_at}`.
 - `create_place_folder` → `{folder, member, preference}`. `accept_place_folder_invite` → `{status: 'joined'|'already_member', folder, member, preference}`(이미 회원이면 기존 행, 이름 변경 없음).
 - `rename_place_folder` → `setof place_folders`(1행). `set_place_folder_display_name`·`set_place_folder_member_role` → `member` 객체. 같은 역할로 바꾸면 revision을 올리지 않고 현재 행을 돌려준다.
 - `create_place_folder_invite` → `{id, token, expires_at}`(정확히 3개). `list_place_folder_invites`·`revoke_place_folder_invite` → `table(id, created_at, expires_at, revoked_at)`; 목록은 `revoked_at is null and expires_at > now`만, `(created_at, id)` 순서.
@@ -109,7 +112,7 @@ JSON 키는 열 이름 그대로 snake_case다. 예외는 계약이 정한 `set_
 - `my_star_entries` 열: `owner_id, source('saved'|'shared'), id, folder_id`(개인은 null), `place, alias, kind, province, revision, starred_at, star_slot`(공유는 null). 정렬은 클라이언트가 `(starred_at, id)`.
 - `place_folder_members`는 열 단위로 `folder_id, member_id, role, display_name, joined_at, revision`만 SELECT할 수 있다(`select *` 불가).
 - `recommendation_shared_restaurants`의 `rows` 원소: `{id, folder_id, place, alias, revision, created_at}`(정확히 6개, 식당만, `(created_at, id)` 순서). 경계 값이 null·NaN·무한대이거나 min > max면 `INVALID_RECOMMENDATION_REQUEST`.
-- 이 절에서 더한 오류 코드: `PLACE_FOLDER_STALE`(폴더 revision), `PLACE_FOLDER_MEMBER_STALE`(회원 행 revision), `SHARED_PLACE_STALE`, `PLACE_FOLDER_MEMBER_NOT_FOUND`(주인이 지정한 회원이 없음), `INVALID_PLACE_FOLDER_ROLE`(editor·viewer 외), `INVALID_PLACE_FOLDER_PREFERENCES`(배열 아님·0개·21개 이상·키 오류·uuid 아님·같은 폴더 반복), `AVOIDED_PLACE_NOT_FOUND`, `PLACE_FOLDER_WRITE_CONFLICT`(가져오기 영향 행 불일치, 정상 경로에서는 나오지 않음). 장소 형식 오류는 기존 `INVALID_SAVED_PLACE`, 별명·종류·지역 지점 별명 누락은 `INVALID_SAVED_PLACE_METADATA`, 남의/없는 저장 장소 id는 기존 `SAVED_PLACE_NOT_FOUND`, id 목록의 null·중복은 `INVALID_PLACE_FOLDER`, 1,000개 초과 목록은 `PLACE_FOLDER_PLACE_LIMIT`. 주인 행 변경·주인 내보내기는 `PLACE_FOLDER_FORBIDDEN`.
+- 이 절에서 더한 오류 코드: `PLACE_FOLDER_STALE`(폴더 revision), `PLACE_FOLDER_MEMBER_STALE`(회원 행 revision), `SHARED_PLACE_STALE`, `PLACE_FOLDER_MEMBER_NOT_FOUND`(주인이 지정한 회원이 없음), `INVALID_PLACE_FOLDER_ROLE`(editor·viewer 외), `INVALID_PLACE_FOLDER_PREFERENCES`(배열 아님·0개·21개 이상·키 오류·uuid 아님·같은 폴더 반복), `AVOIDED_PLACE_NOT_FOUND`, `PLACE_FOLDER_WRITE_CONFLICT`(가져오기 영향 행 불일치, 정상 경로에서는 나오지 않음), `PLACE_FOLDER_REQUEST_MISMATCH`(같은 만들기 `request_id`에 다른 입력). 장소 형식 오류는 기존 `INVALID_SAVED_PLACE`, 별명·종류·지역 지점 별명 누락은 `INVALID_SAVED_PLACE_METADATA`, 남의/없는 저장 장소 id는 기존 `SAVED_PLACE_NOT_FOUND`, id 목록의 null·중복은 `INVALID_PLACE_FOLDER`, 1,000개 초과 목록은 `PLACE_FOLDER_PLACE_LIMIT`. 주인 행 변경·주인 내보내기는 `PLACE_FOLDER_FORBIDDEN`.
 - 커밋 시 불변식 위반(우회 쓰기에서만 가능): 별표 합계·비회원 공유 별표는 `SAVED_PLACE_STAR_INVARIANT`, 주인 행 1개·주인 일치·회원별 설정 행은 `PLACE_FOLDER_INVARIANT`.
 - 잠금: 별표 추가·`set_place_folders_enabled`는 폴더 lock 공유 모드, 나머지 폴더 쓰기는 배타 모드. 사용자 lock을 잡는 RPC는 `create_place_folder`, `accept_place_folder_invite`, `import_saved_places_to_folder`(폴더 lock 다음), `set_shared_place_star`(폴더 lock 다음), `add_avoided_place`, `remove_avoided_place`와 기존 개인 RPC다.
 

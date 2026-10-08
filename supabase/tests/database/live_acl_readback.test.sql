@@ -62,6 +62,7 @@ with protected_tables(table_name) as (
     ,('place_folder_invites')
     ,('avoided_places')
     ,('shared_place_stars')
+    ,('place_folder_create_requests')
     ,('play_admission_challenges')
     ,('play_admission_budget')
     ,('weather_budget_policy')

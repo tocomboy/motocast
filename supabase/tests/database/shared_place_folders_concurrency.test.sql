@@ -126,7 +126,7 @@ insert into tap_results values
 ((select count(*)=20 from public.place_folder_members where member_id=pg_temp.u(4)),'the rider never exceeds twenty folders');
 delete from race_results;
 select pg_temp.as_user('sf_c1',5); select pg_temp.as_user('sf_c2',5);
-select pg_temp.call('sf_c1','select public.create_place_folder(''새 폴더'',''five'',''{}'')->''member''->>''role''');
+select pg_temp.call('sf_c1','select public.create_place_folder(''새 폴더'',''five'',''{}'',gen_random_uuid())->''member''->>''role''');
 select pg_temp.call('sf_c2',format('select public.accept_place_folder_invite(%L,%L)->>''status''',pg_temp.token('c'),'five'));
 select pg_temp.collect('sf_c1'); select pg_temp.collect('sf_c2');
 insert into tap_results values
@@ -244,6 +244,21 @@ insert into tap_results values
 (not exists(select 1 from public.shared_place_stars where owner_id=pg_temp.u(2)) and exists(select 1 from public.place_folder_members where member_id=pg_temp.u(2) and folder_id=pg_temp.f('J')),
   'the removal clears the star and the join remains');
 
+-- 7. The same create request sent twice at once (a transport retry) makes one folder.
+delete from race_results;
+select extensions.dblink_exec('sf_admin','begin');
+select extensions.dblink_exec('sf_admin',format('do $do$ begin perform pg_advisory_xact_lock(hashtextextended(%L,0)); end $do$','place-favorites:'||pg_temp.u(38)));
+select pg_temp.as_user('sf_c1',38); select pg_temp.as_user('sf_c2',38);
+select pg_temp.call('sf_c1','select public.create_place_folder(''같은 요청'',''eight'',''{}'',''95000000-0000-0000-0000-000000000038'')->''folder''->>''id''');
+select pg_temp.call('sf_c2','select public.create_place_folder(''같은 요청'',''eight'',''{}'',''95000000-0000-0000-0000-000000000038'')->''folder''->>''id''');
+insert into tap_results values (pg_temp.wait_for('folder-race-c1','advisory') and pg_temp.wait_for('folder-race-c2','advisory'),'both copies of one create request wait on the rider lock');
+select extensions.dblink_exec('sf_admin','commit');
+select pg_temp.collect('sf_c1'); select pg_temp.collect('sf_c2');
+insert into tap_results values
+((select count(distinct result)=1 and count(*)=2 and bool_and(result ~ '^[0-9a-f-]{36}$') from race_results),'both copies return the same folder'),
+((select count(*)=1 from public.place_folders where owner_id=pg_temp.u(38)),'one create request makes exactly one folder');
+delete from race_results;
+
 select extensions.dblink_disconnect('sf_c1'); select extensions.dblink_disconnect('sf_c2'); select extensions.dblink_disconnect('sf_c3'); select extensions.dblink_disconnect('sf_admin');
 drop function public.test_folder_race(text);
 insert into tap_results values
@@ -257,6 +272,6 @@ select (case when ok then 'ok ' else 'not ok ' end)||row_number() over()||' - '|
 select '1..'||count(*) from tap_results;
 -- Fixed plan: a skipped assertion fails the suite instead of vanishing.
 do $$ begin
-  if (select count(*) from tap_results)<>34 then raise exception 'SHARED_PLACE_FOLDERS_CONCURRENCY_PLAN_MISMATCH: % of 34', (select count(*) from tap_results); end if;
+  if (select count(*) from tap_results)<>37 then raise exception 'SHARED_PLACE_FOLDERS_CONCURRENCY_PLAN_MISMATCH: % of 37', (select count(*) from tap_results); end if;
   if exists(select 1 from tap_results where not ok) then raise exception 'SHARED_PLACE_FOLDERS_CONCURRENCY_FAILED'; end if;
 end $$;

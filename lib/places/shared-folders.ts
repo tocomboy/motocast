@@ -13,7 +13,8 @@ export const FOLDER_DISPLAY_NAME_LIMIT = 20;
 export const SHARED_PLACE_PAGE_SIZE = 1000;
 
 export type FolderRole = "owner" | "editor" | "viewer";
-export type PlaceFolder = { id: string; ownerId: string; name: string; revision: number; createdAt: string; updatedAt: string };
+/** `createRequestId`: the create_place_folder request_id that made it (contract §6), null if unknown. */
+export type PlaceFolder = { id: string; ownerId: string; name: string; revision: number; createRequestId: string | null; createdAt: string; updatedAt: string };
 export type FolderMember = { folderId: string; memberId: string; role: FolderRole; displayName: string; joinedAt: string; revision: number };
 export type FolderPreference = { memberId: string; folderId: string; enabled: boolean; updatedAt: string };
 export type SharedPlace = {
@@ -92,6 +93,7 @@ export function parsePlaceFolder(value: unknown): PlaceFolder {
     ownerId: uuid(row.owner_id, "INVALID_PLACE_FOLDER"),
     name: text(row.name, "INVALID_PLACE_FOLDER", FOLDER_NAME_LIMIT),
     revision: revision(row.revision, "INVALID_PLACE_FOLDER"),
+    createRequestId: row.create_request_id === undefined || row.create_request_id === null ? null : uuid(row.create_request_id, "INVALID_PLACE_FOLDER"),
     createdAt: time(row.created_at, "INVALID_PLACE_FOLDER"),
     updatedAt: time(row.updated_at, "INVALID_PLACE_FOLDER"),
   };

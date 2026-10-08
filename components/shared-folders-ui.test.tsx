@@ -291,7 +291,8 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
   function reload(next: SharedSnapshot) { snapshot = next; generation += 1; }
   beforeEach(() => {
     generation = 0;
-    mocks.shared = { ...mocks.shared, captureSnapshot: () => { const at = generation; return () => at === generation; } };
+    // Assigned in place: spreading would freeze the `snapshot` getter to the first snapshot.
+    mocks.shared.captureSnapshot = () => { const at = generation; return () => at === generation; };
   });
   async function openMenuRow(r: ReactTestRenderer, label: string) {
     await act(async () => button(r, "공유 폴더").props.onClick());
@@ -330,7 +331,7 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
 
   it("delta 2-1: a stale rename whose newest name could not be read only re-reads, then opens G37c with the newest name", async () => {
     let status = "ready";
-    mocks.shared = { ...mocks.shared, current: () => ({ status, snapshot }) };
+    mocks.shared.current = () => ({ status, snapshot });
     const r = await mount();
     await openMenuRow(r, "폴더 이름 바꾸기");
     await act(async () => inputOf(r).props.onChange({ target: { value: "주말 라이더 C" } }));
@@ -374,25 +375,52 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
     await act(async () => r.unmount());
   });
 
-  it("V3-3: a lost create reply never takes a same-name folder from another device as its own", async () => {
-    const r = await mount();
+  async function startCreate(r: ReactTestRenderer) {
     await act(async () => button(r, "공유 폴더").props.onClick());
     await act(async () => button(r, "＋ 공유 폴더 만들기").props.onClick());
     await act(async () => r.root.findByProps({ placeholder: "예: 주말 라이더" }).props.onChange({ target: { value: "새 폴더" } }));
     await act(async () => r.root.findByProps({ placeholder: "예: 주말라이더" }).props.onChange({ target: { value: "바람개비" } }));
     await act(async () => button(r, "빈 폴더로 만들기").props.onClick());
-    const other = { ...snapshot.folders[0], id: "00000000-0000-4000-8000-0000000000f9", name: "새 폴더", revision: 1 };
-    // Like the provider: no reply, so the re-read list decides through `applied`.
-    write.mockImplementationOnce(async (spec: { applied: (s: SharedSnapshot) => boolean }) => {
-      reload({ ...snapshot, folders: [...snapshot.folders, other] });
-      return spec.applied(snapshot) ? { ok: true } : { ok: false, reason: "unknown", checked: true, title: "변경을 확인하지 못했어요", message: "" };
+  }
+  type CreateSpec = { args: { request_id: string }; applied: (s: SharedSnapshot) => boolean };
+  const lost = (spec: CreateSpec) => (spec.applied(snapshot) ? { ok: true } : { ok: false, reason: "unknown", checked: true, title: "변경을 확인하지 못했어요", message: "" });
+
+  it("V3-3 / idempotent create: a lost reply is confirmed by the folder carrying this request id", async () => {
+    const r = await mount();
+    await startCreate(r);
+    write.mockImplementationOnce(async (spec: CreateSpec) => {
+      const id = "00000000-0000-4000-8000-0000000000f9";
+      reload({
+        ...snapshot,
+        folders: [...snapshot.folders, { ...snapshot.folders[0], id, name: "새 폴더", createRequestId: spec.args.request_id }],
+        members: [...snapshot.members, { ...snapshot.members[0], folderId: id, memberId: ME, role: "owner", displayName: "바람개비" }],
+        preferences: [...snapshot.preferences, { ...snapshot.preferences[0], folderId: id, enabled: true }],
+      });
+      return lost(spec);
     });
     await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "폴더 만들기").props.onClick());
-    expect(r.root.findAllByProps({ "aria-label": "폴더 메뉴" })).toHaveLength(0);
-    expect(text(r.root)).toContain("폴더를 만들었는지 확인하지 못했어요");
-    expect(text(r.root)).toContain("이 기기에서 만든 폴더인지 확인하지 못했어요");
-    expect(buttons(r, "확인하고 만들기")).toHaveLength(0);
+    expect(write.mock.calls[0][0]).toMatchObject({ rpc: "create_place_folder", args: { folder_name: "새 폴더", display_name: "바람개비", saved_place_ids: [] } });
+    expect(write.mock.calls[0][0].args.request_id).toMatch(/^[0-9a-f-]{36}$/);
+    // The created folder opens (G10 entry notice), not the list.
+    expect(text(r.root)).toContain("공유 폴더를 만들었어요.");
     expect(write).toHaveBeenCalledTimes(1);
+    await act(async () => r.unmount());
+  });
+
+  it("V3-3 / idempotent create: a same-name folder from another request is not taken, and a retry resends the same request id", async () => {
+    const r = await mount();
+    await startCreate(r);
+    write.mockImplementationOnce(async (spec: CreateSpec) => {
+      reload({ ...snapshot, folders: [...snapshot.folders, { ...snapshot.folders[0], id: "00000000-0000-4000-8000-0000000000f9", name: "새 폴더", createRequestId: "00000000-0000-4000-8000-00000000ffff" }] });
+      return lost(spec);
+    });
+    const popup = () => dialogWith(r, "이 공유 폴더를 만들까요?");
+    await act(async () => button(popup(), "폴더 만들기").props.onClick());
+    expect(r.root.findAllByProps({ "aria-label": "폴더 메뉴" })).toHaveLength(0);
+    expect(text(popup())).toContain("폴더가 만들어지지 않았어요");
+    await act(async () => button(popup(), "확인하고 만들기").props.onClick());
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(write.mock.calls[1][0].args.request_id).toBe(write.mock.calls[0][0].args.request_id);
     await act(async () => r.unmount());
   });
 

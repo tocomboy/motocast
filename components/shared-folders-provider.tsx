@@ -101,7 +101,7 @@ async function readAll(): Promise<SharedSnapshot> {
   };
   const [session, folders, members, preferences, stars, avoided] = await Promise.all([
     client.auth.getSession().then(({ data }: { data: { session: Session | null } }) => data.session?.user.id ?? null),
-    read(client.from("place_folders").select("id,owner_id,name,revision,created_at,updated_at").order("created_at").order("id"), rows(parsePlaceFolder, PLACE_FOLDER_LIMIT)),
+    read(client.from("place_folders").select("id,owner_id,name,revision,create_request_id,created_at,updated_at").order("created_at").order("id"), rows(parsePlaceFolder, PLACE_FOLDER_LIMIT)),
     read(client.from("place_folder_members").select("folder_id,member_id,role,display_name,joined_at,revision").order("folder_id").order("joined_at").order("member_id"), rows(parseFolderMember, PLACE_FOLDER_LIMIT * 30)),
     read(client.from("place_folder_preferences").select("member_id,folder_id,enabled,updated_at").order("folder_id"), rows(parseFolderPreference, PLACE_FOLDER_LIMIT)),
     read(client.from("my_star_entries").select("source,id,folder_id,place,alias,kind,province,revision,starred_at"), (data) => parseStarEntries(data)),
@@ -377,7 +377,7 @@ const KNOWN_CODES = new Set([
   "PLACE_FOLDER_INVITE_INVALID", "PLACE_FOLDER_NOT_FOUND", "SHARED_PLACE_NOT_FOUND", "PLACE_FOLDER_INVITE_NOT_FOUND", "PLACE_FOLDER_FORBIDDEN",
   "PLACE_FOLDER_STALE", "PLACE_FOLDER_MEMBER_STALE", "SHARED_PLACE_STALE", "PLACE_FOLDER_MEMBER_NOT_FOUND", "INVALID_PLACE_FOLDER_ROLE",
   "INVALID_PLACE_FOLDER_PREFERENCES", "AVOIDED_PLACE_NOT_FOUND", "PLACE_FOLDER_WRITE_CONFLICT", "PLACE_FOLDER_OWNER_CANNOT_LEAVE",
-  "INVALID_SAVED_PLACE", "INVALID_SAVED_PLACE_METADATA", "SAVED_PLACE_NOT_FOUND",
+  "INVALID_SAVED_PLACE", "INVALID_SAVED_PLACE_METADATA", "SAVED_PLACE_NOT_FOUND", "PLACE_FOLDER_REQUEST_MISMATCH",
 ]);
 
 /** Fallback wording for a clear refusal; screens pass their own text for the codes they expect. */

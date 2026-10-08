@@ -17,6 +17,8 @@ create table if not exists public.place_folders (
   owner_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
   revision bigint not null default 1,
+  -- The creating request (create_place_folder.request_id); members read it back to confirm a lost reply.
+  create_request_id uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint place_folders_pkey primary key (id),
@@ -24,6 +26,20 @@ create table if not exists public.place_folders (
   constraint place_folders_revision_check check (revision > 0)
 );
 create index if not exists place_folders_owner_key on public.place_folders(owner_id);
+create unique index if not exists place_folders_create_request_key on public.place_folders(owner_id, create_request_id)
+  where create_request_id is not null;
+
+-- One create per (owner, request_id): a replay of the same input returns the stored result
+-- (no new folder, no limit re-check); another input under the same id is refused. Private.
+create table if not exists public.place_folder_create_requests (
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  request_id uuid not null,
+  payload_hash text not null,
+  result jsonb not null,
+  created_at timestamptz not null default now(),
+  constraint place_folder_create_requests_pkey primary key (owner_id, request_id),
+  constraint place_folder_create_requests_hash_check check (payload_hash ~ '^[0-9a-f]{64}$')
+);
 
 create table if not exists public.place_folder_members (
   folder_id uuid not null references public.place_folders(id) on delete cascade,
@@ -121,8 +137,10 @@ alter table public.shared_places enable row level security;
 alter table public.place_folder_invites enable row level security;
 alter table public.avoided_places enable row level security;
 alter table public.shared_place_stars enable row level security;
+alter table public.place_folder_create_requests enable row level security;
 revoke all on table public.place_folders, public.place_folder_members, public.place_folder_preferences, public.shared_places,
-  public.place_folder_invites, public.avoided_places, public.shared_place_stars from public, anon, authenticated, service_role;
+  public.place_folder_invites, public.avoided_places, public.shared_place_stars, public.place_folder_create_requests
+  from public, anon, authenticated, service_role;
 grant select on table public.place_folders, public.place_folder_preferences, public.shared_places, public.avoided_places,
   public.shared_place_stars to authenticated;
 grant select (folder_id, member_id, role, display_name, joined_at, revision) on table public.place_folder_members to authenticated;
@@ -331,23 +349,37 @@ create or replace view public.my_star_entries with (security_invoker = true) as
 revoke all on table public.my_star_entries from public, anon, authenticated, service_role;
 grant select on table public.my_star_entries to authenticated;
 
-create or replace function public.create_place_folder(folder_name text, display_name text, saved_place_ids uuid[])
+create or replace function public.create_place_folder(folder_name text, display_name text, saved_place_ids uuid[], request_id uuid)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare caller uuid := auth.uid(); new_folder public.place_folders; new_member public.place_folder_members;
-  new_preference public.place_folder_preferences; copied integer;
+  new_preference public.place_folder_preferences; copied integer; request_hash text; stored public.place_folder_create_requests;
+  outcome jsonb;
 begin
   if caller is null or not public.is_active_member(caller) then raise exception using errcode = 'P0001', message = 'MEMBERSHIP_REQUIRED'; end if;
+  if create_place_folder.request_id is null then raise exception using errcode = 'P0001', message = 'INVALID_PLACE_FOLDER'; end if;
   perform public.assert_place_folder_name(folder_name);
   perform public.assert_folder_display_name(create_place_folder.display_name);
   perform public.assert_place_id_list(saved_place_ids);
+  -- Same input = same name, folder name and set of ids (order-free).
+  request_hash := encode(extensions.digest(jsonb_build_object(
+    'name', folder_name, 'displayName', create_place_folder.display_name,
+    'savedPlaceIds', (select coalesce(jsonb_agg(id order by id), '[]'::jsonb) from unnest(saved_place_ids) id)
+  )::text, 'sha256'), 'hex');
+  -- Serializes this rider's creates, so a concurrent replay waits and then reads the stored result.
   perform public.lock_place_user(caller);
+  select * into stored from public.place_folder_create_requests request
+    where request.owner_id = caller and request.request_id = create_place_folder.request_id;
+  if found then
+    if stored.payload_hash <> request_hash then raise exception using errcode = 'P0001', message = 'PLACE_FOLDER_REQUEST_MISMATCH'; end if;
+    return stored.result;
+  end if;
   if (select count(*) from public.place_folder_members member where member.member_id = caller) >= 20 then
     raise exception using errcode = 'P0001', message = 'PLACE_FOLDER_LIMIT';
   end if;
   if (select count(*) from public.saved_places saved where saved.owner_id = caller and saved.id = any(saved_place_ids)) <> cardinality(saved_place_ids) then
     raise exception using errcode = 'P0001', message = 'SAVED_PLACE_NOT_FOUND';
   end if;
-  insert into public.place_folders(owner_id, name) values (caller, folder_name) returning * into new_folder;
+  insert into public.place_folders(owner_id, name, create_request_id) values (caller, folder_name, create_place_folder.request_id) returning * into new_folder;
   insert into public.place_folder_members(folder_id, member_id, role, display_name)
     values (new_folder.id, caller, 'owner', create_place_folder.display_name) returning * into new_member;
   insert into public.place_folder_preferences(member_id, folder_id) values (caller, new_folder.id) returning * into new_preference;
@@ -357,8 +389,11 @@ begin
     from public.saved_places saved where saved.owner_id = caller and saved.id = any(saved_place_ids);
   get diagnostics copied = row_count;
   if copied <> cardinality(saved_place_ids) then raise exception using errcode = 'P0001', message = 'SAVED_PLACE_NOT_FOUND'; end if;
-  return jsonb_build_object('folder', to_jsonb(new_folder), 'member', public.place_folder_member_json(new_member),
+  outcome := jsonb_build_object('folder', to_jsonb(new_folder), 'member', public.place_folder_member_json(new_member),
     'preference', to_jsonb(new_preference));
+  insert into public.place_folder_create_requests(owner_id, request_id, payload_hash, result)
+    values (caller, create_place_folder.request_id, request_hash, outcome);
+  return outcome;
 end;
 $$;
 
@@ -1038,7 +1073,7 @@ revoke all on function public.is_place_folder_member(uuid), public.lock_place_fo
   public.place_folder_members_clear_stars(), public.place_star_total_consistent(uuid), public.place_folder_consistent(uuid),
   public.assert_place_star_total(), public.assert_place_folder_consistent(), public.place_folder_invite_hash(text),
   public.shared_place_folder(uuid),
-  public.create_place_folder(text,text,uuid[]), public.rename_place_folder(uuid,bigint,text), public.delete_place_folder(uuid,bigint),
+  public.create_place_folder(text,text,uuid[],uuid), public.rename_place_folder(uuid,bigint,text), public.delete_place_folder(uuid,bigint),
   public.create_place_folder_invite(uuid), public.list_place_folder_invites(uuid), public.revoke_place_folder_invite(uuid),
   public.preview_place_folder_invite(text), public.accept_place_folder_invite(text,text),
   public.set_place_folder_display_name(uuid,bigint,text), public.set_place_folder_member_role(uuid,uuid,bigint,text),
@@ -1051,7 +1086,7 @@ revoke all on function public.is_place_folder_member(uuid), public.lock_place_fo
   public.set_saved_place_star(uuid,bigint,boolean), public.add_place_favorite(jsonb)
   from public, anon, authenticated, service_role;
 grant execute on function public.is_place_folder_member(uuid),
-  public.create_place_folder(text,text,uuid[]), public.rename_place_folder(uuid,bigint,text), public.delete_place_folder(uuid,bigint),
+  public.create_place_folder(text,text,uuid[],uuid), public.rename_place_folder(uuid,bigint,text), public.delete_place_folder(uuid,bigint),
   public.create_place_folder_invite(uuid), public.list_place_folder_invites(uuid), public.revoke_place_folder_invite(uuid),
   public.preview_place_folder_invite(text), public.accept_place_folder_invite(text,text),
   public.set_place_folder_display_name(uuid,bigint,text), public.set_place_folder_member_role(uuid,uuid,bigint,text),

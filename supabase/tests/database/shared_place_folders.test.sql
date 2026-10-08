@@ -55,7 +55,7 @@ insert into public.saved_places(owner_id,place,alias,kind,province) values
 
 -- 1. Creating a folder copies the chosen own places unchanged.
 select pg_temp.sub(1); set local role authenticated;
-insert into res select 'F1', public.create_place_folder('우리 폴더','Ace',array[pg_temp.saved(1,'s1'),pg_temp.saved(1,'s2'),pg_temp.saved(1,'map:37.1000000:127.1000000:region')]);
+insert into res select 'F1', public.create_place_folder('우리 폴더','Ace',array[pg_temp.saved(1,'s1'),pg_temp.saved(1,'s2'),pg_temp.saved(1,'map:37.1000000:127.1000000:region')],gen_random_uuid());
 insert into tap_results values
 ((pg_temp.r('F1')->'folder'->>'name')='우리 폴더' and (pg_temp.r('F1')->'folder'->>'revision')='1' and (pg_temp.r('F1')->'folder'->>'owner_id')=pg_temp.u(1)::text,'create returns the folder'),
 ((pg_temp.r('F1')->'member')=jsonb_build_object('folder_id',pg_temp.fid('F1'),'member_id',pg_temp.u(1),'role','owner','display_name','Ace','joined_at',pg_temp.r('F1')->'member'->'joined_at','revision',1),'create returns exactly the six member fields with role owner'),
@@ -66,21 +66,43 @@ insert into tap_results select count(*)=3 and bool_and(shared.place=saved.place 
   'copies keep the original place with its signature, alias, kind and province'
   from public.shared_places shared join public.saved_places saved on saved.owner_id=pg_temp.u(1) and saved.place->>'kakaoPlaceId'=shared.place->>'kakaoPlaceId'
   where shared.folder_id=pg_temp.fid('F1');
-insert into res select 'F2', public.create_place_folder(repeat('가',40),repeat('나',20),'{}');
+-- 1b. One request id makes one folder: a replay returns the stored result, another input is refused.
+insert into res select 'RQ1', public.create_place_folder('요청 폴더','Ace',array[pg_temp.saved(1,'s4')],'95000000-0000-0000-0000-000000000001');
+insert into res select 'RQ1b', public.create_place_folder('요청 폴더','Ace',array[pg_temp.saved(1,'s4')],'95000000-0000-0000-0000-000000000001');
+insert into tap_results values
+(pg_temp.r('RQ1b')=pg_temp.r('RQ1'),'a replay of the same request returns the stored result unchanged'),
+((select count(*)=1 from public.place_folders where owner_id=pg_temp.u(1) and name='요청 폴더'),'a replayed request creates one folder'),
+((select count(*)=1 from public.shared_places where folder_id=pg_temp.fid('RQ1')),'a replayed request copies the places once'),
+((pg_temp.r('RQ1')->'folder'->>'create_request_id')='95000000-0000-0000-0000-000000000001','the folder carries its create request id'),
+((select create_request_id from public.place_folders where id=pg_temp.fid('RQ1'))='95000000-0000-0000-0000-000000000001'::uuid,'the owner reads the create request id back from the folder list');
+select pg_temp.expect_error($q$select public.create_place_folder('다른 이름','Ace',array[pg_temp.saved(1,'s4')],'95000000-0000-0000-0000-000000000001')$q$,'PLACE_FOLDER_REQUEST_MISMATCH','another name under the same request id is refused');
+select pg_temp.expect_error($q$select public.create_place_folder('요청 폴더','Ace','{}','95000000-0000-0000-0000-000000000001')$q$,'PLACE_FOLDER_REQUEST_MISMATCH','other places under the same request id are refused');
+select pg_temp.expect_error($q$select public.create_place_folder('요청 폴더','Ace','{}',null)$q$,'INVALID_PLACE_FOLDER','a missing request id is rejected');
+select pg_temp.expect_error($q$select * from public.place_folder_create_requests$q$,'permission denied for table place_folder_create_requests','request records are not readable by riders','42501');
+reset role;
+select pg_temp.sub(2); set local role authenticated;
+insert into res select 'RQ2', public.create_place_folder('요청 폴더','Bee','{}','95000000-0000-0000-0000-000000000001');
+insert into tap_results values
+(pg_temp.fid('RQ2')<>pg_temp.fid('RQ1'),'another rider''s same request id is independent');
+reset role;
+-- The request folders are not part of the scenarios below.
+delete from public.place_folders where id in (pg_temp.fid('RQ1'),pg_temp.fid('RQ2'));
+select pg_temp.sub(1); set local role authenticated;
+insert into res select 'F2', public.create_place_folder(repeat('가',40),repeat('나',20),'{}',gen_random_uuid());
 insert into tap_results values
 ((select count(*)=0 from public.shared_places where folder_id=pg_temp.fid('F2')),'an empty folder is allowed, with 40-character name and 20-character display name');
-select pg_temp.expect_error($q$select public.create_place_folder('x','Ace',array[pg_temp.saved(2,'b1')])$q$,'SAVED_PLACE_NOT_FOUND','another rider''s place cannot be copied');
-select pg_temp.expect_error($q$select public.create_place_folder('x','Ace',array[gen_random_uuid()])$q$,'SAVED_PLACE_NOT_FOUND','an unknown place cannot be copied');
-select pg_temp.expect_error($q$select public.create_place_folder('x','Ace',array[pg_temp.saved(1,'s3'),pg_temp.saved(1,'s3')])$q$,'INVALID_PLACE_FOLDER','duplicate ids reject the whole folder');
-select pg_temp.expect_error($q$select public.create_place_folder('x','Ace',null)$q$,'INVALID_PLACE_FOLDER','a null id list is rejected');
-select pg_temp.expect_error($q$select public.create_place_folder('x','Ace',array[null::uuid])$q$,'INVALID_PLACE_FOLDER','a null id is rejected');
-select pg_temp.expect_error($q$select public.create_place_folder('x','Ace',(select array_agg(gen_random_uuid()) from generate_series(1,1001)))$q$,'PLACE_FOLDER_PLACE_LIMIT','more than 1,000 places is rejected');
-select pg_temp.expect_error($q$select public.create_place_folder(repeat('가',41),'Ace','{}')$q$,'INVALID_PLACE_FOLDER','a 41-character name is rejected');
-select pg_temp.expect_error($q$select public.create_place_folder('',  'Ace','{}')$q$,'INVALID_PLACE_FOLDER','an empty name is rejected');
-select pg_temp.expect_error($q$select public.create_place_folder(' 폴더','Ace','{}')$q$,'INVALID_PLACE_FOLDER','an untrimmed name is rejected');
-select pg_temp.expect_error($q$select public.create_place_folder(E'폴\n더','Ace','{}')$q$,'INVALID_PLACE_FOLDER','a control character in the name is rejected');
-select pg_temp.expect_error($q$select public.create_place_folder('폴더',repeat('나',21),'{}')$q$,'INVALID_FOLDER_DISPLAY_NAME','a 21-character display name is rejected');
-select pg_temp.expect_error($q$select public.create_place_folder('폴더','Ace ','{}')$q$,'INVALID_FOLDER_DISPLAY_NAME','an untrimmed display name is rejected');
+select pg_temp.expect_error($q$select public.create_place_folder('x','Ace',array[pg_temp.saved(2,'b1')],gen_random_uuid())$q$,'SAVED_PLACE_NOT_FOUND','another rider''s place cannot be copied');
+select pg_temp.expect_error($q$select public.create_place_folder('x','Ace',array[gen_random_uuid()],gen_random_uuid())$q$,'SAVED_PLACE_NOT_FOUND','an unknown place cannot be copied');
+select pg_temp.expect_error($q$select public.create_place_folder('x','Ace',array[pg_temp.saved(1,'s3'),pg_temp.saved(1,'s3')],gen_random_uuid())$q$,'INVALID_PLACE_FOLDER','duplicate ids reject the whole folder');
+select pg_temp.expect_error($q$select public.create_place_folder('x','Ace',null,gen_random_uuid())$q$,'INVALID_PLACE_FOLDER','a null id list is rejected');
+select pg_temp.expect_error($q$select public.create_place_folder('x','Ace',array[null::uuid],gen_random_uuid())$q$,'INVALID_PLACE_FOLDER','a null id is rejected');
+select pg_temp.expect_error($q$select public.create_place_folder('x','Ace',(select array_agg(gen_random_uuid()) from generate_series(1,1001)),gen_random_uuid())$q$,'PLACE_FOLDER_PLACE_LIMIT','more than 1,000 places is rejected');
+select pg_temp.expect_error($q$select public.create_place_folder(repeat('가',41),'Ace','{}',gen_random_uuid())$q$,'INVALID_PLACE_FOLDER','a 41-character name is rejected');
+select pg_temp.expect_error($q$select public.create_place_folder('',  'Ace','{}',gen_random_uuid())$q$,'INVALID_PLACE_FOLDER','an empty name is rejected');
+select pg_temp.expect_error($q$select public.create_place_folder(' 폴더','Ace','{}',gen_random_uuid())$q$,'INVALID_PLACE_FOLDER','an untrimmed name is rejected');
+select pg_temp.expect_error($q$select public.create_place_folder(E'폴\n더','Ace','{}',gen_random_uuid())$q$,'INVALID_PLACE_FOLDER','a control character in the name is rejected');
+select pg_temp.expect_error($q$select public.create_place_folder('폴더',repeat('나',21),'{}',gen_random_uuid())$q$,'INVALID_FOLDER_DISPLAY_NAME','a 21-character display name is rejected');
+select pg_temp.expect_error($q$select public.create_place_folder('폴더','Ace ','{}',gen_random_uuid())$q$,'INVALID_FOLDER_DISPLAY_NAME','an untrimmed display name is rejected');
 insert into tap_results values ((select count(*)=2 from public.place_folders),'rejected creations leave no folder');
 reset role;
 
@@ -384,7 +406,7 @@ delete from public.shared_places where folder_id=pg_temp.fid('F2');
 insert into public.shared_places(folder_id,place,kind,province,created_by,updated_by,created_at)
 select pg_temp.fid('F2'),pg_temp.place('bulk'||n,37.3,127.3),'restaurant','경기',pg_temp.u(1),pg_temp.u(1),now()-interval '1 hour'+n*interval '1 second' from generate_series(1,997) n;
 select pg_temp.sub(1); set local role authenticated;
-insert into res select 'F3', public.create_place_folder('세번째','Ace','{}');
+insert into res select 'F3', public.create_place_folder('세번째','Ace','{}',gen_random_uuid());
 reset role;
 insert into public.shared_places(folder_id,place,kind,province,created_by,updated_by,created_at)
 select pg_temp.fid('F3'),pg_temp.place('more'||n,37.3,127.3),'restaurant','경기',pg_temp.u(1),pg_temp.u(1),now()+n*interval '1 second' from generate_series(1,1000) n;
@@ -410,8 +432,10 @@ set constraints all immediate; set constraints all deferred;
 
 -- 9. Limits on folders per rider and members per folder, and the accept order.
 select pg_temp.sub(7); set local role authenticated;
-do $$ begin for n in 1..20 loop perform public.create_place_folder('폴더'||n,'Gee','{}'); end loop; end $$;
-select pg_temp.expect_error($q$select public.create_place_folder('스물한번째','Gee','{}')$q$,'PLACE_FOLDER_LIMIT','a twenty-first folder is rejected');
+do $$ begin for n in 1..20 loop perform public.create_place_folder('폴더'||n,'Gee','{}',('95000000-0000-0000-0000-0000000001'||lpad(n::text,2,'0'))::uuid); end loop; end $$;
+insert into tap_results values
+((public.create_place_folder('폴더20','Gee','{}','95000000-0000-0000-0000-000000000120')->'folder'->>'name')='폴더20','a replay at the 20-folder limit returns the stored folder without a limit check');
+select pg_temp.expect_error($q$select public.create_place_folder('스물한번째','Gee','{}',gen_random_uuid())$q$,'PLACE_FOLDER_LIMIT','a twenty-first folder is rejected');
 reset role;
 -- F1 already has members A, E; fill to 29 with fillers 10..36, then the 30th joins.
 insert into public.place_folder_members(folder_id,member_id,role,display_name) select pg_temp.fid('F1'),pg_temp.u(n),'editor','filler'||n from generate_series(10,36) n;
@@ -445,7 +469,7 @@ insert into tap_results values
 ((select count(*)=0 from public.place_folders) and (select count(*)=0 from public.place_folder_members) and (select count(*)=0 from public.shared_places)
   and (select count(*)=0 from public.place_folder_preferences) and (select count(*)=0 from public.shared_place_stars) and (select count(*)=0 from public.avoided_places)
   and (select count(*)=0 from public.shared_place_entries) and (select count(*)=0 from public.my_star_entries),'a revoked member who still has member rows reads nothing');
-select pg_temp.expect_error($q$select public.create_place_folder('x','x','{}')$q$,'MEMBERSHIP_REQUIRED','a revoked member cannot create');
+select pg_temp.expect_error($q$select public.create_place_folder('x','x','{}',gen_random_uuid())$q$,'MEMBERSHIP_REQUIRED','a revoked member cannot create');
 select pg_temp.expect_error($q$select public.leave_place_folder(pg_temp.fid('F1'))$q$,'MEMBERSHIP_REQUIRED','a revoked member cannot leave');
 select pg_temp.expect_error($q$select public.preview_place_folder_invite(pg_temp.r('I3')->>'token')$q$,'MEMBERSHIP_REQUIRED','a revoked member cannot preview');
 select pg_temp.expect_error($q$select public.set_shared_place_star(pg_temp.shared(pg_temp.fid('F1'),'s1'),true)$q$,'MEMBERSHIP_REQUIRED','a revoked member cannot star');
@@ -466,7 +490,7 @@ select pg_temp.expect_error($q$select updated_at from public.place_folder_member
 select pg_temp.expect_error($q$select * from public.place_folder_invites$q$,'permission denied for table place_folder_invites','authenticated cannot read invites directly','42501');
 reset role;
 
-with tbl(name) as (values ('place_folders'),('place_folder_members'),('place_folder_preferences'),('shared_places'),('place_folder_invites'),('avoided_places'),('shared_place_stars'))
+with tbl(name) as (values ('place_folders'),('place_folder_members'),('place_folder_preferences'),('shared_places'),('place_folder_invites'),('avoided_places'),('shared_place_stars'),('place_folder_create_requests'))
 insert into tap_results select
   not has_table_privilege('authenticated','public.'||name,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
   and not has_table_privilege('anon','public.'||name,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
@@ -490,12 +514,12 @@ select pg_temp.expect_error($q$select public.recommendation_shared_restaurants(3
 reset role;
 set local role service_role;
 select pg_temp.expect_error($q$select * from public.shared_place_entries$q$,'permission denied for view shared_place_entries','service-role entry read denied','42501');
-select pg_temp.expect_error($q$select public.create_place_folder('x','x','{}')$q$,'permission denied for function create_place_folder','service-role create denied','42501');
+select pg_temp.expect_error($q$select public.create_place_folder('x','x','{}',gen_random_uuid())$q$,'permission denied for function create_place_folder','service-role create denied','42501');
 select pg_temp.expect_error($q$select public.recommendation_shared_restaurants(37,38,127,128)$q$,'permission denied for function recommendation_shared_restaurants','service-role recommendation read denied','42501');
 reset role;
 
 with rpc(signature) as (values
-  ('public.create_place_folder(text,text,uuid[])'),('public.rename_place_folder(uuid,bigint,text)'),('public.delete_place_folder(uuid,bigint)'),
+  ('public.create_place_folder(text,text,uuid[],uuid)'),('public.rename_place_folder(uuid,bigint,text)'),('public.delete_place_folder(uuid,bigint)'),
   ('public.create_place_folder_invite(uuid)'),('public.list_place_folder_invites(uuid)'),('public.revoke_place_folder_invite(uuid)'),
   ('public.preview_place_folder_invite(text)'),('public.accept_place_folder_invite(text,text)'),
   ('public.set_place_folder_display_name(uuid,bigint,text)'),('public.set_place_folder_member_role(uuid,uuid,bigint,text)'),
@@ -596,7 +620,7 @@ select (case when ok then 'ok ' else 'not ok ' end)||row_number() over()||' - '|
 select '1..'||count(*) from tap_results;
 -- Fixed plan: a skipped or row-less assertion fails the suite instead of vanishing.
 do $$ begin
-  if (select count(*) from tap_results)<>265 then raise exception 'SHARED_PLACE_FOLDERS_PLAN_MISMATCH: % of 265', (select count(*) from tap_results); end if;
+  if (select count(*) from tap_results)<>277 then raise exception 'SHARED_PLACE_FOLDERS_PLAN_MISMATCH: % of 277', (select count(*) from tap_results); end if;
   if exists(select 1 from tap_results where not ok) then raise exception 'SHARED_PLACE_FOLDERS_TEST_FAILED'; end if;
 end $$;
 rollback;
