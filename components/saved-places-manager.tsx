@@ -19,8 +19,8 @@ import { useSavedPlaces, type SavedPlaceWrite } from "./saved-places-provider";
 import { useSharedFolders } from "./shared-folders-provider";
 import { avoidedFor, avoidPopup, folderNameOf, folderPickerPopup, unavoidPopup, sharedStarPopup, useSharedPopup } from "./shared-place-actions";
 import { SharedPlaceDetail } from "./shared-place-detail";
-import { FolderCreate, SharedFolderList } from "./shared-folder-list";
-import { PENDING_CREATE_SETTLE_MS, type PendingCreate } from "@/lib/places/shared-folders";
+import { abandonCreate, FolderCreate, SharedFolderList } from "./shared-folder-list";
+import type { PendingCreate } from "@/lib/places/shared-folders";
 import { SharedFolderDetail } from "./shared-folder-detail";
 import { AvoidedPlacesView } from "./avoided-places";
 import {
@@ -106,10 +106,21 @@ function SavedPlacesManagerContent({
   const [listNotice, setListNotice] = useState("");
   // A create kept with an unknown result (account-wide, shared folders provider): new creates wait.
   const unresolvedCreate = shared.pendingCreate;
-  const [createCheck, setCreateCheck] = useState<"idle" | "checking" | "unreadable" | "waiting">("idle");
+  const [createCheck, setCreateCheck] = useState<"idle" | "checking" | "unreadable" | "abandon-unknown">("idle");
   /** Read only: the folder carrying the kept request id opens; otherwise the same confirmation reopens. */
   async function recheckCreate(pending: PendingCreate) {
     setCreateCheck("checking");
+    if (pending.abandoning) {
+      // The abandon of this id is not confirmed: send it again (same id, same answer).
+      const outcome = await abandonCreate(shared, pending.requestId);
+      if (outcome.kind === "unknown") { setCreateCheck("abandon-unknown"); return; }
+      setCreateCheck("idle");
+      shared.setPendingCreate(null);
+      if (outcome.kind === "created") setOpenFolder({ id: outcome.folderId, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." });
+      else if (outcome.kind === "created_gone") setListNotice("이 요청으로 만든 폴더는 이미 삭제됐어요. 새로 만들려면 \"＋ 공유 폴더 만들기\"를 눌러 주세요.");
+      else setListNotice(`${pending.abandoning.title}. ${pending.abandoning.message}`);
+      return;
+    }
     const read = await shared.refresh();
     const now = shared.current();
     const list = read ?? (now.status === "ready" ? now.snapshot : null);
@@ -119,12 +130,6 @@ function SavedPlacesManagerContent({
     if (folder) {
       shared.setPendingCreate(null);
       setOpenFolder({ id: folder.id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." });
-      return;
-    }
-    if (pending.refused) {
-      // A retry was refused while the first send's result is unknown: only time and a read settle it.
-      if (Date.now() - pending.firstSentAt >= PENDING_CREATE_SETTLE_MS) shared.setPendingCreate(null);
-      else setCreateCheck("waiting");
       return;
     }
     // Not there: the same confirmation reopens with the same id and input.
@@ -601,15 +606,16 @@ function SavedPlacesManagerContent({
           {listNotice ? <p className={styles.noticeCard} role="status">{listNotice}</p> : null}
           {unresolvedCreate && !creatingFolder ? (
             <div className={styles.noticeCard} role="status">
-              {unresolvedCreate.refused ? <>
-                <strong>이전 요청 결과를 확인하고 있어요</strong>
-                <p>다시 만들기는 거절됐지만, 응답을 받지 못한 이전 요청이 늦게 처리될 수 있어요. 확인이 끝날 때까지 새 폴더 만들기를 잠시 막아 둘게요.</p>
+              {unresolvedCreate.abandoning ? <>
+                <strong>이전 만들기 요청을 정리하고 있어요</strong>
+                <p>다시 만들기는 거절됐어요. 응답을 받지 못한 이전 요청이 나중에 처리되지 않게 정리하는 중이에요. 정리가 끝날 때까지 새 폴더 만들기를 잠시 막아 둘게요.</p>
+                <p>다시 확인을 누르면 같은 정리 요청을 한 번 더 보내요. 여러 번 보내도 결과는 같아요.</p>
               </> : <>
                 <strong>폴더를 만들었는지 확인하고 있어요</strong>
                 <p>응답을 받지 못한 만들기 요청이 있어요. 확인이 끝날 때까지 새 폴더 만들기를 잠시 막아 둘게요.</p>
               </>}
               {createCheck === "unreadable" ? <p role="alert">목록을 확인하지 못했어요. 잠시 뒤 다시 확인해 주세요.</p> : null}
-              {createCheck === "waiting" ? <p role="status">아직 이전 요청이 처리될 수 있어요. 1분쯤 뒤에 다시 확인해 주세요.</p> : null}
+              {createCheck === "abandon-unknown" ? <p role="alert">정리됐는지 확인하지 못했어요. 잠시 뒤 다시 확인해 주세요.</p> : null}
               <button type="button" className={styles.secondaryButton} disabled={createCheck === "checking" || shared.busy} onClick={() => void recheckCreate(unresolvedCreate)}>{createCheck === "checking" ? "확인하는 중…" : "다시 확인"}</button>
             </div>
           ) : null}

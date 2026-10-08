@@ -16,6 +16,8 @@ import {
   PLACE_FOLDER_MEMBER_LIMIT,
   PLACE_FOLDER_PLACE_LIMIT,
   parsePlaceFolder,
+  parseAbandonResult,
+  type AbandonResult,
   type PendingCreate,
 } from "@/lib/places/shared-folders";
 import { folderLastEdit, roleLabel } from "@/lib/places/shared-folder-format";
@@ -183,6 +185,22 @@ export function leavingWhat(name: string, displayName: string, places: number) {
 /** G04–G08: name, my folder name, optional copies of my places, then the final confirmation. */
 export type { PendingCreate };
 
+export type AbandonOutcome = { kind: "created"; folderId: string } | { kind: "created_gone" } | { kind: "abandoned" } | { kind: "unknown" };
+/**
+ * Ends a kept create on the server (contract §6): its stored result or a tombstone that stops a late
+ * copy of it. A write, but the same id may be sent again with the same answer.
+ */
+export async function abandonCreate(shared: ReturnType<typeof useSharedFolders>, requestId: string): Promise<AbandonOutcome> {
+  const { data, code, lost } = await shared.call("abandon_place_folder_request", { request_id: requestId });
+  if (code || lost) return { kind: "unknown" };
+  let result: AbandonResult;
+  try { result = parseAbandonResult(data); } catch { return { kind: "unknown" }; }
+  if (result.status !== "created") return { kind: result.status };
+  // The folder made by that request: read the list so it can open.
+  await shared.refresh();
+  return { kind: "created", folderId: result.folder.id };
+}
+
 /**
  * G04–G08 folder create. While the account has a kept create with an unknown result
  * (`shared.pendingCreate`), this screen only reopens that request: same id, same input, inputs
@@ -250,9 +268,11 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
     // One request id per confirmation: every try in it (FP39 re-check, "확인하고 만들기") reuses it,
     // so a resent or browser-retried request makes one folder (contract §6, idempotent create).
     const requestId = resume?.requestId ?? crypto.randomUUID();
-    // Mutable for this confirmation: the first send time and whether a try's result was unknown.
-    const request: PendingCreate = resume ? { ...resume } : { requestId, folderName, displayName: mine, ids, firstSentAt: 0, refused: false };
+    const request: PendingCreate = { requestId, folderName, displayName: mine, ids, abandoning: null };
+    // An earlier try of this request had an unknown result (a reopened kept request always did).
     let uncertain = Boolean(resume);
+    // The confirmation ends with a single close button (deleted since, abandoned, abandon unknown).
+    let ended = false;
     const createdBy = (s: SharedSnapshot) => s.folders.find((f) => f.ownerId === me && f.createRequestId === requestId);
     const deletedSince: SharedWrite = { ok: false, reason: "rejected", title: "이 요청으로 만든 폴더는 이미 삭제됐어요", message: "같은 요청으로 만든 폴더가 그사이 삭제돼 다시 만들지 않았어요. 새로 만들려면 \"폴더 만들기\"를 다시 눌러 주세요." };
     open({
@@ -275,7 +295,6 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
         notApplied: { title: "폴더가 만들어지지 않았어요", message: "폴더 목록을 다시 확인했지만 새 폴더가 없어요. 입력 내용은 그대로예요. 다시 만들려면 \"확인하고 만들기\"를 눌러 주세요." },
         run: async () => {
           created.current = null;
-          if (!request.firstSentAt) request.firstSentAt = Date.now();
           const write = await shared.write({
             rpc: "create_place_folder",
             args: { folder_name: folderName, display_name: mine, saved_place_ids: ids, request_id: requestId },
@@ -292,6 +311,8 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
               ? { reason: "rejected", title: "폴더를 만들지 못했어요", message: `공유 폴더 ${PLACE_FOLDER_LIMIT}개가 모두 찼어요. 쓰지 않는 폴더를 삭제하거나 나간 뒤 만들 수 있어요.` }
               : code === "SAVED_PLACE_NOT_FOUND"
                 ? { reason: "rejected", stale: true, title: "고른 장소가 바뀌었어요", message: "고른 내 장소 중 삭제된 것이 있어요. 선택을 확인한 뒤 다시 만들어 주세요." }
+                : code === "PLACE_FOLDER_REQUEST_ABANDONED"
+                  ? { reason: "rejected", title: "이 요청은 이미 정리됐어요", message: "응답을 받지 못한 이 만들기 요청은 정리돼 다시 만들지 않았어요. 새로 만들려면 \"폴더 만들기\"를 다시 눌러 주세요." }
                 : code === "PLACE_FOLDER_REQUEST_MISMATCH"
                   ? { reason: "rejected", title: "폴더를 만들지 못했어요", message: "같은 요청으로 다른 내용을 보낼 수 없어요. 닫고 다시 만들어 주세요." }
                 : code === "INVALID_FOLDER_DISPLAY_NAME" || code === "INVALID_PLACE_FOLDER"
@@ -310,7 +331,6 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
           // Unknown, or a receipt the list does not show yet: kept for this account until a read settles it.
           if (write.reason === "unknown" || write.reason === "mismatch") {
             uncertain = true;
-            request.refused = false;
             shared.setPendingCreate({ ...request });
             // A receipt whose folder a later successful read still does not show was deleted since.
             return write.reason === "mismatch" && created.current
@@ -319,14 +339,25 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
           }
           if (write.reason === "rejected" || write.reason === "star_limit") {
             // A clear refusal of this try. Without an unknown try before it, nothing was made: release.
-            // After an unknown try, the timed-out first send may still land (a timeout does not cancel
-            // it), so the request stays kept until PENDING_CREATE_SETTLE_MS and a read without it.
-            if (!uncertain) shared.setPendingCreate(null);
-            else { request.refused = true; shared.setPendingCreate({ ...request }); return { ...write, stale: false }; }
+            if (!uncertain) { shared.setPendingCreate(null); return write; }
+            // After an unknown try, that send may still arrive (a timeout cancels nothing): the server
+            // ends this id instead, returning its folder if it was made, or blocking a late copy.
+            ended = true;
+            const outcome = await abandonCreate(shared, requestId);
+            if (outcome.kind === "created") {
+              shared.setPendingCreate(null);
+              onCreated(outcome.folderId);
+              return { ok: true };
+            }
+            if (outcome.kind === "created_gone") { shared.setPendingCreate(null); return deletedSince; }
+            if (outcome.kind === "abandoned") { shared.setPendingCreate(null); return { ...write, stale: false }; }
+            // The abandon's own result is unknown: still kept and blocked; the list retries it.
+            shared.setPendingCreate({ ...request, abandoning: { title: write.title, message: write.message } });
+            return { ok: false, reason: "rejected", title: write.title, message: `${write.message} 응답을 받지 못한 이전 요청을 정리했는지 확인하지 못했어요. 목록에서 다시 확인해 주세요.` };
           }
           return write;
         },
-        finalOnRefusal: (write) => (write.title === deletedSince.title || request.refused
+        finalOnRefusal: (write) => (write.title === deletedSince.title || ended
           ? [{ label: "닫기", primary: true, onClick: () => undefined }]
           : null),
         onApplied: () => {

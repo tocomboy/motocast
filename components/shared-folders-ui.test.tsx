@@ -488,74 +488,81 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
     await act(async () => r.unmount());
   });
 
-  // The first send times out (its result unknown, the list without it), then the retry is refused.
-  async function refusedAfterUnknown(r: ReactTestRenderer) {
+  // The first send times out (its result unknown, the list without it), then the retry is refused,
+  // so the request is abandoned on the server with `abandon` as the answer.
+  async function refusedAfterUnknown(r: ReactTestRenderer, abandon: { data: unknown; code: string | null; lost: boolean }) {
     await startCreate(r);
     write
       .mockImplementationOnce(async () => ({ ok: false, reason: "unknown", checked: true, title: "변경을 확인하지 못했어요", message: "" }))
       .mockImplementationOnce(async () => ({ ok: false, reason: "rejected", title: "폴더를 만들지 못했어요", message: "공유 폴더 20개가 모두 찼어요." }));
+    const call = vi.fn<(rpc: string, args: Record<string, unknown>) => Promise<typeof abandon>>(async () => abandon);
+    (mocks.shared as { call: typeof call }).call = call;
+    await rerenderManager(r);
     const popup = () => dialogWith(r, "이 공유 폴더를 만들까요?");
     await act(async () => button(popup(), "폴더 만들기").props.onClick());
-    await act(async () => button(popup(), "확인하고 만들기").props.onClick());
+    await act(async () => { button(popup(), "확인하고 만들기").props.onClick(); await Promise.resolve(); });
+    expect(call).toHaveBeenCalledWith("abandon_place_folder_request", { request_id: write.mock.calls[0][0].args.request_id });
+    return { call, popup, requestId: write.mock.calls[0][0].args.request_id as string };
+  }
+
+  it("delta 7: a refused retry after an unknown try abandons the request; 'abandoned' releases it with the refusal", async () => {
+    const r = await mount();
+    const { popup } = await refusedAfterUnknown(r, { data: { status: "abandoned" }, code: null, lost: false });
     expect(text(popup())).toContain("공유 폴더 20개가 모두 찼어요.");
     expect(buttons(popup(), "다시 시도")).toHaveLength(0);
+    expect(mocks.shared.pendingCreate).toBeNull();
     await act(async () => button(popup(), "닫기").props.onClick());
-    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
-    expect(text(r.root)).toContain("이전 요청 결과를 확인하고 있어요");
-    expect(button(r, "＋ 공유 폴더 만들기").props.disabled).toBe(true);
-    return write.mock.calls[0][0].args.request_id as string;
-  }
-  async function checkAgain(r: ReactTestRenderer, read: () => SharedSnapshot) {
-    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => read());
-    await rerenderManager(r);
-    await act(async () => { button(r, "다시 확인").props.onClick(); await Promise.resolve(); });
-  }
-
-  it("delta 6-1: a refused retry after an unknown first send stays blocked for 90 s, then a read without it releases it", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      vi.setSystemTime(new Date("2026-10-09T00:00:00Z"));
-      const r = await mount();
-      await refusedAfterUnknown(r);
-      vi.setSystemTime(new Date("2026-10-09T00:00:30Z"));
-      await checkAgain(r, () => snapshot);
-      expect(text(r.root)).toContain("이전 요청 결과를 확인하고 있어요");
-      expect(text(r.root)).toContain("1분쯤 뒤에 다시 확인해 주세요.");
-      expect(button(r, "＋ 공유 폴더 만들기").props.disabled).toBe(true);
-      vi.setSystemTime(new Date("2026-10-09T00:01:31Z"));
-      await checkAgain(r, () => snapshot);
-      expect(text(r.root)).not.toContain("이전 요청 결과를 확인하고 있어요");
-      expect(button(r, "＋ 공유 폴더 만들기").props.disabled).toBe(false);
-      expect(write).toHaveBeenCalledTimes(2);
-      await act(async () => r.unmount());
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(write).toHaveBeenCalledTimes(2);
+    await act(async () => r.unmount());
   });
 
-  it("delta 6-1: when the late first send shows up in a read, that folder opens", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      vi.setSystemTime(new Date("2026-10-09T00:00:00Z"));
-      const r = await mount();
-      const requestId = await refusedAfterUnknown(r);
-      vi.setSystemTime(new Date("2026-10-09T00:00:40Z"));
-      const id = "00000000-0000-4000-8000-0000000000f9";
-      await checkAgain(r, () => {
-        reload({
-          ...snapshot,
-          folders: [...snapshot.folders, { ...snapshot.folders[0], id, name: "새 폴더", createRequestId: requestId }],
-          members: [...snapshot.members, { ...snapshot.members[0], folderId: id, memberId: ME, role: "owner", displayName: "바람개비" }],
-          preferences: [...snapshot.preferences, { ...snapshot.preferences[0], folderId: id, enabled: true }],
-        });
-        return snapshot;
+  it("delta 7: an abandon answering 'created' opens the folder the late first send made", async () => {
+    const r = await mount();
+    const id = "00000000-0000-4000-8000-0000000000f9";
+    (mocks.shared as { refresh: ReturnType<typeof vi.fn> }).refresh = vi.fn(async () => {
+      reload({
+        ...snapshot,
+        folders: [...snapshot.folders, { ...snapshot.folders[0], id, name: "새 폴더" }],
+        members: [...snapshot.members, { ...snapshot.members[0], folderId: id, memberId: ME, role: "owner", displayName: "바람개비" }],
+        preferences: [...snapshot.preferences, { ...snapshot.preferences[0], folderId: id, enabled: true }],
       });
-      expect(text(r.root)).toContain("공유 폴더를 만들었어요.");
-      expect(mocks.shared.pendingCreate).toBeNull();
-      await act(async () => r.unmount());
-    } finally {
-      vi.useRealTimers();
-    }
+      return snapshot;
+    });
+    await refusedAfterUnknown(r, { data: { status: "created", result: { folder: { id, owner_id: ME, name: "새 폴더", revision: 1, create_request_id: null, created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z" } } }, code: null, lost: false });
+    expect(text(r.root)).toContain("공유 폴더를 만들었어요.");
+    expect(mocks.shared.pendingCreate).toBeNull();
+    await act(async () => r.unmount());
+  });
+
+  it("delta 7: an abandon answering 'created_gone' ends with the deleted notice", async () => {
+    const r = await mount();
+    const { popup } = await refusedAfterUnknown(r, { data: { status: "created_gone" }, code: null, lost: false });
+    expect(text(popup())).toContain("이 요청으로 만든 폴더는 이미 삭제됐어요");
+    expect(mocks.shared.pendingCreate).toBeNull();
+    await act(async () => r.unmount());
+  });
+
+  it("delta 7: an unknown abandon keeps the request blocked, and 다시 확인 sends the same abandon again", async () => {
+    const r = await mount();
+    const { call, popup, requestId } = await refusedAfterUnknown(r, { data: null, code: null, lost: true });
+    expect(mocks.shared.pendingCreate).toMatchObject({ requestId, abandoning: { title: "폴더를 만들지 못했어요" } });
+    await act(async () => button(popup(), "닫기").props.onClick());
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+    expect(text(r.root)).toContain("이전 만들기 요청을 정리하고 있어요");
+    expect(text(r.root)).toContain("다시 확인을 누르면 같은 정리 요청을 한 번 더 보내요. 여러 번 보내도 결과는 같아요.");
+    expect(button(r, "＋ 공유 폴더 만들기").props.disabled).toBe(true);
+    call.mockResolvedValueOnce({ data: null, code: null, lost: true });
+    await act(async () => { button(r, "다시 확인").props.onClick(); await Promise.resolve(); });
+    expect(text(r.root)).toContain("정리됐는지 확인하지 못했어요.");
+    call.mockResolvedValueOnce({ data: { status: "abandoned" }, code: null, lost: false });
+    await act(async () => { button(r, "다시 확인").props.onClick(); await Promise.resolve(); });
+    expect(text(r.root)).not.toContain("이전 만들기 요청을 정리하고 있어요");
+    expect(text(r.root)).toContain("폴더를 만들지 못했어요. 공유 폴더 20개가 모두 찼어요.");
+    expect(button(r, "＋ 공유 폴더 만들기").props.disabled).toBe(false);
+    expect(call.mock.calls.every((args) => args[0] === "abandon_place_folder_request" && (args[1] as { request_id?: string }).request_id === requestId)).toBe(true);
+    expect(call).toHaveBeenCalledTimes(3);
+    expect(write).toHaveBeenCalledTimes(2);
+    await act(async () => r.unmount());
   });
 
   it("delta 6-2: a receipt, a failed read, then a read without the folder settles it without resending", async () => {

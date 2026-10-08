@@ -259,6 +259,23 @@ insert into tap_results values
 ((select count(*)=1 from public.place_folders where owner_id=pg_temp.u(38)),'one create request makes exactly one folder');
 delete from race_results;
 
+-- 8. A create and an abandon of the same request at once: exactly one wins, consistently.
+select extensions.dblink_exec('sf_admin','begin');
+select extensions.dblink_exec('sf_admin',format('do $do$ begin perform pg_advisory_xact_lock(hashtextextended(%L,0)); end $do$','place-favorites:'||pg_temp.u(39)));
+select pg_temp.as_user('sf_c1',39); select pg_temp.as_user('sf_c2',39);
+select pg_temp.call('sf_c1','select public.create_place_folder(''포기 경합'',''nine'',''{}'',''95000000-0000-0000-0000-000000000039'')->''folder''->>''id''');
+select pg_temp.call('sf_c2','select public.abandon_place_folder_request(''95000000-0000-0000-0000-000000000039'')->>''status''');
+insert into tap_results values (pg_temp.wait_for('folder-race-c1','advisory') and pg_temp.wait_for('folder-race-c2','advisory'),'a create and an abandon of one request wait on the rider lock');
+select extensions.dblink_exec('sf_admin','commit');
+select pg_temp.collect('sf_c1'); select pg_temp.collect('sf_c2');
+insert into tap_results values
+(((select result from race_results where connection='sf_c1') ~ '^[0-9a-f-]{36}$' and (select result from race_results where connection='sf_c2')='created'
+    and (select count(*)=1 from public.place_folders where owner_id=pg_temp.u(39)))
+  or ((select result from race_results where connection='sf_c1')='PLACE_FOLDER_REQUEST_ABANDONED' and (select result from race_results where connection='sf_c2')='abandoned'
+    and (select count(*)=0 from public.place_folders where owner_id=pg_temp.u(39))),
+  'exactly one of the create and the abandon wins, and the folders agree');
+delete from race_results;
+
 select extensions.dblink_disconnect('sf_c1'); select extensions.dblink_disconnect('sf_c2'); select extensions.dblink_disconnect('sf_c3'); select extensions.dblink_disconnect('sf_admin');
 drop function public.test_folder_race(text);
 insert into tap_results values
@@ -272,6 +289,6 @@ select (case when ok then 'ok ' else 'not ok ' end)||row_number() over()||' - '|
 select '1..'||count(*) from tap_results;
 -- Fixed plan: a skipped assertion fails the suite instead of vanishing.
 do $$ begin
-  if (select count(*) from tap_results)<>37 then raise exception 'SHARED_PLACE_FOLDERS_CONCURRENCY_PLAN_MISMATCH: % of 37', (select count(*) from tap_results); end if;
+  if (select count(*) from tap_results)<>39 then raise exception 'SHARED_PLACE_FOLDERS_CONCURRENCY_PLAN_MISMATCH: % of 39', (select count(*) from tap_results); end if;
   if exists(select 1 from tap_results where not ok) then raise exception 'SHARED_PLACE_FOLDERS_CONCURRENCY_FAILED'; end if;
 end $$;

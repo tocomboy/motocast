@@ -15,17 +15,20 @@ export const SHARED_PLACE_PAGE_SIZE = 1000;
 export type FolderRole = "owner" | "editor" | "viewer";
 /**
  * A create whose result is unknown: its id and exact input are kept so only the same request is resent.
- * `firstSentAt` (ms) is the first send of this id; `refused` says the latest try was clearly refused
- * while an earlier try's result is still unknown (V3 delta 6).
+ * `abandoning`: a retry was clearly refused after an unknown try, and the server-side abandon of this
+ * id is not confirmed yet; it holds the refusal to show once it is (contract §6, §8; V3 delta 7).
  */
-export type PendingCreate = { requestId: string; folderName: string; displayName: string; ids: string[]; firstSentAt: number; refused: boolean };
+export type PendingCreate = { requestId: string; folderName: string; displayName: string; ids: string[]; abandoning: { title: string; message: string } | null };
 
-/**
- * An unanswered create can still run on the server for at most the PostgREST statement_timeout and
- * the gateway limit (about 60 s). After 90 s from its first send it can no longer make a folder, so a
- * read without that request's folder settles it (contract §8, V3 delta 6).
- */
-export const PENDING_CREATE_SETTLE_MS = 90_000;
+/** `abandon_place_folder_request` (contract §6): the stored create result, or the tombstone. */
+export type AbandonResult = { status: "created"; folder: PlaceFolder } | { status: "created_gone" } | { status: "abandoned" };
+export function parseAbandonResult(value: unknown): AbandonResult {
+  const row = record(value, "INVALID_ABANDON_RESULT");
+  if (row.status === "abandoned" || row.status === "created_gone") return { status: row.status };
+  if (row.status !== "created") throw new Error("INVALID_ABANDON_RESULT");
+  const result = record(row.result, "INVALID_ABANDON_RESULT");
+  return { status: "created", folder: parsePlaceFolder(result.folder) };
+}
 
 /** `createRequestId`: the create_place_folder request_id that made it (contract §6), null if unknown. */
 export type PlaceFolder = { id: string; ownerId: string; name: string; revision: number; createRequestId: string | null; createdAt: string; updatedAt: string };

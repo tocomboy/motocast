@@ -29,16 +29,20 @@ create index if not exists place_folders_owner_key on public.place_folders(owner
 create unique index if not exists place_folders_create_request_key on public.place_folders(owner_id, create_request_id)
   where create_request_id is not null;
 
--- One create per (owner, request_id): a replay of the same input returns the stored result
--- (no new folder, no limit re-check); another input under the same id is refused. Private.
+-- One outcome per (owner, request_id). 'created': a replay of the same input returns the stored
+-- result (no new folder, no limit re-check), another input is refused. 'abandoned': a tombstone
+-- written by abandon_place_folder_request, so a late copy of that request makes nothing. Private.
 create table if not exists public.place_folder_create_requests (
   owner_id uuid not null references auth.users(id) on delete cascade,
   request_id uuid not null,
-  payload_hash text not null,
-  result jsonb not null,
+  outcome text not null,
+  payload_hash text,
+  result jsonb,
   created_at timestamptz not null default now(),
   constraint place_folder_create_requests_pkey primary key (owner_id, request_id),
-  constraint place_folder_create_requests_hash_check check (payload_hash ~ '^[0-9a-f]{64}$')
+  constraint place_folder_create_requests_outcome_check check (
+    (outcome = 'created' and payload_hash ~ '^[0-9a-f]{64}$' and result is not null)
+    or (outcome = 'abandoned' and payload_hash is null and result is null))
 );
 
 create table if not exists public.place_folder_members (
@@ -370,6 +374,8 @@ begin
   select * into stored from public.place_folder_create_requests request
     where request.owner_id = caller and request.request_id = create_place_folder.request_id;
   if found then
+    -- The client gave this request up: a copy arriving late never creates.
+    if stored.outcome = 'abandoned' then raise exception using errcode = 'P0001', message = 'PLACE_FOLDER_REQUEST_ABANDONED'; end if;
     if stored.payload_hash <> request_hash then raise exception using errcode = 'P0001', message = 'PLACE_FOLDER_REQUEST_MISMATCH'; end if;
     return stored.result;
   end if;
@@ -391,9 +397,34 @@ begin
   if copied <> cardinality(saved_place_ids) then raise exception using errcode = 'P0001', message = 'SAVED_PLACE_NOT_FOUND'; end if;
   outcome := jsonb_build_object('folder', to_jsonb(new_folder), 'member', public.place_folder_member_json(new_member),
     'preference', to_jsonb(new_preference));
-  insert into public.place_folder_create_requests(owner_id, request_id, payload_hash, result)
-    values (caller, create_place_folder.request_id, request_hash, outcome);
+  insert into public.place_folder_create_requests(owner_id, request_id, outcome, payload_hash, result)
+    values (caller, create_place_folder.request_id, 'created', request_hash, outcome);
   return outcome;
+end;
+$$;
+
+-- Ends a create whose result the client does not know, under the same rider lock as the create:
+-- either its stored result ('created', or 'created_gone' once that folder was deleted), or a
+-- tombstone ('abandoned', idempotent) after which create_place_folder refuses that id.
+create or replace function public.abandon_place_folder_request(request_id uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare caller uuid := auth.uid(); stored public.place_folder_create_requests;
+begin
+  if caller is null or not public.is_active_member(caller) then raise exception using errcode = 'P0001', message = 'MEMBERSHIP_REQUIRED'; end if;
+  if abandon_place_folder_request.request_id is null then raise exception using errcode = 'P0001', message = 'INVALID_PLACE_FOLDER'; end if;
+  perform public.lock_place_user(caller);
+  select * into stored from public.place_folder_create_requests request
+    where request.owner_id = caller and request.request_id = abandon_place_folder_request.request_id;
+  if not found then
+    insert into public.place_folder_create_requests(owner_id, request_id, outcome)
+      values (caller, abandon_place_folder_request.request_id, 'abandoned');
+    return jsonb_build_object('status', 'abandoned');
+  end if;
+  if stored.outcome = 'abandoned' then return jsonb_build_object('status', 'abandoned'); end if;
+  if not exists (select 1 from public.place_folders folder where folder.id = (stored.result->'folder'->>'id')::uuid) then
+    return jsonb_build_object('status', 'created_gone');
+  end if;
+  return jsonb_build_object('status', 'created', 'result', stored.result);
 end;
 $$;
 
@@ -1073,7 +1104,7 @@ revoke all on function public.is_place_folder_member(uuid), public.lock_place_fo
   public.place_folder_members_clear_stars(), public.place_star_total_consistent(uuid), public.place_folder_consistent(uuid),
   public.assert_place_star_total(), public.assert_place_folder_consistent(), public.place_folder_invite_hash(text),
   public.shared_place_folder(uuid),
-  public.create_place_folder(text,text,uuid[],uuid), public.rename_place_folder(uuid,bigint,text), public.delete_place_folder(uuid,bigint),
+  public.create_place_folder(text,text,uuid[],uuid), public.abandon_place_folder_request(uuid), public.rename_place_folder(uuid,bigint,text), public.delete_place_folder(uuid,bigint),
   public.create_place_folder_invite(uuid), public.list_place_folder_invites(uuid), public.revoke_place_folder_invite(uuid),
   public.preview_place_folder_invite(text), public.accept_place_folder_invite(text,text),
   public.set_place_folder_display_name(uuid,bigint,text), public.set_place_folder_member_role(uuid,uuid,bigint,text),
@@ -1086,7 +1117,7 @@ revoke all on function public.is_place_folder_member(uuid), public.lock_place_fo
   public.set_saved_place_star(uuid,bigint,boolean), public.add_place_favorite(jsonb)
   from public, anon, authenticated, service_role;
 grant execute on function public.is_place_folder_member(uuid),
-  public.create_place_folder(text,text,uuid[],uuid), public.rename_place_folder(uuid,bigint,text), public.delete_place_folder(uuid,bigint),
+  public.create_place_folder(text,text,uuid[],uuid), public.abandon_place_folder_request(uuid), public.rename_place_folder(uuid,bigint,text), public.delete_place_folder(uuid,bigint),
   public.create_place_folder_invite(uuid), public.list_place_folder_invites(uuid), public.revoke_place_folder_invite(uuid),
   public.preview_place_folder_invite(text), public.accept_place_folder_invite(text,text),
   public.set_place_folder_display_name(uuid,bigint,text), public.set_place_folder_member_role(uuid,uuid,bigint,text),
