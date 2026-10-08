@@ -632,6 +632,8 @@ function SavedPlacesManagerContent({
             />
           </div>
           {clustersVisible && (spots || restaurants) && !(preview && !wide) ? <p className={styles.helper}>숫자는 그 자리에 묶인 장소 수예요. 누르면 확대돼요. 별 배지는 자주 찾는 장소가 포함된 묶음이에요.</p> : null}
+          {/* AV05: avoided pins ignore the layer toggles and are never clustered. */}
+          {pins.some((pin) => pin.avoided) ? <p className={styles.helper}>기피 장소는 라이딩 스팟·식당 토글과 관계없이 항상 보여요. 묶음 개수에 넣지 않아요.</p> : null}
           {!spots && !restaurants ? <p className={styles.notice} role="status">저장 장소 핀을 모두 숨겼어요. 현재 일정의 지점과 지도는 유지돼요.</p> : null}
           {preview && !wide ? (
             <div className={styles.previewCard}>
