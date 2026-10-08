@@ -61,7 +61,8 @@ export function SharedFolderDetail({
   const [adding, setAdding] = useState<AddFlow>(null);
   const [status, setStatus] = useState(notice ?? "");
   // V3-6: the place was saved but its star failed or is unknown; shown until it is resolved.
-  const [starIssue, setStarIssue] = useState<{ placeId: string | null; title: string; message: string; unknown: boolean } | null>(null);
+  const [starIssue, setStarIssue] = useState<{ placeId: string | null; saved: string; title: string; message: string; unknown: boolean } | null>(null);
+  const [starDone, setStarDone] = useState("");
   // Success text from a write made on this screen replaces the entry notice.
   const [baseline] = useState(shared.message);
   // Opening a folder re-reads it (memo G10: entry, refresh and right after a save).
@@ -75,13 +76,17 @@ export function SharedFolderDetail({
   const me = snapshot.userId;
 
   /** The star asked for in G13b, sent once after the save; its own result is kept apart (V3-6). */
-  async function starNewPlace(row: SharedPlace | null) {
-    if (!row) { setStarIssue({ placeId: null, title: "자주 찾는 장소에는 추가하지 못했어요", message: "장소는 폴더에 저장했어요. 별표할 장소를 목록에서 찾지 못했어요. 장소 상세에서 다시 추가해 주세요.", unknown: false }); return; }
+  async function starNewPlace(row: SharedPlace | null, label: string) {
+    // G18a–c: "장소를 폴더에 저장했어요 · <place> · <folder>" stays above the star result card.
+    const saved = `${label} · ${folder?.name ?? ""}`;
+    setStarDone("");
+    if (!row) { setStarIssue({ placeId: null, saved, title: "자주 찾는 장소에는 추가하지 못했어요", message: "장소는 폴더에 저장했어요. 별표할 장소를 목록에서 찾지 못했어요. 장소 상세에서 다시 추가해 주세요.", unknown: false }); return; }
     const result = await starAfterAdd(shared, row);
     if (result.ok) { setStarIssue(null); return; }
     const unknown = result.reason === "unknown" || result.reason === "mismatch";
     setStarIssue({
       placeId: row.id,
+      saved,
       unknown,
       title: unknown ? "별표가 반영됐는지 확인하지 못했어요" : "자주 찾는 장소에는 추가하지 못했어요",
       message: unknown
@@ -93,9 +98,9 @@ export function SharedFolderDetail({
   }
   async function recheckStar(placeId: string) {
     const fresh = await shared.refresh();
-    if (!fresh) { setStarIssue({ placeId, unknown: true, title: "목록을 확인하지 못했어요", message: "장소는 폴더에 저장했어요. 별표가 반영됐는지 아직 몰라요. 잠시 뒤 다시 확인해 주세요." }); return; }
-    if (fresh.places.some((p) => p.id === placeId && p.starred)) { setStarIssue(null); setStatus("폴더에 저장하고 자주 찾는 장소에도 추가했어요."); return; }
-    setStarIssue({ placeId, unknown: false, title: "자주 찾는 장소에는 추가되지 않았어요", message: "장소는 폴더에 저장했어요. 별표는 없어요. 장소 상세에서 다시 추가할 수 있어요." });
+    if (!fresh) { setStarIssue((current) => current && { ...current, placeId, unknown: true, title: "목록을 확인하지 못했어요", message: "장소는 폴더에 저장했어요. 별표가 반영됐는지 아직 몰라요. 잠시 뒤 다시 확인해 주세요." }); return; }
+    if (fresh.places.some((p) => p.id === placeId && p.starred)) { setStarIssue(null); setStarDone("폴더에 저장하고 자주 찾는 장소에도 추가했어요."); return; }
+    setStarIssue((current) => current && { ...current, placeId, unknown: false, title: "자주 찾는 장소에는 추가되지 않았어요", message: "장소는 폴더에 저장했어요. 별표는 없어요. 장소 상세에서 다시 추가할 수 있어요." });
   }
   const members = snapshot.members.filter((row) => row.folderId === folderId);
   const role = members.find((row) => row.memberId === me)?.role;
@@ -168,7 +173,9 @@ export function SharedFolderDetail({
         <button type="button" className={styles.iconButton} aria-label="폴더 메뉴" aria-haspopup="dialog" onClick={() => setMenuOpen(true)}><LineIcon name="more-vertical" /></button>
       </header>
       <div className={`${styles.mobileRegion} ${styles.mobileOnly}`}>{regionSelect("large")}</div>
-      {shared.message !== baseline ? <p className={styles.noticeCard} role="status">{shared.message}</p> : status ? <p className={styles.noticeCard} role="status">{status}</p> : null}
+      {starIssue ? (
+        <div className={styles.noticeCard} role="status"><strong>장소를 폴더에 저장했어요</strong><p>{starIssue.saved}</p></div>
+      ) : starDone ? <p className={styles.noticeCard} role="status">{starDone}</p> : shared.message !== baseline ? <p className={styles.noticeCard} role="status">{shared.message}</p> : status ? <p className={styles.noticeCard} role="status">{status}</p> : null}
       {starIssue ? (
         <div className={styles.errorCard} role="alert">
           <strong>{starIssue.title}</strong>
@@ -267,7 +274,7 @@ export function SharedFolderDetail({
             onSaved: (row) => {
               setAdding(null);
               if (row) setTab(row.kind);
-              if (starred) void starNewPlace(row);
+              if (starred) void starNewPlace(row, row ? sharedName(row) : alias.trim() || place.name);
             },
             onBackToFolder: () => setAdding(null),
             onExisting: (row) => open({

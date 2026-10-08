@@ -203,7 +203,7 @@ export function FolderInvite() {
     try { fresh = check.code || check.lost ? null : parseInvitePreview(check.data); } catch { fresh = null; }
     if (fresh?.status === "already_member") { token.current = null; openFolder(fresh.folderId); return; }
     if (fresh) { setView({ step: "join", preview: fresh, lost: true, error: "참여되지 않았어요. 다시 참여하려면 \"참여하기\"를 눌러 주세요." }); return; }
-    setView({ step: "join", preview, unknown: true, error: "참여됐는지 확인하지 못했어요. 참여 요청은 다시 보내지 않아요. 잠시 뒤 다시 확인해 주세요." });
+    setView({ step: "join", preview, unknown: true, error: "참여 요청은 다시 보내지 않아요. 잠시 뒤 다시 확인해 주세요." });
   }
 
   // FP39: while a request runs the page cannot be left; its reply would otherwise land elsewhere.
@@ -267,7 +267,8 @@ export function FolderInvite() {
       actions = <Link className={styles.secondary} href="/#favorites">즐겨찾기로 가기</Link>;
       break;
     case "join": {
-      const shownError = view.error ?? (problem === "long" ? `${FOLDER_DISPLAY_NAME_LIMIT}자 이하로 줄여 주세요. 지금 ${length}자` : problem === "invalid" ? "쓸 수 없는 문자가 있어요." : "");
+      // G24b: an unknown join is its own card below the (locked) input, not an input error.
+      const shownError = view.unknown ? "" : view.error ?? (problem === "long" ? `${FOLDER_DISPLAY_NAME_LIMIT}자 이하로 줄여 주세요. 지금 ${length}자` : problem === "invalid" ? "쓸 수 없는 문자가 있어요." : "");
       body = (
         <>
           {summary(view.preview)}
@@ -287,6 +288,7 @@ export function FolderInvite() {
           <p id={`${nameId}-hint`} className={shownError ? styles.error : styles.hint} role={shownError ? "alert" : undefined}>
             {shownError || (name ? `${length} / ${FOLDER_DISPLAY_NAME_LIMIT} · 이 폴더 회원에게만 보여요. 카카오 닉네임은 보이지 않아요.` : "이 폴더 회원에게만 보여요. 1~20자, 카카오 닉네임은 보이지 않아요.")}
           </p>
+          {view.unknown && view.error ? <div className={styles.errorCard} role="alert"><strong>참여됐는지 확인하지 못했어요</strong><p>{view.error}</p></div> : null}
         </>
       );
       actions = (

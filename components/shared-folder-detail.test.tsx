@@ -96,7 +96,10 @@ describe("adding a place to a shared folder (G13b)", () => {
     await act(async () => { buttons(dialogs(r, "폴더에 저장할까요?").at(-1)!, "확인하고 저장")[0].props.onClick(); await Promise.resolve(); });
     expect(write.mock.calls.map((call) => call[0].rpc)).toEqual(["add_shared_place", "set_shared_place_star"]);
     expect(text(r.root)).toContain("자주 찾는 장소에는 추가하지 못했어요");
-    expect(text(r.root)).toContain("자주 찾는 장소 10곳이 모두 차서");
+    expect(text(r.root)).toContain("장소는 폴더에 저장했어요. 자주 찾는 장소 10곳이 모두 차서 별표하지 못했어요. 다른 별표를 뺀 뒤 장소 상세에서 추가해 주세요.");
+    // G18a: the saved card names the place and the folder above the partial result.
+    expect(text(r.root)).toContain("장소를 폴더에 저장했어요");
+    expect(text(r.root)).toContain("양서 손두부 · 주말 라이더");
   });
 
   it("V3-6: an unknown star is shown as unknown and resolved by a re-read, never by sending it again", async () => {

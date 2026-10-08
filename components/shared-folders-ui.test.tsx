@@ -47,6 +47,7 @@ const buttons = (r: ReactTestRenderer | ReactTestInstance, label: string) => ("r
 const button = (r: ReactTestRenderer | ReactTestInstance, label: string) => buttons(r, label)[0];
 // The innermost dialog: popups open inside full-screen dialogs.
 const dialogWith = (r: ReactTestRenderer, title: string) => r.root.findAll((n) => n.type === "dialog" && text(n).includes(title)).at(-1)!;
+const dialogs = (r: ReactTestRenderer, title: string) => r.root.findAll((n) => n.type === "dialog" && text(n).includes(title));
 const cards = (r: ReactTestRenderer) => r.root.findAll((n) => n.type === "li" && typeof n.props.className === "string" && n.props.className.includes("placeCard")).map(text);
 
 let snapshot: SharedSnapshot;
@@ -316,6 +317,14 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
     expect(buttons(popup(), "다시 시도")).toHaveLength(0);
     expect(buttons(popup(), "확인하고 바꾸기")).toHaveLength(0);
     expect(write).toHaveBeenCalledTimes(1);
+    // G37c: the newest name is the "전" value, with one button that shows it in the input.
+    expect(text(popup())).toContain("다른 기기에서 먼저 바뀌었어요");
+    expect(text(popup())).toContain("지금 폴더 이름은 \"주말 라이더 B\"이에요. 바꿀 이름을 확인한 뒤 다시 저장해 주세요.");
+    expect(popup().findAll((n) => n.type === "del").map(text)).toEqual(["주말 라이더 B"]);
+    expect(text(popup())).toContain("회원 모두에게 새 이름으로 보여요.");
+    await act(async () => button(popup(), "최신 이름 확인").props.onClick());
+    expect(dialogs(r, "폴더 이름을 바꿀까요?")).toHaveLength(0);
+    expect(inputOf(r).props.value).toBe("주말 라이더 B");
     await act(async () => r.unmount());
   });
 
@@ -331,6 +340,10 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
     expect(write).not.toHaveBeenCalled();
     expect(text(popup())).toContain("지금 폴더용 이름은 \"바람개비B\"이에요.");
     expect(buttons(popup(), "다시 시도")).toHaveLength(0);
+    // G36c
+    expect(popup().findAll((n) => n.type === "del").map(text)).toEqual(["바람개비B"]);
+    await act(async () => button(popup(), "최신 이름 확인").props.onClick());
+    expect(inputOf(r).props.value).toBe("바람개비B");
     await act(async () => r.unmount());
   });
 
@@ -349,6 +362,7 @@ describe("V3 part 1: newer data is never overwritten by a retry", () => {
     });
     await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "폴더 만들기").props.onClick());
     expect(r.root.findAllByProps({ "aria-label": "폴더 메뉴" })).toHaveLength(0);
+    expect(text(r.root)).toContain("폴더를 만들었는지 확인하지 못했어요");
     expect(text(r.root)).toContain("이 기기에서 만든 폴더인지 확인하지 못했어요");
     expect(buttons(r, "확인하고 만들기")).toHaveLength(0);
     expect(write).toHaveBeenCalledTimes(1);

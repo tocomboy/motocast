@@ -288,6 +288,8 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   const [placeSelectionRevision, setPlaceSelectionRevision] = useState(0);
   const [favoriteTarget, setFavoriteTarget] = useState<"origin" | "destination" | string | null>("origin");
   const [recommendationOpen, setRecommendationOpen] = useState(false);
+  // SRC04 "기피 장소 보기" opens 즐겨찾기 on its 기피 장소 tab; any other navigation starts at 장소.
+  const [favoritesSection, setFavoritesSection] = useState<"places" | "avoided">("places");
   const [recommendationStale, setRecommendationStale] = useState(false);
   const plannerPanelRef = useRef<HTMLElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
@@ -482,6 +484,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
 
   function navigate(next: PlannerView, replace = false) {
     setMapFailure(null);
+    setFavoritesSection("places");
     if (next !== "summary") {
       setRecommendationOpen(false);
       setSummaryActionsOpen(false);
@@ -982,7 +985,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     if (sources.some((source) => !source)) return "stale";
     const recheck = await recheckRecommendationSources(client as unknown as RecheckClient, sources as NonNullable<(typeof sources)[number]>[]);
     if (!mountedRef.current || !usable()) return "stale";
-    if (!recheck.ok) return recheck.reason;
+    if (!recheck.ok) return recheck.reason === "changed" ? { reason: "changed", rejected: recheck.rejected } : "unreadable";
     const result = applyRecommendedMealsWith({
       originId: places.origin!.kakaoPlaceId,
       destinationId: places.destination!.kakaoPlaceId,
@@ -1017,6 +1020,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
         onClose={closeRecommendation}
         onEditRoute={() => { closeRecommendation(); navigate("editor"); }}
         onOpenFavorites={() => { closeRecommendation(); navigate("favorites"); }}
+        onOpenAvoided={() => { closeRecommendation(); navigate("favorites"); setFavoritesSection("avoided"); }}
       /> : null}
       <header className="app-header">
         <button className="brand" type="button" aria-label="MOTOCAST 홈" onClick={() => navigationMode === "memory" && onExit ? onExit() : navigate("home")}>
@@ -1032,7 +1036,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       {view === "home" ? (
         <PlannerHome connected={connected} busy={calculating} status={homeStatus} onNewRoute={startNewRoute} onCollections={() => navigate("collections")} onFavorites={() => navigate("favorites")} collections={connected ? <CollectionManager mode="home" currentCourse={currentCourse} onApply={applyCollection} onShare={prepareCollectionShare} disabled={calculating} /> : undefined} />
       ) : view === "favorites" ? (
-        <SavedPlacesManager onBack={() => navigate("home")} onAddWaypoint={addSavedWaypoint} routePoints={inputMapPoints} routePath={liveResultStale ? undefined : selectedMapPath} disabled={calculating || summarySaveBusy} />
+        <SavedPlacesManager initialSection={favoritesSection} onBack={() => navigate("home")} onAddWaypoint={addSavedWaypoint} routePoints={inputMapPoints} routePath={liveResultStale ? undefined : selectedMapPath} disabled={calculating || summarySaveBusy} />
       ) : view === "collections" ? (
         <section className="collections-view" id="collections" aria-labelledby="collections-view-title">
           <div className="view-heading"><button className="collections-back" type="button" onClick={() => navigate("home")} aria-label="홈으로"><LineIcon name="chevron-left" /></button><div><h1 id="collections-view-title" data-view-title="collections" tabIndex={-1}><span className="desktop-collections-title">저장한 경로 모음</span><span className="mobile-collections-title">저장한 경로</span></h1><p className="collections-desktop-intro">경로를 고르면 새로운 출발 날짜와 시간을 설정해요.</p></div></div>

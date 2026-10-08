@@ -66,13 +66,13 @@ describe("apply-time re-check (contract §7.4)", () => {
   it("refuses after an avoided place was added for the same place", async () => {
     const tables = healthy();
     tables.avoided_places = [{ id: "a1", place: place("folder", 37.6) }];
-    expect(await recheckRecommendationSources(client(tables).api, [sharedSource])).toEqual({ ok: false, reason: "changed" });
+    expect(await recheckRecommendationSources(client(tables).api, [sharedSource])).toMatchObject({ ok: false, reason: "changed" });
   });
 
   it("refuses when an avoided map point sits within 30 m, and allows it 35 m away", async () => {
     const tables = healthy();
     tables.avoided_places = [{ id: "a1", place: place("map:37.5002250:127.1000000", 37.500225, 127.1) }];
-    expect(await recheckRecommendationSources(client(tables).api, [savedSource])).toEqual({ ok: false, reason: "changed" });
+    expect(await recheckRecommendationSources(client(tables).api, [savedSource])).toMatchObject({ ok: false, reason: "changed" });
     tables.avoided_places = [{ id: "a1", place: place("map:37.5003150:127.1000000", 37.500315, 127.1) }];
     expect((await recheckRecommendationSources(client(tables).api, [savedSource])).ok).toBe(true);
   });
@@ -80,7 +80,14 @@ describe("apply-time re-check (contract §7.4)", () => {
   it("refuses after the folder was switched off", async () => {
     const tables = healthy();
     tables.place_folder_preferences = [{ folder_id: FOLDER, enabled: false }];
-    expect(await recheckRecommendationSources(client(tables).api, [sharedSource])).toEqual({ ok: false, reason: "changed" });
+    expect(await recheckRecommendationSources(client(tables).api, [sharedSource])).toMatchObject({ ok: false, reason: "changed" });
+  });
+
+  it("SRC06: names every refused source so only those choices are cleared", async () => {
+    const tables = healthy();
+    tables.shared_place_entries = [];
+    const result = await recheckRecommendationSources(client(tables).api, [savedSource, sharedSource]);
+    expect(result).toEqual({ ok: false, reason: "changed", rejected: [`shared:${SHARED}`] });
   });
 
   it("V3-5: ends as unreadable when a read never answers, and ignores its late answer", async () => {
@@ -96,22 +103,22 @@ describe("apply-time re-check (contract §7.4)", () => {
     const tables = healthy();
     tables.shared_place_entries = [];
     tables.place_folder_preferences = [];
-    expect(await recheckRecommendationSources(client(tables).api, [sharedSource])).toEqual({ ok: false, reason: "changed" });
+    expect(await recheckRecommendationSources(client(tables).api, [sharedSource])).toMatchObject({ ok: false, reason: "changed" });
   });
 
   it("refuses a newer revision and a deleted saved place", async () => {
     const tables = healthy();
     tables.saved_place_entries = [{ id: SAVED, place: place("mine"), revision: 4 }];
-    expect(await recheckRecommendationSources(client(tables).api, [savedSource])).toEqual({ ok: false, reason: "changed" });
+    expect(await recheckRecommendationSources(client(tables).api, [savedSource])).toMatchObject({ ok: false, reason: "changed" });
     tables.saved_place_entries = [];
-    expect(await recheckRecommendationSources(client(tables).api, [savedSource])).toEqual({ ok: false, reason: "changed" });
+    expect(await recheckRecommendationSources(client(tables).api, [savedSource])).toMatchObject({ ok: false, reason: "changed" });
   });
 
   it("refuses a row that moved to another folder id", async () => {
     const tables = healthy();
     tables.shared_place_entries = [{ id: SHARED, folder_id: OTHER_FOLDER, place: place("folder"), revision: 2 }];
     tables.place_folder_preferences = [{ folder_id: FOLDER, enabled: true }, { folder_id: OTHER_FOLDER, enabled: true }];
-    expect(await recheckRecommendationSources(client(tables).api, [sharedSource])).toEqual({ ok: false, reason: "changed" });
+    expect(await recheckRecommendationSources(client(tables).api, [sharedSource])).toMatchObject({ ok: false, reason: "changed" });
   });
 
   it("reports an unreadable re-check instead of applying", async () => {

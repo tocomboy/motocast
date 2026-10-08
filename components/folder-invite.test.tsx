@@ -191,6 +191,10 @@ describe("folder invite page", () => {
     await act(async () => r.root.findByType("input").props.onChange({ target: { value: "초록헬멧" } }));
     await act(async () => button(r, "참여하기").props.onClick());
     expect(text(r)).toContain("참여됐는지 확인하지 못했어요");
+    // G24b: its own alert card below the locked input; the input hint stays the normal hint.
+    expect(r.root.findAll((n) => n.type === "div" && n.props.role === "alert")).toHaveLength(1);
+    expect(text(r)).toContain("참여 요청은 다시 보내지 않아요. 잠시 뒤 다시 확인해 주세요.");
+    expect(r.root.findAll((n) => n.type === "p" && n.props.role === "alert")).toHaveLength(0);
     expect(button(r, "참여하기")).toBeUndefined();
     expect(r.root.findByType("input").props.disabled).toBe(true);
     mocks.rpc.mockRejectedValueOnce(new TypeError("Failed to fetch"));

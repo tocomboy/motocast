@@ -70,7 +70,8 @@ type Builder = { select(columns: string): Builder; in(column: string, values: st
 export type RecheckClient = { from(table: string): Builder };
 export type SourceRecheck =
   | { ok: true; places: Map<string, PlaceSearchResult> }
-  | { ok: false; reason: "changed" | "unreadable" };
+  | { ok: false; reason: "changed"; rejected: string[] }
+  | { ok: false; reason: "unreadable" };
 
 const rows = (value: unknown): Array<Record<string, unknown>> => {
   if (!Array.isArray(value)) throw new Error("READ_FAILED");
@@ -110,18 +111,21 @@ export async function recheckRecommendationSources(client: RecheckClient, source
       return { id: String(row.id), kakaoPlaceId: place.kakaoPlaceId, latitude: place.latitude, longitude: place.longitude };
     });
     const places = new Map<string, PlaceSearchResult>();
+    // Every refused source is named, so only those choices are cleared (SRC06).
+    const rejected: string[] = [];
     for (const source of sources) {
+      const key = recommendationSourceKey(source);
       const row = (source.type === "saved" ? savedRows : sharedRows).find((candidate) => candidate.id === source.id);
-      if (!row || row.revision !== source.revision) return { ok: false, reason: "changed" };
+      if (!row || row.revision !== source.revision) { rejected.push(key); continue; }
       if (source.type === "shared") {
         const enabled = preferences.find((preference) => preference.folder_id === source.folderId)?.enabled === true;
-        if (row.folder_id !== source.folderId || !enabled) return { ok: false, reason: "changed" };
+        if (row.folder_id !== source.folderId || !enabled) { rejected.push(key); continue; }
       }
       const place = parseStoredPlace(row.place);
-      if (matchesAvoided(place, avoidedPlaces)) return { ok: false, reason: "changed" };
-      places.set(recommendationSourceKey(source), place);
+      if (matchesAvoided(place, avoidedPlaces)) { rejected.push(key); continue; }
+      places.set(key, place);
     }
-    return { ok: true, places };
+    return rejected.length ? { ok: false, reason: "changed", rejected } : { ok: true, places };
   } catch {
     return { ok: false, reason: "unreadable" };
   }

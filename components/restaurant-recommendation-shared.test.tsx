@@ -47,11 +47,11 @@ let confirm: ReturnType<typeof vi.fn<() => Promise<RecommendationConfirmResult>>
 async function mount(response: RecommendationResponseV2, currentInputs: string | null = "inputs-1") {
   request = vi.fn(async (): Promise<RecommendationOutcome> => ({ kind: "ok", view: recommendationView(response), inputs: "inputs-1" }));
   confirm = vi.fn(async (): Promise<RecommendationConfirmResult> => "changed");
-  const props = { stale: false, routeLabel: "팔당역 → 양평역", departureAt: DEPARTURE, returnAt: RETURN, waypointCount: 0, request, currentInputs, confirm, onClose: vi.fn(), onEditRoute: vi.fn(), onOpenFavorites: vi.fn() };
+  const props = { stale: false, routeLabel: "팔당역 → 양평역", departureAt: DEPARTURE, returnAt: RETURN, waypointCount: 0, request, currentInputs, confirm, onClose: vi.fn(), onEditRoute: vi.fn(), onOpenFavorites: vi.fn(), onOpenAvoided: vi.fn() };
   let r!: ReactTestRenderer;
   await act(async () => { r = create(<RestaurantRecommendationDialog {...props} />, { createNodeMock: () => ({ showModal: vi.fn(), close: vi.fn(), focus: vi.fn(), open: false }) }); });
   await act(async () => buttons(r, "추천 받기")[0].props.onClick());
-  return { r, rerender: (inputs: string | null) => act(async () => r.update(<RestaurantRecommendationDialog {...props} currentInputs={inputs} />)) };
+  return { r, props, rerender: (inputs: string | null) => act(async () => r.update(<RestaurantRecommendationDialog {...props} currentInputs={inputs} />)) };
 }
 
 beforeEach(() => {
@@ -140,14 +140,54 @@ describe("restaurant recommendation with shared folders (SRC02, SRC02b, SRC03)",
     expect(confirm).toHaveBeenCalledTimes(1);
   });
 
-  it("explains all-excluded and empty answers with the folder hint (SRC03)", async () => {
-    let mounted = await mount(v2({ status: "ALL_EXCLUDED", meals: v2().meals.map((meal) => ({ ...meal, candidates: [] })) }, { providerRequests: 0, evaluated: 0, nearRoute: 3 }));
-    expect(text(mounted.r.root)).toContain("경로 근처 식당이 모두 기피 장소라서 추천에서 뺐어요.");
-    expect(text(mounted.r.root)).toContain("꺼 둔 폴더를 켜면 후보가 늘 수 있어요.");
-    expect(buttons(mounted.r, "공유 폴더 설정")).toHaveLength(1);
+  it("SRC04: all candidates avoided has its own title, the avoided-places button and no 조건 바꾸기", async () => {
+    const { r, props } = await mount(v2({ status: "ALL_EXCLUDED", meals: v2().meals.map((meal) => ({ ...meal, candidates: [] })) }, { providerRequests: 0, evaluated: 0, nearRoute: 3 }));
+    const body = text(r.root);
+    expect(body).toContain("추천할 식당이 모두 기피 장소예요");
+    expect(body).toContain("경로 근처에서 찾은 식당이 모두 기피 장소라 후보에서 뺐어요. 기피를 해제하면 다시 후보에 들어가요.");
+    expect(body).toContain("꺼 둔 폴더를 켜면 후보가 늘 수 있어요.");
+    expect(body).not.toContain("조건에 맞는 음식점이 없습니다");
+    expect(buttons(r, "공유 폴더 설정")).toHaveLength(1);
+    expect(buttons(r, "조건 바꾸기")).toHaveLength(0);
+    await act(async () => buttons(r, "기피 장소 보기")[0].props.onClick());
+    expect(props.onOpenAvoided).toHaveBeenCalledTimes(1);
+  });
+
+  it("SRC05 / SRC05b: a truncated shared read says how many were read, with and without results", async () => {
+    let mounted = await mount(v2({}, { sharedReadTruncated: true, sharedRestaurants: 2000 }));
+    const sentence = "켜 둔 공유 폴더 식당이 많아 2,000곳까지만 후보로 읽었어요. 나머지 식당은 이번 추천에 들어가지 않았어요.";
+    expect(text(mounted.r.root)).toContain(sentence);
     await act(async () => mounted.r.unmount());
-    mounted = await mount(v2({ meals: v2().meals.map((meal) => ({ ...meal, candidates: [] })) }, { sharedReadTruncated: true }));
+    mounted = await mount(v2({ meals: v2().meals.map((meal) => ({ ...meal, candidates: [] })) }, { sharedReadTruncated: true, sharedRestaurants: 2000 }));
     expect(text(mounted.r.root)).toContain("조건에 맞는 음식점이 없습니다");
-    expect(text(mounted.r.root)).toContain("공유 폴더 식당이 많아 경로 근처 2,000곳까지만 확인했어요.");
+    expect(text(mounted.r.root)).toContain(sentence);
+  });
+
+  it("SRC06: a refused restaurant is unselected and the footer asks for another choice", async () => {
+    const { r } = await mount(v2());
+    const rows = () => r.root.findAll((node) => node.type === "button" && node.props["aria-pressed"] !== undefined);
+    await act(async () => rows()[1].props.onClick());
+    confirm.mockResolvedValueOnce({ reason: "changed", rejected: [`shared:${SHARED}`] });
+    await act(async () => buttons(r, "선택한 식당 1곳 일정에 추가")[0].props.onClick());
+    const banner = r.root.findAll((node) => node.type === "section" && node.props.role === "alert")[0];
+    expect(text(banner)).toContain("다시 추천을 받으면 지금 상태로 계산해요.");
+    expect(rows().every((row) => row.props["aria-pressed"] === false)).toBe(true);
+    expect(text(r.root)).toContain("고른 식당이 없어요");
+    expect(text(r.root)).toContain("다른 식당을 고르거나 다시 추천을 받아 주세요.");
+    expect(buttons(r, "선택한 식당 일정에 추가")[0].props.disabled).toBe(true);
+  });
+
+  it("SRC07: an unreadable re-check keeps the choice and offers one more try from the footer", async () => {
+    const { r } = await mount(v2());
+    const rows = () => r.root.findAll((node) => node.type === "button" && node.props["aria-pressed"] !== undefined);
+    await act(async () => rows()[1].props.onClick());
+    confirm.mockResolvedValueOnce("unreadable");
+    await act(async () => buttons(r, "선택한 식당 1곳 일정에 추가")[0].props.onClick());
+    expect(text(r.root)).toContain("연결이 불안정해 고른 식당을 지금 추가할 수 있는지 확인하지 못했어요.");
+    expect(r.root.findAll((node) => node.type === "section" && node.props.role === "alert")).toHaveLength(1);
+    expect(rows()[1].props["aria-pressed"]).toBe(true);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    await act(async () => buttons(r, "다시 시도 · 선택한 식당 1곳 일정에 추가")[0].props.onClick());
+    expect(confirm).toHaveBeenCalledTimes(2);
   });
 });

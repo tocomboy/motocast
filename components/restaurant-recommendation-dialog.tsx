@@ -41,7 +41,8 @@ export type RecommendationOutcome =
   | { kind: "discarded" };
 
 /** Result of "일정에 추가": added, route changed, a chosen source changed (§7.4), or unreadable. */
-export type RecommendationConfirmResult = "ok" | "stale" | "changed" | "unreadable";
+/** `rejected`: the source keys the re-check refused (SRC06); plain "changed" refuses the whole choice. */
+export type RecommendationConfirmResult = "ok" | "stale" | "changed" | "unreadable" | { reason: "changed"; rejected: string[] };
 
 type Phase =
   | { name: "input" }
@@ -63,6 +64,8 @@ type Props = {
   onClose: () => void;
   onEditRoute: () => void;
   onOpenFavorites: () => void;
+  /** SRC04: 즐겨찾기 · 기피 장소 tab. */
+  onOpenAvoided: () => void;
 };
 
 const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
@@ -202,8 +205,12 @@ export function RestaurantRecommendationDialog(props: Props) {
     const result = await confirm(current.view, current.selection);
     if (!mounted.current || attempt !== applySerial.current || result === "ok") return;
     // §7.4: a changed source adds nothing and asks for a new recommendation.
-    if (result === "stale") setPhase({ name: "stale" });
-    else setPhase({ ...current, applying: false, refused: result });
+    if (result === "stale") { setPhase({ name: "stale" }); return; }
+    if (result === "unreadable") { setPhase({ ...current, applying: false, refused: "unreadable" }); return; }
+    // SRC06: the refused restaurants are unselected; the rest of the choice stays.
+    const rejected = typeof result === "object" ? new Set(result.rejected) : null;
+    const selection = Object.fromEntries(Object.entries(current.selection).filter(([, key]) => rejected !== null && key !== undefined && !rejected.has(key))) as RecommendationSelection;
+    setPhase({ ...current, applying: false, refused: "changed", selection });
   }
 
   const snapshot = shared.snapshot;
@@ -245,7 +252,8 @@ export function RestaurantRecommendationDialog(props: Props) {
           : <><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={() => void submit(input)}>다시 시도</button></>} />
           : view.name === "stale" ? <StatusView key="stale" stateTitleRef={stateTitleRef} tone="tint" role="status" icon={<LineIcon name="clock" />} title="경로가 바뀌어 이전 추천을 사용할 수 없습니다" text="선택한 식당은 일정에 추가하지 않았어요." note="경로 편집에서 경로 다시 계산을 누른 뒤 추천을 다시 받아 주세요." actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onEditRoute}>경로 편집으로</button></>} />
             : view.view.response.status === "NO_SAVED_RESTAURANTS" ? <StatusView key="no-saved" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="star" />} title="저장한 식당이 없습니다" text="즐겨찾기에 식당을 저장하면 이 경로에 맞춰 추천해 드려요." note="추천은 내 식당과 켜 둔 공유 폴더 식당 중에서만 해요. 외부 검색으로 새 음식점을 추가하지 않아요." extra={<Exclusions view={view.view} names={disabledFolderNames} ending="뺐어요. 꺼 둔 폴더를 켜면 후보가 늘 수 있어요." onFolderSettings={folderSettings} />} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onOpenFavorites}>즐겨찾기에서 식당 등록</button></>} />
-              : view.view.response.meals.every((meal) => meal.candidates.length === 0) ? <StatusView key="none" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="search" />} title="조건에 맞는 음식점이 없습니다" text={view.view.response.status === "ALL_EXCLUDED" ? "경로 근처 식당이 모두 기피 장소라서 추천에서 뺐어요." : `원하는 식사 시간 앞뒤 ${view.view.response.settings.toleranceMinutes}분 안에 도착하고 주행이 ${durationLabel(view.view.response.settings.detourLimitMinutes)} 이내로 늘어나는 식당이 없어요.`} note={coverageTextV2(view.view.response)} extra={<Exclusions view={view.view} names={disabledFolderNames} ending={view.view.response.coverage.disabledFolders ? "뺐어요. 꺼 둔 폴더를 켜면 후보가 늘 수 있어요." : "뺐어요."} onFolderSettings={folderSettings} />} conditions={conditionLines({ ...input, mealCount: view.view.response.settings.mealCount, toleranceMinutes: view.view.response.settings.toleranceMinutes }, view.view.response.settings.detourLimitMinutes, view.view.response.basis.departureAt)} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={backToInput}>조건 바꾸기</button></>} />
+              : view.view.response.status === "ALL_EXCLUDED" ? <StatusView key="all-excluded" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="ban" />} title="추천할 식당이 모두 기피 장소예요" text="경로 근처에서 찾은 식당이 모두 기피 장소라 후보에서 뺐어요. 기피를 해제하면 다시 후보에 들어가요." note="" extra={<Exclusions view={view.view} names={disabledFolderNames} ending={view.view.response.coverage.disabledFolders ? "뺐어요. 꺼 둔 폴더를 켜면 후보가 늘 수 있어요." : "뺐어요."} onFolderSettings={folderSettings} />} conditions={conditionLines({ ...input, mealCount: view.view.response.settings.mealCount, toleranceMinutes: view.view.response.settings.toleranceMinutes }, view.view.response.settings.detourLimitMinutes, view.view.response.basis.departureAt)} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={props.onOpenAvoided}>기피 장소 보기</button></>} />
+              : view.view.response.meals.every((meal) => meal.candidates.length === 0) ? <StatusView key="none" stateTitleRef={stateTitleRef} tone="neutral" role="status" icon={<LineIcon name="search" />} title="조건에 맞는 음식점이 없습니다" text={`원하는 식사 시간 앞뒤 ${view.view.response.settings.toleranceMinutes}분 안에 도착하고 주행이 ${durationLabel(view.view.response.settings.detourLimitMinutes)} 이내로 늘어나는 식당이 없어요.`} note={coverageTextV2(view.view.response)} extra={<Exclusions view={view.view} names={disabledFolderNames} ending={view.view.response.coverage.disabledFolders ? "뺐어요. 꺼 둔 폴더를 켜면 후보가 늘 수 있어요." : "뺐어요."} onFolderSettings={folderSettings} />} conditions={conditionLines({ ...input, mealCount: view.view.response.settings.mealCount, toleranceMinutes: view.view.response.settings.toleranceMinutes }, view.view.response.settings.detourLimitMinutes, view.view.response.basis.departureAt)} actions={<><button type="button" className={styles.textAction} onClick={onClose}>닫기</button><button type="button" className="primary-button" onClick={backToInput}>조건 바꾸기</button></>} />
                 : <ResultView view={view.view} selection={view.selection} input={input} settingsChanged={settingsChanged} refused={view.refused} applying={applying} disabledFolderNames={disabledFolderNames} folderName={folderName} onFolderSettings={folderSettings} onRecommendAgain={() => void submit(input)} onSelect={select} onChangeConditions={backToInput} onConfirm={() => void confirmSelection()} />}
     {folderPopup.popup}
   </dialog>;
@@ -326,7 +334,7 @@ export function Exclusions({ view, names, ending = "후보에서 뺐어요.", on
   const truncated = view.response.coverage.sharedReadTruncated;
   if (!text && !truncated && !onFolderSettings) return null;
   return <div className={styles.exclusions}>
-    {truncated ? <p>공유 폴더 식당이 많아 경로 근처 2,000곳까지만 확인했어요. 더 먼 후보가 있을 수 있어요.</p> : null}
+    {truncated ? <p>켜 둔 공유 폴더 식당이 많아 {view.response.coverage.sharedRestaurants.toLocaleString()}곳까지만 후보로 읽었어요. 나머지 식당은 이번 추천에 들어가지 않았어요.</p> : null}
     {text ? <p>{text}</p> : null}
     {onFolderSettings ? <button type="button" className={styles.linkAction} disabled={locked} onClick={onFolderSettings}>공유 폴더 설정<LineIcon name="chevron-right" /></button> : null}
   </div>;
@@ -350,7 +358,7 @@ export function StatusView({ stateTitleRef, tone, role, icon, title, text, note,
         <span className={styles.stateIcon}>{icon}</span>
         <h3 ref={stateTitleRef} tabIndex={-1}>{title}</h3>
         <p>{text}</p>
-        <small>{note}</small>
+        {note ? <small>{note}</small> : null}
         {extra}
       </section>
       {conditions ? <p className={styles.conditionSummary}><span>{conditions[0]}</span><small>{conditions[1]}</small></p> : null}
@@ -394,8 +402,8 @@ export function ResultView({ view, selection, input, settingsChanged, refused, a
       {refused ? <section className={styles.changedBanner} role="alert">
         <strong>{refused === "changed" ? "추천 결과가 바뀌었어요" : "고른 식당을 확인하지 못했어요"}</strong>
         <p>{refused === "changed"
-          ? "고른 식당이 수정·삭제됐거나, 공유 폴더가 꺼졌거나, 기피 장소가 됐어요. 일정에 추가하지 않았어요."
-          : "연결을 확인한 뒤 다시 시도해 주세요. 일정에 추가하지 않았어요."}</p>
+          ? "고른 식당이 수정·삭제됐거나, 공유 폴더가 꺼졌거나, 기피 장소가 됐어요. 일정에 추가하지 않았어요. 다시 추천을 받으면 지금 상태로 계산해요."
+          : "연결이 불안정해 고른 식당을 지금 추가할 수 있는지 확인하지 못했어요. 일정에 추가하지 않았어요. 아래 버튼을 다시 누르면 다시 확인해요."}</p>
         <button type="button" className={styles.bannerAction} disabled={applying} onClick={onRecommendAgain}>다시 추천 받기</button>
       </section> : settingsChanged ? <section className={styles.changedBanner} role="status">
         <strong>공유 폴더 설정이 바뀌었어요</strong>
@@ -438,9 +446,12 @@ export function ResultView({ view, selection, input, settingsChanged, refused, a
         {resolved ? <>
           <strong>{resolved.items.map((item) => `식사 ${item.mealIndex} · ${item.candidate.displayName}`).join(" / ")}</strong>
           <span>{extraDriveLabel(resolved.extraDriveSeconds, resolved.items.length === 2)} · 예상 복귀 {seoulClock(resolved.returnAt)}</span>
+        </> : refused === "changed" && !chosenCount ? <>
+          <strong>고른 식당이 없어요</strong>
+          <span>다른 식당을 고르거나 다시 추천을 받아 주세요.</span>
         </> : <span>{selectionGuidance(response, selection) ?? (chosenCount ? "선택한 식당은 함께 추가할 수 없어요. 선택을 바꿔 주세요." : "일정에 추가할 식당을 골라 주세요.")}</span>}
       </div>
-      <button type="button" className="primary-button" disabled={!resolved || applying} onClick={onConfirm}>{applying ? "식당을 확인하는 중…" : resolved ? `선택한 식당 ${resolved.items.length}곳 일정에 추가` : "선택한 식당 일정에 추가"}</button>
+      <button type="button" className="primary-button" disabled={!resolved || applying} onClick={onConfirm}>{applying ? "식당을 확인하는 중…" : resolved ? `${refused === "unreadable" ? "다시 시도 · " : ""}선택한 식당 ${resolved.items.length}곳 일정에 추가` : "선택한 식당 일정에 추가"}</button>
     </footer>
   </>;
 }
