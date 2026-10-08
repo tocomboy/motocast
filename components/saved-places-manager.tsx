@@ -110,25 +110,28 @@ function SavedPlacesManagerContent({
   /** Read only: the folder carrying the kept request id opens; otherwise the same confirmation reopens. */
   async function recheckCreate(pending: PendingCreate) {
     setCreateCheck("checking");
+    // Bound to this account and id: a reply after an account change changes nothing.
+    const token = shared.captureCreate(pending.requestId);
     if (pending.abandoning) {
       // The abandon of this id is not confirmed: send it again (same id, same answer).
-      const outcome = await abandonCreate(shared, pending.requestId);
+      const outcome = await abandonCreate(shared, token, pending);
+      if (outcome.kind === "stale") return;
       if (outcome.kind === "unknown") { setCreateCheck("abandon-unknown"); return; }
       setCreateCheck("idle");
-      shared.setPendingCreate(null);
       if (outcome.kind === "created") setOpenFolder({ id: outcome.folderId, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." });
       else if (outcome.kind === "created_gone") setListNotice("이 요청으로 만든 폴더는 이미 삭제됐어요. 새로 만들려면 \"＋ 공유 폴더 만들기\"를 눌러 주세요.");
       else setListNotice(`${pending.abandoning.title}. ${pending.abandoning.message}`);
       return;
     }
     const read = await shared.refresh();
+    if (!token.live()) return;
     const now = shared.current();
     const list = read ?? (now.status === "ready" ? now.snapshot : null);
     if (!list) { setCreateCheck("unreadable"); return; }
     setCreateCheck("idle");
     const folder = list.folders.find((row) => row.ownerId === list.userId && row.createRequestId === pending.requestId);
     if (folder) {
-      shared.setPendingCreate(null);
+      if (!token.clear()) return;
       setOpenFolder({ id: folder.id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." });
       return;
     }

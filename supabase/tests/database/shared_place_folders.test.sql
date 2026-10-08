@@ -101,6 +101,7 @@ insert into tap_results values
 (pg_temp.fid('RQ2')<>pg_temp.fid('RQ1'),'another rider''s same request id is independent'),
 ((public.create_place_folder('남의 요청','Bee','{}','95000000-0000-0000-0000-000000000004')->'folder'->>'name')='남의 요청','another rider''s create is not stopped by this rider''s tombstone');
 reset role;
+select pg_temp.expect_error($q$insert into public.place_folder_create_requests(owner_id,request_id,outcome,payload_hash,result) values (pg_temp.u(1),gen_random_uuid(),'created',null,'{}')$q$,'new row for relation "place_folder_create_requests" violates check constraint "place_folder_create_requests_outcome_check"','a created record needs its input hash','23514');
 -- The request folders are not part of the scenarios below.
 delete from public.place_folders where id in (pg_temp.fid('RQ1'),pg_temp.fid('RQ2'),pg_temp.fid('RQ3')) or (owner_id=pg_temp.u(2) and name='남의 요청');
 -- A replay after the folder was deleted returns the stored result and does not recreate it.
@@ -644,7 +645,7 @@ select (case when ok then 'ok ' else 'not ok ' end)||row_number() over()||' - '|
 select '1..'||count(*) from tap_results;
 -- Fixed plan: a skipped or row-less assertion fails the suite instead of vanishing.
 do $$ begin
-  if (select count(*) from tap_results)<>293 then raise exception 'SHARED_PLACE_FOLDERS_PLAN_MISMATCH: % of 293', (select count(*) from tap_results); end if;
+  if (select count(*) from tap_results)<>294 then raise exception 'SHARED_PLACE_FOLDERS_PLAN_MISMATCH: % of 294', (select count(*) from tap_results); end if;
   if exists(select 1 from tap_results where not ok) then raise exception 'SHARED_PLACE_FOLDERS_TEST_FAILED'; end if;
 end $$;
 rollback;

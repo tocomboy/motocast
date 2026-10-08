@@ -5,7 +5,7 @@ import { LineIcon } from "@/components/line-icon";
 import { ConfirmPopup, type Pending } from "./confirm-popup";
 import { SavedDialog } from "./saved-dialog";
 import { useSavedPlaces } from "./saved-places-provider";
-import { useSharedFolders, type SharedSnapshot, type SharedWrite } from "./shared-folders-provider";
+import { useSharedFolders, type CreateToken, type SharedSnapshot, type SharedWrite } from "./shared-folders-provider";
 import { kindLabel, useSharedPopup } from "./shared-place-actions";
 import { isRegionOnlyPlace, savedPlaceName, type SavedPlaceEntry, type SavedPlaceKind } from "@/lib/places/saved";
 import {
@@ -185,19 +185,23 @@ export function leavingWhat(name: string, displayName: string, places: number) {
 /** G04–G08: name, my folder name, optional copies of my places, then the final confirmation. */
 export type { PendingCreate };
 
-export type AbandonOutcome = { kind: "created"; folderId: string } | { kind: "created_gone" } | { kind: "abandoned" } | { kind: "unknown" };
+/** `stale`: the account changed (or another request is kept) meanwhile; nothing was applied. */
+export type AbandonOutcome = { kind: "created"; folderId: string } | { kind: "created_gone" } | { kind: "abandoned" } | { kind: "unknown" } | { kind: "stale" };
 /**
  * Ends a kept create on the server (contract §6): its stored result or a tombstone that stops a late
- * copy of it. A write, but the same id may be sent again with the same answer.
+ * copy of it. A write, but the same id may be sent again with the same answer. The kept request is
+ * updated only through `token`, so an answer arriving after an account change changes nothing.
  */
-export async function abandonCreate(shared: ReturnType<typeof useSharedFolders>, requestId: string): Promise<AbandonOutcome> {
-  const { data, code, lost } = await shared.call("abandon_place_folder_request", { request_id: requestId });
-  if (code || lost) return { kind: "unknown" };
-  let result: AbandonResult;
-  try { result = parseAbandonResult(data); } catch { return { kind: "unknown" }; }
-  if (result.status !== "created") return { kind: result.status };
+export async function abandonCreate(shared: ReturnType<typeof useSharedFolders>, token: CreateToken, pending: PendingCreate): Promise<AbandonOutcome> {
+  const { data, code, lost } = await shared.call("abandon_place_folder_request", { request_id: pending.requestId });
+  if (!token.live()) return { kind: "stale" };
+  let result: AbandonResult | null = null;
+  if (!code && !lost) { try { result = parseAbandonResult(data); } catch { result = null; } }
+  if (!result) return token.keep(pending) ? { kind: "unknown" } : { kind: "stale" };
+  if (result.status !== "created") return token.clear() ? { kind: result.status } : { kind: "stale" };
   // The folder made by that request: read the list so it can open.
   await shared.refresh();
+  if (!token.live() || !token.clear()) return { kind: "stale" };
   return { kind: "created", folderId: result.folder.id };
 }
 
@@ -268,6 +272,8 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
     // One request id per confirmation: every try in it (FP39 re-check, "확인하고 만들기") reuses it,
     // so a resent or browser-retried request makes one folder (contract §6, idempotent create).
     const requestId = resume?.requestId ?? crypto.randomUUID();
+    // Every keep/clear of this request below is bound to this account and this id.
+    const token = shared.captureCreate(requestId);
     const request: PendingCreate = { requestId, folderName, displayName: mine, ids, abandoning: null };
     // An earlier try of this request had an unknown result (a reopened kept request always did).
     let uncertain = Boolean(resume);
@@ -319,40 +325,37 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
                   ? { reason: "rejected", title: "이름을 확인해 주세요", message: "폴더 이름은 1~40자, 내 이름은 1~20자로 입력해 주세요." }
                   : null,
           });
+          if (!token.live()) return write;
           if (write.ok) {
-            shared.setPendingCreate(null);
+            token.clear();
             const id = created.current ?? createdBy(shared.current().snapshot)?.id;
             if (id) onCreated(id);
             return write;
           }
           // The server replayed this request's receipt, but the readable list has no such folder:
           // it was deleted since. This id is settled: nothing is kept or resent under it.
-          if (write.reason === "mismatch" && write.checked && created.current) { shared.setPendingCreate(null); return deletedSince; }
+          if (write.reason === "mismatch" && write.checked && created.current) { token.clear(); return deletedSince; }
           // Unknown, or a receipt the list does not show yet: kept for this account until a read settles it.
           if (write.reason === "unknown" || write.reason === "mismatch") {
             uncertain = true;
-            shared.setPendingCreate({ ...request });
+            token.keep({ ...request });
             // A receipt whose folder a later successful read still does not show was deleted since.
             return write.reason === "mismatch" && created.current
-              ? { ...write, stillMissing: { title: deletedSince.title, message: deletedSince.message, settle: () => shared.setPendingCreate(null) } }
+              ? { ...write, stillMissing: { title: deletedSince.title, message: deletedSince.message, settle: () => { token.clear(); } } }
               : write;
           }
           if (write.reason === "rejected" || write.reason === "star_limit") {
             // A clear refusal of this try. Without an unknown try before it, nothing was made: release.
-            if (!uncertain) { shared.setPendingCreate(null); return write; }
+            if (!uncertain) { token.clear(); return write; }
             // After an unknown try, that send may still arrive (a timeout cancels nothing): the server
             // ends this id instead, returning its folder if it was made, or blocking a late copy.
             ended = true;
-            const outcome = await abandonCreate(shared, requestId);
-            if (outcome.kind === "created") {
-              shared.setPendingCreate(null);
-              onCreated(outcome.folderId);
-              return { ok: true };
-            }
-            if (outcome.kind === "created_gone") { shared.setPendingCreate(null); return deletedSince; }
-            if (outcome.kind === "abandoned") { shared.setPendingCreate(null); return { ...write, stale: false }; }
+            const outcome = await abandonCreate(shared, token, { ...request, abandoning: { title: write.title, message: write.message } });
+            if (outcome.kind === "stale") return write;
+            if (outcome.kind === "created") { onCreated(outcome.folderId); return { ok: true }; }
+            if (outcome.kind === "created_gone") return deletedSince;
+            if (outcome.kind === "abandoned") return { ...write, stale: false };
             // The abandon's own result is unknown: still kept and blocked; the list retries it.
-            shared.setPendingCreate({ ...request, abandoning: { title: write.title, message: write.message } });
             return { ok: false, reason: "rejected", title: write.title, message: `${write.message} 응답을 받지 못한 이전 요청을 정리했는지 확인하지 못했어요. 목록에서 다시 확인해 주세요.` };
           }
           return write;
@@ -361,7 +364,8 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
           ? [{ label: "닫기", primary: true, onClick: () => undefined }]
           : null),
         onApplied: () => {
-          shared.setPendingCreate(null);
+          if (!token.live()) return;
+          token.clear();
           const id = created.current ?? createdBy(shared.current().snapshot)?.id;
           if (id) onCreated(id);
         },

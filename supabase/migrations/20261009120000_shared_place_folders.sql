@@ -41,7 +41,8 @@ create table if not exists public.place_folder_create_requests (
   created_at timestamptz not null default now(),
   constraint place_folder_create_requests_pkey primary key (owner_id, request_id),
   constraint place_folder_create_requests_outcome_check check (
-    (outcome = 'created' and payload_hash ~ '^[0-9a-f]{64}$' and result is not null)
+    -- IS NOT NULL is explicit: a regex test on NULL is unknown, which a CHECK accepts.
+    (outcome = 'created' and payload_hash is not null and payload_hash ~ '^[0-9a-f]{64}$' and result is not null)
     or (outcome = 'abandoned' and payload_hash is null and result is null))
 );
 

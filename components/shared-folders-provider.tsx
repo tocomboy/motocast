@@ -90,8 +90,15 @@ type Controls = {
    * reloads): new creates wait until a read settles it; only the same request may be resent.
    */
   pendingCreate: PendingCreate | null;
-  setPendingCreate: (pending: PendingCreate | null) => void;
+  /**
+   * Binds one create request to this account: every async step that keeps or clears it goes through
+   * the token, which refuses once the account changed or another request is kept (V3 delta 8).
+   */
+  captureCreate: (requestId: string) => CreateToken;
 };
+
+/** `live`: same account as when captured. `keep` / `clear` return whether they applied. */
+export type CreateToken = { live: () => boolean; keep: (pending: PendingCreate) => boolean; clear: () => boolean };
 const Context = createContext<Controls | null>(null);
 
 async function readAll(): Promise<SharedSnapshot> {
@@ -152,6 +159,7 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
   const [message, setMessage] = useState("");
   const [accountEpoch, setAccountEpoch] = useState(0);
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null);
+  const pendingRef = useRef<PendingCreate | null>(null);
   const mounted = useRef(false);
   const generation = useRef(0);
   const session = useRef(0);
@@ -211,6 +219,7 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
           snapshotRef.current = empty;
           setSnapshot(empty);
           // Another account (or none) never inherits a kept create.
+          pendingRef.current = null;
           setPendingCreate(null);
           setBusy(false);
           setVerifying(false);
@@ -363,6 +372,29 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
     return () => mounted.current && read === generation.current && epoch === session.current;
   }, []);
 
+  const captureCreate = useCallback((requestId: string): CreateToken => {
+    const epoch = session.current;
+    const live = () => mounted.current && epoch === session.current;
+    const set = (next: PendingCreate | null) => { pendingRef.current = next; setPendingCreate(next); };
+    return {
+      live,
+      keep: (next) => {
+        if (!live() || next.requestId !== requestId) return false;
+        if (pendingRef.current && pendingRef.current.requestId !== requestId) return false;
+        set(next);
+        return true;
+      },
+      // Nothing kept is already clear; another kept request is never touched.
+      clear: () => {
+        if (!live()) return false;
+        if (!pendingRef.current) return true;
+        if (pendingRef.current.requestId !== requestId) return false;
+        set(null);
+        return true;
+      },
+    };
+  }, []);
+
   const value = useMemo<Controls>(() => ({
     accountEpoch,
     enabled,
@@ -380,8 +412,8 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
     write,
     call,
     pendingCreate,
-    setPendingCreate,
-  }), [accountEpoch, enabled, status, snapshot, busy, verifying, message, load, refresh, reloadStars, captureSnapshot, recheck, write, call, pendingCreate]);
+    captureCreate,
+  }), [accountEpoch, enabled, status, snapshot, busy, verifying, message, load, refresh, reloadStars, captureSnapshot, recheck, write, call, pendingCreate, captureCreate]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

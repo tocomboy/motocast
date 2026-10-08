@@ -2,6 +2,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SharedFoldersProvider, useSharedFolders, type SharedWrite } from "./shared-folders-provider";
+import { abandonCreate } from "./shared-folder-list";
 import { F1, F2, ME, sampleTables, sharedRow } from "@/tests/fixtures/shared-folders";
 
 type Tables = ReturnType<typeof sampleTables>;
@@ -182,16 +183,42 @@ describe("SharedFoldersProvider", () => {
   it("delta 5-3: keeps a pending create for the same account and drops it for another or none", async () => {
     await mount();
     const pending = { requestId: "95000000-0000-0000-0000-000000000001", folderName: "새 폴더", displayName: "바람개비", ids: [], abandoning: null };
-    await act(async () => controls.setPendingCreate(pending));
+    await act(async () => { controls.captureCreate(pending.requestId).keep(pending); });
     await act(async () => { mocks.listener?.("INITIAL_SESSION", { user: { id: ME } }); });
     await act(async () => { mocks.listener?.("TOKEN_REFRESHED", { user: { id: ME } }); });
     expect(controls.pendingCreate).toEqual(pending);
     await act(async () => { mocks.listener?.("SIGNED_IN", { user: { id: "00000000-0000-4000-8000-0000000000b9" } }); });
     expect(controls.pendingCreate).toBeNull();
-    await act(async () => controls.setPendingCreate(pending));
+    await act(async () => { controls.captureCreate(pending.requestId).keep(pending); });
     await act(async () => { mocks.listener?.("SIGNED_OUT", null); });
     expect(controls.pendingCreate).toBeNull();
   });
+
+  for (const reply of ["abandoned", "lost"] as const) {
+    it(`delta 8: an abandon reply (${reply}) after an account change leaves the new account's kept request alone`, async () => {
+      await mount();
+      await act(async () => { mocks.listener?.("INITIAL_SESSION", { user: { id: ME } }); });
+      const pendingA = { requestId: "95000000-0000-0000-0000-00000000000a", folderName: "A 폴더", displayName: "에이", ids: [], abandoning: { title: "폴더를 만들지 못했어요", message: "" } };
+      const tokenA = controls.captureCreate(pendingA.requestId);
+      await act(async () => { tokenA.keep(pendingA); });
+      let release!: (value: unknown) => void;
+      mocks.rpc.mockImplementationOnce(() => new Promise((resolve, reject) => { release = (value) => (reply === "lost" ? reject(value) : resolve(value)); }));
+      let outcome!: Promise<{ kind: string }>;
+      await act(async () => { outcome = abandonCreate(controls, tokenA, pendingA); });
+      // Account B signs in and keeps its own request while A's abandon is still in flight.
+      await act(async () => { mocks.listener?.("SIGNED_IN", { user: { id: "00000000-0000-4000-8000-0000000000b9" } }); });
+      const pendingB = { requestId: "95000000-0000-0000-0000-00000000000b", folderName: "B 폴더", displayName: "비", ids: [], abandoning: null };
+      await act(async () => { controls.captureCreate(pendingB.requestId).keep(pendingB); });
+      expect(controls.pendingCreate).toEqual(pendingB);
+      let result!: { kind: string };
+      await act(async () => { release(reply === "lost" ? new TypeError("Failed to fetch") : { data: { status: "abandoned" }, error: null }); result = await outcome; });
+      expect(result.kind).toBe("stale");
+      expect(controls.pendingCreate).toEqual(pendingB);
+      expect(tokenA.keep(pendingA)).toBe(false);
+      expect(tokenA.clear()).toBe(false);
+      expect(controls.pendingCreate).toEqual(pendingB);
+    });
+  }
 
   it("drops the former account's folders when another account signs in", async () => {
     await mount();

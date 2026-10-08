@@ -276,7 +276,7 @@ check(sql(CONSISTENT) == 't', 'conflict fixture is removed and every owner is co
 suites = {}
 # Fixed plans: a suite that silently drops an assertion fails here.
 PLANS = {'frequent_places.test.sql': 146, 'frequent_places_concurrency.test.sql': 26, 'saved_places.test.sql': 78,
-         'saved_places_concurrency.test.sql': 17, 'shared_place_folders.test.sql': 293, 'shared_place_folders_concurrency.test.sql': 39}
+         'saved_places_concurrency.test.sql': 17, 'shared_place_folders.test.sql': 294, 'shared_place_folders_concurrency.test.sql': 39}
 for name, planned in PLANS.items():
     result = subprocess.run(PSQL + [DATABASE], input=(TESTS / name).read_bytes(), capture_output=True, timeout=600)
     lines = [line for line in result.stdout.decode('utf-8', 'replace').splitlines() if line.startswith(('ok ', 'not ok '))]

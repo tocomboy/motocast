@@ -81,7 +81,21 @@ beforeEach(() => {
     captureSnapshot: () => () => true, recheck: vi.fn(async () => "unreadable"), write, call: vi.fn(async () => ({ data: [] })),
     // Like the provider: account-wide, outside the favorites screen.
     pendingCreate: null,
-    setPendingCreate: vi.fn((next: unknown) => { mocks.shared.pendingCreate = next; }),
+    captureCreate: (requestId: string) => ({
+      live: () => true,
+      keep: (next: { requestId: string }) => {
+        const current = mocks.shared.pendingCreate as { requestId: string } | null;
+        if (next.requestId !== requestId || (current && current.requestId !== requestId)) return false;
+        mocks.shared.pendingCreate = next;
+        return true;
+      },
+      clear: () => {
+        const current = mocks.shared.pendingCreate as { requestId: string } | null;
+        if (current && current.requestId !== requestId) return false;
+        mocks.shared.pendingCreate = null;
+        return true;
+      },
+    }),
   };
   mocks.canvases = [];
 });
