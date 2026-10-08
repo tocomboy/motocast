@@ -94,11 +94,13 @@ export function SavedPlaceRegistration({
           onClose={onClose}
           onPickOnMap={() => setStep("map")}
           onChoose={choose}
+          nextHint={variant.kind === "avoid" ? "다음 화면에서 기피 장소로 등록할지 확인해요." : undefined}
         />
       ) : step === "map" ? (
         <MapStep
           startView={pickerView}
           onChoose={(chosen) => { setPickerView({ latitude: chosen.latitude, longitude: chosen.longitude }); choose(chosen); }}
+          chooseLabel={variant.kind === "avoid" ? "이 지점 선택" : undefined}
         />
       ) : place ? (
         <FormStep place={place} existing={existing} stars={stars} blocked={blocked} variant={variant} onSave={onSave} />
@@ -107,7 +109,8 @@ export function SavedPlaceRegistration({
   );
 }
 
-function SearchStep({ query, setQuery, search, setSearch, onClose, onPickOnMap, onChoose }: {
+function SearchStep({ query, setQuery, search, setSearch, onClose, onPickOnMap, onChoose, nextHint = "다음 화면에서 별명과 분류를 정해요." }: {
+  nextHint?: string;
   query: string;
   setQuery: (query: string) => void;
   search: Search;
@@ -264,7 +267,7 @@ function SearchStep({ query, setQuery, search, setSearch, onClose, onPickOnMap, 
               <span className={styles.wideLabel}>{selectedIndex + 1}번 {selected.name} 선택</span>
               <span className={styles.narrowLabel}>선택한 장소로 진행</span>
             </button>
-            <p className={`${styles.footerHint} ${styles.mobileOnly}`}>다음 화면에서 별명과 분류를 정해요.</p>
+            <p className={`${styles.footerHint} ${styles.mobileOnly}`}>{nextHint}</p>
           </>
         ) : (
           <button type="button" className={styles.secondaryButton} onClick={onClose}>취소</button>
@@ -274,7 +277,8 @@ function SearchStep({ query, setQuery, search, setSearch, onClose, onPickOnMap, 
   );
 }
 
-function MapStep({ startView, onChoose }: {
+function MapStep({ startView, onChoose, chooseLabel }: {
+  chooseLabel?: string;
   startView: Point;
   onChoose: (place: PlaceSearchResult) => void;
 }) {
@@ -319,7 +323,7 @@ function MapStep({ startView, onChoose }: {
     </>
   ) : lookup.status === "ready" ? (
     <>
-      <button type="button" className="primary-button" onClick={() => onChoose(lookup.place)}>{region ? "별명 정하고 저장" : "이 장소 선택"}</button>
+      <button type="button" className="primary-button" onClick={() => onChoose(lookup.place)}>{chooseLabel ?? (region ? "별명 정하고 저장" : "이 장소 선택")}</button>
       <button type="button" className={styles.secondaryButton} onClick={restart}>다시 고르기</button>
     </>
   ) : lookup.status === "empty" ? (
