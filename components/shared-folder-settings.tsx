@@ -368,7 +368,7 @@ function Members({ folderId, onClose, onLeave, popup }: { folderId: string; onCl
           const latest = shared.current().snapshot.members.find((row) => row.folderId === folderId && row.memberId === target.memberId);
           if (!latest) { close(); setDone({ memberId: target.memberId, text: `${target.displayName}님은 이미 폴더에서 나갔어요. 회원 목록을 새로 불러왔어요.` }); return { ok: false, reason: "blocked", title: "", message: "" }; }
           if (latest.revision !== target.revision) {
-            update(rolePopup(latest, null, `${target.displayName}님의 권한이 다른 기기에서 먼저 "${permissionLabel(latest.role)}"으로 바뀌었어요. 지금 권한을 확인하고 필요하면 다시 골라 주세요.`));
+            open(rolePopup(latest, null, `${target.displayName}님의 권한이 다른 기기에서 먼저 "${permissionLabel(latest.role)}"으로 바뀌었어요. 지금 권한을 확인하고 필요하면 다시 골라 주세요.`));
             return { ok: false, reason: "blocked", title: "", message: "" };
           }
           const applied = (s: SharedSnapshot) => s.members.some((row) => row.folderId === folderId && row.memberId === target.memberId && row.role === selected);
@@ -387,7 +387,7 @@ function Members({ folderId, onClose, onLeave, popup }: { folderId: string; onCl
           if (write.reason === "rejected" && write.stale) {
             const fresh = shared.current().snapshot.members.find((row) => row.folderId === folderId && row.memberId === target.memberId);
             if (!fresh) { close(); setDone({ memberId: target.memberId, text: `${target.displayName}님은 이미 폴더에서 나갔어요. 회원 목록을 새로 불러왔어요.` }); return { ok: false, reason: "blocked", title: "", message: "" }; }
-            update(rolePopup(fresh, null, `${target.displayName}님의 권한이 다른 기기에서 먼저 "${permissionLabel(fresh.role)}"으로 바뀌었어요. 지금 권한을 확인하고 필요하면 다시 골라 주세요.`));
+            open(rolePopup(fresh, null, `${target.displayName}님의 권한이 다른 기기에서 먼저 "${permissionLabel(fresh.role)}"으로 바뀌었어요. 지금 권한을 확인하고 필요하면 다시 골라 주세요.`));
             return { ok: false, reason: "blocked", title: "", message: "" };
           }
           return write;
@@ -502,6 +502,7 @@ function DisplayNameEdit({ folderId, onClose }: { folderId: string; onClose: () 
   const same = next === mine.displayName;
   function submit() {
     if (issue || duplicate || same) return;
+    const shown = mine.revision;
     open({
       title: "폴더용 이름을 바꿀까요?",
       card: { eyebrow: `${folder.name} · 내 폴더용 이름`, name: next, line: "1~20자 · 이 폴더 안에서 겹치지 않음" },
@@ -515,23 +516,27 @@ function DisplayNameEdit({ folderId, onClose }: { folderId: string; onClose: () 
         run: async () => {
           const latest = shared.current().snapshot.members.find((row) => row.folderId === folderId && row.memberId === mine.memberId);
           if (!latest) return { ok: false, reason: "rejected", title: "폴더를 찾지 못했어요", message: "폴더가 삭제됐거나 더 볼 수 없어요." };
+          if (latest.revision !== shown) return { ok: false, reason: "rejected", stale: true, title: "다른 기기에서 먼저 바뀌었어요", message: `지금 폴더용 이름은 "${latest.displayName}"이에요. 바꿀 이름을 확인한 뒤 다시 저장해 주세요.` };
           const applied = (s: SharedSnapshot) => s.members.some((row) => row.folderId === folderId && row.memberId === mine.memberId && row.displayName === next);
           const write = await shared.write({
             rpc: "set_place_folder_display_name",
-            args: { folder_id: folderId, expected_revision: latest.revision, display_name: next },
+            args: { folder_id: folderId, expected_revision: shown, display_name: next },
             success: "폴더용 이름을 바꿨어요.",
             receipt: (data) => { const row = parseFolderMember(data); return (s) => s.members.some((m) => m.folderId === folderId && m.memberId === row.memberId && m.revision >= row.revision); },
             applied,
             unknownMessage: "이름이 바뀌었는지 확인하지 못했어요.",
             refusal: (code) => code === "FOLDER_DISPLAY_NAME_TAKEN"
               ? { reason: "rejected", title: "같은 이름이 있어요", message: "이 폴더에 이미 같은 이름이 있어요. 다른 이름을 입력해 주세요." }
-              : code === "PLACE_FOLDER_MEMBER_STALE" ? { reason: "rejected", stale: true, title: "다른 기기에서 먼저 바뀌었어요", message: "최신 이름을 불러왔어요. 다시 시도해 주세요." } : null,
+              : code === "PLACE_FOLDER_MEMBER_STALE" ? { reason: "rejected", stale: true, title: "다른 기기에서 먼저 바뀌었어요", message: "최신 이름을 불러왔어요. 바꿀 이름을 확인한 뒤 다시 저장해 주세요." } : null,
           });
           if (write.ok) onClose();
           return write;
         },
         onApplied: onClose,
-        finalOnRefusal: (write) => (write.title === "같은 이름이 있어요" ? [{ label: "이름 고치기", primary: true, onClick: () => { close(); setTaken(true); } }] : null),
+        finalOnRefusal: (write) => (write.title === "같은 이름이 있어요"
+          ? [{ label: "이름 고치기", primary: true, onClick: () => { close(); setTaken(true); } }]
+          // A newer name is never overwritten by a retry with the newest revision: close and look again.
+          : write.stale ? [{ label: "최신 이름 확인", primary: true, onClick: close }] : null),
       },
     });
   }
@@ -557,7 +562,7 @@ function DisplayNameEdit({ folderId, onClose }: { folderId: string; onClose: () 
 /** G37 / G37b: the owner renames the folder. */
 function FolderRename({ folderId, onClose }: { folderId: string; onClose: () => void }) {
   const shared = useSharedFolders();
-  const { open, popup } = useSharedPopup();
+  const { open, close, popup } = useSharedPopup();
   const { snapshot } = shared;
   const folder = snapshot.folders.find((row) => row.id === folderId)!;
   const [value, setValue] = useState(folder.name);
@@ -569,6 +574,7 @@ function FolderRename({ folderId, onClose }: { folderId: string; onClose: () => 
   const members = snapshot.members.filter((row) => row.folderId === folderId).length;
   function submit() {
     if (issue || same) return;
+    const shown = folder.revision;
     open({
       title: "폴더 이름을 바꿀까요?",
       card: { eyebrow: "공유 폴더 · 주인", line: `회원 ${members}명 · 장소 ${places.toLocaleString()}` },
@@ -582,18 +588,23 @@ function FolderRename({ folderId, onClose }: { folderId: string; onClose: () => 
         run: async () => {
           const latest = shared.current().snapshot.folders.find((row) => row.id === folderId);
           if (!latest) return { ok: false, reason: "rejected", title: "폴더를 찾지 못했어요", message: "폴더가 삭제됐어요." };
+          if (latest.revision !== shown) return { ok: false, reason: "rejected", stale: true, title: "다른 기기에서 먼저 바뀌었어요", message: `지금 폴더 이름은 "${latest.name}"이에요. 바꿀 이름을 확인한 뒤 다시 저장해 주세요.` };
           const write = await shared.write({
             rpc: "rename_place_folder",
-            args: { folder_id: folderId, expected_revision: latest.revision, folder_name: next },
+            args: { folder_id: folderId, expected_revision: shown, folder_name: next },
             success: "폴더 이름을 바꿨어요.",
             receipt: (data) => { if (!Array.isArray(data) || data.length !== 1) throw new Error("NO_RECEIPT"); const row = parsePlaceFolder(data[0]); return (s) => s.folders.some((f) => f.id === row.id && f.revision >= row.revision); },
             applied: (s) => s.folders.some((f) => f.id === folderId && f.name === next),
             unknownMessage: "이름이 바뀌었는지 확인하지 못했어요.",
+            refusal: (code) => code === "PLACE_FOLDER_STALE"
+              ? { reason: "rejected", stale: true, title: "다른 기기에서 먼저 바뀌었어요", message: "최신 이름을 불러왔어요. 바꿀 이름을 확인한 뒤 다시 저장해 주세요." }
+              : null,
           });
           if (write.ok) onClose();
           return write;
         },
         onApplied: onClose,
+        finalOnRefusal: (write) => (write.stale ? [{ label: "최신 이름 확인", primary: true, onClick: close }] : null),
       },
     });
   }

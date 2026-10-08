@@ -1,5 +1,6 @@
 import { matchesAvoided } from "../places/place-merge";
 import { parseStoredPlace } from "../places/saved";
+import { withClientTimeout } from "./client-timeout";
 import type { PlaceSearchResult } from "../places/search";
 import {
   recommendationSourceKey,
@@ -91,16 +92,19 @@ const read = async (query: Query) => {
  * Server reads only; no provider call and no budget. The original place, signature included,
  * comes from the re-read row.
  */
-export async function recheckRecommendationSources(client: RecheckClient, sources: RecommendationSourceRef[]): Promise<SourceRecheck> {
+export const RECOMMENDATION_RECHECK_TIMEOUT_MS = 15_000;
+
+export async function recheckRecommendationSources(client: RecheckClient, sources: RecommendationSourceRef[], timeoutMs = RECOMMENDATION_RECHECK_TIMEOUT_MS): Promise<SourceRecheck> {
   const saved = sources.filter((source) => source.type === "saved");
   const shared = sources.filter((source): source is Extract<RecommendationSourceRef, { type: "shared" }> => source.type === "shared");
   try {
-    const [savedRows, sharedRows, preferences, avoided] = await Promise.all([
+    // One deadline for all reads: a read that never answers ends as "unreadable" and is ignored (V3-5).
+    const [savedRows, sharedRows, preferences, avoided] = await withClientTimeout(Promise.all([
       saved.length ? read(client.from("saved_place_entries").select("id,place,revision").in("id", saved.map((source) => source.id)).limit(saved.length)) : Promise.resolve([]),
       shared.length ? read(client.from("shared_place_entries").select("id,folder_id,place,revision").in("id", shared.map((source) => source.id)).limit(shared.length)) : Promise.resolve([]),
       shared.length ? read(client.from("place_folder_preferences").select("folder_id,enabled").in("folder_id", [...new Set(shared.map((source) => source.folderId))]).limit(shared.length)) : Promise.resolve([]),
       read(client.from("avoided_places").select("id,place").limit(201)),
-    ]);
+    ]), timeoutMs);
     const avoidedPlaces = avoided.map((row) => {
       const place = parseStoredPlace(row.place);
       return { id: String(row.id), kakaoPlaceId: place.kakaoPlaceId, latitude: place.latitude, longitude: place.longitude };

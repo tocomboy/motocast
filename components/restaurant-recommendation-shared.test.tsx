@@ -117,6 +117,29 @@ describe("restaurant recommendation with shared folders (SRC02, SRC02b, SRC03)",
     expect(buttons(r, "다시 추천 받기")).toHaveLength(1);
   });
 
+  it("V3-4: locks the result while the chosen restaurants are re-checked, so a late answer cannot apply another choice or undo a new screen", async () => {
+    const { r } = await mount(v2());
+    let release!: (value: RecommendationConfirmResult) => void;
+    confirm.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const rows = () => r.root.findAll((node) => node.type === "button" && node.props["aria-pressed"] !== undefined);
+    await act(async () => rows()[0].props.onClick());
+    await act(async () => { void buttons(r, "선택한 식당 1곳 일정에 추가")[0].props.onClick(); });
+    expect(buttons(r, "식당을 확인하는 중…")).toHaveLength(1);
+    // Choosing another restaurant, changing conditions and Esc do nothing while the check runs.
+    expect(rows().every((row) => row.props.disabled === true)).toBe(true);
+    await act(async () => rows()[1].props.onClick());
+    expect(rows()[0].props["aria-pressed"]).toBe(true);
+    const change = r.root.findAll((node) => node.type === "button" && text(node).startsWith("조건 바꾸기"))[0];
+    expect(change.props.disabled).toBe(true);
+    await act(async () => change.props.onClick());
+    const dialog = r.root.findByType("dialog");
+    await act(async () => dialog.props.onCancel({ preventDefault: vi.fn() }));
+    expect(text(r.root)).toContain("식당을 확인하는 중…");
+    await act(async () => { release("unreadable"); await Promise.resolve(); });
+    expect(text(r.root)).toContain("고른 식당을 확인하지 못했어요");
+    expect(confirm).toHaveBeenCalledTimes(1);
+  });
+
   it("explains all-excluded and empty answers with the folder hint (SRC03)", async () => {
     let mounted = await mount(v2({ status: "ALL_EXCLUDED", meals: v2().meals.map((meal) => ({ ...meal, candidates: [] })) }, { providerRequests: 0, evaluated: 0, nearRoute: 3 }));
     expect(text(mounted.r.root)).toContain("경로 근처 식당이 모두 기피 장소라서 추천에서 뺐어요.");

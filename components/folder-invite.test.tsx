@@ -8,9 +8,16 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   client: true,
   push: vi.fn(),
+  authListener: null as null | ((event: string, session: { user: { id: string } } | null) => void),
 }));
 vi.mock("@/lib/supabase/browser", () => ({
-  getBrowserSupabase: () => (mocks.client ? { auth: { getSession: mocks.getSession }, rpc: mocks.rpc } : null),
+  getBrowserSupabase: () => (mocks.client ? {
+    auth: {
+      getSession: mocks.getSession,
+      onAuthStateChange: (listener: typeof mocks.authListener) => { mocks.authListener = listener; return { data: { subscription: { unsubscribe: () => { mocks.authListener = null; } } } }; },
+    },
+    rpc: mocks.rpc,
+  } : null),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("next/link", () => ({
@@ -172,6 +179,57 @@ describe("folder invite page", () => {
     await act(async () => button(r, "참여하기").props.onClick());
     expect(mocks.rpc.mock.calls.map((call) => call[0])).toEqual(["preview_place_folder_invite", "accept_place_folder_invite", "preview_place_folder_invite"]);
     expect(mocks.push).toHaveBeenCalledWith("/#favorites");
+  });
+
+  it("V3-1: after a lost join and a failed re-read it only re-reads, and allows joining again once a read proves it did not join", async () => {
+    win = fakeWindow(`#t=${TOKEN}`);
+    mocks.rpc
+      .mockResolvedValueOnce(preview("joinable"))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const r = await mount();
+    await act(async () => r.root.findByType("input").props.onChange({ target: { value: "초록헬멧" } }));
+    await act(async () => button(r, "참여하기").props.onClick());
+    expect(text(r)).toContain("참여됐는지 확인하지 못했어요");
+    expect(button(r, "참여하기")).toBeUndefined();
+    expect(r.root.findByType("input").props.disabled).toBe(true);
+    mocks.rpc.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await act(async () => button(r, "참여됐는지 다시 확인").props.onClick());
+    expect(button(r, "참여하기")).toBeUndefined();
+    mocks.rpc.mockResolvedValueOnce(preview("joinable"));
+    await act(async () => button(r, "참여됐는지 다시 확인").props.onClick());
+    expect(text(r)).toContain("참여되지 않았어요");
+    expect(button(r, "참여하기").props.disabled).toBe(false);
+    // Only one join was ever sent; every other call was a read.
+    expect(mocks.rpc.mock.calls.map((call) => call[0]).filter((name) => name === "accept_place_folder_invite")).toHaveLength(1);
+  });
+
+  it("V3-8: locks leaving while joining and drops a late reply after the page is left or the account changes", async () => {
+    win = fakeWindow(`#t=${TOKEN}`);
+    let release!: (value: unknown) => void;
+    mocks.rpc.mockResolvedValueOnce(preview("joinable")).mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    let r = await mount();
+    await act(async () => r.root.findByType("input").props.onChange({ target: { value: "초록헬멧" } }));
+    await act(async () => { void button(r, "참여하기").props.onClick(); });
+    const closeLink = r.root.findByProps({ "aria-label": "초대 화면 닫기" });
+    expect(closeLink.props["aria-disabled"]).toBe(true);
+    const prevent = vi.fn();
+    closeLink.props.onClick({ preventDefault: prevent });
+    expect(prevent).toHaveBeenCalled();
+    await act(async () => r.unmount());
+    await act(async () => { release({ data: { status: "joined", folder: {}, member, preference: {} }, error: null }); await Promise.resolve(); });
+    expect(mocks.push).not.toHaveBeenCalled();
+
+    mocks.rpc.mockReset();
+    win = fakeWindow(`#t=${TOKEN}`);
+    mocks.rpc.mockResolvedValueOnce(preview("joinable")).mockImplementationOnce(() => new Promise((resolve) => { release = resolve; })).mockResolvedValue(preview("joinable"));
+    r = await mount();
+    await act(async () => r.root.findByType("input").props.onChange({ target: { value: "초록헬멧" } }));
+    await act(async () => { void button(r, "참여하기").props.onClick(); });
+    await act(async () => { mocks.authListener?.("SIGNED_IN", { user: { id: "other" } }); await Promise.resolve(); });
+    await act(async () => { release({ data: { status: "joined", folder: {}, member, preference: {} }, error: null }); await Promise.resolve(); });
+    expect(mocks.push).not.toHaveBeenCalled();
+    await act(async () => r.unmount());
   });
 
   it("opens an already joined folder instead of joining again (G27)", async () => {

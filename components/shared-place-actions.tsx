@@ -82,6 +82,7 @@ export function sharedStarPopup(shared: Actions, row: SharedPlace, onManageStars
       title: `자주 찾는 장소 ${FREQUENT_PLACE_LIMIT}곳이 모두 찼어요`,
       card: sharedCard(row, folder),
       note: "다른 장소의 별표를 빼면 이 장소를 추가할 수 있어요. 아무것도 바뀌지 않았어요.",
+      // The popup closes itself before a button's action (ConfirmPopup).
       buttons: [{ label: "닫기", primary: true, onClick: () => undefined }, ...(onManageStars ? [{ label: "자주 찾는 장소 관리", onClick: onManageStars }] : [])],
     };
   return {
@@ -389,6 +390,8 @@ export function addSharedPopup(
         done.onSaved(saved);
         return write;
       },
+      // An unknown reply later shown by a read-only re-check: the place is saved, so the star follows.
+      onApplied: () => done.onSaved(shared.current().snapshot.places.find((p) => p.folderId === folderId && p.place.kakaoPlaceId === draft.place.kakaoPlaceId) ?? null),
       finalOnRefusal: (write): PopupButton[] | null => (write.title === FORBIDDEN_TITLE ? [
         { label: "폴더로 돌아가기", primary: true, onClick: done.onBackToFolder },
         { label: "닫기", onClick: done.onBackToFolder },

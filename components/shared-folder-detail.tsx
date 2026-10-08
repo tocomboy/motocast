@@ -20,7 +20,7 @@ import {
 import { SharedPlaceDetail } from "./shared-place-detail";
 import { RoleChip, SavedPlacePicker, selectionCounts } from "./shared-folder-list";
 import { FolderSettings, useInvites, type SettingsPage } from "./shared-folder-settings";
-import { PROVINCES, type SavedPlaceKind } from "@/lib/places/saved";
+import { FREQUENT_PLACE_LIMIT, PROVINCES, type SavedPlaceKind } from "@/lib/places/saved";
 import { PLACE_FOLDER_MEMBER_LIMIT, PLACE_FOLDER_PLACE_LIMIT, type SharedPlace } from "@/lib/places/shared-folders";
 import { canEditPlaces, expiryLabel, lastEditLine, permissionLabel } from "@/lib/places/shared-folder-format";
 import styles from "./saved-places-manager.module.css";
@@ -60,6 +60,8 @@ export function SharedFolderDetail({
   const [settings, setSettings] = useState<SettingsPage | null>(null);
   const [adding, setAdding] = useState<AddFlow>(null);
   const [status, setStatus] = useState(notice ?? "");
+  // V3-6: the place was saved but its star failed or is unknown; shown until it is resolved.
+  const [starIssue, setStarIssue] = useState<{ placeId: string | null; title: string; message: string; unknown: boolean } | null>(null);
   // Success text from a write made on this screen replaces the entry notice.
   const [baseline] = useState(shared.message);
   // Opening a folder re-reads it (memo G10: entry, refresh and right after a save).
@@ -71,6 +73,30 @@ export function SharedFolderDetail({
   const { snapshot } = shared;
   const folder = snapshot.folders.find((row) => row.id === folderId);
   const me = snapshot.userId;
+
+  /** The star asked for in G13b, sent once after the save; its own result is kept apart (V3-6). */
+  async function starNewPlace(row: SharedPlace | null) {
+    if (!row) { setStarIssue({ placeId: null, title: "자주 찾는 장소에는 추가하지 못했어요", message: "장소는 폴더에 저장했어요. 별표할 장소를 목록에서 찾지 못했어요. 장소 상세에서 다시 추가해 주세요.", unknown: false }); return; }
+    const result = await starAfterAdd(shared, row);
+    if (result.ok) { setStarIssue(null); return; }
+    const unknown = result.reason === "unknown" || result.reason === "mismatch";
+    setStarIssue({
+      placeId: row.id,
+      unknown,
+      title: unknown ? "별표가 반영됐는지 확인하지 못했어요" : "자주 찾는 장소에는 추가하지 못했어요",
+      message: unknown
+        ? "장소는 폴더에 저장했어요. 별표 요청은 다시 보내지 않아요. 목록을 다시 확인해 주세요."
+        : result.reason === "star_limit"
+          ? `장소는 폴더에 저장했어요. 자주 찾는 장소 ${FREQUENT_PLACE_LIMIT}곳이 모두 차서 별표하지 못했어요. 다른 별표를 뺀 뒤 장소 상세에서 추가해 주세요.`
+          : `장소는 폴더에 저장했어요. ${result.message || "별표하지 못했어요."} 장소 상세에서 다시 추가할 수 있어요.`,
+    });
+  }
+  async function recheckStar(placeId: string) {
+    const fresh = await shared.refresh();
+    if (!fresh) { setStarIssue({ placeId, unknown: true, title: "목록을 확인하지 못했어요", message: "장소는 폴더에 저장했어요. 별표가 반영됐는지 아직 몰라요. 잠시 뒤 다시 확인해 주세요." }); return; }
+    if (fresh.places.some((p) => p.id === placeId && p.starred)) { setStarIssue(null); setStatus("폴더에 저장하고 자주 찾는 장소에도 추가했어요."); return; }
+    setStarIssue({ placeId, unknown: false, title: "자주 찾는 장소에는 추가되지 않았어요", message: "장소는 폴더에 저장했어요. 별표는 없어요. 장소 상세에서 다시 추가할 수 있어요." });
+  }
   const members = snapshot.members.filter((row) => row.folderId === folderId);
   const role = members.find((row) => row.memberId === me)?.role;
   const editable = canEditPlaces(role);
@@ -143,6 +169,13 @@ export function SharedFolderDetail({
       </header>
       <div className={`${styles.mobileRegion} ${styles.mobileOnly}`}>{regionSelect("large")}</div>
       {shared.message !== baseline ? <p className={styles.noticeCard} role="status">{shared.message}</p> : status ? <p className={styles.noticeCard} role="status">{status}</p> : null}
+      {starIssue ? (
+        <div className={styles.errorCard} role="alert">
+          <strong>{starIssue.title}</strong>
+          <p>{starIssue.message}</p>
+          {starIssue.unknown && starIssue.placeId ? <button type="button" className={styles.secondaryButton} disabled={shared.busy} onClick={() => void recheckStar(starIssue.placeId!)}>목록 다시 확인</button> : null}
+        </div>
+      ) : null}
       <div className={styles.columns}>
         <div className={styles.mapColumn}>
           <div className={styles.layers} role="group" aria-label="지도 핀 표시">
@@ -233,7 +266,8 @@ export function SharedFolderDetail({
           onSave={(place, alias, kind, starred) => open(addSharedPopup(shared, folderId, { place, alias, kind, starred }, {
             onSaved: (row) => {
               setAdding(null);
-              if (row) { setTab(row.kind); if (starred) void starAfterAdd(shared, row); }
+              if (row) setTab(row.kind);
+              if (starred) void starNewPlace(row);
             },
             onBackToFolder: () => setAdding(null),
             onExisting: (row) => open({

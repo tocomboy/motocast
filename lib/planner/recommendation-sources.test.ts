@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   coverageTextV2,
   exclusionText,
   recheckRecommendationSources,
+  RECOMMENDATION_RECHECK_TIMEOUT_MS,
   recommendationGeneration,
   recommendationView,
   type RecheckClient,
@@ -48,6 +49,8 @@ const healthy = (): Tables => ({
   avoided_places: [],
 });
 
+afterEach(() => vi.useRealTimers());
+
 describe("apply-time re-check (contract §7.4)", () => {
   it("passes an unchanged saved and shared source and returns their original places", async () => {
     const { api, reads } = client(healthy());
@@ -78,6 +81,15 @@ describe("apply-time re-check (contract §7.4)", () => {
     const tables = healthy();
     tables.place_folder_preferences = [{ folder_id: FOLDER, enabled: false }];
     expect(await recheckRecommendationSources(client(tables).api, [sharedSource])).toEqual({ ok: false, reason: "changed" });
+  });
+
+  it("V3-5: ends as unreadable when a read never answers, and ignores its late answer", async () => {
+    vi.useFakeTimers();
+    let settled: unknown = "pending";
+    const hanging = { from: () => { const builder = { select: () => builder, in: () => builder, limit: () => new Promise<never>(() => undefined) }; return builder; } };
+    void recheckRecommendationSources(hanging, [savedSource, sharedSource]).then((value) => { settled = value; });
+    await vi.advanceTimersByTimeAsync(RECOMMENDATION_RECHECK_TIMEOUT_MS + 1);
+    expect(settled).toEqual({ ok: false, reason: "unreadable" });
   });
 
   it("refuses after I was removed from the folder (the row is no longer visible)", async () => {

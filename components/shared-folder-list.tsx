@@ -180,7 +180,12 @@ export function leavingWhat(name: string, displayName: string, places: number) {
 }
 
 /** G04–G08: name, my folder name, optional copies of my places, then the final confirmation. */
-export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCreated: (folderId: string) => void }) {
+export function FolderCreate({ onClose, onCreated, onUncertain }: {
+  onClose: () => void;
+  onCreated: (folderId: string) => void;
+  /** A lost reply and a same-name folder in the list: it may be another device's, so nothing is claimed. */
+  onUncertain: () => void;
+}) {
   const shared = useSharedFolders();
   const saved = useSavedPlaces();
   const { open, close, popup } = useSharedPopup();
@@ -240,7 +245,10 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
         checkingMessage: "응답을 받지 못해 폴더 목록을 다시 읽는 중이에요. 같은 요청을 다시 보내지 않아요.",
         notApplied: { title: "폴더가 만들어지지 않았어요", message: "폴더 목록을 다시 확인했지만 새 폴더가 없어요. 입력 내용은 그대로예요. 다시 만들려면 \"확인하고 만들기\"를 눌러 주세요." },
         run: async () => {
-          const isNew = (s: SharedSnapshot) => s.folders.find((f) => f.ownerId === me && f.name === folderName && !before.has(f.id));
+          // Only the reply's folder id proves this request made a folder; a same-name folder could
+          // come from another device, so it is never taken as success (V3-3).
+          const sameName = (s: SharedSnapshot) => s.folders.some((f) => f.ownerId === me && f.name === folderName && !before.has(f.id));
+          created.current = null;
           const write = await shared.write({
             rpc: "create_place_folder",
             args: { folder_name: folderName, display_name: mine, saved_place_ids: ids },
@@ -250,7 +258,7 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
               created.current = folder.id;
               return (s) => s.folders.some((f) => f.id === folder.id);
             },
-            applied: (s) => Boolean(isNew(s)),
+            applied: () => false,
             unknownMessage: "만들어졌는지 확인했는데 새 폴더가 없어요. 입력 내용은 그대로예요.",
             refusal: (code) => code === "PLACE_FOLDER_LIMIT"
               ? { reason: "rejected", title: "폴더를 만들지 못했어요", message: `공유 폴더 ${PLACE_FOLDER_LIMIT}개가 모두 찼어요. 쓰지 않는 폴더를 삭제하거나 나간 뒤 만들 수 있어요.` }
@@ -261,14 +269,21 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
                   : null,
           });
           if (write.ok) {
-            const id = created.current ?? isNew(shared.current().snapshot)?.id;
-            if (id) onCreated(id);
+            if (created.current) onCreated(created.current);
+            return write;
           }
-          return write;
+          if (write.reason !== "unknown") return write;
+          if (write.checked) {
+            // FP39b only when the re-read list has no new folder of this name; otherwise ask to check.
+            if (!sameName(shared.current().snapshot)) return write;
+            onUncertain();
+            return { ok: false, reason: "blocked", title: "", message: "" };
+          }
+          return { ...write, recheck: sameName };
         },
         onApplied: () => {
-          const id = shared.current().snapshot.folders.find((f) => f.ownerId === me && f.name === folderName && !before.has(f.id))?.id;
-          if (id) onCreated(id);
+          if (created.current) onCreated(created.current);
+          else onUncertain();
         },
       },
     });

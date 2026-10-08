@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type MouseEvent } from "react";
 import { LineIcon } from "@/components/line-icon";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { withClientTimeout } from "@/lib/planner/client-timeout";
@@ -56,7 +56,11 @@ type View =
   | { step: "membership" }
   | { step: "invalid" }
   | { step: "unavailable" }
-  | { step: "join"; preview: InvitePreview; error?: string; busy?: boolean; lost?: boolean }
+  /**
+   * `unknown`: a join was sent but its result is not known; only a read may follow until a read
+   * proves the rider did not join (V3-1). `busy` locks leaving while a request runs (FP39).
+   */
+  | { step: "join"; preview: InvitePreview; error?: string; busy?: boolean; lost?: boolean; unknown?: boolean }
   | { step: "member"; preview: InvitePreview }
   | { step: "full"; preview: InvitePreview; reason: "mine" | "folder" };
 
@@ -86,7 +90,27 @@ export function FolderInvite() {
   const [name, setName] = useState("");
   const nameId = useId();
   const sequence = useRef(0);
+  const mounted = useRef(false);
+  const account = useRef<string | null | undefined>(undefined);
+  const [epoch, setEpoch] = useState(0);
   const router = useRouter();
+
+  // Replies belong to this page, account and token: leaving or switching accounts drops them (V3-8).
+  useEffect(() => {
+    mounted.current = true;
+    const subscription = getBrowserSupabase()?.auth.onAuthStateChange?.((_event: string, session: { user: { id: string } } | null) => {
+      const id = session?.user.id ?? null;
+      if (account.current === undefined || account.current === id) { account.current = id; return; }
+      account.current = id;
+      sequence.current++;
+      setView({ step: "checking" });
+      setEpoch((value) => value + 1);
+    }).data.subscription;
+    return () => {
+      mounted.current = false;
+      subscription?.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const attempt = ++sequence.current;
@@ -106,6 +130,7 @@ export function FolderInvite() {
       if (!client) { set({ step: "login" }); return; }
       const { data } = await client.auth.getSession();
       if (!data.session) { set({ step: "login" }); return; }
+      if (!cancelled && attempt === sequence.current) account.current = data.session.user.id;
       const result = await rpc("preview_place_folder_invite", { token: token.current });
       if (result.code === "PLACE_FOLDER_INVITE_INVALID") { set({ step: "invalid" }); return; }
       if (result.code === "MEMBERSHIP_REQUIRED") { set({ step: "membership" }); return; }
@@ -118,7 +143,7 @@ export function FolderInvite() {
       }
     })();
     return () => { cancelled = true; };
-  }, [capture]);
+  }, [capture, epoch]);
 
   function loginAndContinue() {
     const value = token.current;
@@ -134,12 +159,19 @@ export function FolderInvite() {
     router.push("/#favorites");
   }
 
+  function liveFor(value: string) {
+    const run = sequence.current;
+    return () => mounted.current && run === sequence.current && token.current === value;
+  }
+
   async function join(preview: InvitePreview) {
     const value = token.current;
     const problem = nameProblem(name, FOLDER_DISPLAY_NAME_LIMIT);
     if (!value || problem) return;
+    const live = liveFor(value);
     setView({ step: "join", preview, busy: true });
     const result = await rpc("accept_place_folder_invite", { token: value, display_name: name.trim() });
+    if (!live()) return;
     if (!result.code && !result.lost) {
       try {
         const body = result.data as { status?: unknown; member?: unknown };
@@ -157,17 +189,27 @@ export function FolderInvite() {
     if (result.code === "PLACE_FOLDER_MEMBER_LIMIT") { setView({ step: "full", preview, reason: "folder" }); return; }
     if (result.code === "PLACE_FOLDER_INVITE_INVALID") { setView({ step: "invalid" }); return; }
     // Unknown result: read again instead of sending the join twice (FP39).
-    const check = await rpc("preview_place_folder_invite", { token: value });
-    try {
-      const fresh = check.code || check.lost ? null : parseInvitePreview(check.data);
-      if (fresh?.status === "already_member") { token.current = null; openFolder(fresh.folderId); return; }
-      setView({ step: "join", preview: fresh ?? preview, lost: true, error: fresh ? "참여되지 않았어요. 다시 참여하려면 \"참여하기\"를 눌러 주세요." : "참여됐는지 확인하지 못했어요. 잠시 뒤 다시 시도해 주세요." });
-    } catch {
-      setView({ step: "join", preview, lost: true, error: "참여됐는지 확인하지 못했어요. 잠시 뒤 다시 시도해 주세요." });
-    }
+    await readJoin(preview, value, live);
   }
 
-  const close = <Link className={styles.close} href="/" aria-label="초대 화면 닫기"><LineIcon name="close" /></Link>;
+  /** Read-only check of an unknown join; joining is offered again only after a read says "not joined". */
+  async function readJoin(preview: InvitePreview, value: string, live = liveFor(value)) {
+    setView({ step: "join", preview, unknown: true, busy: true });
+    const check = await rpc("preview_place_folder_invite", { token: value });
+    if (!live()) return;
+    if (check.code === "PLACE_FOLDER_INVITE_INVALID") { setView({ step: "invalid" }); return; }
+    if (check.code === "MEMBERSHIP_REQUIRED") { setView({ step: "membership" }); return; }
+    let fresh: InvitePreview | null = null;
+    try { fresh = check.code || check.lost ? null : parseInvitePreview(check.data); } catch { fresh = null; }
+    if (fresh?.status === "already_member") { token.current = null; openFolder(fresh.folderId); return; }
+    if (fresh) { setView({ step: "join", preview: fresh, lost: true, error: "참여되지 않았어요. 다시 참여하려면 \"참여하기\"를 눌러 주세요." }); return; }
+    setView({ step: "join", preview, unknown: true, error: "참여됐는지 확인하지 못했어요. 참여 요청은 다시 보내지 않아요. 잠시 뒤 다시 확인해 주세요." });
+  }
+
+  // FP39: while a request runs the page cannot be left; its reply would otherwise land elsewhere.
+  const locked = view.step === "join" && Boolean(view.busy);
+  const guard = locked ? { "aria-disabled": true, tabIndex: -1, onClick: (e: MouseEvent) => e.preventDefault() } : {};
+  const close = <Link className={styles.close} href="/" aria-label="초대 화면 닫기" {...guard}><LineIcon name="close" /></Link>;
   const summary = (preview: InvitePreview) => (
     <div className={styles.folderCard}>
       <p className={styles.folderName}><LineIcon name="folder" /><strong>{preview.folderName}</strong></p>
@@ -237,7 +279,7 @@ export function FolderInvite() {
             value={name}
             maxLength={40}
             placeholder="예: 주말라이더"
-            disabled={view.busy}
+            disabled={view.busy || view.unknown}
             aria-invalid={Boolean(shownError) || undefined}
             aria-describedby={`${nameId}-hint`}
             onChange={(e) => { setName(e.target.value); if (view.error && !view.lost) setView({ step: "join", preview: view.preview }); }}
@@ -249,8 +291,12 @@ export function FolderInvite() {
       );
       actions = (
         <>
-          <button type="button" className={styles.primary} disabled={view.busy || Boolean(problem)} onClick={() => void join(view.preview)}>{view.busy ? "참여하는 중…" : "참여하기"}</button>
-          <Link className={styles.secondary} href="/" aria-disabled={view.busy || undefined} onClick={(e) => { if (view.busy) e.preventDefault(); }}>참여하지 않기</Link>
+          {view.unknown ? (
+            <button type="button" className={styles.primary} disabled={view.busy} onClick={() => { if (token.current) void readJoin(view.preview, token.current); }}>{view.busy ? "확인하는 중…" : "참여됐는지 다시 확인"}</button>
+          ) : (
+            <button type="button" className={styles.primary} disabled={view.busy || Boolean(problem)} onClick={() => void join(view.preview)}>{view.busy ? "참여하는 중…" : "참여하기"}</button>
+          )}
+          <Link className={styles.secondary} href="/" {...guard}>참여하지 않기</Link>
         </>
       );
       break;
@@ -259,8 +305,8 @@ export function FolderInvite() {
   return (
     <div className={styles.page}>
       <header className={styles.siteHeader}>
-        <Link className={styles.brand} href="/" aria-label="MOTOCAST 홈">MOTOCAST</Link>
-        <nav className={styles.siteNav} aria-label="주요 화면"><Link href="/">홈</Link><Link href="/#editor">새 경로 만들기</Link><Link href="/#collections">저장한 경로</Link></nav>
+        <Link className={styles.brand} href="/" aria-label="MOTOCAST 홈" {...guard}>MOTOCAST</Link>
+        <nav className={styles.siteNav} aria-label="주요 화면"><Link href="/" {...guard}>홈</Link><Link href="/#editor" {...guard}>새 경로 만들기</Link><Link href="/#collections" {...guard}>저장한 경로</Link></nav>
       </header>
       <main className={styles.main}>
         <section className={styles.panel} aria-labelledby={`${nameId}-title`}>

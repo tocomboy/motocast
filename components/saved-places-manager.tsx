@@ -573,7 +573,7 @@ function SavedPlacesManagerContent({
         <div className={styles.sectionBody}>
           {listNotice ? <p className={styles.noticeCard} role="status">{listNotice}</p> : null}
           <SharedFolderList onOpen={(id) => { setListNotice(""); setOpenFolder({ id }); }} onCreate={() => setCreatingFolder(true)} />
-          {creatingFolder ? <FolderCreate onClose={() => setCreatingFolder(false)} onCreated={(id) => { setCreatingFolder(false); setOpenFolder({ id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." }); }} /> : null}
+          {creatingFolder ? <FolderCreate onClose={() => setCreatingFolder(false)} onUncertain={() => { setCreatingFolder(false); setListNotice("응답을 받지 못했어요. 목록에 같은 이름의 새 폴더가 있지만 이 기기에서 만든 폴더인지 확인하지 못했어요. 폴더를 열어 확인한 뒤 써 주세요."); }} onCreated={(id) => { setCreatingFolder(false); setOpenFolder({ id, notice: "공유 폴더를 만들었어요. 메뉴의 초대 링크에서 링크를 만들어 회원을 불러 보세요." }); }} /> : null}
         </div>
       ) : section === "avoided" ? (
         <div className={styles.sectionBody}><AvoidedPlacesView startView={startView} /></div>

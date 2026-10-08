@@ -284,6 +284,97 @@ describe("states added with the 456 frames", () => {
   });
 });
 
+describe("V3 part 1: newer data is never overwritten by a retry", () => {
+  // Like the provider: every reload starts a new generation, and a popup's approval belongs to one.
+  let generation = 0;
+  function reload(next: SharedSnapshot) { snapshot = next; generation += 1; }
+  beforeEach(() => {
+    generation = 0;
+    mocks.shared = { ...mocks.shared, captureSnapshot: () => { const at = generation; return () => at === generation; } };
+  });
+  async function openMenuRow(r: ReactTestRenderer, label: string) {
+    await act(async () => button(r, "공유 폴더").props.onClick());
+    await act(async () => r.root.findByProps({ "aria-label": "주말 라이더 폴더 열기, 주인" }).props.onClick());
+    await act(async () => r.root.findByProps({ "aria-label": "폴더 메뉴" }).props.onClick());
+    const row = dialogWith(r, "폴더 삭제").findAll((n) => n.type === "button" && text(n).startsWith(label))[0];
+    await act(async () => row.props.onClick());
+  }
+  const inputOf = (r: ReactTestRenderer) => r.root.findAll((n) => n.type === "input" && n.props.maxLength !== undefined).at(-1)!;
+
+  it("V3-2: a folder rename refused as stale ends with the newest name instead of retrying over it", async () => {
+    const r = await mount();
+    await openMenuRow(r, "폴더 이름 바꾸기");
+    await act(async () => inputOf(r).props.onChange({ target: { value: "주말 라이더 C" } }));
+    await act(async () => button(r, "이름 저장").props.onClick());
+    write.mockImplementationOnce(async () => {
+      reload({ ...snapshot, folders: snapshot.folders.map((row) => (row.id === F1 ? { ...row, name: "주말 라이더 B", revision: 2 } : row)) });
+      return { ok: false, reason: "rejected", stale: true, title: "다른 기기에서 먼저 바뀌었어요", message: "최신 이름을 불러왔어요." };
+    });
+    const popup = () => dialogWith(r, "폴더 이름을 바꿀까요?");
+    await act(async () => button(popup(), "확인하고 바꾸기").props.onClick());
+    expect(write.mock.calls[0][0]).toMatchObject({ rpc: "rename_place_folder", args: { expected_revision: 1, folder_name: "주말 라이더 C" } });
+    expect(buttons(popup(), "다시 시도")).toHaveLength(0);
+    expect(buttons(popup(), "확인하고 바꾸기")).toHaveLength(0);
+    expect(write).toHaveBeenCalledTimes(1);
+    await act(async () => r.unmount());
+  });
+
+  it("V3-2: a display name confirm whose row changed underneath sends nothing and shows the newest name", async () => {
+    const r = await mount();
+    await openMenuRow(r, "이 폴더에서 쓰는 내 이름");
+    await act(async () => inputOf(r).props.onChange({ target: { value: "바람개비C" } }));
+    await act(async () => button(r, "이름 저장").props.onClick());
+    // Another device renamed me without a reload of this screen's generation.
+    snapshot = { ...snapshot, members: snapshot.members.map((row) => (row.folderId === F1 && row.memberId === ME ? { ...row, displayName: "바람개비B", revision: 2 } : row)) };
+    const popup = () => dialogWith(r, "폴더용 이름을 바꿀까요?");
+    await act(async () => button(popup(), "확인하고 바꾸기").props.onClick());
+    expect(write).not.toHaveBeenCalled();
+    expect(text(popup())).toContain("지금 폴더용 이름은 \"바람개비B\"이에요.");
+    expect(buttons(popup(), "다시 시도")).toHaveLength(0);
+    await act(async () => r.unmount());
+  });
+
+  it("V3-3: a lost create reply never takes a same-name folder from another device as its own", async () => {
+    const r = await mount();
+    await act(async () => button(r, "공유 폴더").props.onClick());
+    await act(async () => button(r, "＋ 공유 폴더 만들기").props.onClick());
+    await act(async () => r.root.findByProps({ placeholder: "예: 주말 라이더" }).props.onChange({ target: { value: "새 폴더" } }));
+    await act(async () => r.root.findByProps({ placeholder: "예: 주말라이더" }).props.onChange({ target: { value: "바람개비" } }));
+    await act(async () => button(r, "빈 폴더로 만들기").props.onClick());
+    const other = { ...snapshot.folders[0], id: "00000000-0000-4000-8000-0000000000f9", name: "새 폴더", revision: 1 };
+    // Like the provider: no reply, so the re-read list decides through `applied`.
+    write.mockImplementationOnce(async (spec: { applied: (s: SharedSnapshot) => boolean }) => {
+      reload({ ...snapshot, folders: [...snapshot.folders, other] });
+      return spec.applied(snapshot) ? { ok: true } : { ok: false, reason: "unknown", checked: true, title: "변경을 확인하지 못했어요", message: "" };
+    });
+    await act(async () => button(dialogWith(r, "이 공유 폴더를 만들까요?"), "폴더 만들기").props.onClick());
+    expect(r.root.findAllByProps({ "aria-label": "폴더 메뉴" })).toHaveLength(0);
+    expect(text(r.root)).toContain("이 기기에서 만든 폴더인지 확인하지 못했어요");
+    expect(buttons(r, "확인하고 만들기")).toHaveLength(0);
+    expect(write).toHaveBeenCalledTimes(1);
+    await act(async () => r.unmount());
+  });
+
+  it("V3-7: after a stale role refusal the reloaded choices open as a new approval that can be confirmed", async () => {
+    const r = await mount();
+    await openMenuRow(r, "회원·권한 관리");
+    await act(async () => r.root.findByProps({ "aria-label": "새벽바이크님 권한 편집 가능, 바꾸기" }).props.onClick());
+    const popup = () => dialogWith(r, "새벽바이크님의 권한");
+    await act(async () => popup().findAll((n) => n.type === "input" && n.props.type === "radio")[1].props.onChange());
+    write.mockImplementationOnce(async () => {
+      reload({ ...snapshot, members: snapshot.members.map((row) => (row.folderId === F1 && row.memberId === OTHER ? { ...row, role: "viewer", revision: 2 } : row)) });
+      return { ok: false, reason: "rejected", stale: true, title: "회원 정보가 바뀌었어요", message: "최신 회원 목록을 불러왔어요." };
+    });
+    await act(async () => button(popup(), "보기만으로 바꾸기").props.onClick());
+    expect(text(popup())).toContain("다른 기기에서 먼저 \"보기만\"으로 바뀌었어요");
+    await act(async () => popup().findAll((n) => n.type === "input" && n.props.type === "radio")[0].props.onChange());
+    expect(button(popup(), "편집 가능으로 바꾸기").props.disabled).toBe(false);
+    await act(async () => button(popup(), "편집 가능으로 바꾸기").props.onClick());
+    expect(write.mock.calls[1][0]).toMatchObject({ rpc: "set_place_folder_member_role", args: { expected_revision: 2, role: "editor" } });
+    await act(async () => r.unmount());
+  });
+});
+
 describe("shared place detail and folder screens", () => {
   async function openDetail(r: ReactTestRenderer, name: string) {
     await act(async () => r.root.findByProps({ "aria-label": `${name} 상세 보기` }).props.onClick());
