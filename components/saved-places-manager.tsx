@@ -503,8 +503,16 @@ function SavedPlacesManagerContent({
     </label>
   );
   const folderCount = sharedReady ? snapshot.folders.length : 0;
+  // G00g: a failed shared read keeps my places and says so instead of passing for an empty folder list.
+  const sharedFailed = shared.enabled && shared.status === "error";
+  const showSource = Boolean(folderCount) || sharedFailed;
   // G00/G00b: hidden without folders; "공유 폴더 n / m" when any is on, "공유 폴더 끔" otherwise.
-  const folderToggle = folderCount ? (
+  const folderToggle = sharedFailed ? (
+    <button type="button" className={styles.folderToggle} aria-label="공유 폴더, 불러오지 못해 고를 수 없음" disabled>
+      <span aria-hidden="true">공유 폴더</span>
+      <LineIcon name="chevron-down" />
+    </button>
+  ) : folderCount ? (
     <button
       type="button"
       className={`${styles.folderToggle}${enabledFolderIds.length ? ` ${styles.folderToggleOn}` : ""}`}
@@ -578,6 +586,13 @@ function SavedPlacesManagerContent({
             {layerToggle("식당", restaurants, setRestaurants)}
             {folderToggle}
           </div>
+          {sharedFailed ? (
+            <div className={styles.errorCard} role="alert">
+              <strong>공유 폴더 장소를 불러오지 못했어요</strong>
+              <p>내 장소는 그대로 볼 수 있어요. 공유 폴더 장소는 지도와 목록에서 잠시 빠져 있어요.</p>
+              <button type="button" className={styles.secondaryButton} disabled={shared.busy} onClick={shared.retry}>공유 폴더 다시 불러오기</button>
+            </div>
+          ) : null}
           {/* FP41: a failed map keeps its place with an error card; lists and search stay usable. */}
           {mapStatus === "error" ? (
             <div className={styles.mapFailure} role="alert">
@@ -641,7 +656,7 @@ function SavedPlacesManagerContent({
                 <span className={styles.placeKind}>{kindLabel(preview.row.kind)} · {preview.row.province ?? "지역 미확인"}{preview.starred ? " · 자주 찾는 장소" : ""}</span>
                 <strong>{itemName(preview)}</strong>
                 <span>{placeLine(preview.row)}</span>
-                {folderCount ? sourceLine(preview) : null}
+                {showSource ? sourceLine(preview) : null}
               </button>
               <StarIconButton starred={preview.starred} disabled={preview.source === "saved" ? blocked : shared.busy} onClick={() => confirmItemStar(preview)} />
             </div>
@@ -724,7 +739,7 @@ function SavedPlacesManagerContent({
                     <span className={styles.placeKind}>{kindLabel(p.row.kind)} · {p.row.province ?? "지역 미확인"}{avoidedOf(p.row.place) ? <span className={styles.chip}>기피</span> : null}</span>
                     <strong>{itemName(p)}</strong>
                     <span>{placeLine(p.row)}</span>
-                    {folderCount ? sourceLine(p) : null}
+                    {showSource ? sourceLine(p) : null}
                   </button>
                   <StarIconButton starred={p.starred} disabled={p.source === "saved" ? blocked : shared.busy} onClick={() => confirmItemStar(p)} />
                 </li>
@@ -733,7 +748,7 @@ function SavedPlacesManagerContent({
           )}
           {tab === "starred" && list.length ? <p className={`${styles.notice} ${styles.mobileOnly}`}>{folderCount ? "별표를 빼도 라이딩 스팟·식당 목록과 공유 폴더에는 그대로 남아 있어요." : "별표를 빼도 라이딩 스팟·식당 목록에는 그대로 남아 있어요."}</p> : null}
           {tab !== "starred" && folderCount ? <p className={`${styles.notice} ${styles.mobileOnly}`}>{enabledFolderIds.length ? "같은 장소가 내 장소와 공유 폴더에 함께 있으면 내 장소 하나만 보여요. 여러 폴더에만 있으면 하나로 묶고 \"외 n\"으로 표시해요." : "공유 폴더를 모두 꺼서 내 장소만 보여요. 별표한 공유 장소는 자주 찾는 장소 탭에서 계속 볼 수 있어요."}</p> : null}
-          {shared.enabled && shared.status === "error" ? <div className={styles.errorCard} role="alert"><strong>공유 폴더 장소를 불러오지 못했어요</strong><p>내 장소만 보여요. 공유 폴더 칸에서 다시 시도할 수 있어요.</p></div> : null}
+          {sharedFailed ? <p className={styles.noticeCard}>다시 불러오면 공유 폴더 장소가 지도와 목록에 함께 보여요. 별표한 공유 장소도 그때 자주 찾는 장소 탭에 보여요.</p> : null}
           {saved.places.length >= 1000 ? (
             <p role="status">
               저장 한도에 도달했어요. 기존 장소를 정리한 뒤 등록해 주세요.
@@ -761,7 +776,7 @@ function SavedPlacesManagerContent({
                   <span className={styles.placeKind}>{kindLabel(p.row.kind)} · {p.row.province ?? "지역 미확인"}</span>
                   <strong>{itemName(p)}</strong>
                   <span>{placeLine(p.row)}</span>
-                  {folderCount ? sourceLine(p) : null}
+                  {showSource ? sourceLine(p) : null}
                 </button>
               </li>
             ))}

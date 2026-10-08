@@ -72,8 +72,9 @@ export function SavedPlaceRegistration({
   // Kept here so returning from the map picker shows the same query and results.
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState<Search>({ status: "idle" });
-  const title = step === "map" ? "지도에서 지점 고르기"
-    : variant.kind === "avoid" ? "기피 장소 등록"
+  // AV10: the avoided registration keeps its title through search and map picking.
+  const title = variant.kind === "avoid" ? "기피 장소 등록"
+    : step === "map" ? "지도에서 지점 고르기"
     : variant.kind === "folder-add" ? "폴더에 장소 추가"
     : step === "search" ? "장소 등록" : existing ? "별명·분류 수정" : "내 장소로 저장";
   // AV03: an avoided place has no alias or kind, so the choice goes straight to the confirmation.
@@ -94,13 +95,17 @@ export function SavedPlaceRegistration({
           onClose={onClose}
           onPickOnMap={() => setStep("map")}
           onChoose={choose}
-          nextHint={variant.kind === "avoid" ? "다음 화면에서 기피 장소로 등록할지 확인해요." : undefined}
+          {...(variant.kind === "avoid" ? {
+            nextHint: "다음 화면에서 기피 장소로 등록할지 확인해요.",
+            placeholder: "예: 양평 해장국, 양평군 양평읍",
+            idleHint: "기피 장소는 나에게만 적용돼요. 같은 장소로 판단되는 식당은 식당 추천에서 빠져요.",
+          } : {})}
         />
       ) : step === "map" ? (
         <MapStep
           startView={pickerView}
           onChoose={(chosen) => { setPickerView({ latitude: chosen.latitude, longitude: chosen.longitude }); choose(chosen); }}
-          chooseLabel={variant.kind === "avoid" ? "이 지점 선택" : undefined}
+          {...(variant.kind === "avoid" ? { chooseLabel: "이 지점 선택", nextLine: "다음 화면에서 기피 장소로 등록할지 확인해요. 아직 등록되지 않았어요." } : {})}
         />
       ) : place ? (
         <FormStep place={place} existing={existing} stars={stars} blocked={blocked} variant={variant} onSave={onSave} />
@@ -109,8 +114,16 @@ export function SavedPlaceRegistration({
   );
 }
 
-function SearchStep({ query, setQuery, search, setSearch, onClose, onPickOnMap, onChoose, nextHint = "다음 화면에서 별명과 분류를 정해요." }: {
+function SearchStep({
+  query, setQuery, search, setSearch, onClose, onPickOnMap, onChoose,
+  nextHint = "다음 화면에서 별명과 분류를 정해요.",
+  placeholder = "예: 서종 막국수, 양평군 서종면",
+  idleHint = "즐겨찾기 지도를 길게 눌러도 그 지점을 등록할 수 있어요.",
+}: {
   nextHint?: string;
+  placeholder?: string;
+  /** FP10 last line; AV10 replaces the long-press hint. */
+  idleHint?: string;
   query: string;
   setQuery: (query: string) => void;
   search: Search;
@@ -180,7 +193,7 @@ function SearchStep({ query, setQuery, search, setSearch, onClose, onPickOnMap, 
             maxLength={100}
             enterKeyHint="search"
             autoComplete="off"
-            placeholder="예: 서종 막국수, 양평군 서종면"
+            placeholder={placeholder}
             onChange={(e) => setQuery(e.target.value)}
           />
           {search.status === "error" ? null : (
@@ -194,7 +207,7 @@ function SearchStep({ query, setQuery, search, setSearch, onClose, onPickOnMap, 
             <p className={styles.helper}>검색어를 2자 이상 입력하면 검색할 수 있어요.</p>
             <div className={styles.infoCard}><strong>검색으로 안 나오는 곳</strong><p>도로 위나 이름 없는 쉼터는 지도를 움직여 지점을 직접 고를 수 있어요.</p></div>
             {mapButton}
-            <p className={styles.helper}>즐겨찾기 지도를 길게 눌러도 그 지점을 등록할 수 있어요.</p>
+            <p className={styles.helper}>{idleHint}</p>
           </>
         ) : search.status === "loading" ? (
           <div className={styles.searchLoading} role="status">
@@ -277,8 +290,10 @@ function SearchStep({ query, setQuery, search, setSearch, onClose, onPickOnMap, 
   );
 }
 
-function MapStep({ startView, onChoose, chooseLabel }: {
+function MapStep({ startView, onChoose, chooseLabel, nextLine }: {
   chooseLabel?: string;
+  /** Replaces the alias and kind hint after a point is checked (AV10 has neither). */
+  nextLine?: string;
   startView: Point;
   onChoose: (place: PlaceSearchResult) => void;
 }) {
@@ -371,7 +386,7 @@ function MapStep({ startView, onChoose, chooseLabel }: {
                   <span>{region ? `${lookup.place.address} (지역만 확인)` : address(lookup.place)}</span>
                   {region ? <span className={styles.coordinateLine}>좌표 <b className={styles.coordinate}>{lookup.place.latitude.toFixed(4)}, {lookup.place.longitude.toFixed(4)}</b></span> : null}
                 </div>
-                {region
+                {nextLine ? <p className={styles.helper}>{nextLine}</p> : region
                   ? <p className={styles.notice}>도로 위처럼 상세 주소가 없는 지점이에요. 고른 위치 그대로 저장되고, 다음 <span className={styles.mobileOnly}>화면</span><span className={styles.desktopOnly}>단계</span>에서 별명을 꼭 정해야 해요.</p>
                   : <p className={styles.helper}>다음 화면에서 별명과 분류를 정하고 저장해요. 아직 저장되지 않았어요.</p>}
               </>

@@ -77,7 +77,7 @@ beforeEach(() => {
     get snapshot() { return snapshot; },
     current: () => ({ status: "ready", snapshot }),
     retry: vi.fn(), refresh: vi.fn(), reloadStars: vi.fn(async () => undefined),
-    captureSnapshot: () => () => true, recheck: vi.fn(async () => "unreadable"), write, call: vi.fn(),
+    captureSnapshot: () => () => true, recheck: vi.fn(async () => "unreadable"), write, call: vi.fn(async () => ({ data: [] })),
   };
   mocks.canvases = [];
 });
@@ -189,6 +189,97 @@ describe("favorites places view with shared folders (G00, G00a, G00b)", () => {
     expect(write).not.toHaveBeenCalled();
     await act(async () => button(popup, "추가").props.onClick());
     expect(write.mock.calls[0][0]).toMatchObject({ rpc: "set_shared_place_star", args: { shared_place_id: sharedRow(4, F1, "", "").id, starred: true } });
+    await act(async () => r.unmount());
+  });
+});
+
+describe("states added with the 456 frames", () => {
+  it("keeps my places and offers a reload when the shared folders fail to load (G00g)", async () => {
+    mocks.shared = { ...mocks.shared, status: "error" };
+    const r = await mount();
+    const body = text(r.root);
+    expect(body).toContain("공유 폴더 장소를 불러오지 못했어요");
+    expect(body).toContain("내 장소는 그대로 볼 수 있어요. 공유 폴더 장소는 지도와 목록에서 잠시 빠져 있어요.");
+    expect(body).toContain("다시 불러오면 공유 폴더 장소가 지도와 목록에 함께 보여요.");
+    expect(r.root.findByProps({ "aria-label": "공유 폴더, 불러오지 못해 고를 수 없음" }).props.disabled).toBe(true);
+    expect(cards(r).every((card) => card.includes("내 장소"))).toBe(true);
+    expect(cards(r).some((card) => card.includes("공유 ·"))).toBe(false);
+    await act(async () => button(r, "공유 폴더 다시 불러오기").props.onClick());
+    expect(mocks.shared.retry).toHaveBeenCalledTimes(1);
+    await act(async () => r.unmount());
+  });
+
+  it("asks before dropping a started folder and names what is lost (G04x)", async () => {
+    const r = await mount();
+    await act(async () => button(r, "공유 폴더").props.onClick());
+    await act(async () => button(r, "＋ 공유 폴더 만들기").props.onClick());
+    const back = () => r.root.findByProps({ "aria-label": "공유 폴더 만들기 뒤로" });
+    await act(async () => r.root.findByProps({ placeholder: "예: 주말 라이더" }).props.onChange({ target: { value: "주말 라이더" } }));
+    await act(async () => r.root.findByProps({ placeholder: "예: 주말라이더" }).props.onChange({ target: { value: "바람개비" } }));
+    await act(async () => back().props.onClick());
+    const popup = () => dialogWith(r, "폴더 만들기를 그만둘까요?");
+    expect(text(popup())).toContain("입력한 폴더 이름·내 폴더용 이름이 저장되지 않아요.");
+    expect(button(popup(), "그만두기").props.className).toContain("destructiveButton");
+    // X keeps making the folder, like "계속 만들기".
+    await act(async () => popup().findByProps({ "aria-label": "닫기" }).props.onClick());
+    expect(r.root.find((n) => n.type === "input" && n.props.placeholder === "예: 주말 라이더").props.value).toBe("주말 라이더");
+    await act(async () => back().props.onClick());
+    await act(async () => button(popup(), "그만두기").props.onClick());
+    expect(r.root.findAll((n) => n.type === "input" && n.props.placeholder === "예: 주말 라이더")).toHaveLength(0);
+    expect(write).not.toHaveBeenCalled();
+    await act(async () => r.unmount());
+  });
+
+  async function openInvites(rows: unknown[]) {
+    (mocks.shared as { call: ReturnType<typeof vi.fn> }).call = vi.fn(async () => ({ data: rows }));
+    const r = await mount();
+    await act(async () => button(r, "공유 폴더").props.onClick());
+    await act(async () => r.root.findByProps({ "aria-label": "주말 라이더 폴더 열기, 주인" }).props.onClick());
+    await act(async () => r.root.findByProps({ "aria-label": "폴더 메뉴" }).props.onClick());
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+    const row = dialogWith(r, "폴더 삭제").findAll((n) => n.type === "button" && text(n).startsWith("초대 링크"))[0];
+    await act(async () => row.props.onClick());
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+    return r;
+  }
+  const invite = (index: number) => ({
+    id: `00000000-0000-4000-8000-0000000009${String(index).padStart(2, "0")}`,
+    created_at: new Date(Date.now() - 3_600_000).toISOString(),
+    expires_at: new Date(Date.now() + 6 * 86_400_000).toISOString(),
+    revoked_at: null,
+  });
+
+  it("shows the empty invite state with the link count (G20a)", async () => {
+    const r = await openInvites([]);
+    const body = text(r.root);
+    expect(body).toContain("사용 중인 링크0 / 10");
+    expect(body).toContain("새 링크를 만들어 보내면, 받은 사람이 로그인한 뒤 이 폴더에 들어올 수 있어요.");
+    expect(button(r, "새 초대 링크 만들기").props.disabled).toBe(false);
+    await act(async () => r.unmount());
+  });
+
+  it("disables a new link at 10 and says why (G20b)", async () => {
+    const r = await openInvites(Array.from({ length: 10 }, (_, index) => invite(index)));
+    const body = text(r.root);
+    expect(body).toContain("사용 중인 링크10 / 10");
+    expect(body).toContain("사용 중인 초대 링크 10개가 모두 찼어요");
+    expect(body).toContain("쓰지 않는 링크를 회수하면 새 링크를 만들 수 있어요.");
+    expect(body).toContain("사용 중인 링크가 10개라 더 만들 수 없어요.");
+    expect(button(r, "새 초대 링크 만들기").props.disabled).toBe(true);
+    await act(async () => r.unmount());
+  });
+
+  it("starts the avoided registration with its own title, example and note (AV10)", async () => {
+    const r = await mount();
+    await act(async () => button(r, "기피 장소").props.onClick());
+    await act(async () => button(r, "＋ 기피 장소 등록").props.onClick());
+    const body = text(r.root);
+    expect(body).toContain("기피 장소 등록");
+    expect(r.root.findAll((n) => n.type === "input" && n.props.placeholder === "예: 양평 해장국, 양평군 양평읍")).toHaveLength(1);
+    expect(body).toContain("기피 장소는 나에게만 적용돼요. 같은 장소로 판단되는 식당은 식당 추천에서 빠져요.");
+    expect(body).not.toContain("길게 눌러도");
+    await act(async () => button(r, "지도에서 지점 고르기").props.onClick());
+    expect(r.root.findAll((n) => n.type === "h2" && text(n) === "기피 장소 등록").length).toBeGreaterThan(0);
     await act(async () => r.unmount());
   });
 });

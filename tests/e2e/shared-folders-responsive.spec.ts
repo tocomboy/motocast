@@ -181,7 +181,7 @@ test("an invite whose fragment cannot be removed sends nothing", async ({ page }
   expect(sent.filter((line) => /\/rest\/v1\/|\/functions\/v1\/|\/api\//.test(line))).toEqual([]);
 });
 
-test("a token that cannot be kept for the login return asks to log in first, without navigating", async ({ page }) => {
+test("a token that cannot be kept for the login return shows the reopen screen (G29), without navigating", async ({ page }) => {
   await page.addInitScript((key) => {
     const original = Storage.prototype.setItem;
     Storage.prototype.setItem = function (name, value) {
@@ -191,7 +191,8 @@ test("a token that cannot be kept for the login return asks to log in first, wit
   }, PENDING_KEY);
   await page.goto(`/folder-invite#t=${TOKEN}`);
   await page.getByRole("button", { name: "로그인하고 계속" }).click();
-  await expect(page.getByText("로그인한 뒤 링크를 다시 열어 주세요")).toBeVisible();
+  await expect(page.getByText("초대 링크를 다시 열어 주세요")).toBeVisible();
+  await expect(page.getByRole("link", { name: "즐겨찾기로 가기" })).toBeVisible();
   await expect(page).toHaveURL(/\/folder-invite$/);
 });
 

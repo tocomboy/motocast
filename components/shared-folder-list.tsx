@@ -172,6 +172,13 @@ export const selectionCounts = (places: readonly SavedPlaceEntry[], selected: Re
   restaurants: places.filter((row) => row.kind === "restaurant" && selected.has(row.id)).length,
 });
 
+/** G04x (456:12971): what is lost, e.g. "입력한 폴더 이름·내 폴더용 이름과 고른 장소 14곳". */
+export function leavingWhat(name: string, displayName: string, places: number) {
+  const typed = [name ? "폴더 이름" : "", displayName ? "내 폴더용 이름" : ""].filter(Boolean).join("·");
+  const picked = places ? `고른 장소 ${places}곳` : "";
+  return typed && picked ? `입력한 ${typed}과 ${picked}` : typed ? `입력한 ${typed}` : picked;
+}
+
 /** G04–G08: name, my folder name, optional copies of my places, then the final confirmation. */
 export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCreated: (folderId: string) => void }) {
   const shared = useSharedFolders();
@@ -191,16 +198,16 @@ export function FolderCreate({ onClose, onCreated }: { onClose: () => void; onCr
   const displayIssue = nameProblem(displayName, FOLDER_DISPLAY_NAME_LIMIT);
   const { spots, restaurants } = selectionCounts(saved.places, selected);
   const total = spots + restaurants;
-  const dirty = Boolean(name || displayName || selected.size);
+  const dirty = Boolean(name || displayName || total);
   const length = (value: string) => [...value.trim()].length;
   function back() {
     if (!dirty) { onClose(); return; }
     setLeaving({
       key: 1,
-      title: "만들기를 그만둘까요?",
-      note: "입력한 폴더 이름과 고른 장소는 저장되지 않아요.",
+      title: "폴더 만들기를 그만둘까요?",
+      note: `${leavingWhat(name, displayName, total)}이 저장되지 않아요.`,
       buttons: [
-        { label: "그만두기", primary: true, onClick: () => { setLeaving(null); onClose(); } },
+        { label: "그만두기", danger: true, onClick: () => { setLeaving(null); onClose(); } },
         { label: "계속 만들기", onClick: () => setLeaving(null) },
       ],
     });

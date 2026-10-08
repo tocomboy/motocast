@@ -52,7 +52,7 @@ type View =
   | { step: "checking" }
   | { step: "cleanup-failed" }
   | { step: "missing" }
-  | { step: "login"; storageFailed?: boolean }
+  | { step: "login" }
   | { step: "membership" }
   | { step: "invalid" }
   | { step: "unavailable" }
@@ -124,7 +124,8 @@ export function FolderInvite() {
     const value = token.current;
     if (!value) { setView({ step: "missing" }); return; }
     // Same-tab navigation only; no new window copies the session storage.
-    if (!savePendingInvite(sessionStore, value)) { setView({ step: "login", storageFailed: true }); return; }
+    // G29: a value that could not be kept is the same as one that expired or was used.
+    if (!savePendingInvite(sessionStore, value)) { token.current = null; setView({ step: "missing" }); return; }
     router.push("/login");
   }
 
@@ -187,16 +188,19 @@ export function FolderInvite() {
       actions = <Link className={styles.secondary} href="/">홈으로</Link>;
       break;
     case "missing":
-      body = <div className={styles.card}><LineIcon name="folder" /><strong>초대 링크를 다시 열어 주세요</strong><p>로그인한 뒤 받은 초대 링크를 다시 열면 참여할 수 있어요. 초대 정보는 이 화면을 떠나면 남지 않아요.</p></div>;
-      actions = <Link className={styles.secondary} href="/#favorites">즐겨찾기로 가기</Link>;
+      // G29 (456:13070): kept value expired, already used, or never saved; no token or folder shown.
+      body = (
+        <div className={styles.noticeCard} role="status">
+          <strong>초대 링크를 다시 열어 주세요</strong>
+          <p>이 화면에서 초대 정보를 더 이상 확인할 수 없어요. 받은 초대 링크를 다시 눌러 주세요.</p>
+          <p>보안을 위해 초대 정보는 링크를 연 화면에만 잠시 보관해요. 앱이 다시 시작되거나 시간이 지나면 지워져요.</p>
+        </div>
+      );
+      actions = <Link className={styles.primary} href="/#favorites">즐겨찾기로 가기</Link>;
       break;
     case "login":
-      body = view.storageFailed
-        ? <div className={styles.errorCard} role="alert"><strong>로그인한 뒤 링크를 다시 열어 주세요</strong><p>이 브라우저에서 초대 정보를 잠시 보관하지 못했어요. 먼저 로그인한 다음 받은 초대 링크를 다시 열어 주세요.</p></div>
-        : <div className={styles.card}><LineIcon name="folder" /><strong>공유 폴더에 초대받았어요</strong><p>로그인하면 어떤 폴더인지 확인하고 참여할 수 있어요. 로그인 전에는 폴더 내용을 보여 주지 않아요.</p></div>;
-      actions = view.storageFailed
-        ? <Link className={styles.primary} href="/login">로그인하기</Link>
-        : <><button type="button" className={styles.primary} onClick={loginAndContinue}>로그인하고 계속</button><p className={styles.hint}>로그인한 뒤 이 초대 화면으로 돌아와요.</p></>;
+      body = <div className={styles.card}><LineIcon name="folder" /><strong>공유 폴더에 초대받았어요</strong><p>로그인하면 어떤 폴더인지 확인하고 참여할 수 있어요. 로그인 전에는 폴더 내용을 보여 주지 않아요.</p></div>;
+      actions = <><button type="button" className={styles.primary} onClick={loginAndContinue}>로그인하고 계속</button><p className={styles.hint}>로그인한 뒤 이 초대 화면으로 돌아와요.</p></>;
       break;
     case "membership":
       body = <div className={styles.errorCard} role="alert"><strong>앱에서 먼저 가입해 주세요</strong><p>MOTOCAST 회원만 공유 폴더에 참여할 수 있어요. Google Play의 MOTOCAST 앱에서 카카오 로그인으로 가입한 뒤 링크를 다시 열어 주세요.</p></div>;

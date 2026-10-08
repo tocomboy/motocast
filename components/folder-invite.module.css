@@ -9,6 +9,10 @@
 .body { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 12px 20px 24px; }
 .card, .folderCard, .errorCard { display: flex; flex-direction: column; gap: 8px; padding: 18px; border-radius: 16px; background: var(--mc-surface-card); border: 1px solid var(--mc-border-card); }
 .errorCard { border: 1.5px solid var(--mc-danger-text); }
+/* G29: the reopen notice uses the signal tint like the FP notice cards. */
+.noticeCard { display: flex; flex-direction: column; gap: 8px; padding: 18px; border-radius: 16px; background: var(--mc-signal-tint); border: 1px solid var(--mc-signal-tint-border); }
+.noticeCard strong { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; }
+.noticeCard p { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-primary); overflow-wrap: anywhere; }
 .card strong, .errorCard strong { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
 .errorCard strong { color: var(--mc-danger-text); }
 .card p, .errorCard p { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-secondary); overflow-wrap: anywhere; }

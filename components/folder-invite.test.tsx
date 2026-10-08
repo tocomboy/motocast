@@ -96,12 +96,14 @@ describe("folder invite page", () => {
     expect(JSON.stringify(mocks.push.mock.calls)).not.toContain(TOKEN);
   });
 
-  it("asks to log in first and reopen the link when the token cannot be stored", async () => {
+  it("shows the reopen screen (G29) without navigating when the token cannot be stored", async () => {
     win = fakeWindow(`#t=${TOKEN}`, { storageThrows: true });
     mocks.getSession.mockResolvedValue({ data: { session: null } });
     const r = await mount();
     await act(async () => button(r, "로그인하고 계속").props.onClick());
-    expect(text(r)).toContain("로그인한 뒤 링크를 다시 열어 주세요");
+    expect(text(r)).toContain("초대 링크를 다시 열어 주세요");
+    expect(text(r)).toContain("받은 초대 링크를 다시 눌러 주세요");
+    expect(text(r)).not.toContain(TOKEN);
     expect(mocks.push).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
@@ -123,6 +125,8 @@ describe("folder invite page", () => {
     const r = await mount();
     expect(win.values.has("motocast.folder-invite.pending")).toBe(false);
     expect(text(r)).toContain("초대 링크를 다시 열어 주세요");
+    expect(text(r)).toContain("앱이 다시 시작되거나 시간이 지나면 지워져요.");
+    expect(text(r)).toContain("즐겨찾기로 가기");
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 

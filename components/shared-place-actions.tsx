@@ -132,7 +132,8 @@ export function avoidPopup(
   return {
     title: context.registration ? "기피 장소로 등록할까요?" : "기피 장소로 표시할까요?",
     card: {
-      eyebrow: context.registration ? `${place.category?.includes("음식") ? "식당" : "장소"} · ${isRegionOnlyPlace(place) || place.kakaoPlaceId.startsWith("map:") ? "지도에서 선택" : "검색 결과"}` : `${kindLabel(context.kind ?? "riding_spot")} · ${context.province ?? "지역 미확인"}`,
+      // AV03: an avoided place has no kind, so the top line names only where it came from.
+      eyebrow: context.registration ? (isRegionOnlyPlace(place) || place.kakaoPlaceId.startsWith("map:") ? "지도 지점" : "검색 결과") : `${kindLabel(context.kind ?? "riding_spot")} · ${context.province ?? "지역 미확인"}`,
       region: isRegionOnlyPlace(place),
       name: context.name ?? place.name,
       line: placeAddress(place),

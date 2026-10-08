@@ -71,4 +71,16 @@ describe("shared place confirmations", () => {
     await pending.confirm!.run();
     expect(shared.write.mock.calls[0][0]).toMatchObject({ rpc: "add_avoided_place", args: { source_shared_place_id: target().id, place: { kakaoPlaceId: "k-f1" } } });
   });
+
+  it("names only where a newly registered avoided place came from, never a kind (AV03)", () => {
+    const shared = controls(snapshotFrom());
+    const searched = { ...target().place, category: "음식점 > 한식" };
+    expect(avoidPopup(shared, searched, { registration: true }).card!.eyebrow).toBe("검색 결과");
+    const point = { ...target().place, kakaoPlaceId: "map:37.5000000:127.1000000", category: "지도에서 선택" };
+    expect(avoidPopup(shared, point, { registration: true }).card!.eyebrow).toBe("지도 지점");
+    const region = { ...point, kakaoPlaceId: "map:37.5000000:127.1000000:region", category: "지도에서 선택 · 상세 주소 없음" };
+    const regionCard = avoidPopup(shared, region, { registration: true }).card!;
+    expect(regionCard.eyebrow).toBe("지도 지점");
+    expect(regionCard.region).toBe(true);
+  });
 });

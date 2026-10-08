@@ -27,7 +27,8 @@ export type ConfirmWrite<T> =
     };
 /** Outcome of a read-only recheck of an earlier write. */
 export type Recheck = "applied" | "missing" | "unreadable";
-export type PopupButton = { label: string; primary?: boolean; onClick: () => void };
+/** `danger` is the red destructive button (G04x "그만두기"). */
+export type PopupButton = { label: string; primary?: boolean; danger?: boolean; onClick: () => void };
 
 /** Centered confirmation popup content (Figma FP29, FP29b, FP34–FP37, memo 392:10916; #124 UI-001). */
 export type Pending<T> = {
@@ -223,7 +224,7 @@ export function ConfirmPopup<T>({
       ) : error ? <div className={styles.errorCard} role="alert"><strong>{error.title}</strong><p>{error.message}</p></div> : null}
       <div className={styles.popupActions}>
         {final ? final.map((button) => (
-          <button key={button.label} type="button" className={button.primary ? "primary-button" : styles.secondaryButton} onClick={button.onClick}>{button.label}</button>
+          <button key={button.label} type="button" className={button.danger ? styles.destructiveButton : button.primary ? "primary-button" : styles.secondaryButton} onClick={button.onClick}>{button.label}</button>
         )) : pending.confirm ? (
           <>
             {readOnly ? (
@@ -243,7 +244,7 @@ export function ConfirmPopup<T>({
             <button type="button" className={styles.secondaryButton} disabled={running} onClick={close}>{pending.confirm.cancelLabel ?? "취소"}</button>
           </>
         ) : (pending.buttons ?? []).map((button) => (
-          <button key={button.label} type="button" className={button.primary ? "primary-button" : styles.secondaryButton} onClick={button.onClick}>{button.label}</button>
+          <button key={button.label} type="button" className={button.danger ? styles.destructiveButton : button.primary ? "primary-button" : styles.secondaryButton} onClick={button.onClick}>{button.label}</button>
         ))}
       </div>
     </dialog>

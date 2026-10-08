@@ -385,6 +385,8 @@
 .infoCard strong, .noticeCard strong, .errorCard strong { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; }
 .errorCard strong { color: var(--mc-danger-text); }
 .infoCard p, .noticeCard p, .errorCard p { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-primary); }
+/* #124 one-line notices (G00g, G10, G20–G21, G30) are the card itself, with the same body text. */
+p.noticeCard { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-primary); }
 .dialog .errorCard[role="alert"] { color: var(--mc-text-primary); }
 
 /* Full-screen v2 screens (FP02, FP10–27): ground background, header inside the scroll area, card footer. */
