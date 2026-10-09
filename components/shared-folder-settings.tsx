@@ -229,7 +229,7 @@ function InviteLinks({ folderId, onClose }: { folderId: string; onClose: () => v
     setPending({
       key: ++popupKey.current,
       title: "이 초대 링크를 회수할까요?",
-      card: { eyebrow: "초대 링크 · 사용 중", line: `만료 ${expiry.at} · ${expiry.left} 남음`, line2: `만든 사람 ${owner?.displayName ?? "주인"} · ${dateTimeLabel(invite.createdAt)}` },
+      card: { eyebrow: "초대 링크 · 사용 중", line: `만료 ${expiry.at} · ${expiry.expired ? "만료됨" : `${expiry.left} 남음`}`, line2: `만든 사람 ${owner?.displayName ?? "주인"} · ${dateTimeLabel(invite.createdAt)}` },
       note: `회수하면 이 링크로는 더 이상 들어올 수 없어요. 이미 들어온 회원 ${members.length}명은 그대로예요. 되돌릴 수 없어요.`,
       confirm: {
         label: "링크 회수",
@@ -265,7 +265,7 @@ function InviteLinks({ folderId, onClose }: { folderId: string; onClose: () => v
           <p className={styles.noticeCard} role="status">{created.copied ? "초대 링크를 복사했어요. 메신저에 붙여 넣어 보내세요." : "아래 버튼으로 링크를 복사해 메신저로 보내세요."}</p>
           <div className={styles.inviteCreated}>
             <p className={styles.inviteTitle}><LineIcon name="link" /><strong>방금 만든 초대 링크</strong></p>
-            <p className={styles.helper}>만료 <b className={styles.countNumber}>{expiry.at}</b> · {expiry.left} 뒤</p>
+            <p className={styles.helper}>만료 <b className={styles.countNumber}>{expiry.at}</b> · {expiry.expired ? "만료됨" : `${expiry.left} 뒤`}</p>
             <button type="button" className={styles.secondaryButton} onClick={async () => setCreated({ ...created, copied: await copy(inviteUrl(created.token)) })}><LineIcon name="copy" /> 링크 다시 복사</button>
             {typeof navigator !== "undefined" && "share" in navigator ? (
               <button type="button" className={styles.secondaryButton} onClick={() => { void navigator.share({ title: "MOTOCAST 공유 폴더 초대", url: inviteUrl(created.token) }).catch(() => undefined); }}>공유하기</button>
@@ -301,7 +301,7 @@ function InviteLinks({ folderId, onClose }: { folderId: string; onClose: () => v
               return (
                 <li key={invite.id} className={styles.inviteCard}>
                   <p className={styles.inviteTitle}><LineIcon name="link" /><strong>초대 링크</strong><span className={styles.ownerChip}>사용 중</span></p>
-                  <p className={styles.helper}>만료 <b className={styles.countNumber}>{expiry.at}</b> · {expiry.left} 남음</p>
+                  <p className={styles.helper}>만료 <b className={styles.countNumber}>{expiry.at}</b> · {expiry.expired ? "만료됨" : `${expiry.left} 남음`}</p>
                   <p className={styles.helper}>만든 시각 {dateTimeLabel(invite.createdAt)} · {owner?.displayName ?? "주인"}</p>
                   <button type="button" className={styles.dangerButton} onClick={() => revoke(invite)}>이 링크 회수</button>
                 </li>

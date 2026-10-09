@@ -298,6 +298,28 @@ describe("states added with the 456 frames", () => {
     await act(async () => r.unmount());
   });
 
+  it("shows a link that expired while the list was open as 만료됨, never 0시간 (card, revoke popup)", async () => {
+    const expired = { ...invite(1), expires_at: new Date(Date.now() - 60_000).toISOString() };
+    const r = await openInvites([expired]);
+    const card = r.root.findAll((n) => n.type === "li" && text(n).startsWith("초대 링크"))[0];
+    expect(text(card)).toMatch(/만료 \d+\/\d+ \d{2}:\d{2} · 만료됨/);
+    await act(async () => button(card, "이 링크 회수").props.onClick());
+    expect(text(dialogWith(r, "이 초대 링크를 회수할까요?"))).toMatch(/만료 \d+\/\d+ \d{2}:\d{2} · 만료됨/);
+    expect(text(r.root)).not.toContain("0시간");
+    await act(async () => r.unmount());
+  });
+
+  it("names the folder menu link line by the soonest expiry, or 만료됨", async () => {
+    (mocks.shared as { call: ReturnType<typeof vi.fn> }).call = vi.fn(async () => ({ data: [{ ...invite(1), expires_at: new Date(Date.now() - 60_000).toISOString() }, invite(2)] }));
+    const r = await mount();
+    await act(async () => button(r, "공유 폴더").props.onClick());
+    await act(async () => r.root.findByProps({ "aria-label": "주말 라이더 폴더 열기, 주인" }).props.onClick());
+    await act(async () => r.root.findByProps({ "aria-label": "폴더 메뉴" }).props.onClick());
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+    expect(text(dialogWith(r, "폴더 삭제"))).toContain("사용 중인 링크 2개 · 만료됨");
+    await act(async () => r.unmount());
+  });
+
   it("starts the avoided registration with its own title, example and note (AV10)", async () => {
     const r = await mount();
     await act(async () => button(r, "기피 장소").props.onClick());

@@ -332,7 +332,7 @@ function FolderMenu({ folderId, onClose, onOpen }: { folderId: string; onClose: 
   const soonest = invites?.reduce<string | null>((first, row) => (!first || row.expiresAt < first ? row.expiresAt : first), null);
   const inviteLine = state !== "ready" || !invites
     ? "만들기·회수 · 링크는 7일 동안 쓸 수 있어요"
-    : invites.length && soonest ? `사용 중인 링크 ${invites.length}개 · ${expiryLabel(soonest).left} 뒤 만료` : "사용 중인 링크 없음";
+    : invites.length && soonest ? `사용 중인 링크 ${invites.length}개 · ${expiryLabel(soonest).expired ? "만료됨" : `${expiryLabel(soonest).left} 뒤 만료`}` : "사용 중인 링크 없음";
   const row = (icon: "link" | "person" | "folder", title: string, sub: string, page: SettingsPage) => (
     <li><button type="button" className={styles.menuRow} onClick={() => onOpen(page)}><LineIcon name={icon} /><span><strong>{title}</strong><span>{sub}</span></span><LineIcon name="chevron-right" /></button></li>
   );

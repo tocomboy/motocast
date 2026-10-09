@@ -17,14 +17,15 @@ export const dateLabel = (iso: string) => { const p = parts(iso); return `${p.mo
 const INVITE_LIFETIME_DAYS = 7;
 /**
  * Invite expiry "10/14 15:00" and the time left, rounded up: a link made just now shows "7일" (G11),
- * a day or more shows whole days, under a day shows hours ("5시간").
+ * a day or more shows whole days, under a day shows hours ("5시간"). At or past the expiry time
+ * `expired` is true and callers show "만료됨" (as on Android), never "0시간".
  */
 export function expiryLabel(iso: string, now = Date.now()) {
   const p = parts(iso);
   const left = Date.parse(iso) - now;
   const days = Math.min(INVITE_LIFETIME_DAYS, Math.ceil(left / 86_400_000));
   const hours = Math.max(0, Math.ceil(left / 3_600_000));
-  return { at: `${p.month}/${p.day} ${p.time}`, left: left >= 86_400_000 ? `${days}일` : `${hours}시간` };
+  return { at: `${p.month}/${p.day} ${p.time}`, left: left >= 86_400_000 ? `${days}일` : `${hours}시간`, expired: left <= 0 };
 }
 
 export const roleLabel = (role: FolderRole) => (role === "owner" ? "주인" : "회원");
