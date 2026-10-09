@@ -70,20 +70,21 @@ const itemName = (item: Item) => item.row.alias ?? item.row.place.name;
 const starLabel = (starred: boolean) => (starred ? "자주 찾는 장소에서 빼기" : "자주 찾는 장소에 추가");
 
 export function SavedPlacesManager(props: SavedPlacesManagerProps) {
-  const { accountEpoch } = useSavedPlaces();
+  const { accountEpoch, userId } = useSavedPlaces();
   const shared = useSharedFolders();
-  const openRequest = useOpenFolderRequest();
+  const openRequest = useOpenFolderRequest(userId);
   return <SavedPlacesManagerContent key={`${accountEpoch}:${shared.accountEpoch}`} {...props} openRequest={openRequest.id} onOpenRequestDone={openRequest.done} />;
 }
 
 /**
  * "폴더 열기" from the invite page: the folder id is read and removed once, then held here, above
- * the account-keyed content. The content remounts when the signed-in session first arrives, so a
- * request read and held inside it was lost and the 장소 tab stayed open (Preview 2026-10-09).
+ * the account-keyed content, which remounts when the session is first confirmed (Preview
+ * 2026-10-09: the request was lost there). The first confirmed account owns the request; a
+ * sign-out or any other account drops it, so it never carries over to the next account.
  */
-function useOpenFolderRequest() {
+function useOpenFolderRequest(userId: string | null | undefined) {
   const taken = useRef<string | null | undefined>(undefined);
-  const [id, setId] = useState<string | null>(null);
+  const [held, setHeld] = useState<{ id: string; owner?: string } | null>(null);
   useEffect(() => {
     if (taken.current === undefined) {
       let value: string | null = null;
@@ -97,11 +98,14 @@ function useOpenFolderRequest() {
     }
     const folderId = taken.current;
     if (!folderId) return;
-    const task = window.setTimeout(() => setId(folderId), 0);
+    const task = window.setTimeout(() => setHeld((current) => current ?? { id: folderId }), 0);
     return () => window.clearTimeout(task);
   }, []);
-  const done = useCallback(() => { taken.current = null; setId(null); }, []);
-  return { id, done };
+  if (held && userId !== undefined && held.owner !== userId) {
+    setHeld(held.owner === undefined && userId !== null ? { id: held.id, owner: userId } : null);
+  }
+  const done = useCallback(() => { taken.current = null; setHeld(null); }, []);
+  return { id: held?.owner !== undefined && held.owner === userId ? held.id : null, done };
 }
 
 type SavedPlacesManagerProps = {

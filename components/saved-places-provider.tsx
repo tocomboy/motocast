@@ -78,6 +78,8 @@ export const SAVED_PLACE_WRITE_TIMEOUT_MS = 15_000;
 export const SAVED_PLACE_READ_TIMEOUT_MS = 10_000;
 type SavedPlacesControls = {
   accountEpoch: number;
+  /** The signed-in account from the auth reports: undefined until the first one, null when signed out. */
+  userId: string | null | undefined;
   places: SavedPlaceEntry[];
   favorites: PlaceFavorite[];
   status: State;
@@ -111,6 +113,15 @@ type SavedPlacesControls = {
 };
 const Context = createContext<SavedPlacesControls | null>(null);
 
+/** The signed-in user id as the client session reports it now; undefined when it cannot be read. */
+function sessionUser(client: NonNullable<ReturnType<typeof getBrowserSupabase>>): Promise<string | null | undefined> {
+  if (typeof client.auth?.getSession !== "function") return Promise.resolve(undefined);
+  return client.auth.getSession().then(
+    ({ data }: { data: { session: Session | null } }) => data.session?.user.id ?? null,
+    () => undefined,
+  );
+}
+
 export function SavedPlacesProvider({
   children,
   enabled,
@@ -122,6 +133,7 @@ export function SavedPlacesProvider({
   const [status, setStatus] = useState<State>(enabled ? "loading" : "ready");
   const [busy, setBusy] = useState(false);
   const [accountEpoch, setAccountEpoch] = useState(0);
+  const [userId, setUserId] = useState<string | null | undefined>(undefined);
   const [message, setMessage] = useState(
     enabled ? "" : "데모 모드에서는 저장 장소를 저장하지 않습니다.",
   );
@@ -131,6 +143,8 @@ export function SavedPlacesProvider({
   const generation = useRef(0);
   const session = useRef(0);
   const user = useRef<string | null | undefined>(undefined);
+  // The account whose list is on screen, as the read that loaded it saw the session; undefined when unknown.
+  const shownUser = useRef<string | null | undefined>(undefined);
   const operation = useRef<symbol | null>(null);
   // Writes decide on the current state, not on the render that created the callback.
   const statusRef = useRef<State>(status);
@@ -150,17 +164,21 @@ export function SavedPlacesProvider({
       try {
         const client = getBrowserSupabase();
         if (!client) throw new Error("UNAVAILABLE");
-        // One view select is one snapshot of places, stars and revisions.
-        const { data, error } = await withClientTimeout<{ data: unknown; error: unknown }>(
-          client
-            .from("saved_place_entries")
-            .select(
-              "id,place,alias,kind,province,star_slot,star_position,revision,created_at,updated_at",
-            )
-            .order("created_at")
-            .limit(1001),
-          SAVED_PLACE_READ_TIMEOUT_MS,
-        );
+        // One view select is one snapshot of places, stars and revisions. The session read beside
+        // it names the account the list belongs to (unknown when it cannot be read).
+        const [{ data, error }, reader] = await Promise.all([
+          withClientTimeout<{ data: unknown; error: unknown }>(
+            client
+              .from("saved_place_entries")
+              .select(
+                "id,place,alias,kind,province,star_slot,star_position,revision,created_at,updated_at",
+              )
+              .order("created_at")
+              .limit(1001),
+            SAVED_PLACE_READ_TIMEOUT_MS,
+          ),
+          sessionUser(client),
+        ]);
         if (
           !mounted.current ||
           read !== generation.current ||
@@ -169,6 +187,7 @@ export function SavedPlacesProvider({
           return null;
         if (error) throw new Error("READ_FAILED");
         const entries = parseSavedPlaceEntries(data);
+        shownUser.current = reader;
         placesRef.current = entries;
         statusRef.current = "ready";
         setPlaces(entries);
@@ -184,6 +203,7 @@ export function SavedPlacesProvider({
         ) {
           // A late reply of this read must not overwrite the error state.
           generation.current++;
+          shownUser.current = undefined;
           statusRef.current = "error";
           setPlaces([]);
           setStatus("error");
@@ -208,16 +228,18 @@ export function SavedPlacesProvider({
             (_event: AuthChangeEvent, next: Session | null) => {
               const id = next?.user.id ?? null;
               if (user.current === id) return;
-              const first = user.current === undefined;
+              // Screens keyed by the account start fresh when the account changes. The first report
+              // keeps the screen only when it names the account whose list is already on it (a
+              // folder opened from an invite was dropped there); before that nothing proves it.
+              const sameAccount = user.current === undefined && id !== null && shownUser.current === id;
               user.current = id;
+              shownUser.current = undefined;
               session.current++;
               generation.current++;
               operation.current = null;
               verifyingOwner.current = null;
-              // Screens keyed by the account start fresh only when the account changes. The first
-              // report names the account the screen was already showing, so it keeps the screen
-              // (a folder opened from an invite was dropped there). It still re-reads below.
-              if (!first) setAccountEpoch(session.current);
+              if (!sameAccount) setAccountEpoch(session.current);
+              setUserId(id);
               setPlaces([]);
               setBusy(false);
               setVerifying(false);
@@ -439,6 +461,7 @@ export function SavedPlacesProvider({
   const value = useMemo<SavedPlacesControls>(
     () => ({
       accountEpoch,
+      userId,
       places,
       status,
       busy,
@@ -502,6 +525,7 @@ export function SavedPlacesProvider({
     }),
     [
       accountEpoch,
+      userId,
       places,
       status,
       busy,
