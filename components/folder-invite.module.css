@@ -1,0 +1,50 @@
+/* Folder invite (Figma G23–G28 384 wide, GS01 320 × 1.3, GW02 PC centered card max 560). */
+.page { min-height: 100dvh; display: flex; flex-direction: column; background: var(--mc-surface-ground); color: var(--mc-text-primary); }
+.siteHeader { display: none; }
+.main { flex: 1; display: flex; flex-direction: column; }
+.panel { flex: 1; display: flex; flex-direction: column; box-sizing: border-box; width: 100%; }
+.heading { display: flex; align-items: center; gap: 12px; padding: 24px 20px 0; }
+.heading h1 { flex: 1; min-width: 0; margin: 0; font-size: 1.5rem; font-weight: 900; line-height: 1.35; letter-spacing: -0.02em; }
+.close { flex-shrink: 0; width: 48px; height: 48px; display: grid; place-items: center; border: 1px solid var(--mc-border-default); border-radius: 14px; background: var(--mc-surface-card); color: var(--mc-text-primary); }
+.body { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 12px 20px 24px; }
+.card, .folderCard, .errorCard { display: flex; flex-direction: column; gap: 8px; padding: 18px; border-radius: 16px; background: var(--mc-surface-card); border: 1px solid var(--mc-border-card); }
+.errorCard { border: 1.5px solid var(--mc-danger-text); }
+/* G29: the reopen notice uses the signal tint like the FP notice cards. */
+.noticeCard { display: flex; flex-direction: column; gap: 8px; padding: 18px; border-radius: 16px; background: var(--mc-signal-tint); border: 1px solid var(--mc-signal-tint-border); }
+.noticeCard strong { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; }
+.noticeCard p { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-primary); overflow-wrap: anywhere; }
+.card strong, .errorCard strong { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.errorCard strong { color: var(--mc-danger-text); }
+.card p, .errorCard p { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-secondary); overflow-wrap: anywhere; }
+.errorCard p { color: var(--mc-text-primary); }
+.folderCard p { margin: 0; }
+.folderName { display: flex; align-items: center; gap: 10px; }
+.folderName strong { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.meta { font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-secondary); }
+.number { font-family: var(--mc-font-number); font-size: 1rem; font-weight: 700; color: var(--mc-text-primary); }
+.text { margin: 0; font-size: 0.8125rem; line-height: 1.6; color: var(--mc-text-secondary); overflow-wrap: anywhere; }
+.label { margin-top: 4px; font-size: 0.8125rem; font-weight: 700; letter-spacing: .04em; line-height: 1.4; color: var(--mc-text-secondary); }
+.input { box-sizing: border-box; width: 100%; height: 56px; padding: 0 16px; border-radius: 14px; border: 1px solid var(--mc-border-default); background: var(--mc-surface-card); font: inherit; font-size: 1.0625rem; color: var(--mc-text-primary); }
+.input:focus-visible { outline: none; border: 2px solid var(--mc-text-primary); padding: 0 15px; }
+.invalid, .invalid:focus-visible { border: 2px solid var(--mc-danger-text); padding: 0 15px; }
+.hint, .error { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--mc-text-secondary); overflow-wrap: anywhere; }
+.error { color: var(--mc-danger-text); }
+.actions { position: sticky; bottom: 0; display: flex; flex-direction: column; gap: 8px; padding: 14px 20px max(24px, env(safe-area-inset-bottom)); background: var(--mc-surface-card); border-top: 1px solid var(--mc-border-card); }
+.primary, .secondary { box-sizing: border-box; width: 100%; min-height: 56px; display: flex; align-items: center; justify-content: center; padding: 8px 24px; border-radius: 14px; font: inherit; font-size: 1rem; font-weight: 700; text-align: center; text-decoration: none; cursor: pointer; }
+.primary { border: 0; background: var(--mc-signal-fill); color: var(--mc-signal-on); }
+.primary:disabled { opacity: .45; cursor: default; }
+.secondary { border: 1.5px solid var(--mc-border-strong); background: var(--mc-surface-card); color: var(--mc-text-primary); }
+.secondary[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+@media (min-width: 768px) {
+  .siteHeader { display: flex; align-items: center; justify-content: space-between; height: 72px; padding: 0 max(32px, calc((100% - 1200px) / 2)); background: var(--mc-surface-card); border-bottom: 1px solid var(--mc-border-card); }
+  .brand { font-family: var(--mc-font-number); font-size: 1.25rem; font-weight: 700; letter-spacing: .08em; color: var(--mc-text-primary); text-decoration: none; }
+  .siteNav { display: flex; gap: 32px; }
+  .siteNav a { font-size: 0.875rem; color: var(--mc-text-primary); text-decoration: none; }
+  .main { align-items: center; padding: 40px 20px; }
+  .panel { flex: none; max-width: 560px; padding: 32px; gap: 16px; border-radius: 24px; background: var(--mc-surface-card); border: 1px solid var(--mc-border-card); }
+  .heading, .body { padding: 0; }
+  .close { display: none; }
+  .actions { position: static; flex-direction: row-reverse; padding: 0; border: 0; background: transparent; }
+  .actions > * { flex: 1; }
+  .actions .hint { flex-basis: 100%; }
+}

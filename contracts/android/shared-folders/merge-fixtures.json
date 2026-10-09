@@ -1,0 +1,170 @@
+{
+  "contract": "docs/work/2026-10-09-issue124-shared-folders-contract.md §1, §7.2, §8",
+  "rules": {
+    "duplicate": "kakaoPlaceId string equality, no normalization",
+    "representative": "saved first; among folders only, earliest (createdAt, id)",
+    "disabledFolders": "excluded before merging; never listed in otherFolderIds",
+    "otherFolderIds": "enabled folders holding the same kakaoPlaceId, ordered by their earliest (createdAt, id) row, representative folder excluded",
+    "entryOrder": "saved entries in input order, then shared representatives in (createdAt, id) order",
+    "label": "saved: 내 장소; shared: 공유 · <folder name>, plus ' 외 n' when otherFolderIds has n > 0 entries",
+    "avoided": "POI avoided place (kakaoPlaceId not starting with map:) matches the same kakaoPlaceId only; avoided map point matches the same kakaoPlaceId or any place within 30 m (haversine, earth radius 6371008.8 m, inclusive)"
+  },
+  "mergeCases": [
+    {
+      "name": "saved place wins over the same place in folders",
+      "input": {
+        "folders": { "f1": "주말 라이더", "f2": "남한강 맛집" },
+        "enabledFolderIds": ["f1", "f2"],
+        "saved": [{ "id": "s1", "kakaoPlaceId": "100" }],
+        "shared": [
+          { "id": "p1", "folderId": "f1", "kakaoPlaceId": "100", "createdAt": "2026-10-02T00:00:00Z" },
+          { "id": "p2", "folderId": "f2", "kakaoPlaceId": "100", "createdAt": "2026-10-01T00:00:00Z" }
+        ]
+      },
+      "expected": [
+        { "source": "saved", "id": "s1", "otherFolderIds": ["f2", "f1"], "label": "내 장소" }
+      ]
+    },
+    {
+      "name": "folders only: earliest created_at represents, the rest are 외 n",
+      "input": {
+        "folders": { "f1": "주말 라이더", "f2": "남한강 맛집", "f3": "동호회 정모 코스" },
+        "enabledFolderIds": ["f1", "f2", "f3"],
+        "saved": [],
+        "shared": [
+          { "id": "p1", "folderId": "f1", "kakaoPlaceId": "200", "createdAt": "2026-10-03T00:00:00Z" },
+          { "id": "p2", "folderId": "f2", "kakaoPlaceId": "200", "createdAt": "2026-10-01T09:00:00Z" },
+          { "id": "p3", "folderId": "f3", "kakaoPlaceId": "200", "createdAt": "2026-10-02T00:00:00Z" }
+        ]
+      },
+      "expected": [
+        { "source": "shared", "id": "p2", "folderId": "f2", "otherFolderIds": ["f3", "f1"], "label": "공유 · 남한강 맛집 외 2" }
+      ]
+    },
+    {
+      "name": "same created_at: the smaller id represents",
+      "input": {
+        "folders": { "f1": "주말 라이더", "f2": "남한강 맛집" },
+        "enabledFolderIds": ["f1", "f2"],
+        "saved": [],
+        "shared": [
+          { "id": "p-b", "folderId": "f1", "kakaoPlaceId": "300", "createdAt": "2026-10-01T00:00:00Z" },
+          { "id": "p-a", "folderId": "f2", "kakaoPlaceId": "300", "createdAt": "2026-10-01T00:00:00Z" }
+        ]
+      },
+      "expected": [
+        { "source": "shared", "id": "p-a", "folderId": "f2", "otherFolderIds": ["f1"], "label": "공유 · 남한강 맛집 외 1" }
+      ]
+    },
+    {
+      "name": "a disabled folder adds nothing and is not listed",
+      "input": {
+        "folders": { "f1": "주말 라이더", "f2": "남한강 맛집" },
+        "enabledFolderIds": ["f1"],
+        "saved": [{ "id": "s1", "kakaoPlaceId": "100" }],
+        "shared": [
+          { "id": "p1", "folderId": "f2", "kakaoPlaceId": "100", "createdAt": "2026-10-01T00:00:00Z" },
+          { "id": "p2", "folderId": "f2", "kakaoPlaceId": "400", "createdAt": "2026-10-01T00:00:00Z" },
+          { "id": "p3", "folderId": "f1", "kakaoPlaceId": "500", "createdAt": "2026-10-04T00:00:00Z" },
+          { "id": "p4", "folderId": "f2", "kakaoPlaceId": "500", "createdAt": "2026-10-01T00:00:00Z" }
+        ]
+      },
+      "expected": [
+        { "source": "saved", "id": "s1", "otherFolderIds": [], "label": "내 장소" },
+        { "source": "shared", "id": "p3", "folderId": "f1", "otherFolderIds": [], "label": "공유 · 주말 라이더" }
+      ]
+    },
+    {
+      "name": "all folders off: only saved places",
+      "input": {
+        "folders": { "f1": "주말 라이더" },
+        "enabledFolderIds": [],
+        "saved": [{ "id": "s1", "kakaoPlaceId": "100" }, { "id": "s2", "kakaoPlaceId": "map:37.5000000:127.1000000:region" }],
+        "shared": [{ "id": "p1", "folderId": "f1", "kakaoPlaceId": "600", "createdAt": "2026-10-01T00:00:00Z" }]
+      },
+      "expected": [
+        { "source": "saved", "id": "s1", "otherFolderIds": [], "label": "내 장소" },
+        { "source": "saved", "id": "s2", "otherFolderIds": [], "label": "내 장소" }
+      ]
+    },
+    {
+      "name": "exact string comparison: region suffix and leading zeros are different places",
+      "input": {
+        "folders": { "f1": "주말 라이더", "f2": "남한강 맛집" },
+        "enabledFolderIds": ["f1", "f2"],
+        "saved": [{ "id": "s1", "kakaoPlaceId": "map:37.5000000:127.1000000" }],
+        "shared": [
+          { "id": "p1", "folderId": "f1", "kakaoPlaceId": "map:37.5000000:127.1000000:region", "createdAt": "2026-10-01T00:00:00Z" },
+          { "id": "p2", "folderId": "f2", "kakaoPlaceId": "map:37.5000000:127.1000000", "createdAt": "2026-10-01T00:00:00Z" },
+          { "id": "p3", "folderId": "f1", "kakaoPlaceId": "00123", "createdAt": "2026-10-02T00:00:00Z" },
+          { "id": "p4", "folderId": "f2", "kakaoPlaceId": "123", "createdAt": "2026-10-03T00:00:00Z" }
+        ]
+      },
+      "expected": [
+        { "source": "saved", "id": "s1", "otherFolderIds": ["f2"], "label": "내 장소" },
+        { "source": "shared", "id": "p1", "folderId": "f1", "otherFolderIds": [], "label": "공유 · 주말 라이더" },
+        { "source": "shared", "id": "p3", "folderId": "f1", "otherFolderIds": [], "label": "공유 · 주말 라이더" },
+        { "source": "shared", "id": "p4", "folderId": "f2", "otherFolderIds": [], "label": "공유 · 남한강 맛집" }
+      ]
+    },
+    {
+      "name": "shared representatives keep (createdAt, id) order across folders",
+      "input": {
+        "folders": { "f1": "주말 라이더", "f2": "남한강 맛집" },
+        "enabledFolderIds": ["f2", "f1"],
+        "saved": [],
+        "shared": [
+          { "id": "p9", "folderId": "f1", "kakaoPlaceId": "700", "createdAt": "2026-10-05T00:00:00Z" },
+          { "id": "p8", "folderId": "f2", "kakaoPlaceId": "800", "createdAt": "2026-10-04T00:00:00+09:00" },
+          { "id": "p7", "folderId": "f1", "kakaoPlaceId": "900", "createdAt": "2026-10-03T16:00:00Z" }
+        ]
+      },
+      "expected": [
+        { "source": "shared", "id": "p8", "folderId": "f2", "otherFolderIds": [], "label": "공유 · 남한강 맛집" },
+        { "source": "shared", "id": "p7", "folderId": "f1", "otherFolderIds": [], "label": "공유 · 주말 라이더" },
+        { "source": "shared", "id": "p9", "folderId": "f1", "otherFolderIds": [], "label": "공유 · 주말 라이더" }
+      ]
+    }
+  ],
+  "avoidedCases": [
+    {
+      "name": "POI avoided place matches the same id",
+      "place": { "kakaoPlaceId": "100", "latitude": 37.5, "longitude": 127.1 },
+      "avoided": [{ "id": "a1", "kakaoPlaceId": "100", "latitude": 37.6, "longitude": 127.2 }],
+      "expected": "a1"
+    },
+    {
+      "name": "POI avoided place does not match a nearby different id",
+      "place": { "kakaoPlaceId": "101", "latitude": 37.50002, "longitude": 127.1 },
+      "avoided": [{ "id": "a1", "kakaoPlaceId": "100", "latitude": 37.5, "longitude": 127.1 }],
+      "expected": null
+    },
+    {
+      "name": "avoided map point matches a POI about 25 m away",
+      "place": { "kakaoPlaceId": "200", "latitude": 37.500225, "longitude": 127.1 },
+      "avoided": [{ "id": "a2", "kakaoPlaceId": "map:37.5000000:127.1000000", "latitude": 37.5, "longitude": 127.1 }],
+      "expected": "a2"
+    },
+    {
+      "name": "avoided map point does not match a POI about 35 m away",
+      "place": { "kakaoPlaceId": "200", "latitude": 37.500315, "longitude": 127.1 },
+      "avoided": [{ "id": "a2", "kakaoPlaceId": "map:37.5000000:127.1000000", "latitude": 37.5, "longitude": 127.1 }],
+      "expected": null
+    },
+    {
+      "name": "avoided region point also uses the 30 m rule",
+      "place": { "kakaoPlaceId": "map:37.5001000:127.1000000", "latitude": 37.5001, "longitude": 127.1 },
+      "avoided": [{ "id": "a3", "kakaoPlaceId": "map:37.5000000:127.1000000:region", "latitude": 37.5, "longitude": 127.1 }],
+      "expected": "a3"
+    },
+    {
+      "name": "the first matching avoided place in list order is reported",
+      "place": { "kakaoPlaceId": "300", "latitude": 37.5, "longitude": 127.1 },
+      "avoided": [
+        { "id": "a4", "kakaoPlaceId": "map:37.5000500:127.1000000", "latitude": 37.50005, "longitude": 127.1 },
+        { "id": "a5", "kakaoPlaceId": "300", "latitude": 37.5, "longitude": 127.1 }
+      ],
+      "expected": "a4"
+    }
+  ]
+}

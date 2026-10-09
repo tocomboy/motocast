@@ -7,6 +7,8 @@ export type PlaceFavorite = {
   place: SelectedPlace;
   createdAt: string;
   displayName?: string;
+  /** Source line for pickers (SRC01): "내 장소" or "공유 · <folder>". */
+  sourceLabel?: string;
 };
 
 export function favoritePlacePayload(value: unknown): SelectedPlace {

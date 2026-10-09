@@ -28,12 +28,16 @@ type Props = {
   selected: PlaceSearchResult | null;
   onSelect: (place: PlaceSearchResult | null) => void;
   onActivate?: () => void;
+  /** Each time the picker opens (not on focus): e.g. re-read stars changed on another device. */
+  onOpen?: () => void;
   favorites?: Pick<PlaceFavoritesControls, "favorites" | "status" | "message" | "retry">;
   presentation?: "default" | "waypoint";
   selectionActionLabel?: string;
+  /** SRC01 "저장 장소 전체 보기": opens the favorites places screen. */
+  onOpenSavedPlaces?: () => void;
 };
 
-export function PlaceSearchField({ label, accessibleLabel, placeholder, required = false, autoFocus = false, selected, onSelect, onActivate, favorites, presentation = "default", selectionActionLabel }: Props) {
+export function PlaceSearchField({ label, accessibleLabel, placeholder, required = false, autoFocus = false, selected, onSelect, onActivate, favorites, presentation = "default", selectionActionLabel, onOpenSavedPlaces, onOpen }: Props) {
   const titleId = useId();
   const statusId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -56,6 +60,7 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
 
   function openPicker() {
     onActivate?.();
+    onOpen?.();
     setQuery(selected?.name ?? "");
     setResults([]);
     setShowResults(false);
@@ -170,9 +175,10 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
             <aside className="place-favorites" aria-labelledby={`${titleId}-favorites`}>
               <div className="place-favorites-heading"><h3 id={`${titleId}-favorites`}>자주 찾는 장소</h3><span>{favorites?.favorites.length ?? 0} / {FREQUENT_PLACE_LIMIT}</span></div>
               {!favorites ? <p>즐겨찾기 연결 전입니다.</p> : favorites.status === "loading" ? <p role="status">즐겨찾기를 불러오는 중입니다.</p> : favorites.status === "error" ? <div className="place-favorites-error"><p role="alert">{favorites.message}</p><button type="button" onClick={favorites.retry}>다시 시도</button></div> : favorites.favorites.length ? (
-                <ul>{favorites.favorites.map((favorite) => <li key={favorite.slot}><button type="button" onClick={() => choose(favoriteAsSearchResult(favorite))}><strong><StarMark filled size={20} /> {favorite.displayName ?? favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span></button></li>)}</ul>
-              ) : <p>별표한 자주 찾는 장소가 없어요. 홈의 즐겨찾기에서 별표를 추가할 수 있어요.</p>}
+                <ul>{favorites.favorites.map((favorite) => <li key={favorite.slot}><button type="button" onClick={() => choose(favoriteAsSearchResult(favorite))}><strong><StarMark filled size={20} /> {favorite.displayName ?? favorite.place.name}</strong>{favorite.sourceLabel ? <small className="place-favorite-source">{favorite.sourceLabel}</small> : null}<span>{favorite.place.roadAddress ?? favorite.place.address}</span></button></li>)}</ul>
+              ) : <p>자주 찾는 장소가 없어요. 홈의 즐겨찾기에서 추가할 수 있어요.</p>}
               {favorites && favorites.status !== "loading" && favorites.status !== "error" ? <p className="place-favorite-status" role="status">{favorites.message}</p> : null}
+              {onOpenSavedPlaces ? <button type="button" className="place-saved-all" onClick={() => { closePicker(); onOpenSavedPlaces(); }}>저장 장소 전체 보기<LineIcon name="chevron-right" /></button> : null}
             </aside>
             <section className="place-picker-results" aria-labelledby={`${titleId}-results`}>
               <div><h3 id={`${titleId}-results`}>검색 결과</h3><span>{results.length ? `${results.length}개` : ""}</span></div>

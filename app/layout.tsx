@@ -6,6 +6,8 @@ import { designTokens } from "@/packages/shared-ui/src/design-tokens";
 
 import { ReleaseFooter } from "@/components/release-footer";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
+import { InviteTokenSweeper } from "@/components/invite-token-sweeper";
+import { FOLDER_INVITE_BOOT_SCRIPT } from "@/lib/places/folder-invite-token";
 
 import "./globals.css";
 
@@ -26,10 +28,15 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ko">
+      <head>
+        {/* Folder invite links: the fragment leaves the address before any app code runs (contract §8). */}
+        <script dangerouslySetInnerHTML={{ __html: FOLDER_INVITE_BOOT_SCRIPT }} />
+      </head>
       <body>
         {children}
         <ReleaseFooter />
         <ServiceWorkerRegistration />
+        <InviteTokenSweeper />
       </body>
     </html>
   );

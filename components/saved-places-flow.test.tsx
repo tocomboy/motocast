@@ -1,6 +1,7 @@
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SavedPlacesProvider } from "./saved-places-provider";
+import { SharedFoldersProvider } from "./shared-folders-provider";
 import { SavedPlacesManager } from "./saved-places-manager";
 import { SAVED_PLACE_READ_TIMEOUT_MS, SAVED_PLACE_WRITE_TIMEOUT_MS } from "./saved-places-provider";
 
@@ -65,7 +66,9 @@ async function mount() {
   await act(async () => {
     r = create(
       <SavedPlacesProvider enabled>
-        <SavedPlacesManager onBack={vi.fn()} onAddWaypoint={vi.fn(() => null)} routePoints={[]} />
+        <SharedFoldersProvider enabled={false}>
+          <SavedPlacesManager onBack={vi.fn()} onAddWaypoint={vi.fn(() => null)} routePoints={[]} />
+        </SharedFoldersProvider>
       </SavedPlacesProvider>,
       { createNodeMock: () => ({ showModal: vi.fn(), focus: vi.fn(), close: vi.fn() }) },
     );

@@ -11,9 +11,10 @@ import { KakaoMapCanvas, MapMarkerLegend } from "@/components/kakao-map-canvas";
 import { OrderedWaypointEditor } from "@/components/ordered-waypoint-editor";
 import { SavedPlacesProvider, useSavedPlaces } from "@/components/saved-places-provider";
 import { SavedPlacesManager } from "@/components/saved-places-manager";
+import { SharedFoldersProvider, useSharedFolders } from "@/components/shared-folders-provider";
 import { MapPointConfirmation, type MapPlacePickerHandle } from "@/components/map-point-confirmation";
 import { RouteFailureDialog } from "@/components/route-failure-dialog";
-import { RestaurantRecommendationDialog, type RecommendationOutcome } from "@/components/restaurant-recommendation-dialog";
+import { RestaurantRecommendationDialog, type RecommendationConfirmResult, type RecommendationOutcome } from "@/components/restaurant-recommendation-dialog";
 import recommendationStyles from "@/components/restaurant-recommendation-dialog.module.css";
 import { PlaceSearchField } from "@/components/place-search-field";
 import { PlannerHome } from "@/components/planner-home";
@@ -23,7 +24,7 @@ import { ShareManager } from "@/components/share-manager";
 import { prepareCollectionApplication } from "@/lib/collections/application";
 import type { CollectionCourse, CollectionPoint } from "@/lib/collections/contracts";
 import type { PlaceSearchResult } from "@/lib/places/search";
-import { favoriteAsSearchResult } from "@/lib/places/favorites";
+import { favoriteAsSearchResult, type PlaceFavorite } from "@/lib/places/favorites";
 import { FREQUENT_PLACE_LIMIT } from "@/lib/places/saved";
 import {
   demoRoute,
@@ -45,18 +46,25 @@ import {
 } from "@/lib/planner/ordered-waypoints";
 import { parseSafeRecommendedRoute, ProviderContractError, type SafeRouteResponse } from "@/lib/planner/provider-contract";
 import {
-  applyRecommendedMeals,
+  applyRecommendedMealsWith,
   buildRecommendationRequest,
   isRouteStaleFailure,
-  parseRecommendationResponse,
+  parseRecommendationResponseV2,
   readRecommendationFailure,
   recommendationBasis,
+  resolveSelection,
   responseMatchesRequest,
   sameBasis,
   type RecommendationInput,
-  type RecommendationResponse,
   type RecommendationSelection,
 } from "@/lib/planner/restaurant-recommendation";
+import {
+  recheckRecommendationSources,
+  recommendationGeneration,
+  recommendationView,
+  type RecheckClient,
+  type RecommendationView,
+} from "@/lib/planner/recommendation-sources";
 import { readMealDwellFixedMessage } from "@/lib/planner/meal-dwell-failure";
 import { readRouteFailureCode, routeFailureNotice, routeFailurePopup, type RouteFailureCode } from "@/lib/planner/route-failure";
 import { buildTimeline, formatRideTime, weatherRiskLabel } from "@/lib/planner/schedule";
@@ -219,11 +227,28 @@ export function buildPlannerDisplayTimeline(input: {
 }
 
 export function PlannerDashboard(props: PlannerDashboardProps) {
-  return <SavedPlacesProvider enabled={props.connected}><PlannerDashboardContent {...props} /></SavedPlacesProvider>;
+  return <SavedPlacesProvider enabled={props.connected}><SharedFoldersProvider enabled={props.connected}><PlannerDashboardContent {...props} /></SharedFoldersProvider></SavedPlacesProvider>;
 }
 
 function PlannerDashboardContent({ connected, initialCourse = null, initialTitle = "공유받은 경로", navigationMode = "browser", onExit }: PlannerDashboardProps) {
-  const favoriteControls = useSavedPlaces();
+  const savedControls = useSavedPlaces();
+  const sharedFolders = useSharedFolders();
+  // SRC01: frequent places are every star, personal and shared, ordered by when they were
+  // starred and shown with their source; folder toggles never hide them.
+  const favoriteControls = useMemo(() => {
+    // Without shared folders there is nothing to tell apart, so no source line (same rule as Android).
+    if (!sharedFolders.enabled || sharedFolders.status !== "ready" || !sharedFolders.snapshot.folders.length) return savedControls;
+    // A place starred both as mine and from a folder shows twice and counts twice (two stars).
+    const { stars, folders } = sharedFolders.snapshot;
+    const favorites = stars.map((star, index): PlaceFavorite => ({
+      slot: (index + 1) as PlaceFavorite["slot"],
+      place: star.place,
+      createdAt: star.starredAt,
+      displayName: star.alias ?? star.place.name,
+      sourceLabel: star.source === "saved" ? "내 장소" : `공유 · ${folders.find((folder) => folder.id === star.folderId)?.name ?? "공유 폴더"}`,
+    }));
+    return { ...savedControls, favorites };
+  }, [savedControls, sharedFolders.enabled, sharedFolders.status, sharedFolders.snapshot]);
   const [view, setView] = useState<PlannerView>(initialCourse ? "editor" : connected ? "home" : "summary");
   const [draft, setDraft] = useState(defaultDraft);
   const [places, setPlaces] = useState<PlannerPlaces>({
@@ -263,6 +288,8 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   const [placeSelectionRevision, setPlaceSelectionRevision] = useState(0);
   const [favoriteTarget, setFavoriteTarget] = useState<"origin" | "destination" | string | null>("origin");
   const [recommendationOpen, setRecommendationOpen] = useState(false);
+  // SRC04 "기피 장소 보기" opens 즐겨찾기 on its 기피 장소 tab; any other navigation starts at 장소.
+  const [favoritesSection, setFavoritesSection] = useState<"places" | "avoided">("places");
   const [recommendationStale, setRecommendationStale] = useState(false);
   const plannerPanelRef = useRef<HTMLElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
@@ -280,7 +307,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   const mountedRef = useRef(true);
   const summaryActionsDialogRef = useRef<HTMLDialogElement>(null);
   const recommendationSerialRef = useRef(0);
-  const recommendationResultRef = useRef<{ generation: number; tripId: string; response: RecommendationResponse } | null>(null);
+  const recommendationResultRef = useRef<{ generation: number; tripId: string; view: RecommendationView } | null>(null);
   function setNotice(
     message: string,
     severity: PlannerNotice["severity"] = "info",
@@ -457,6 +484,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
 
   function navigate(next: PlannerView, replace = false) {
     setMapFailure(null);
+    setFavoritesSection("places");
     if (next !== "summary") {
       setRecommendationOpen(false);
       setSummaryActionsOpen(false);
@@ -887,6 +915,13 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     recommendationResultRef.current = null;
     setRecommendationStale(false);
     setRecommendationOpen(true);
+    // Folders switched off on another device show here (names, SRC02b basis); the server reads its own.
+    if (sharedFolders.enabled) void sharedFolders.refresh();
+  }
+
+  // Stars changed on another device show each time a place picker opens (SRC01 favorites).
+  function reloadPickerStars() {
+    if (sharedFolders.enabled) void sharedFolders.reloadStars();
   }
 
   function closeRecommendation() {
@@ -901,7 +936,12 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     const supabase = getBrowserSupabase();
     const generation = routeGenerationRef.current;
     const tripId = liveTripIdRef.current;
-    const body = liveRoute && tripId ? buildRecommendationRequest(tripId, liveRoute, input) : null;
+    const request = liveRoute && tripId ? buildRecommendationRequest(tripId, liveRoute, input) : null;
+    // Contract v2 (#124 §7.1): my restaurants, enabled shared folders, minus my avoided places.
+    const body = request ? { ...request, contractVersion: 2 as const } : null;
+    // The inputs this answer is computed for (§7.4); null while the folder read is not ready.
+    const shared = sharedFolders.current();
+    const inputs = shared.status === "ready" ? recommendationGeneration(shared.snapshot) : null;
     if (!supabase || !body || !tripId || liveResultStale || calculatedGenerationRef.current !== generation) return { kind: "stale" };
     const serial = ++recommendationSerialRef.current;
     recommendationResultRef.current = null;
@@ -918,10 +958,10 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
         if (!current()) return { kind: "discarded" };
         return isRouteStaleFailure(failure) ? { kind: "stale" } : { kind: "error", failure };
       }
-      const response = parseRecommendationResponse(data);
-      if (!responseMatchesRequest(response, body)) return { kind: "error", failure: { code: "RECOMMENDATION_RESPONSE_INVALID", status: null } };
-      recommendationResultRef.current = { generation, tripId, response };
-      return { kind: "ok", response };
+      const view = recommendationView(parseRecommendationResponseV2(data));
+      if (!responseMatchesRequest(view.selectable, body)) return { kind: "error", failure: { code: "RECOMMENDATION_RESPONSE_INVALID", status: null } };
+      recommendationResultRef.current = { generation, tripId, view };
+      return { kind: "ok", view, inputs };
     } catch (error) {
       if (!sameRoute()) return { kind: "stale" };
       if (!current()) return { kind: "discarded" };
@@ -930,34 +970,43 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
     }
   }
 
-  // Confirmation never calls the server: it re-checks the live plan and saved
-  // places, inserts the chosen meals and asks for an explicit recalculation.
-  function confirmRecommendation(response: RecommendationResponse, selection: RecommendationSelection): boolean {
-    const bound = recommendationResultRef.current;
+  // Confirmation never calls the route provider: it re-checks the live plan, re-reads the chosen
+  // sources (§7.4: row and revision, enabled folder, not avoided), inserts the chosen meals with
+  // the original places and asks for an explicit recalculation.
+  async function confirmRecommendation(view: RecommendationView, selection: RecommendationSelection): Promise<RecommendationConfirmResult> {
     const generation = routeGenerationRef.current;
-    const basis = liveRoute ? recommendationBasis(liveRoute) : null;
-    if (
-      !bound || bound.response !== response || bound.generation !== generation ||
-      calculatedGenerationRef.current !== generation || liveTripIdRef.current !== bound.tripId ||
-      !recommendationAvailable || actionGateRef.current.planning || !basis || !places.origin || !places.destination ||
-      !sameBasis(basis, response.basis)
-    ) return false;
-    const result = applyRecommendedMeals({
-      originId: places.origin.kakaoPlaceId,
-      destinationId: places.destination.kakaoPlaceId,
+    const usable = () => {
+      const bound = recommendationResultRef.current;
+      const basis = liveRoute ? recommendationBasis(liveRoute) : null;
+      return Boolean(
+        bound && bound.view === view && bound.generation === generation && routeGenerationRef.current === generation &&
+        calculatedGenerationRef.current === generation && liveTripIdRef.current === bound.tripId &&
+        recommendationAvailable && !actionGateRef.current.planning && basis && places.origin && places.destination &&
+        sameBasis(basis, view.selectable.basis),
+      );
+    };
+    const resolved = resolveSelection(view.selectable, selection);
+    const client = getBrowserSupabase();
+    if (!usable() || !resolved || !client) return "stale";
+    const sources = resolved.items.map((item) => view.sources.get(item.candidate.savedPlaceId)?.source);
+    if (sources.some((source) => !source)) return "stale";
+    const recheck = await recheckRecommendationSources(client as unknown as RecheckClient, sources as NonNullable<(typeof sources)[number]>[]);
+    if (!mountedRef.current || !usable()) return "stale";
+    if (!recheck.ok) return recheck.reason === "changed" ? { reason: "changed", rejected: recheck.rejected } : "unreadable";
+    const result = applyRecommendedMealsWith({
+      originId: places.origin!.kakaoPlaceId,
+      destinationId: places.destination!.kakaoPlaceId,
       waypoints,
-      savedPlaces: favoriteControls.places,
-      savedPlacesReady: favoriteControls.status === "ready",
-      response,
+      response: view.selectable,
       selection,
       createId: () => crypto.randomUUID(),
-    });
-    if (!result.ok) return false;
+    }, (candidate) => recheck.places.get(candidate.savedPlaceId) ?? null);
+    if (!result.ok) return result.reason === "SAVED_PLACE_CHANGED" ? "changed" : "stale";
     updateWaypoints(result.waypoints);
     closeRecommendation();
     navigate("editor");
     setNotice(`식당 ${result.added}곳을 식사로 추가했어요. 경로 업데이트 필요: 경로 다시 계산을 눌러 주세요.`, "warning");
-    return true;
+    return "ok";
   }
 
   const recommendationRouteLabel = [selected.segments[0]?.from.label, ...selected.segments.map((segment) => segment.to.label)].filter(Boolean).join(" → ");
@@ -973,10 +1022,12 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
         returnAt={liveRoute.returnAt}
         waypointCount={waypoints.length}
         request={requestRecommendations}
+        currentInputs={sharedFolders.status === "ready" ? recommendationGeneration(sharedFolders.snapshot) : null}
         confirm={confirmRecommendation}
         onClose={closeRecommendation}
         onEditRoute={() => { closeRecommendation(); navigate("editor"); }}
         onOpenFavorites={() => { closeRecommendation(); navigate("favorites"); }}
+        onOpenAvoided={() => { closeRecommendation(); navigate("favorites"); setFavoritesSection("avoided"); }}
       /> : null}
       <header className="app-header">
         <button className="brand" type="button" aria-label="MOTOCAST 홈" onClick={() => navigationMode === "memory" && onExit ? onExit() : navigate("home")}>
@@ -992,7 +1043,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       {view === "home" ? (
         <PlannerHome connected={connected} busy={calculating} status={homeStatus} onNewRoute={startNewRoute} onCollections={() => navigate("collections")} onFavorites={() => navigate("favorites")} collections={connected ? <CollectionManager mode="home" currentCourse={currentCourse} onApply={applyCollection} onShare={prepareCollectionShare} disabled={calculating} /> : undefined} />
       ) : view === "favorites" ? (
-        <SavedPlacesManager onBack={() => navigate("home")} onAddWaypoint={addSavedWaypoint} routePoints={inputMapPoints} routePath={liveResultStale ? undefined : selectedMapPath} disabled={calculating || summarySaveBusy} />
+        <SavedPlacesManager initialSection={favoritesSection} onBack={() => navigate("home")} onAddWaypoint={addSavedWaypoint} routePoints={inputMapPoints} routePath={liveResultStale ? undefined : selectedMapPath} disabled={calculating || summarySaveBusy} />
       ) : view === "collections" ? (
         <section className="collections-view" id="collections" aria-labelledby="collections-view-title">
           <div className="view-heading"><button className="collections-back" type="button" onClick={() => navigate("home")} aria-label="홈으로"><LineIcon name="chevron-left" /></button><div><h1 id="collections-view-title" data-view-title="collections" tabIndex={-1}><span className="desktop-collections-title">저장한 경로 모음</span><span className="mobile-collections-title">저장한 경로</span></h1><p className="collections-desktop-intro">경로를 고르면 새로운 출발 날짜와 시간을 설정해요.</p></div></div>
@@ -1025,10 +1076,11 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
             </section>
             <fieldset className="planner-fields" disabled={calculating} aria-busy={calculating}>
             <section className="planner-stop is-origin">
-              {connected ? <PlaceSearchField key={`origin-${placeSelectionRevision}`} label="출발" accessibleLabel="출발지" placeholder="예: 팔당역" required selected={places.origin} favorites={favoriteControls} onActivate={() => setFavoriteTarget("origin")} onSelect={(place) => selectEndpoint("origin", place)} /> : <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>}
+              {connected ? <PlaceSearchField key={`origin-${placeSelectionRevision}`} label="출발" accessibleLabel="출발지" placeholder="예: 팔당역" required selected={places.origin} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("origin")} onOpen={reloadPickerStars} onSelect={(place) => selectEndpoint("origin", place)} /> : <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>}
             </section>
             <section className="planner-waypoint-stops">
               <OrderedWaypointEditor
+                onPickerOpen={reloadPickerStars}
                 key={favoriteControls.accountEpoch}
                 connected={connected}
                 disabled={calculating}
@@ -1043,7 +1095,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
               <p className="sr-only" role="status" aria-live="polite">{waypointStatus}</p>
             </section>
             <section className="planner-stop is-destination">
-              {connected ? <PlaceSearchField key={`destination-${placeSelectionRevision}`} label="도착" accessibleLabel="도착지" placeholder="예: 양평역" required selected={places.destination} favorites={favoriteControls} onActivate={() => setFavoriteTarget("destination")} onSelect={(place) => selectEndpoint("destination", place)} /> : <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>}
+              {connected ? <PlaceSearchField key={`destination-${placeSelectionRevision}`} label="도착" accessibleLabel="도착지" placeholder="예: 양평역" required selected={places.destination} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("destination")} onOpen={reloadPickerStars} onSelect={(place) => selectEndpoint("destination", place)} /> : <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>}
             </section>
             <button className="route-reset-button" type="button" disabled={calculating} onClick={startNewRoute}>경로 초기화</button>
             </fieldset>
@@ -1124,7 +1176,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
               </> : null}
             </>}
             map={<><h2 className="summary-course-title">{routeTitle}</h2><div className="route-map-meta"><div className="condition-banner"><span>안전 조건</span><strong>이륜차 · 자동차전용도로 제외</strong></div>{liveRoute ? <span className="live-data-badge">{liveResultStale ? "경로 업데이트 필요" : "실제 경로"}</span> : <span className="example-data-badge">예시 데이터</span>}</div><div className="map-area"><KakaoMapCanvas points={selectedMapPoints} path={selectedMapPath} showLegend={false} onSelectCoordinate={connected && !calculating && !summarySaveBusy ? selectMapCoordinate : undefined} /></div></>}
-            mapDetails={<div className="route-map-details"><p className="summary-route-order">{[selected.segments[0]?.from.label, ...selected.segments.map((segment) => segment.to.label)].filter(Boolean).join(" → ")}</p><p className="route-safety-copy">이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</p><MapMarkerLegend points={selectedMapPoints} inline /><section className="summary-visits"><h3>구간별 도착 시간</h3><ol><li><span className="visit-symbol" aria-hidden="true">출</span><strong>{selected.segments[0]?.from.label}</strong><span>{formatRideTime(displayedDepartureAt, displayedDepartureAt)} 출발</span></li>{timeline.segments.map((segment, index) => <li key={segment.id}><span className="visit-symbol" aria-hidden="true">{index === timeline.segments.length - 1 ? "도" : index + 1}</span><strong>{segment.to.label}</strong><span>{formatRideTime(displayedDepartureAt, segment.arrivalAt)} 도착{segment.to.selected && segment.to.dwellMinutes ? ` · ${segment.to.dwellMinutes}분 정차` : " · 통과"}</span></li>)}</ol></section>{connected ? <section className={recommendationStyles.mobileEntry} aria-labelledby="mobile-recommendation-title"><h3 id="mobile-recommendation-title">식사할 곳</h3><p>즐겨찾기에 저장한 식당 중 이 경로에 들르기 좋은 곳을 추천해요. 고른 식당만 일정에 추가돼요.</p><button className="secondary-button" type="button" disabled={!recommendationAvailable} onClick={openRecommendation}>음식점 추천 받기</button></section> : null}</div>}
+            mapDetails={<div className="route-map-details"><p className="summary-route-order">{[selected.segments[0]?.from.label, ...selected.segments.map((segment) => segment.to.label)].filter(Boolean).join(" → ")}</p><p className="route-safety-copy">이륜차 · 자동차전용도로 제외 · 자동차 경로 대체 없음</p><MapMarkerLegend points={selectedMapPoints} inline /><section className="summary-visits"><h3>구간별 도착 시간</h3><ol><li><span className="visit-symbol" aria-hidden="true">출</span><strong>{selected.segments[0]?.from.label}</strong><span>{formatRideTime(displayedDepartureAt, displayedDepartureAt)} 출발</span></li>{timeline.segments.map((segment, index) => <li key={segment.id}><span className="visit-symbol" aria-hidden="true">{index === timeline.segments.length - 1 ? "도" : index + 1}</span><strong>{segment.to.label}</strong><span>{formatRideTime(displayedDepartureAt, segment.arrivalAt)} 도착{segment.to.selected && segment.to.dwellMinutes ? ` · ${segment.to.dwellMinutes}분 정차` : " · 통과"}</span></li>)}</ol></section>{connected ? <section className={recommendationStyles.mobileEntry} aria-labelledby="mobile-recommendation-title"><h3 id="mobile-recommendation-title">식사할 곳</h3><p>즐겨찾기의 내 식당과 켜 둔 공유 폴더 식당 중 이 경로에 들르기 좋은 곳을 추천해요. 고른 식당만 일정에 추가돼요.</p><button className="secondary-button" type="button" disabled={!recommendationAvailable} onClick={openRecommendation}>음식점 추천 받기</button></section> : null}</div>}
             weather={<><div className="forecast-heading"><div><h2>구간별 날씨</h2></div><span className="forecast-issued">{weatherLoading === selected.id ? "기상청 예보 조회 중" : selectedWeatherStatus?.header ?? "날씨 미조회"}</span></div><p className="sr-only" role="status" aria-live="polite">{selectedWeatherAnnouncement}</p><div className="timeline-list">{timeline.segments.map((segment) => { const effectiveDwell = segment.to.selected ? segment.to.dwellMinutes : 0; return <RidingWeatherCard key={segment.id} time={formatRideTime(displayedDepartureAt, segment.arrivalAt)} place={segment.to.label} stopDetail={effectiveDwell ? `${effectiveDwell}분 정차` : "통과"} condition={segment.weather.condition} conditionLabel={weatherIcon(segment.weather.condition)} wind={`바람 ${segment.weather.windSpeedMps ?? "–"}m/s`} temperature={`${segment.weather.temperatureC ?? "–"}°`} probability={`${segment.weather.precipitationProbability ?? "–"}%`} statusNote={segment.weather.status === "outside-window" ? weatherModelLabel(segment.weather.status, segment.weather.model) : undefined} />; })}</div><details className="weather-detail"><summary>날씨 상세정보</summary><ul>{timeline.segments.map((segment) => <li key={segment.id}><strong>{segment.to.label}</strong><span>바람 {segment.weather.windSpeedMps ?? "–"}m/s · {weatherModelLabel(segment.weather.status, segment.weather.model)}</span></li>)}</ul></details></>}
             notices={<>{selectedWeatherStatus ? <div className="stale-notice"><LineIcon name="info" />{selectedWeatherStatus.notice}</div> : null}<div ref={noticeRef} className={`action-notice ${notice.severity}`} role={notice.severity === "error" ? "alert" : "status"} aria-live={notice.severity === "error" ? "assertive" : "polite"} tabIndex={-1}><LineIcon className="notice-symbol" name="info" /><p><strong>{notice.severity === "error" ? "계획을 완료하지 못했습니다" : notice.severity === "warning" ? "확인이 필요합니다" : "진행 상태"}</strong><span>{notice.message}</span></p></div></>}
           />

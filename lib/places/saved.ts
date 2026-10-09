@@ -33,6 +33,19 @@ export type SavedPlace = {
   updatedAt: string;
 };
 
+/** A stored `place` jsonb (saved, shared or avoided). The signed fields are kept as stored. */
+export function parseStoredPlace(value: unknown): PlaceSearchResult {
+  const validated = favoritePlacePayload(value);
+  const original = value as Record<string, unknown>;
+  return {
+    ...validated,
+    roadAddress: original.roadAddress === "" ? "" : validated.roadAddress,
+    category: "",
+    phone: null,
+    placeUrl: null,
+  };
+}
+
 export function parseSavedPlace(value: unknown): SavedPlace {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("INVALID_SAVED_PLACE");
@@ -61,17 +74,9 @@ export function parseSavedPlace(value: unknown): SavedPlace {
     !Number.isFinite(Date.parse(row.updated_at))
   )
     throw new Error("INVALID_SAVED_PLACE");
-  const validated = favoritePlacePayload(row.place);
-  const original = row.place as Record<string, unknown>;
   return {
     id: row.id,
-    place: {
-      ...validated,
-      roadAddress: original.roadAddress === "" ? "" : validated.roadAddress,
-      category: "",
-      phone: null,
-      placeUrl: null,
-    },
+    place: parseStoredPlace(row.place),
     alias: row.alias as string | null,
     kind: row.kind as SavedPlaceKind,
     province: row.province as string | null,

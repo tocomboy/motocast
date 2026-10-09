@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaceSearchResult } from "@/lib/places/search";
 import type { EditableWaypoint } from "@/lib/planner/ordered-waypoints";
 
+// Shared folders are off here: these tests cover the #123 personal-place behavior.
+vi.mock("./shared-folders-provider", async () => {
+  const React = await import("react");
+  const actual = await vi.importActual<typeof import("./shared-folders-provider")>("./shared-folders-provider");
+  return { ...actual, useSharedFolders: () => React.useMemo(() => ({ accountEpoch: 0, enabled: false, status: "ready", snapshot: { userId: null, folders: [], members: [], preferences: [], places: [], stars: [], avoided: [] }, busy: false, verifying: false, message: "", current: () => ({ status: "ready", snapshot: { userId: null, folders: [], members: [], preferences: [], places: [], stars: [], avoided: [] } }), retry: () => undefined, refresh: async () => null, reloadStars: async () => undefined, captureSnapshot: () => () => true, recheck: async () => "unreadable", write: async () => ({ ok: false, reason: "blocked", title: "", message: "" }), call: async () => ({ data: null, code: "UNAVAILABLE", lost: false }) }), []) };
+});
 vi.mock("@/components/place-search-field", () => ({
   PlaceSearchField: ({ label, onSelect }: { label: string; onSelect: (place: PlaceSearchResult | null) => void }) => (
     <button type="button" data-place-label={label} onClick={() => onSelect({

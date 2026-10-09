@@ -5403,3 +5403,8 @@ dialog header > button { border: 1.5px solid var(--mc-border-strong); border-rad
 
 /* PLAN-003 amendment: meals show a fixed-duration note instead of a dwell input. */
 .waypoint-settings-dialog .meal-dwell-note { margin-top: 12px; margin-bottom: 0; color: var(--mc-text-secondary); font-size: 13px; line-height: 1.5; }
+
+/* #124 SRC01: source of each frequent place and the "저장 장소 전체 보기" link. */
+.place-favorites .place-favorite-source { font-size: 13px; color: var(--mc-text-secondary); }
+.place-favorites .place-saved-all { display: inline-flex; align-items: center; gap: 4px; min-height: 48px; margin-top: 4px; padding: 0; border: 0; background: transparent; color: var(--mc-signal-text); font-size: 15px; font-weight: 700; cursor: pointer; }
+.place-favorites .place-saved-all .mc-icon { width: 18px; height: 18px; }

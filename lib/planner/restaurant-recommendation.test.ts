@@ -16,9 +16,11 @@ import {
   isDailyBudgetFailure,
   mealTargetAt,
   parseRecommendationResponse,
+  parseRecommendationResponseV2,
   readRecommendationFailure,
   recommendationFailureMessage,
   recommendationInputError,
+  recommendationSourceKey,
   resolveSelection,
   responseMatchesRequest,
   seoulClock,
@@ -832,5 +834,184 @@ describe("confirming recommended meals", () => {
     const places = [savedPlace(crowded, "a"), savedPlace(crowded, "d")];
     expect(order(base(crowded, { 1: id("a") }, { waypoints: points, savedPlaces: places }))).toHaveLength(30);
     expect(order(base(crowded, { 1: id("a"), 2: id("d") }, { waypoints: points, savedPlaces: places }))).toBe("LIMIT");
+  });
+});
+
+// --- Contract v2 (issue #124 §7.3) ------------------------------------------------
+
+const FOLDER = "aaaaaaaa-0000-4000-8000-000000000001";
+const FOLDER_2 = "aaaaaaaa-0000-4000-8000-000000000002";
+
+// Rewrites a v1 body into the v2 shape. Saved place IDs listed in `shared`
+// become rows of that folder; every other candidate stays my saved place.
+function toV2(body: Json, shared: Record<string, string> = {}): Json {
+  const revisions = new Map<string, number>();
+  const source = (savedPlaceId: unknown) => {
+    const key = savedPlaceId as string;
+    const revision = revisions.get(key)!;
+    return shared[key] ? { type: "shared", id: key, revision, folderId: shared[key] } : { type: "saved", id: key, revision };
+  };
+  (body.meals as Json[]).forEach((meal) => (meal.candidates as Json[]).forEach((candidate) => {
+    revisions.set(candidate.savedPlaceId as string, candidate.savedPlaceRevision as number);
+  }));
+  return {
+    contractVersion: 2,
+    ...body,
+    meals: (body.meals as Json[]).map((meal) => ({
+      ...meal,
+      candidates: (meal.candidates as Json[]).map((candidate) => {
+        const rest = { ...candidate };
+        delete rest.savedPlaceId;
+        delete rest.savedPlaceRevision;
+        return { source: source(candidate.savedPlaceId), ...rest, otherFolderIds: [] };
+      }),
+    })),
+    pairs: (body.pairs as Json[]).map(({ firstSavedPlaceId, secondSavedPlaceId, ...rest }) => (
+      { first: source(firstSavedPlaceId), second: source(secondSavedPlaceId), ...rest }
+    )),
+    coverage: {
+      ...(body.coverage as Json),
+      sharedRestaurants: Object.keys(shared).length, duplicateMerged: 0, avoidedExcluded: 0, disabledFolders: 0, sharedReadTruncated: false,
+    },
+  };
+}
+
+describe("recommendation response parser, contract v2", () => {
+  it.each(fixtures.responses.map((response) => [response.id, response.body] as const))(
+    "reads the v2 form of %s with the same values as v1",
+    (_name, body) => {
+      const v1 = parseRecommendationResponse(structuredClone(body));
+      const v2 = parseRecommendationResponseV2(toV2(structuredClone(body) as unknown as Json));
+      expect(v2.contractVersion).toBe(2);
+      expect(v2.basis).toEqual(v1.basis);
+      expect(v2.settings).toEqual(v1.settings);
+      expect(v2.meals.map((meal) => meal.candidates.map(({ source, otherFolderIds, ...rest }) => (
+        { savedPlaceId: source.id, savedPlaceRevision: source.revision, otherFolderIds, ...rest }
+      )))).toEqual(v1.meals.map((meal) => meal.candidates.map((candidate) => ({ ...candidate, otherFolderIds: [] }))));
+      expect(v2.pairs.map(({ first, second, ...rest }) => ({ firstSavedPlaceId: first.id, secondSavedPlaceId: second.id, ...rest })))
+        .toEqual(v1.pairs);
+      expect(v2.coverage).toEqual({
+        ...v1.coverage, sharedRestaurants: 0, duplicateMerged: 0, avoidedExcluded: 0, disabledFolders: 0, sharedReadTruncated: false,
+      });
+    },
+  );
+
+  it("keeps shared sources, their other folders and pairs across my and shared places", () => {
+    const body = toV2(rich(), { [id("a")]: FOLDER, [id("e")]: FOLDER_2 });
+    set(body, "meals.0.candidates.0.otherFolderIds", [FOLDER_2]);
+    const parsed = parseRecommendationResponseV2(body);
+    expect(parsed.meals[0].candidates[0].source).toEqual({ type: "shared", id: id("a"), revision: 2, folderId: FOLDER });
+    expect(parsed.meals[0].candidates[0].otherFolderIds).toEqual([FOLDER_2]);
+    expect(parsed.meals[1].candidates[0].source).toEqual({ type: "saved", id: id("d"), revision: 2 });
+    expect(parsed.pairs[0]).toMatchObject({ first: { type: "shared", id: id("a") }, second: { type: "saved", id: id("d") } });
+    expect(recommendationSourceKey(parsed.pairs[0].first)).toBe(`shared:${id("a")}`);
+    expect(recommendationSourceKey(parsed.pairs[0].second)).toBe(`saved:${id("d")}`);
+  });
+
+  it("treats my place and a shared place with the same row ID as different candidates", () => {
+    const body = toV2(rich());
+    const sharedA = { type: "shared", id: id("a"), revision: 2, folderId: FOLDER };
+    set(body, "meals.0.candidates.1.source", sharedA);
+    set(body, "pairs.2.first", sharedA); // b+d now names the shared row
+    const parsed = parseRecommendationResponseV2(body);
+    expect(parsed.meals[0].candidates.map((candidate) => recommendationSourceKey(candidate.source)).slice(0, 2))
+      .toEqual([`saved:${id("a")}`, `shared:${id("a")}`]);
+  });
+
+  it("accepts coverage above the v1 1,000 bound up to the combined pool", () => {
+    const body = toV2(fixtureBody("ok-no-result"));
+    set(body, "coverage.savedRestaurants", 1000);
+    set(body, "coverage.sharedRestaurants", 2000);
+    set(body, "coverage.duplicateMerged", 2000);
+    set(body, "coverage.invalidSaved", 3000);
+    set(body, "coverage.nearRoute", 3000);
+    set(body, "coverage.avoidedExcluded", 3000);
+    set(body, "coverage.disabledFolders", 20);
+    set(body, "coverage.sharedReadTruncated", true);
+    expect(parseRecommendationResponseV2(body).coverage).toMatchObject({ nearRoute: 3000, sharedRestaurants: 2000, sharedReadTruncated: true });
+  });
+
+  it("accepts ALL_EXCLUDED only as an empty, call-free result of an untruncated read", () => {
+    const empty = toV2(fixtureBody("no-saved-restaurants"));
+    set(empty, "status", "ALL_EXCLUDED");
+    expect(parseRecommendationResponseV2(empty).status).toBe("ALL_EXCLUDED");
+    const truncated = structuredClone(empty);
+    set(truncated, "coverage.sharedReadTruncated", true);
+    expect(() => parseRecommendationResponseV2(truncated)).toThrow();
+    const withCandidates = toV2(fixtureBody("ok-one-meal"));
+    set(withCandidates, "status", "ALL_EXCLUDED");
+    expect(() => parseRecommendationResponseV2(withCandidates)).toThrow();
+    const withCalls = structuredClone(empty);
+    set(withCalls, "coverage.providerRequests", 1);
+    expect(() => parseRecommendationResponseV2(withCalls)).toThrow();
+  });
+
+  const s0 = "meals.0.candidates.0";
+  const v2Mutations: Array<[string, (body: Json) => void]> = [
+    ["missing contract version", (body) => { delete body.contractVersion; }],
+    ["contract version 1", (body) => set(body, "contractVersion", 1)],
+    ["contract version as text", (body) => set(body, "contractVersion", "2")],
+    ["unknown status", (body) => set(body, "status", "PARTIAL")],
+    ["source with an extra key", (body) => set(body, `${s0}.source.folderName`, "폴더")],
+    ["unknown source type", (body) => set(body, `${s0}.source.type`, "folder")],
+    ["shared source without a folder", (body) => { delete at(body, `${s0}.source`).folderId; }],
+    ["saved source with a folder", (body) => set(body, "meals.0.candidates.1.source.folderId", FOLDER)],
+    ["source ID that is not a UUID", (body) => set(body, `${s0}.source.id`, "a")],
+    ["source revision zero", (body) => set(body, `${s0}.source.revision`, 0)],
+    ["v1 saved place ID in place of a source", (body) => { delete at(body, s0).source; set(body, `${s0}.savedPlaceId`, id("a")); }],
+    ["other folders not a list", (body) => set(body, `${s0}.otherFolderIds`, FOLDER_2)],
+    ["other folders repeating the own folder", (body) => set(body, `${s0}.otherFolderIds`, [FOLDER])],
+    ["other folders with a duplicate", (body) => set(body, `${s0}.otherFolderIds`, [FOLDER_2, FOLDER_2])],
+    ["other folders with a non-UUID", (body) => set(body, `${s0}.otherFolderIds`, ["folder"])],
+    ["other folders beyond the folder limit", (body) => set(body, `${s0}.otherFolderIds`, Array.from({ length: 21 }, (_, index) => id(`f${index}`)))],
+    ["duplicate candidate source", (body) => set(body, "meals.0.candidates.1.source", at(body, s0).source)],
+    ["pair naming an unlisted source", (body) => set(body, "pairs.0.first", { type: "saved", id: id("z"), revision: 2 })],
+    ["pair naming the right ID with the wrong source type", (body) => set(body, "pairs.0.first", { type: "saved", id: id("a"), revision: 2 })],
+    ["pair in the v1 shape", (body) => set(body, "pairs.0", { ...at(body, "pairs.0"), first: undefined, firstSavedPlaceId: id("a") })],
+    ["savedRestaurants over 1,000", (body) => set(body, "coverage.savedRestaurants", 1001)],
+    ["sharedRestaurants over 2,000", (body) => set(body, "coverage.sharedRestaurants", 2001)],
+    ["nearRoute over the combined pool", (body) => set(body, "coverage.nearRoute", 3001)],
+    ["more than 20 disabled folders", (body) => set(body, "coverage.disabledFolders", 21)],
+    ["more than 14 provider requests", (body) => set(body, "coverage.providerRequests", 15)],
+    ["truncation flag not a boolean", (body) => set(body, "coverage.sharedReadTruncated", "false")],
+    ["missing avoided count", (body) => { delete at(body, "coverage").avoidedExcluded; }],
+  ];
+
+  it.each(v2Mutations)("rejects %s instead of showing a result", (_name, mutate) => {
+    const body = toV2(rich(), { [id("a")]: FOLDER });
+    expect(() => parseRecommendationResponseV2(structuredClone(body))).not.toThrow();
+    mutate(body);
+    expect(() => parseRecommendationResponseV2(body)).toThrow();
+  });
+
+  it("never reads one version as the other", () => {
+    expect(() => parseRecommendationResponseV2(fixtureBody("ok-one-meal"))).toThrow();
+    expect(() => parseRecommendationResponse(toV2(fixtureBody("ok-one-meal")))).toThrow();
+  });
+
+  it("binds a v2 response to its request like v1", () => {
+    const response = parseRecommendationResponseV2(toV2(fixtureBody("ok-one-meal")));
+    const request = {
+      tripId,
+      basis: {
+        departureAt: "2030-01-01T00:00:00.000Z", returnAt: "2030-01-01T04:00:00.000Z", pointIds: ["origin", "occ-w", "destination"],
+        arrivalAts: ["2030-01-01T02:00:00.000Z", "2030-01-01T04:00:00.000Z"],
+      },
+      mealCount: 1 as const,
+      meals: [{ desiredTime: "12:00", dwellMinutes: 45 }],
+      toleranceMinutes: 30 as const,
+    };
+    expect(responseMatchesRequest(response, request)).toBe(true);
+    expect(responseMatchesRequest(response, { ...request, toleranceMinutes: 60 })).toBe(false);
+  });
+});
+
+// The web client reads the published v2 examples (contracts/android/restaurant-recommendation/fixtures-v2.json).
+describe("contract v2 published examples", async () => {
+  const v2 = (await import("../../contracts/android/restaurant-recommendation/fixtures-v2.json")).default as { responses: Array<{ id: string; body: unknown }> };
+  it.each(v2.responses.map((response) => [response.id, response.body] as const))("parses %s unchanged", (_id, body) => {
+    const parsed = parseRecommendationResponseV2(structuredClone(body));
+    expect(parsed.contractVersion).toBe(2);
+    expect(parsed.coverage).toEqual((body as { coverage: unknown }).coverage);
   });
 });

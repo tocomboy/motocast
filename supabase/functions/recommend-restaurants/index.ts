@@ -1,12 +1,18 @@
 import { consumeBudget, requireMember } from "../_shared/auth.ts";
 import { corsHeaders, jsonResponse } from "../_shared/http.ts";
 import { requestKakaoRoute } from "../_shared/kakao-provider.ts";
+import { AVOIDED_PLACE_LIMIT, parseAvoidedPlaces, parseSharedRestaurantRead } from "../_shared/restaurant-candidates.ts";
 import { mealTargets, parseRecommendationRequest } from "../_shared/restaurant-recommendation-request.ts";
 import {
   prepareStoredRoute,
   recommendationDiagnostic,
   recommendationFailure,
   recommendRestaurants,
+  recommendRestaurantsV2,
+  sharedReadBounds,
+  type RecommendationDependencies,
+  type RecommendationResponse,
+  type RecommendationResponseV2,
 } from "../_shared/restaurant-recommendation.ts";
 
 const SAVED_RESTAURANT_READ_LIMIT = 1000;
@@ -56,6 +62,16 @@ Deno.serve(async (request) => {
       .order("id", { ascending: true })
       .limit(SAVED_RESTAURANT_READ_LIMIT);
     if (savedError || !Array.isArray(savedRows)) throw new Error("RECOMMENDATION_STORAGE_FAILED");
+    // One row past the limit is read so a broken limit fails instead of hiding avoided places.
+    const { data: avoidedRows, error: avoidedError } = await supabase
+      .from("avoided_places")
+      .select("id,place")
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(AVOIDED_PLACE_LIMIT + 1);
+    if (avoidedError) throw new Error("RECOMMENDATION_STORAGE_FAILED");
+    const avoided = parseAvoidedPlaces(avoidedRows);
 
     // Configuration is checked only when a provider call is about to be budgeted,
     // so requests that need no routing (e.g. no saved restaurants) still succeed.
@@ -64,7 +80,7 @@ Deno.serve(async (request) => {
       if (!value) throw new Error("PROVIDER_NOT_CONFIGURED");
       return value;
     };
-    const result = await recommendRestaurants({ request: input, targets, route, savedRows }, {
+    const dependencies: RecommendationDependencies = {
       now: Date.now,
       limitFor: (operation) => {
         apiKey();
@@ -72,7 +88,32 @@ Deno.serve(async (request) => {
       },
       consumeBudget: (operation, hardLimit) => consumeBudget(user.id, "kakao", operation, hardLimit),
       requestProvider: (chunk) => requestKakaoRoute({ ...chunk, apiKey: apiKey() }),
-    });
+    };
+    let result: RecommendationResponse | RecommendationResponseV2;
+    let sharedLog: string[] = [];
+    if (input.contractVersion === 2) {
+      // Enabled shared folder restaurants inside the route box, through the member's RLS.
+      const bounds = sharedReadBounds(route);
+      const { data: sharedData, error: sharedError } = await supabase.rpc("recommendation_shared_restaurants", {
+        min_lat: bounds.minLatitude,
+        max_lat: bounds.maxLatitude,
+        min_lng: bounds.minLongitude,
+        max_lng: bounds.maxLongitude,
+      });
+      if (sharedError) throw new Error("RECOMMENDATION_STORAGE_FAILED");
+      const shared = parseSharedRestaurantRead(sharedData);
+      const v2 = await recommendRestaurantsV2({ request: input, targets, route, savedRows, avoided, shared }, dependencies);
+      sharedLog = [
+        `shared=${v2.coverage.sharedRestaurants}`,
+        `merged=${v2.coverage.duplicateMerged}`,
+        `avoided=${v2.coverage.avoidedExcluded}`,
+        `disabledFolders=${v2.coverage.disabledFolders}`,
+        `truncated=${v2.coverage.sharedReadTruncated}`,
+      ];
+      result = v2;
+    } else {
+      result = await recommendRestaurants({ request: input, targets, route, savedRows, avoided }, dependencies);
+    }
 
     const { coverage } = result;
     console.info(
@@ -88,6 +129,7 @@ Deno.serve(async (request) => {
       `requests=${coverage.providerRequests}`,
       `pairs=${result.pairs.length}`,
       `candidates=${result.meals.map((meal) => meal.candidates.length).join("/")}`,
+      ...sharedLog,
     );
     return jsonResponse(result, 200, cors);
   } catch (error) {

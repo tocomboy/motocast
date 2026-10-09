@@ -33,6 +33,17 @@
 
 입력·기준 오류, 경유지 한도, 저장 식당 0곳, 경로 근처 후보 0곳은 길찾기 0회다. 1곳 요청은 최대 6회, 2곳 요청은 식사별 상위 5곳(같은 식당·구간은 1회) + 같은 구간 조합 최대 4회로 최대 14회, 동시 4개다. 구간 출발이 현재+5분을 넘으면 `future_directions`, 아니면 `directions` 예산을 쓴다.
 
+## 요청·응답 v2 (Issue #124, 공유 폴더·기피 장소)
+
+정본은 `docs/work/2026-10-09-issue124-shared-folders-contract.md` 7.1~7.4절, 예시는 이 디렉터리의 `fixtures-v2.json`이다. v1(`fixtures.json` 3.0.1)의 규칙과 오류는 그대로이며, v2는 아래만 다르다.
+
+- 요청: v1 키 집합에 `contractVersion: 2`를 더한다(정확한 키 집합 검사 유지). 다른 값(`3`, 문자열 `"2"` 등)은 내부 오류 `INVALID_RECOMMENDATION_REQUEST`, HTTP 400 `RECOMMENDATION_INPUT_INVALID`. `requests[]`에 수락 1건·거부 2건이 있다.
+- 후보: `savedPlaceId`·`savedPlaceRevision` 대신 `source`(`{type:"saved", id, revision}` 또는 `{type:"shared", id, revision, folderId}`)와 `otherFolderIds`(같은 장소가 있는 다른 켜 둔 폴더, 표시용, 대표 폴더 제외). 조합은 `first`·`second`가 `source`다. 선택 키는 `"<type>:<id>"`로 쓰면 v1 선택·삽입 규칙을 그대로 쓸 수 있다.
+- 상태: `OK` | `NO_SAVED_RESTAURANTS`(내 식당 + 켜 둔 폴더 식당 총수가 0) | `ALL_EXCLUDED`(읽은 후보가 모두 기피, 잘림 없음일 때만). 잘린 읽기에서는 모두 기피여도 `OK` + 빈 후보 + `sharedReadTruncated: true`.
+- `coverage` 추가: `sharedRestaurants`(중복 제거 전 켜 둔 폴더 식당 수, 읽은 범위), `duplicateMerged`, `avoidedExcluded`, `disabledFolders`(꺼 둔 폴더 수), `sharedReadTruncated`. 화면 문구는 Figma SRC02·SRC03(예: "기피 장소 n곳과 꺼 둔 공유 폴더 n개의 식당은 후보에서 뺐어요.").
+- 일정에 추가하기 직전 재검사(7.4): 출처 행이 있고 revision이 같은지, 공유면 그 폴더가 지금 켜져 있는지, 지금 기피 목록과 일치하지 않는지(POI id, 지도 지점 30 m)를 서버에서 다시 읽어 확인하고, 하나라도 어긋나면 추가하지 않는다. 통과하면 다시 읽은 행의 원래 place(서명 포함)를 쓴다. 웹 구현: `lib/planner/recommendation-sources.ts`.
+- `responses[]`는 서버 모듈의 합성 시나리오 실제 출력이다(`supabase/functions/_shared/restaurant-recommendation.test.ts`의 "shared Android v2 response fixtures"가 같은 값인지 검사하고, 웹 `lib/planner/restaurant-recommendation.test.ts`가 v2 파서로 읽는다). 중복 제거·기피 일치 규칙 자체의 공용 사례는 `contracts/android/shared-folders/merge-fixtures.json`.
+
 ## 변경 이력
 
 - 3.0.1 (2026-10-05, 요청·응답 형식 변경 없음, Codex V2 지적 반영): 오류 우선순위를 고정했다. 모든 형식·범위·순서 검증을 마친 뒤 식사 45분 정책을 검사한다. 복합 거부 사례(체류 60 + 문자열 허용 범위, 식사 1 60 + 식사 2 0, 체류 60 + 같은 목표 시각, 체류 60 + 추가 키, 체류 60 + basis 도착 수 불일치)를 `RECOMMENDATION_INPUT_INVALID`로 추가했다.

@@ -17,7 +17,7 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  const sensitivePath = ["/share", "/api/", "/auth/", "/invite", "/admin/", "/login"]
+  const sensitivePath = ["/share", "/api/", "/auth/", "/invite", "/folder-invite", "/admin/", "/login"]
     .some((prefix) => url.pathname.startsWith(prefix));
   if (event.request.method !== "GET" || url.origin !== self.location.origin || sensitivePath) return;
 

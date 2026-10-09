@@ -12,6 +12,12 @@ const mocks = vi.hoisted(() => ({
   mapSelect: null as null | ((place: unknown) => void),
   invoke: vi.fn(),
 }));
+// Shared folders are off here: these tests cover the #123 personal-place behavior.
+vi.mock("./shared-folders-provider", async () => {
+  const React = await import("react");
+  const actual = await vi.importActual<typeof import("./shared-folders-provider")>("./shared-folders-provider");
+  return { ...actual, useSharedFolders: () => React.useMemo(() => ({ accountEpoch: 0, enabled: false, status: "ready", snapshot: { userId: null, folders: [], members: [], preferences: [], places: [], stars: [], avoided: [] }, busy: false, verifying: false, message: "", current: () => ({ status: "ready", snapshot: { userId: null, folders: [], members: [], preferences: [], places: [], stars: [], avoided: [] } }), retry: () => undefined, refresh: async () => null, reloadStars: async () => undefined, captureSnapshot: () => () => true, recheck: async () => "unreadable", write: async () => ({ ok: false, reason: "blocked", title: "", message: "" }), call: async () => ({ data: null, code: "UNAVAILABLE", lost: false }) }), []) };
+});
 vi.mock("./saved-places-provider", () => ({
   useSavedPlaces: () => mocks.controls,
 }));
@@ -533,7 +539,7 @@ it("shows the FP04 count line for kind tabs", async () => {
   mocks.controls.favorites = [];
   const r = await mount();
   const line = text(r.root.findAll((node) => node.type === "p" && text(node).startsWith("라이딩 스팟"))[0]);
-  expect(line).toBe("라이딩 스팟2곳 · 저장 장소 전체3 / 1,000");
+  expect(line).toBe("라이딩 스팟2곳 · 내 저장 장소3 / 1,000");
   await act(async () => r.unmount());
 });
 
@@ -569,7 +575,7 @@ it("filters only the list and count with the saved-place search, not the map pin
   const r = await mount();
   await act(async () => r.root.findByProps({ placeholder: "별명, 장소명, 주소" }).props.onChange({ target: { value: "팔당" } }));
   expect(r.root.findAllByProps({ "aria-label": "양수리 쉼터 상세 보기" })).toHaveLength(0);
-  expect(text(r.root)).toContain("라이딩 스팟1곳 · 저장 장소 전체2 / 1,000");
+  expect(text(r.root)).toContain("라이딩 스팟1곳 · 내 저장 장소2 / 1,000");
   const map = mocks.canvases.filter((canvas) => canvas.onSelectSavedCluster).at(-1)!;
   expect((map.savedPins as Array<{ id: string }>).map((pin) => pin.id)).toEqual([a.id, b.id]);
   await act(async () => r.unmount());
