@@ -208,12 +208,16 @@ export function SavedPlacesProvider({
             (_event: AuthChangeEvent, next: Session | null) => {
               const id = next?.user.id ?? null;
               if (user.current === id) return;
+              const first = user.current === undefined;
               user.current = id;
               session.current++;
               generation.current++;
               operation.current = null;
               verifyingOwner.current = null;
-              setAccountEpoch(session.current);
+              // Screens keyed by the account start fresh only when the account changes. The first
+              // report names the account the screen was already showing, so it keeps the screen
+              // (a folder opened from an invite was dropped there). It still re-reads below.
+              if (!first) setAccountEpoch(session.current);
               setPlaces([]);
               setBusy(false);
               setVerifying(false);

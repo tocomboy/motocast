@@ -2,6 +2,7 @@
 
 import { LineIcon, StarMark } from "@/components/line-icon";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -71,7 +72,36 @@ const starLabel = (starred: boolean) => (starred ? "자주 찾는 장소에서 �
 export function SavedPlacesManager(props: SavedPlacesManagerProps) {
   const { accountEpoch } = useSavedPlaces();
   const shared = useSharedFolders();
-  return <SavedPlacesManagerContent key={`${accountEpoch}:${shared.accountEpoch}`} {...props} />;
+  const openRequest = useOpenFolderRequest();
+  return <SavedPlacesManagerContent key={`${accountEpoch}:${shared.accountEpoch}`} {...props} openRequest={openRequest.id} onOpenRequestDone={openRequest.done} />;
+}
+
+/**
+ * "폴더 열기" from the invite page: the folder id is read and removed once, then held here, above
+ * the account-keyed content. The content remounts when the signed-in session first arrives, so a
+ * request read and held inside it was lost and the 장소 tab stayed open (Preview 2026-10-09).
+ */
+function useOpenFolderRequest() {
+  const taken = useRef<string | null | undefined>(undefined);
+  const [id, setId] = useState<string | null>(null);
+  useEffect(() => {
+    if (taken.current === undefined) {
+      let value: string | null = null;
+      try {
+        value = window.sessionStorage.getItem(OPEN_FOLDER_STORAGE_KEY);
+        window.sessionStorage.removeItem(OPEN_FOLDER_STORAGE_KEY);
+      } catch {
+        value = null;
+      }
+      taken.current = value && /^[0-9a-f-]{36}$/i.test(value) ? value : null;
+    }
+    const folderId = taken.current;
+    if (!folderId) return;
+    const task = window.setTimeout(() => setId(folderId), 0);
+    return () => window.clearTimeout(task);
+  }, []);
+  const done = useCallback(() => { taken.current = null; setId(null); }, []);
+  return { id, done };
 }
 
 type SavedPlacesManagerProps = {
@@ -88,6 +118,7 @@ type SavedPlacesManagerProps = {
   /** Which of "장소 / 공유 폴더 / 기피 장소" opens first. */
   initialSection?: Section;
 };
+type ContentProps = SavedPlacesManagerProps & { openRequest: string | null; onOpenRequestDone: () => void };
 
 function SavedPlacesManagerContent({
   onBack,
@@ -97,7 +128,9 @@ function SavedPlacesManagerContent({
   disabled = false,
   initialWaypoint,
   initialSection = "places",
-}: SavedPlacesManagerProps) {
+  openRequest,
+  onOpenRequestDone,
+}: ContentProps) {
   const saved = useSavedPlaces();
   const shared = useSharedFolders();
   const sharedPopup = useSharedPopup();
@@ -184,20 +217,6 @@ function SavedPlacesManagerContent({
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
-  // "폴더 열기" from the invite page: read once, then forget.
-  useEffect(() => {
-    let id: string | null = null;
-    try {
-      id = window.sessionStorage.getItem(OPEN_FOLDER_STORAGE_KEY);
-      window.sessionStorage.removeItem(OPEN_FOLDER_STORAGE_KEY);
-    } catch {
-      id = null;
-    }
-    if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return;
-    const folderId = id;
-    const task = window.setTimeout(() => { setSection("folders"); setOpenFolder({ id: folderId }); }, 0);
-    return () => window.clearTimeout(task);
-  }, []);
   // Entering 즐겨찾기 re-reads folders: other members' and other devices' changes appear here.
   const { refresh, enabled: sharedEnabled } = shared;
   useEffect(() => {
@@ -205,6 +224,39 @@ function SavedPlacesManagerContent({
     const task = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(task);
   }, [refresh, sharedEnabled]);
+  // "폴더 열기": the folder opens from a list read after the request arrived (its own read, or the
+  // read that replaced it or retried it). A folder that is gone (deleted, or I left or was removed)
+  // shows the list with a notice; a failed read shows the list and its retry, and the request waits.
+  const sharedLatest = useRef(shared);
+  useEffect(() => { sharedLatest.current = shared; });
+  const [awaitingRead, setAwaitingRead] = useState(false);
+  const finishOpen = useCallback((folders: readonly { id: string }[], folderId: string) => {
+    setAwaitingRead(false);
+    onOpenRequestDone();
+    setSection("folders");
+    if (folders.some((folder) => folder.id === folderId)) setOpenFolder({ id: folderId });
+    else setListNotice("이 폴더를 더 볼 수 없어요. 폴더가 삭제됐거나 이 폴더에서 나갔어요.");
+  }, [onOpenRequestDone]);
+  useEffect(() => {
+    if (!openRequest) return;
+    let live = true;
+    const task = window.setTimeout(() => {
+      if (!sharedEnabled) { onOpenRequestDone(); return; }
+      void refresh().then((read) => {
+        if (!live) return;
+        if (read) { finishOpen(read.folders, openRequest); return; }
+        if (sharedLatest.current.current().status === "error") setSection("folders");
+        setAwaitingRead(true);
+      });
+    }, 0);
+    return () => { live = false; window.clearTimeout(task); };
+  }, [openRequest, sharedEnabled, refresh, onOpenRequestDone, finishOpen]);
+  const sharedStatus = shared.status;
+  useEffect(() => {
+    if (!openRequest || !awaitingRead || sharedStatus !== "ready") return;
+    const task = window.setTimeout(() => finishOpen(sharedLatest.current.current().snapshot.folders, openRequest), 0);
+    return () => window.clearTimeout(task);
+  }, [openRequest, awaitingRead, sharedStatus, finishOpen]);
   // A personal star change re-reads my combined star list (personal + shared).
   const { reloadStars } = shared;
   useEffect(() => { if (saved.status === "ready") void reloadStars(); }, [saved.places, saved.status, reloadStars]);
