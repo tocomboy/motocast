@@ -58,8 +58,9 @@ vi.mock("@/lib/supabase/browser", () => ({
     auth: {
       getSession: async () => ({ data: { session: mocks.user ? { user: { id: mocks.user } } : null } }),
       onAuthStateChange: (listener: (event: string, session: { user: { id: string } } | null) => void) => {
+        // Like the client: each subscription gets its own reports until it unsubscribes.
         mocks.authListeners.push(listener);
-        return { data: { subscription: { unsubscribe: vi.fn() } } };
+        return { data: { subscription: { unsubscribe: () => { const at = mocks.authListeners.indexOf(listener); if (at >= 0) mocks.authListeners.splice(at, 1); } } } };
       },
     },
   }),
@@ -200,7 +201,6 @@ describe("폴더 열기 from the invite page", () => {
       expect(folderTitle(renderer)).toEqual([]);
       expect(text(renderer.root)).not.toContain(GONE);
       act(() => renderer.unmount());
-      mocks.authListeners.length = 0;
     }
   });
 
@@ -213,6 +213,26 @@ describe("폴더 열기 from the invite page", () => {
     expect(folderTitle(renderer)).toEqual([]);
     expect(text(renderer.root)).not.toContain(GONE);
     expect(pressed(renderer).join()).toContain("장소");
+    act(() => renderer.unmount());
+  });
+
+  it("drops the request when A signs out and signs in again (separate reports, and together)", async () => {
+    mocks.failFolders = true;
+    ask(FOLDER);
+    let renderer = await open();
+    await report("INITIAL_SESSION", A);
+    await report("SIGNED_OUT", null);
+    mocks.failFolders = false;
+    await report("SIGNED_IN", A);
+    expect(folderTitle(renderer)).toEqual([]);
+    expect(text(renderer.root)).not.toContain(GONE);
+    act(() => renderer.unmount());
+
+    ask(FOLDER);
+    renderer = await open();
+    await reports(A, null, A);
+    expect(folderTitle(renderer)).toEqual([]);
+    expect(text(renderer.root)).not.toContain(GONE);
     act(() => renderer.unmount());
   });
 
@@ -229,7 +249,6 @@ describe("폴더 열기 from the invite page", () => {
       expect(folderTitle(renderer)).toEqual([]);
       expect(text(renderer.root)).not.toContain(GONE);
       act(() => renderer.unmount());
-      mocks.authListeners.length = 0;
     }
   });
 

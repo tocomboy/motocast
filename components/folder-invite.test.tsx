@@ -182,6 +182,7 @@ describe("folder invite page", () => {
     await act(async () => button(r, "참여하기").props.onClick());
     expect(mocks.rpc.mock.calls.map((call) => call[0])).toEqual(["preview_place_folder_invite", "accept_place_folder_invite", "preview_place_folder_invite"]);
     expect(mocks.push).toHaveBeenCalledWith("/#favorites");
+    expect(openRequest()).toEqual({ folderId: "00000000-0000-4000-8000-0000000000f1", userId: RIDER, savedAt: expect.any(Number) });
   });
 
   it("V3-1: after a lost join and a failed re-read it only re-reads, and allows joining again once a read proves it did not join", async () => {
@@ -248,6 +249,19 @@ describe("folder invite page", () => {
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(openRequest()).toEqual({ folderId: "00000000-0000-4000-8000-0000000000f1", userId: RIDER, savedAt: expect.any(Number) });
     expect(mocks.push).toHaveBeenCalledWith("/#favorites");
+  });
+
+  it("does not hand A's preview to B: a press after another account's report saves no request", async () => {
+    win = fakeWindow(`#t=${TOKEN}`);
+    mocks.rpc.mockResolvedValueOnce(preview("already_member")).mockReturnValue(new Promise(() => undefined));
+    const r = await mount();
+    // The button of A's preview, pressed after B's report but before the page re-renders.
+    const press = button(r, "폴더 열기").props.onClick as () => void;
+    await act(async () => { mocks.authListener?.("SIGNED_IN", { user: { id: "00000000-0000-4000-8000-0000000000b2" } }); });
+    await act(async () => press());
+    expect(win.values.has("motocast.favorites.open-folder")).toBe(false);
+    expect(mocks.push).toHaveBeenCalledWith("/#favorites");
+    await act(async () => r.unmount());
   });
 
   it("treats an expired or revoked link and a malformed fragment the same way (G26)", async () => {

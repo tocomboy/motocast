@@ -60,9 +60,11 @@ type View =
    * `unknown`: a join was sent but its result is not known; only a read may follow until a read
    * proves the rider did not join (V3-1). `busy` locks leaving while a request runs (FP39).
    */
-  | { step: "join"; preview: InvitePreview; error?: string; busy?: boolean; lost?: boolean; unknown?: boolean }
-  | { step: "member"; preview: InvitePreview }
-  | { step: "full"; preview: InvitePreview; reason: "mine" | "folder" };
+  | { step: "join"; preview: OwnedPreview; error?: string; busy?: boolean; lost?: boolean; unknown?: boolean }
+  | { step: "member"; preview: OwnedPreview }
+  | { step: "full"; preview: OwnedPreview; reason: "mine" | "folder" };
+/** A preview with the account that asked for it and the page run it belongs to. */
+type OwnedPreview = InvitePreview & { requestedBy: string; sequence: number };
 
 const sessionStore = () => window.sessionStorage;
 const RPC_TIMEOUT_MS = 15_000;
@@ -130,13 +132,14 @@ export function FolderInvite() {
       if (!client) { set({ step: "login" }); return; }
       const { data } = await client.auth.getSession();
       if (!data.session) { set({ step: "login" }); return; }
-      if (!cancelled && attempt === sequence.current) account.current = data.session.user.id;
+      const requestedBy = data.session.user.id;
+      if (!cancelled && attempt === sequence.current) account.current = requestedBy;
       const result = await rpc("preview_place_folder_invite", { token: token.current });
       if (result.code === "PLACE_FOLDER_INVITE_INVALID") { set({ step: "invalid" }); return; }
       if (result.code === "MEMBERSHIP_REQUIRED") { set({ step: "membership" }); return; }
       if (result.code || result.lost) { set({ step: "unavailable" }); return; }
       try {
-        const preview = parseInvitePreview(result.data);
+        const preview: OwnedPreview = { ...parseInvitePreview(result.data), requestedBy, sequence: attempt };
         set(preview.status === "already_member" ? { step: "member", preview } : { step: "join", preview });
       } catch {
         set({ step: "unavailable" });
@@ -154,10 +157,14 @@ export function FolderInvite() {
     router.push("/login");
   }
 
-  function openFolder(folderId: string | null) {
-    // The account that saw this invite owns the request; 즐겨찾기 drops it for any other account.
-    const userId = account.current;
-    if (folderId && userId) saveOpenFolderRequest(sessionStore, { folderId, userId });
+  /**
+   * 즐겨찾기 opens the folder for the account that asked for this preview, and only while that
+   * answer still stands: after an account report the preview is stale and only the list opens.
+   */
+  function openFolder(preview: OwnedPreview, folderId: string | null) {
+    if (folderId && preview.sequence === sequence.current && preview.requestedBy === account.current) {
+      saveOpenFolderRequest(sessionStore, { folderId, userId: preview.requestedBy });
+    }
     router.push("/#favorites");
   }
 
@@ -166,7 +173,7 @@ export function FolderInvite() {
     return () => mounted.current && run === sequence.current && token.current === value;
   }
 
-  async function join(preview: InvitePreview) {
+  async function join(preview: OwnedPreview) {
     const value = token.current;
     const problem = nameProblem(name, FOLDER_DISPLAY_NAME_LIMIT);
     if (!value || problem) return;
@@ -179,7 +186,7 @@ export function FolderInvite() {
         const body = result.data as { status?: unknown; member?: unknown };
         const member = parseFolderMember(body.member);
         token.current = null;
-        openFolder(member.folderId);
+        openFolder(preview, member.folderId);
         return;
       } catch {
         // A reply that is not a receipt: check below like a lost reply.
@@ -195,15 +202,16 @@ export function FolderInvite() {
   }
 
   /** Read-only check of an unknown join; joining is offered again only after a read says "not joined". */
-  async function readJoin(preview: InvitePreview, value: string, live = liveFor(value)) {
+  async function readJoin(preview: OwnedPreview, value: string, live = liveFor(value)) {
     setView({ step: "join", preview, unknown: true, busy: true });
     const check = await rpc("preview_place_folder_invite", { token: value });
     if (!live()) return;
     if (check.code === "PLACE_FOLDER_INVITE_INVALID") { setView({ step: "invalid" }); return; }
     if (check.code === "MEMBERSHIP_REQUIRED") { setView({ step: "membership" }); return; }
-    let fresh: InvitePreview | null = null;
-    try { fresh = check.code || check.lost ? null : parseInvitePreview(check.data); } catch { fresh = null; }
-    if (fresh?.status === "already_member") { token.current = null; openFolder(fresh.folderId); return; }
+    // A re-read in the same run answers for the same account as the preview it checks.
+    let fresh: OwnedPreview | null = null;
+    try { fresh = check.code || check.lost ? null : { ...parseInvitePreview(check.data), requestedBy: preview.requestedBy, sequence: preview.sequence }; } catch { fresh = null; }
+    if (fresh?.status === "already_member") { token.current = null; openFolder(fresh, fresh.folderId); return; }
     if (fresh) { setView({ step: "join", preview: fresh, lost: true, error: "참여되지 않았어요. 다시 참여하려면 \"참여하기\"를 눌러 주세요." }); return; }
     setView({ step: "join", preview, unknown: true, error: "참여 요청은 다시 보내지 않아요. 잠시 뒤 다시 확인해 주세요." });
   }
@@ -260,7 +268,7 @@ export function FolderInvite() {
       break;
     case "member":
       body = <>{summary(view.preview)}<p className={styles.text}>이미 참여한 폴더예요.</p></>;
-      actions = <button type="button" className={styles.primary} onClick={() => openFolder(view.preview.folderId)}>폴더 열기</button>;
+      actions = <button type="button" className={styles.primary} onClick={() => openFolder(view.preview, view.preview.folderId)}>폴더 열기</button>;
       break;
     case "full":
       body = <>{summary(view.preview)}<div className={styles.errorCard} role="alert">{view.reason === "mine"
