@@ -36,7 +36,8 @@ import {
 import type { PlaceSearchResult } from "@/lib/places/search";
 import { mergePlaces, sourceLabel } from "@/lib/places/place-merge";
 import type { SharedPlace } from "@/lib/places/shared-folders";
-import { OPEN_FOLDER_STORAGE_KEY } from "@/lib/places/folder-invite-token";
+import { takeOpenFolderRequest, type OpenFolderRequest } from "@/lib/places/folder-invite-token";
+import { getBrowserSupabase } from "@/lib/supabase/browser";
 import {
   defaultDwellMinutes,
   dwellError,
@@ -70,42 +71,38 @@ const itemName = (item: Item) => item.row.alias ?? item.row.place.name;
 const starLabel = (starred: boolean) => (starred ? "자주 찾는 장소에서 빼기" : "자주 찾는 장소에 추가");
 
 export function SavedPlacesManager(props: SavedPlacesManagerProps) {
-  const { accountEpoch, userId } = useSavedPlaces();
+  const { accountEpoch } = useSavedPlaces();
   const shared = useSharedFolders();
-  const openRequest = useOpenFolderRequest(userId);
-  return <SavedPlacesManagerContent key={`${accountEpoch}:${shared.accountEpoch}`} {...props} openRequest={openRequest.id} onOpenRequestDone={openRequest.done} />;
+  const openRequest = useOpenFolderRequest(shared.enabled);
+  return <SavedPlacesManagerContent key={`${accountEpoch}:${shared.accountEpoch}`} {...props} openRequest={openRequest.request} onOpenRequestDone={openRequest.done} />;
 }
 
 /**
- * "폴더 열기" from the invite page: the folder id is read and removed once, then held here, above
- * the account-keyed content, which remounts when the session is first confirmed (Preview
- * 2026-10-09: the request was lost there). The first confirmed account owns the request; a
- * sign-out or any other account drops it, so it never carries over to the next account.
+ * "폴더 열기" from the invite page, saved with the account that saw the invite. It is read and
+ * removed once and held here, above the account-keyed content, which remounts when the session is
+ * first reported (Preview 2026-10-09: the request was lost there). It is handed over only while an
+ * auth report confirms that same account; a report of any other account, or none, drops it.
  */
-function useOpenFolderRequest(userId: string | null | undefined) {
-  const taken = useRef<string | null | undefined>(undefined);
-  const [held, setHeld] = useState<{ id: string; owner?: string } | null>(null);
+function useOpenFolderRequest(enabled: boolean) {
+  const taken = useRef<OpenFolderRequest | null | undefined>(undefined);
+  const [request, setRequest] = useState<OpenFolderRequest | null>(null);
   useEffect(() => {
-    if (taken.current === undefined) {
-      let value: string | null = null;
-      try {
-        value = window.sessionStorage.getItem(OPEN_FOLDER_STORAGE_KEY);
-        window.sessionStorage.removeItem(OPEN_FOLDER_STORAGE_KEY);
-      } catch {
-        value = null;
-      }
-      taken.current = value && /^[0-9a-f-]{36}$/i.test(value) ? value : null;
-    }
-    const folderId = taken.current;
-    if (!folderId) return;
-    const task = window.setTimeout(() => setHeld((current) => current ?? { id: folderId }), 0);
-    return () => window.clearTimeout(task);
-  }, []);
-  if (held && userId !== undefined && held.owner !== userId) {
-    setHeld(held.owner === undefined && userId !== null ? { id: held.id, owner: userId } : null);
-  }
-  const done = useCallback(() => { taken.current = null; setHeld(null); }, []);
-  return { id: held?.owner !== undefined && held.owner === userId ? held.id : null, done };
+    if (taken.current === undefined) taken.current = takeOpenFolderRequest(() => window.sessionStorage);
+    if (!taken.current) return;
+    const client = enabled ? getBrowserSupabase() : null;
+    if (!client?.auth) { taken.current = null; return; }
+    // Each report is judged as it arrives, so A → signed out → B in one batch still drops it.
+    const subscription = client.auth.onAuthStateChange((_event: string, session: { user: { id: string } } | null) => {
+      const held = taken.current;
+      if (!held) return;
+      if (session?.user.id === held.userId) { setRequest(held); return; }
+      taken.current = null;
+      setRequest(null);
+    }).data.subscription;
+    return () => subscription.unsubscribe();
+  }, [enabled]);
+  const done = useCallback(() => { taken.current = null; setRequest(null); }, []);
+  return { request, done };
 }
 
 type SavedPlacesManagerProps = {
@@ -122,7 +119,7 @@ type SavedPlacesManagerProps = {
   /** Which of "장소 / 공유 폴더 / 기피 장소" opens first. */
   initialSection?: Section;
 };
-type ContentProps = SavedPlacesManagerProps & { openRequest: string | null; onOpenRequestDone: () => void };
+type ContentProps = SavedPlacesManagerProps & { openRequest: OpenFolderRequest | null; onOpenRequestDone: () => void };
 
 function SavedPlacesManagerContent({
   onBack,
@@ -229,16 +226,20 @@ function SavedPlacesManagerContent({
     return () => window.clearTimeout(task);
   }, [refresh, sharedEnabled]);
   // "폴더 열기": the folder opens from a list read after the request arrived (its own read, or the
-  // read that replaced it or retried it). A folder that is gone (deleted, or I left or was removed)
-  // shows the list with a notice; a failed read shows the list and its retry, and the request waits.
+  // read that replaced it or retried it) for the request's account. A folder that is gone (deleted,
+  // or I left or was removed) shows the list with a notice; a failed read shows the list and its
+  // retry, and the request waits.
   const sharedLatest = useRef(shared);
   useEffect(() => { sharedLatest.current = shared; });
   const [awaitingRead, setAwaitingRead] = useState(false);
-  const finishOpen = useCallback((folders: readonly { id: string }[], folderId: string) => {
+  const finishOpen = useCallback((read: SharedSnapshot, request: OpenFolderRequest) => {
+    // A list read for another account proves nothing about this request; wait for the next read.
+    if (read.userId !== request.userId) { setAwaitingRead(true); return; }
+    const folderId = request.folderId;
     setAwaitingRead(false);
     onOpenRequestDone();
     setSection("folders");
-    if (folders.some((folder) => folder.id === folderId)) setOpenFolder({ id: folderId });
+    if (read.folders.some((folder) => folder.id === folderId)) setOpenFolder({ id: folderId });
     else setListNotice("이 폴더를 더 볼 수 없어요. 폴더가 삭제됐거나 이 폴더에서 나갔어요.");
   }, [onOpenRequestDone]);
   useEffect(() => {
@@ -248,7 +249,7 @@ function SavedPlacesManagerContent({
       if (!sharedEnabled) { onOpenRequestDone(); return; }
       void refresh().then((read) => {
         if (!live) return;
-        if (read) { finishOpen(read.folders, openRequest); return; }
+        if (read) { finishOpen(read, openRequest); return; }
         if (sharedLatest.current.current().status === "error") setSection("folders");
         setAwaitingRead(true);
       });
@@ -258,7 +259,7 @@ function SavedPlacesManagerContent({
   const sharedStatus = shared.status;
   useEffect(() => {
     if (!openRequest || !awaitingRead || sharedStatus !== "ready") return;
-    const task = window.setTimeout(() => finishOpen(sharedLatest.current.current().snapshot.folders, openRequest), 0);
+    const task = window.setTimeout(() => finishOpen(sharedLatest.current.current().snapshot, openRequest), 0);
     return () => window.clearTimeout(task);
   }, [openRequest, awaitingRead, sharedStatus, finishOpen]);
   // A personal star change re-reads my combined star list (personal + shared).

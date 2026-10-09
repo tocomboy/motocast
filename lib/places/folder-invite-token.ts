@@ -12,8 +12,14 @@ import { INVITE_TOKEN_PATTERN } from "./shared-folders";
 export const INVITE_PATH = "/folder-invite";
 export const PENDING_INVITE_KEY = "motocast.folder-invite.pending";
 export const PENDING_INVITE_TTL_MS = 30 * 60 * 1000;
-/** One-shot request from the invite page ("폴더 열기") to open that folder in 즐겨찾기. Holds a folder id only. */
+/**
+ * One-shot request from the invite page ("폴더 열기") to open that folder in 즐겨찾기, as
+ * `{folderId, userId, savedAt}`: the account that saw the invite owns it, and it lasts 10 minutes.
+ */
 export const OPEN_FOLDER_STORAGE_KEY = "motocast.favorites.open-folder";
+export const OPEN_FOLDER_TTL_MS = 10 * 60 * 1000;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export type OpenFolderRequest = { folderId: string; userId: string };
 
 export type InviteCapture =
   | { status: "token"; token: string }
@@ -115,4 +121,37 @@ export function hasPendingInvite(storage: () => Storage, now = Date.now()): bool
 
 export function clearPendingInvite(storage: () => Storage) {
   try { storage().removeItem(PENDING_INVITE_KEY); } catch { /* storage unavailable: nothing stored */ }
+}
+
+/** Stores "폴더 열기" for the account that saw the invite. Nothing is stored when it cannot be. */
+export function saveOpenFolderRequest(storage: () => Storage, request: OpenFolderRequest, now = Date.now()) {
+  if (!UUID_PATTERN.test(request.folderId) || !UUID_PATTERN.test(request.userId)) return;
+  try {
+    storage().setItem(OPEN_FOLDER_STORAGE_KEY, JSON.stringify({ folderId: request.folderId, userId: request.userId, savedAt: now }));
+  } catch {
+    try { storage().removeItem(OPEN_FOLDER_STORAGE_KEY); } catch { /* the list opens instead */ }
+  }
+}
+
+/** Reads and removes "폴더 열기" in one step; expired (10 minutes) or malformed values give null. */
+export function takeOpenFolderRequest(storage: () => Storage, now = Date.now()): OpenFolderRequest | null {
+  let raw: string | null = null;
+  try {
+    const store = storage();
+    raw = store.getItem(OPEN_FOLDER_STORAGE_KEY);
+    store.removeItem(OPEN_FOLDER_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+  if (raw === null) return null;
+  let value: unknown = null;
+  try { value = JSON.parse(raw); } catch { value = null; }
+  const record = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  const fresh = record &&
+    Object.keys(record).sort().join() === "folderId,savedAt,userId" &&
+    typeof record.folderId === "string" && UUID_PATTERN.test(record.folderId) &&
+    typeof record.userId === "string" && UUID_PATTERN.test(record.userId) &&
+    typeof record.savedAt === "number" && Number.isFinite(record.savedAt) &&
+    record.savedAt <= now && now - record.savedAt <= OPEN_FOLDER_TTL_MS;
+  return fresh ? { folderId: record.folderId as string, userId: record.userId as string } : null;
 }

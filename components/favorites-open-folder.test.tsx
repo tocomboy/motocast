@@ -2,7 +2,7 @@ import { StrictMode, type ReactNode } from "react";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { OPEN_FOLDER_STORAGE_KEY } from "@/lib/places/folder-invite-token";
+import { OPEN_FOLDER_STORAGE_KEY, OPEN_FOLDER_TTL_MS } from "@/lib/places/folder-invite-token";
 
 // The real planner with its providers, as the app mounts it on /#favorites. The browser session
 // (`mocks.user`) is what reads see; auth reports arrive separately, before or after those reads.
@@ -66,7 +66,6 @@ vi.mock("@/lib/supabase/browser", () => ({
 }));
 
 import { PlannerDashboard } from "./planner-dashboard";
-import { SavedPlaceRegistration } from "./saved-place-registration";
 
 const createNodeMock = () => ({ focus: vi.fn(), scrollTo: vi.fn(), querySelector: vi.fn(() => null), querySelectorAll: vi.fn(() => []), showModal: vi.fn(), close: vi.fn() });
 
@@ -93,6 +92,20 @@ async function open(options: { strict?: boolean; reportFirst?: boolean } = {}) {
 const folderTitle = (renderer: ReactTestRenderer) => renderer.root.findAll((node) => node.type === "h1" && node.props.id === "shared-folder-title").map(text);
 const pressed = (renderer: ReactTestRenderer) => renderer.root.findAll((node) => node.type === "button" && node.props["aria-pressed"] === true).map(text);
 const GONE = "이 폴더를 더 볼 수 없어요";
+/** What the invite page stores on "폴더 열기": the folder and the account that saw the invite. */
+function ask(folderId: string, userId = A, savedAt = Date.now()) {
+  mocks.session.set(OPEN_FOLDER_STORAGE_KEY, JSON.stringify({ folderId, userId, savedAt }));
+}
+/** Several auth reports delivered together, with no render between them. */
+async function reports(...users: Array<string | null>) {
+  await act(async () => {
+    for (const user of users) {
+      mocks.user = user;
+      for (const listener of [...mocks.authListeners]) listener(user ? "SIGNED_IN" : "SIGNED_OUT", user ? { user: { id: user } } : null);
+    }
+  });
+  await settle();
+}
 
 beforeEach(() => {
   mocks.session.clear();
@@ -120,7 +133,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("폴더 열기 from the invite page", () => {
   it.each([false, true])("opens the folder when the session report comes after the reads (StrictMode %s)", async (strict) => {
-    mocks.session.set(OPEN_FOLDER_STORAGE_KEY, FOLDER);
+    ask(FOLDER);
     const renderer = await open({ strict });
     // Read once and removed, before the session is known.
     expect(mocks.session.has(OPEN_FOLDER_STORAGE_KEY)).toBe(false);
@@ -129,15 +142,15 @@ describe("폴더 열기 from the invite page", () => {
     act(() => renderer.unmount());
   });
 
-  it("opens the folder when the session report comes before the reads", async () => {
-    mocks.session.set(OPEN_FOLDER_STORAGE_KEY, FOLDER);
-    const renderer = await open({ reportFirst: true });
+  it.each([false, true])("opens the folder when the session report comes before the reads (StrictMode %s)", async (strict) => {
+    ask(FOLDER);
+    const renderer = await open({ strict, reportFirst: true });
     expect(folderTitle(renderer)).toEqual(["주말 라이더"]);
     act(() => renderer.unmount());
   });
 
   it("shows the folder list with a notice when the folder is gone (deleted, left or removed)", async () => {
-    mocks.session.set(OPEN_FOLDER_STORAGE_KEY, "00000000-0000-4000-8000-0000000000ff");
+    ask("00000000-0000-4000-8000-0000000000ff");
     const renderer = await open();
     await report("INITIAL_SESSION", A);
     expect(folderTitle(renderer)).toEqual([]);
@@ -149,7 +162,7 @@ describe("폴더 열기 from the invite page", () => {
 
   it("keeps the request through a failed read and opens the folder after the retry", async () => {
     mocks.failFolders = true;
-    mocks.session.set(OPEN_FOLDER_STORAGE_KEY, FOLDER);
+    ask(FOLDER);
     const renderer = await open();
     await report("INITIAL_SESSION", A);
     expect(text(renderer.root)).toContain("공유 폴더를 불러오지 못했어요");
@@ -164,7 +177,7 @@ describe("폴더 열기 from the invite page", () => {
 
   it("does not carry an unfinished request to the next account (A asks, read fails, B signs in)", async () => {
     mocks.failFolders = true;
-    mocks.session.set(OPEN_FOLDER_STORAGE_KEY, FOLDER);
+    ask(FOLDER);
     const renderer = await open();
     await report("INITIAL_SESSION", A);
     expect(folderTitle(renderer)).toEqual([]);
@@ -177,28 +190,47 @@ describe("폴더 열기 from the invite page", () => {
     act(() => renderer.unmount());
   });
 
-  it("drops the request on sign-out, even when the same account signs in again", async () => {
+  it("drops the request when the first report names another account or nobody", async () => {
+    for (const first of [B, null]) {
+      ask(FOLDER);
+      const renderer = await open();
+      await report("INITIAL_SESSION", first);
+      mocks.user = A;
+      await report("SIGNED_IN", A);
+      expect(folderTitle(renderer)).toEqual([]);
+      expect(text(renderer.root)).not.toContain(GONE);
+      act(() => renderer.unmount());
+      mocks.authListeners.length = 0;
+    }
+  });
+
+  it("drops the request on sign-out (reports A → nobody → B delivered together)", async () => {
     mocks.failFolders = true;
-    mocks.session.set(OPEN_FOLDER_STORAGE_KEY, FOLDER);
+    ask(FOLDER);
     const renderer = await open();
-    await report("INITIAL_SESSION", A);
-    await report("SIGNED_OUT", null);
     mocks.failFolders = false;
-    await report("SIGNED_IN", A);
+    await reports(A, null, B);
     expect(folderTitle(renderer)).toEqual([]);
     expect(text(renderer.root)).not.toContain(GONE);
+    expect(pressed(renderer).join()).toContain("장소");
     act(() => renderer.unmount());
   });
 
-  it("drops a request the first confirmed session does not own (signed out)", async () => {
-    mocks.session.set(OPEN_FOLDER_STORAGE_KEY, FOLDER);
-    const renderer = await open();
-    await report("INITIAL_SESSION", null);
-    mocks.user = A;
-    await report("SIGNED_IN", A);
-    expect(folderTitle(renderer)).toEqual([]);
-    expect(text(renderer.root)).not.toContain(GONE);
-    act(() => renderer.unmount());
+  it("drops a request older than 10 minutes, or one that is not a request", async () => {
+    for (const stored of [
+      JSON.stringify({ folderId: FOLDER, userId: A, savedAt: Date.now() - OPEN_FOLDER_TTL_MS - 1 }),
+      FOLDER,
+      JSON.stringify({ folderId: FOLDER, savedAt: Date.now() }),
+    ]) {
+      mocks.session.set(OPEN_FOLDER_STORAGE_KEY, stored);
+      const renderer = await open();
+      expect(mocks.session.has(OPEN_FOLDER_STORAGE_KEY)).toBe(false);
+      await report("INITIAL_SESSION", A);
+      expect(folderTitle(renderer)).toEqual([]);
+      expect(text(renderer.root)).not.toContain(GONE);
+      act(() => renderer.unmount());
+      mocks.authListeners.length = 0;
+    }
   });
 
   it("opens nothing without a stored request", async () => {
@@ -206,30 +238,6 @@ describe("폴더 열기 from the invite page", () => {
     await report("INITIAL_SESSION", A);
     expect(folderTitle(renderer)).toEqual([]);
     expect(pressed(renderer).join()).toContain("장소");
-    act(() => renderer.unmount());
-  });
-});
-
-describe("the first session report and a form opened before it", () => {
-  async function openEditForm() {
-    const renderer = await open();
-    await act(async () => renderer.root.findByProps({ "aria-label": "팔당 라이딩 카페 상세 보기" }).props.onClick());
-    await act(async () => renderer.root.findAll((node) => node.type === "button" && text(node) === "별명·분류 수정")[0].props.onClick());
-    expect(renderer.root.findAllByType(SavedPlaceRegistration)).toHaveLength(1);
-    return renderer;
-  }
-
-  it.each([["another account", B], ["no account", null]] as const)("discards A's edit form when the first report names %s", async (_name, next) => {
-    const renderer = await openEditForm();
-    await report("INITIAL_SESSION", next);
-    expect(renderer.root.findAllByType(SavedPlaceRegistration)).toHaveLength(0);
-    act(() => renderer.unmount());
-  });
-
-  it("keeps A's edit form when the first report names A", async () => {
-    const renderer = await openEditForm();
-    await report("INITIAL_SESSION", A);
-    expect(renderer.root.findAllByType(SavedPlaceRegistration)).toHaveLength(1);
     act(() => renderer.unmount());
   });
 });

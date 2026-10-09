@@ -62,6 +62,9 @@ async function mount() {
 }
 const text = (node: ReactTestRenderer) => JSON.stringify(node.toJSON());
 const button = (r: ReactTestRenderer, label: string) => r.root.findAll((n) => n.type === "button" && JSON.stringify(n.props.children ?? "").includes(label))[0];
+const RIDER = "00000000-0000-4000-8000-0000000000a1";
+/** "폴더 열기" is saved for the account that saw the invite (read by 즐겨찾기 within 10 minutes). */
+const openRequest = () => JSON.parse(win.values.get("motocast.favorites.open-folder") ?? "null") as { folderId: string; userId: string; savedAt: number } | null;
 const preview = (status: "joinable" | "already_member", extra: Record<string, unknown> = {}) => ({
   data: { status, folder_name: "주말 라이더", owner_display_name: "바람개비", member_count: 5, place_count: 34, ...(status === "already_member" ? { folder_id: "00000000-0000-4000-8000-0000000000f1" } : {}), ...extra },
   error: null,
@@ -73,7 +76,7 @@ beforeEach(() => {
   mocks.getSession.mockReset();
   mocks.client = true;
   mocks.push.mockReset();
-  mocks.getSession.mockResolvedValue({ data: { session: { user: { id: "u" } } } });
+  mocks.getSession.mockResolvedValue({ data: { session: { user: { id: RIDER } } } });
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -145,7 +148,7 @@ describe("folder invite page", () => {
     await act(async () => input.props.onChange({ target: { value: " 초록헬멧 " } }));
     await act(async () => button(r, "참여하기").props.onClick());
     expect(mocks.rpc).toHaveBeenLastCalledWith("accept_place_folder_invite", { token: TOKEN, display_name: "초록헬멧" });
-    expect(win.values.get("motocast.favorites.open-folder")).toBe(member.folder_id);
+    expect(openRequest()).toEqual({ folderId: member.folder_id, userId: RIDER, savedAt: expect.any(Number) });
     expect(mocks.push).toHaveBeenCalledWith("/#favorites");
   });
 
@@ -243,6 +246,7 @@ describe("folder invite page", () => {
     expect(text(r)).toContain("이미 참여한 폴더예요");
     await act(async () => button(r, "폴더 열기").props.onClick());
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(openRequest()).toEqual({ folderId: "00000000-0000-4000-8000-0000000000f1", userId: RIDER, savedAt: expect.any(Number) });
     expect(mocks.push).toHaveBeenCalledWith("/#favorites");
   });
 

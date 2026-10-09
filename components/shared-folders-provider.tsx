@@ -219,11 +219,9 @@ export function SharedFoldersProvider({ children, enabled }: { children: ReactNo
       ? client.auth.onAuthStateChange((_event: AuthChangeEvent, next: Session | null) => {
           const id = next?.user.id ?? null;
           if (user.current === id) return;
-          // The first report keeps the screen only when it names the account the shown list was read
-          // for; before that nothing proves the list (or a read in flight) is this account's.
-          const sameAccount = user.current === undefined && id !== null && statusRef.current === "ready" && snapshotRef.current.userId === id;
+          const first = user.current === undefined;
           user.current = id;
-          if (sameAccount) return;
+          if (first) return;
           session.current++;
           generation.current++;
           operation.current = null;

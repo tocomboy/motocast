@@ -11,7 +11,7 @@ import {
   consumePendingInvite,
   takeInviteCapture,
   INVITE_PATH,
-  OPEN_FOLDER_STORAGE_KEY,
+  saveOpenFolderRequest,
   savePendingInvite,
   type InviteCapture,
 } from "@/lib/places/folder-invite-token";
@@ -155,7 +155,9 @@ export function FolderInvite() {
   }
 
   function openFolder(folderId: string | null) {
-    try { if (folderId) window.sessionStorage.setItem(OPEN_FOLDER_STORAGE_KEY, folderId); } catch { /* the list opens instead */ }
+    // The account that saw this invite owns the request; 즐겨찾기 drops it for any other account.
+    const userId = account.current;
+    if (folderId && userId) saveOpenFolderRequest(sessionStore, { folderId, userId });
     router.push("/#favorites");
   }
 

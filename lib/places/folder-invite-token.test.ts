@@ -5,7 +5,11 @@ import {
   clearPendingInvite,
   consumePendingInvite,
   hasPendingInvite,
+  OPEN_FOLDER_STORAGE_KEY,
+  OPEN_FOLDER_TTL_MS,
   PENDING_INVITE_KEY,
+  saveOpenFolderRequest,
+  takeOpenFolderRequest,
   PENDING_INVITE_TTL_MS,
   savePendingInvite,
   FOLDER_INVITE_BOOT_SCRIPT,
@@ -120,5 +124,50 @@ describe("boot capture before the app runtime", () => {
     const other = { ...win, location: { hash: `#t=${TOKEN}`, pathname: "/share", search: "" } };
     new Function("window", FOLDER_INVITE_BOOT_SCRIPT)(other);
     expect(other.location.hash).toBe(`#t=${TOKEN}`);
+  });
+});
+
+describe("폴더 열기 request (invite page → 즐겨찾기)", () => {
+  const FOLDER = "00000000-0000-4000-8000-0000000000f1";
+  const RIDER = "00000000-0000-4000-8000-0000000000a1";
+  const memory = () => {
+    const values = new Map<string, string>();
+    return { values, store: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } } };
+  };
+
+  it("keeps the folder and the account that saw the invite, and is taken once", () => {
+    const { values, store } = memory();
+    saveOpenFolderRequest(() => store, { folderId: FOLDER, userId: RIDER }, 1_000);
+    expect(JSON.parse(values.get(OPEN_FOLDER_STORAGE_KEY)!)).toEqual({ folderId: FOLDER, userId: RIDER, savedAt: 1_000 });
+    expect(takeOpenFolderRequest(() => store, 1_000 + OPEN_FOLDER_TTL_MS)).toEqual({ folderId: FOLDER, userId: RIDER });
+    expect(values.has(OPEN_FOLDER_STORAGE_KEY)).toBe(false);
+    expect(takeOpenFolderRequest(() => store, 1_000)).toBeNull();
+  });
+
+  it("gives nothing for a request past 10 minutes, from the future, or malformed, and removes it", () => {
+    const now = 10_000_000;
+    for (const raw of [
+      JSON.stringify({ folderId: FOLDER, userId: RIDER, savedAt: now - OPEN_FOLDER_TTL_MS - 1 }),
+      JSON.stringify({ folderId: FOLDER, userId: RIDER, savedAt: now + 1 }),
+      JSON.stringify({ folderId: FOLDER, savedAt: now }),
+      JSON.stringify({ folderId: "not-a-uuid", userId: RIDER, savedAt: now }),
+      JSON.stringify({ folderId: FOLDER, userId: RIDER, savedAt: now, extra: 1 }),
+      FOLDER,
+      "{",
+    ]) {
+      const { values, store } = memory();
+      values.set(OPEN_FOLDER_STORAGE_KEY, raw);
+      expect(takeOpenFolderRequest(() => store, now), raw).toBeNull();
+      expect(values.has(OPEN_FOLDER_STORAGE_KEY)).toBe(false);
+    }
+  });
+
+  it("stores nothing for a malformed id and survives a storage that throws", () => {
+    const { values, store } = memory();
+    saveOpenFolderRequest(() => store, { folderId: FOLDER, userId: "u" });
+    expect(values.size).toBe(0);
+    const broken = { getItem: () => { throw new Error("SecurityError"); }, setItem: () => { throw new Error("SecurityError"); }, removeItem: () => { throw new Error("SecurityError"); } };
+    expect(() => saveOpenFolderRequest(() => broken, { folderId: FOLDER, userId: RIDER })).not.toThrow();
+    expect(takeOpenFolderRequest(() => broken)).toBeNull();
   });
 });
