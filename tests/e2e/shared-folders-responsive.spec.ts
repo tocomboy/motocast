@@ -116,6 +116,27 @@ for (const viewport of [
       }
     });
 
+    test("popup count rows keep the label on one line with the number after it (G08); labeled rows keep the 100px column (G13b)", async ({ page }, testInfo) => {
+      await setProductionMarkup(page, markup.rowsPopup);
+      await textScale(page);
+      await openLastDialog(page);
+      const rows = await page.locator("dialog[open] dl > div").evaluateAll((items) => items.map((item) => {
+        const dt = item.querySelector("dt")!.getBoundingClientRect();
+        const dd = item.querySelector("dd")!.getBoundingClientRect();
+        const style = getComputedStyle(item.querySelector("dt")!);
+        const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
+        return { label: item.querySelector("dt")!.textContent, lines: Math.round(dt.height / line), dtWidth: dt.width, gap: dd.left - dt.right };
+      }));
+      expect(rows.map((row) => row.label)).toEqual(["라이딩 스팟 · 식당", "폴더 장소", "내 공유 폴더", "분류", "자주 찾는 장소"]);
+      // A labeled row may wrap inside its column with 1.3x text; a count row never splits its label.
+      for (const row of rows.slice(0, 3)) {
+        expect(row.lines, `${row.label} lines`).toBe(1);
+        expect(Math.round(row.gap), `${row.label} gap`).toBe(6);
+      }
+      for (const row of rows.slice(3)) expect(Math.round(row.dtWidth), `${row.label} label column`).toBe(100);
+      await page.screenshot({ path: testInfo.outputPath(`rowsPopup-${viewport.width}.png`) });
+    });
+
     test("member management shows a permission control per member", async ({ page }, testInfo) => {
       await setProductionMarkup(page, markup.members);
       await textScale(page);

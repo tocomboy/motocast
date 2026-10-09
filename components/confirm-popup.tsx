@@ -222,7 +222,7 @@ export function ConfirmPopup<T>({
       {pending.rows ? (
         <dl className={styles.popupRows}>
           {pending.rows.map((row) => (
-            <div key={row.label}><dt>{row.label}</dt><dd>{row.value}{row.count ? <b className={styles.countNumber}>{row.count}</b> : null}</dd></div>
+            <div key={row.label} className={!row.value && row.count ? styles.popupCountRow : undefined}><dt>{row.label}</dt><dd>{row.value}{row.count ? <b className={styles.countNumber}>{row.count}</b> : null}</dd></div>
           ))}
         </dl>
       ) : null}

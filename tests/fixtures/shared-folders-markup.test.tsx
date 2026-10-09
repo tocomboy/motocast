@@ -112,6 +112,19 @@ describe("shared folder screens production markup", () => {
       folderPopup: popup({ key: 1, ...folderPickerPopup(shared as never, snapshot.preferences.filter((row) => row.enabled).map((row) => row.folderId)) }),
       starPopup: popup({ key: 2, ...sharedStarPopup(shared as never, snapshot.places[3]) }),
       deletePopup: popup({ key: 3, ...deleteSharedPopup(shared as never, snapshot.places[3], () => undefined) }),
+      // G08 count rows (label hugs, number follows) next to G13b labeled rows (100px label column).
+      rowsPopup: popup({
+        key: 4,
+        title: "이 공유 폴더를 만들까요?",
+        rows: [
+          { label: "라이딩 스팟 · 식당", value: "", count: "1 · 0" },
+          { label: "폴더 장소", value: "", count: "1 / 1,000" },
+          { label: "내 공유 폴더", value: "", count: "3 → 4 / 20" },
+          { label: "분류", value: "식당" },
+          { label: "자주 찾는 장소", value: "추가", count: "3 → 4 / 10" },
+        ],
+        buttons: [{ label: "닫기", onClick: () => undefined }],
+      }),
       recommendResult: recommendationResult(false),
       recommendChanged: recommendationResult(true),
       // SRC04–SRC07 (#124 copy frames 462:*)
@@ -129,6 +142,7 @@ describe("shared folder screens production markup", () => {
     expect(markup.members).toContain("회원·권한 관리");
     expect(markup.folderPopup).toContain("지도와 목록에 보일 공유 폴더");
     expect(markup.deletePopup).toContain("폴더에서 이 장소를 삭제할까요?");
+    expect(markup.rowsPopup).toContain("라이딩 스팟 · 식당");
     expect(markup.recommendResult).toContain("공유 · 주말 라이더 외 1");
     expect(markup.recommendChanged).toContain("공유 폴더 설정이 바뀌었어요");
     expect(markup.recommendNone).toContain("꺼 둔 폴더를 켜면 후보가 늘 수 있어요.");

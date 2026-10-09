@@ -543,6 +543,10 @@ p.noticeCard { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--m
 .popupRows > div { display: flex; align-items: center; gap: 8px; font-size: .8125rem; }
 .popupRows dt { flex: 0 0 100px; line-height: 1.5; color: var(--mc-text-secondary); }
 .popupRows dd { flex: 1; min-width: 0; margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-weight: 500; letter-spacing: .04em; line-height: 1.4; overflow-wrap: anywhere; }
+/* A count row (G08, GI09): the label keeps one line and the number follows it, unlike the 100px label column (G13b). */
+.popupRows > .popupCountRow { gap: 6px; }
+.popupRows > .popupCountRow dt { flex: 0 0 auto; white-space: nowrap; }
+.popupRows > .popupCountRow dd { flex: 0 1 auto; }
 .popupCount { display: flex; align-items: center; gap: 8px; margin: 0; font-size: .8125rem; color: var(--mc-text-secondary); }
 .popupCount b, .popupRows b { color: var(--mc-text-primary); }
 .popupActions { display: flex; flex-direction: column; gap: 8px; }
