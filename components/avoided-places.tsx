@@ -64,7 +64,7 @@ export function AvoidedPlacesView({ startView }: { startView: { latitude: number
                   <span className={styles.avoidIcon}><LineIcon name="ban" /></span>
                   <div>
                     <strong>{row.place.name}</strong>
-                    <span>{placeAddress(row.place)}</span>
+                    {placeAddress(row.place) ? <span>{placeAddress(row.place)}</span> : null}
                     <span>{origin}</span>
                   </div>
                   <button

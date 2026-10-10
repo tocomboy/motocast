@@ -76,3 +76,15 @@ export function parsePlaceSearchResponse(value: unknown): PlaceSearchResponse {
   }
   return { places: raw.places.map(parseResult), isEnd: raw.isEnd };
 }
+
+/** Second line under a place title (Issue #137 A03): the road address, or the parcel
+ * address when the road address only repeats the title (a map point is named after its
+ * road address). `undefined` when both would repeat it or are missing; the line is hidden. */
+export function placeAddressLine(place: { roadAddress: string | null; address: string }, title: string): string | undefined {
+  const shown = title.trim();
+  for (const line of [place.roadAddress, place.address]) {
+    const text = line?.trim();
+    if (text && text !== shown) return text;
+  }
+  return undefined;
+}

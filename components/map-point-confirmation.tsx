@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useImperativeHandle, useRef, useState, type Ref } from "react";
-import { parsePlaceSearchResponse, selectedMapPointPlace, type PlaceSearchResult } from "@/lib/places/search";
+import { parsePlaceSearchResponse, placeAddressLine, selectedMapPointPlace, type PlaceSearchResult } from "@/lib/places/search";
 import { isRegionOnlyPlace } from "@/lib/places/saved";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { KakaoMapCanvas } from "@/components/kakao-map-canvas";
@@ -92,7 +92,7 @@ export function MapPointConfirmation({ pickerRef, onSelect, purpose = "waypoint"
     {savedPlace ? <button type="button" className="map-confirmation-close" aria-label="위치 선택 닫기" onClick={close}><LineIcon name="close" /></button> : null}</div>
     {preview && !savedPlace ? <KakaoMapCanvas points={[{ ...preview, label: "선택한 위치" }]} showLegend={false} selectionPreview /> : null}
     <div className="map-confirmation-body" aria-live="polite">
-      {selection.status === "ready" ? <>{purpose === "saved-place" ? <div className="map-confirmation-place"><span className="map-confirmation-eyebrow">길게 누른 위치{region ? <span className="detail-address-chip">상세 주소 없음</span> : null}</span><strong>{selection.place.name}</strong><span>{selection.place.roadAddress ?? selection.place.address}</span></div> : <p>{selection.place.roadAddress ?? selection.place.address}</p>}<p>{purpose === "saved-place" ? region ? "다음 화면에서 별명을 꼭 정해야 저장할 수 있어요. 아직 저장되지 않았어요." : "다음 화면에서 별명과 분류를 정하고 저장해요. 아직 장소나 일정에 반영되지 않았습니다." : "이 위치를 마지막 경유지로 추가합니다."}</p></>
+      {selection.status === "ready" ? <>{purpose === "saved-place" ? <div className="map-confirmation-place"><span className="map-confirmation-eyebrow">길게 누른 위치{region ? <span className="detail-address-chip">상세 주소 없음</span> : null}</span><strong>{selection.place.name}</strong>{placeAddressLine(selection.place, selection.place.name) ? <span>{placeAddressLine(selection.place, selection.place.name)}</span> : null}</div> : <p>{selection.place.roadAddress ?? selection.place.address}</p>}<p>{purpose === "saved-place" ? region ? "다음 화면에서 별명을 꼭 정해야 저장할 수 있어요. 아직 저장되지 않았어요." : "다음 화면에서 별명과 분류를 정하고 저장해요. 아직 장소나 일정에 반영되지 않았습니다." : "이 위치를 마지막 경유지로 추가합니다."}</p></>
         : <p>{status === "loading" ? purpose === "saved-place" ? "주소를 확인한 뒤 내 장소로 저장할 수 있어요. 아직 장소나 일정에 반영되지 않았습니다." : "주소를 확인한 뒤 경유지로 추가할 수 있어요. 아직 코스에는 반영되지 않았습니다."
           : status === "empty" ? purpose === "saved-place" ? "강·호수 한가운데처럼 주소 정보가 없는 곳은 등록할 수 없어요. 가까운 땅 위 지점을 골라 주세요." : "지도의 다른 지점을 선택하거나 장소 이름으로 검색해 주세요. 코스는 변경되지 않았습니다."
             : "주소 조회에 실패했습니다. 다시 시도하거나 지도의 다른 지점을 선택해 주세요. 코스는 변경되지 않았습니다."}</p>}

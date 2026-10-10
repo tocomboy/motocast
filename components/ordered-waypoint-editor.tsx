@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { PlaceSearchField, type PlaceFavoritesControls } from "@/components/place-search-field";
 import { SavedPlacesManager } from "@/components/saved-places-manager";
-import type { PlaceSearchResult } from "@/lib/places/search";
+import { placeAddressLine, type PlaceSearchResult } from "@/lib/places/search";
 import {
   defaultDwellMinutes,
   dwellError,
@@ -233,7 +233,7 @@ export function OrderedWaypointEditor({
       <dialog ref={settingsDialogRef} className="waypoint-settings-dialog" aria-label="경유지 설정">
         <div className="waypoint-settings-shell">
           <header><h2>{settingMode === "add" ? "경유지 추가" : "경유지 설정"}</h2><button type="button" onClick={() => settingsDialogRef.current?.close()} aria-label="경유지 설정 닫기"><LineIcon name="close" /></button></header>
-          {settingMode === "edit" && settingId ? <div className="waypoint-setting-place"><strong>{waypoints.find((item) => item.id === settingId)?.place?.name ?? "장소 미선택"}</strong><span>{waypoints.find((item) => item.id === settingId)?.place?.roadAddress ?? waypoints.find((item) => item.id === settingId)?.place?.address ?? "장소를 선택해 주세요."}</span><button type="button" onClick={() => { const id = settingId; settingsDialogRef.current?.close(); focusWaypoint(id, ".place-picker-trigger", true); }}>장소 주소 변경</button></div> : null}
+          {settingMode === "edit" && settingId ? <div className="waypoint-setting-place"><strong>{waypoints.find((item) => item.id === settingId)?.place?.name ?? "장소 미선택"}</strong>{(() => { const place = waypoints.find((item) => item.id === settingId)?.place; const line = place ? placeAddressLine(place, place.name) : "장소를 선택해 주세요."; return line ? <span>{line}</span> : null; })()}<button type="button" onClick={() => { const id = settingId; settingsDialogRef.current?.close(); focusWaypoint(id, ".place-picker-trigger", true); }}>장소 주소 변경</button></div> : null}
           <fieldset><legend>경유 종류</legend><div className="waypoint-role-pills">{waypointRoleOptions.map((option) => <button type="button" key={option.value} aria-pressed={settingRole === option.value} onClick={() => { if (option.value !== settingRole) setSettingDwell(defaultDwellMinutes(option.value)); setSettingRole(option.value); setSettingError(""); }}>{settingRole === option.value ? <LineIcon name="check" /> : null}{option.value === "waypoint" ? "통과" : option.label}</button>)}</div></fieldset>
           {isMealRole(settingRole) ? <p className="meal-dwell-note">{MEAL_DWELL_NOTE}</p> : settingRole === "rest" ? <div className="dwell-stepper"><span>머무는 시간</span><button type="button" aria-label="머무는 시간 10분 줄이기" onClick={() => setSettingDwell((value) => Math.max(1, value - 10))}><LineIcon name="minus" /></button><strong>{settingDwell}분</strong><button type="button" aria-label="머무는 시간 10분 늘리기" onClick={() => setSettingDwell((value) => Math.min(1440, value + 10))}><LineIcon name="plus" /></button></div> : null}
           {settingMode === "add" ? <button ref={savedEntryRef} className="waypoint-saved-entry" type="button" disabled={!connected || disabled || !favorites} onClick={openSavedPlaces}>즐겨찾기에서 선택</button> : null}

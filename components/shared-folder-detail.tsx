@@ -262,7 +262,7 @@ export function SharedFolderDetail({
                     <button type="button" onClick={() => setSelectedId(row.id)} aria-label={`${sharedName(row)} 상세 보기`}>
                       <span className={styles.placeKind}>{kindLabel(row.kind)} · {row.province ?? "지역 미확인"}{avoidedFor(snapshot.avoided, row.place) ? <span className={styles.chip}>기피</span> : null}</span>
                       <strong>{sharedName(row)}</strong>
-                      <span>{cardLine(row)}</span>
+                      {cardLine(row) ? <span>{cardLine(row)}</span> : null}
                       <span>{lastEditLine(row, me)}</span>
                     </button>
                     <button type="button" className={styles.starIconButton} aria-label={row.starred ? "자주 찾는 장소에서 빼기" : "자주 찾는 장소에 추가"} aria-pressed={row.starred} disabled={blocked} onClick={() => open(sharedStarPopup(shared, row))}>
