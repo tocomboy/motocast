@@ -288,6 +288,9 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   const [placeSelectionRevision, setPlaceSelectionRevision] = useState(0);
   // Issue #137 A03/A04: shown while the endpoint still holds the place current location found.
   const [locationApplied, setLocationApplied] = useState<{ key: keyof PlannerPlaces; kakaoPlaceId: string } | null>(null);
+  // The editor form stays mounted (hidden) behind the summary, so leaving the editor
+  // remounts the origin/destination pickers to cancel a pending current-location request.
+  const [editorVisit, setEditorVisit] = useState(0);
   const [favoriteTarget, setFavoriteTarget] = useState<"origin" | "destination" | string | null>("origin");
   const [recommendationOpen, setRecommendationOpen] = useState(false);
   // SRC04 "기피 장소 보기" opens 즐겨찾기 on its 기피 장소 tab; any other navigation starts at 장소.
@@ -374,6 +377,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       navigationGenerationRef.current += 1;
       setRecommendationOpen(false);
       setLocationApplied(null);
+      if (next !== "editor") setEditorVisit((current) => current + 1);
       setView(next);
       resetViewScroll();
       window.setTimeout(() => { if (mountedRef.current && typeof document !== "undefined") document.querySelector<HTMLElement>(`[data-view-title="${next}"]`)?.focus({ preventScroll: true }); }, 0);
@@ -489,6 +493,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   function navigate(next: PlannerView, replace = false) {
     setMapFailure(null);
     setLocationApplied(null);
+    if (next !== "editor") setEditorVisit((current) => current + 1);
     setFavoritesSection("places");
     if (next !== "summary") {
       setRecommendationOpen(false);
@@ -1095,7 +1100,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
             </section>
             <fieldset className="planner-fields" disabled={calculating} aria-busy={calculating}>
             <section className="planner-stop is-origin">
-              {connected ? <PlaceSearchField key={`origin-${placeSelectionRevision}`} label="출발" accessibleLabel="출발지" placeholder="예: 팔당역" required selected={places.origin} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("origin")} onOpen={reloadPickerStars} onSelect={(place) => selectEndpoint("origin", place)} onCurrentLocationSelect={(place) => applyCurrentLocation("origin", place)} /> : <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>}
+              {connected ? <PlaceSearchField key={`origin-${placeSelectionRevision}-${editorVisit}`} label="출발" accessibleLabel="출발지" placeholder="예: 팔당역" required selected={places.origin} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("origin")} onOpen={reloadPickerStars} onSelect={(place) => selectEndpoint("origin", place)} onCurrentLocationSelect={(place) => applyCurrentLocation("origin", place)} /> : <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>}
             </section>
             <section className="planner-waypoint-stops">
               <OrderedWaypointEditor
@@ -1114,7 +1119,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
               <p className="sr-only" role="status" aria-live="polite">{waypointStatus}</p>
             </section>
             <section className="planner-stop is-destination">
-              {connected ? <PlaceSearchField key={`destination-${placeSelectionRevision}`} label="도착" accessibleLabel="도착지" placeholder="예: 양평역" required selected={places.destination} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("destination")} onOpen={reloadPickerStars} onSelect={(place) => selectEndpoint("destination", place)} onCurrentLocationSelect={(place) => applyCurrentLocation("destination", place)} /> : <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>}
+              {connected ? <PlaceSearchField key={`destination-${placeSelectionRevision}-${editorVisit}`} label="도착" accessibleLabel="도착지" placeholder="예: 양평역" required selected={places.destination} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("destination")} onOpen={reloadPickerStars} onSelect={(place) => selectEndpoint("destination", place)} onCurrentLocationSelect={(place) => applyCurrentLocation("destination", place)} /> : <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>}
             </section>
             <button className="route-reset-button" type="button" disabled={calculating} onClick={startNewRoute}>경로 초기화</button>
             </fieldset>

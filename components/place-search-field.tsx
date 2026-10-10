@@ -97,7 +97,9 @@ export function PlaceSearchField({ label, accessibleLabel, placeholder, required
 
   function back() {
     if (locating) {
+      // Like the card's 취소: stay in the picker with focus on the entry button.
       resetLocation();
+      window.setTimeout(() => dialogRef.current?.querySelector<HTMLElement>(".current-location-entry")?.focus(), 0);
       return;
     }
     invalidateSearch();

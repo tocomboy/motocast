@@ -24,7 +24,8 @@ const favorites: PlaceFavoritesControls = {
 type Pending = { success: PositionCallback; failure: PositionErrorCallback };
 let pending: Pending[] = [];
 const getCurrentPosition = vi.fn((success: PositionCallback, failure: PositionErrorCallback, options?: PositionOptions) => { void options; pending.push({ success, failure }); });
-const dialog = { open: false, showModal: vi.fn(() => { dialog.open = true; }), close: vi.fn(() => { dialog.open = false; }), focus: vi.fn() };
+const entryFocus = vi.fn();
+const dialog = { open: false, showModal: vi.fn(() => { dialog.open = true; }), close: vi.fn(() => { dialog.open = false; }), focus: vi.fn(), querySelector: vi.fn((selector: string) => selector === ".current-location-entry" ? { focus: entryFocus } : null) };
 let renderer: ReactTestRenderer;
 
 beforeEach(() => {
@@ -34,6 +35,8 @@ beforeEach(() => {
   dialog.open = false;
   dialog.showModal.mockClear();
   dialog.close.mockClear();
+  dialog.querySelector.mockClear();
+  entryFocus.mockClear();
   vi.stubGlobal("navigator", { geolocation: { getCurrentPosition } });
   vi.stubGlobal("window", { setTimeout: () => 0 });
 });
@@ -109,7 +112,13 @@ describe("PlaceSearchField current location (Issue #137)", () => {
     expect(renderer.root.findByType("input").props.disabled).toBe(true);
     expect(buttonNamed("장소 검색")!.props.disabled).toBe(true);
     expect(buttons().find((node) => textOf(node).includes("집"))!.props.disabled).toBe(true);
+    // Back/Escape cancels like 취소 and returns focus to the entry button.
+    const timers: Array<() => void> = [];
+    vi.stubGlobal("window", { setTimeout: (callback: () => void) => { timers.push(callback); return 0; } });
     await press("출발지 선택에서 뒤로");
+    await act(async () => { for (const callback of timers.splice(0)) callback(); });
+    expect(dialog.querySelector).toHaveBeenCalledWith(".current-location-entry");
+    expect(entryFocus).toHaveBeenCalledOnce();
     expect(dialog.close).not.toHaveBeenCalled();
     expect(buttonNamed("현재 위치를 출발지로 설정")).toBeDefined();
     expect(renderer.root.findByType("input").props.disabled).toBe(false);

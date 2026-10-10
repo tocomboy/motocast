@@ -228,7 +228,7 @@ test("while locating, search and frequent places are locked and cancel or back d
       await expect(card).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(dialog).toBeVisible();
-      await expect(entry).toBeVisible();
+      await expect(entry).toBeFocused();
       await deliverHeldFixes();
       await expect(dialog.locator(".current-location-card")).toHaveCount(0);
     }
