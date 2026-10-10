@@ -38,6 +38,24 @@ async function openPicker(page: Page, editor: Locator, role: "출발지" | "도�
   return dialog;
 }
 
+// PC 489:13152 / 489:13232: the row sits 20 under the search box and 20 above the columns,
+// and the dialog keeps its 780 height so the columns shrink instead of the controls leaving.
+async function pcGeometry(dialog: Locator) {
+  return dialog.evaluate((element) => {
+    const box = (selector: string) => element.querySelector(selector)!.getBoundingClientRect();
+    const search = box(".place-picker-search input"), row = box(".current-location"), favorites = box(".place-favorites");
+    const results = box(".place-picker-results"), clear = box(".current-place-clear"), frame = element.getBoundingClientRect();
+    return {
+      height: Math.round(frame.height),
+      searchGap: Math.round(row.top - search.bottom),
+      columnsGap: Math.round(favorites.top - row.bottom),
+      fullWidth: Math.abs(row.width - search.width) <= 1,
+      columnsAboveClear: favorites.bottom <= clear.top && results.bottom <= clear.top,
+      clearInside: clear.bottom <= frame.bottom,
+    };
+  });
+}
+
 async function expectContained(dialog: Locator) {
   expect(await dialog.evaluate((element) => {
     const card = element.querySelector<HTMLElement>(".current-location")!;
@@ -65,6 +83,7 @@ test("current location sits under the search box at every width and a denied per
     expect(favorites!.y).toBeGreaterThanOrEqual(button!.y + button!.height);
     expect(button!.height).toBeGreaterThanOrEqual(56);
     await expectContained(dialog);
+    if (width === 1440) expect(await pcGeometry(dialog)).toEqual({ height: 780, searchGap: 20, columnsGap: 20, fullWidth: true, columnsAboveClear: true, clearInside: true });
     if (width === 390 || width === 1440) await page.screenshot({ path: testInfo.outputPath(`a01-entry-${width}.png`) });
 
     // No permission was granted to this context, so the browser denies it.
@@ -182,7 +201,15 @@ test("while locating, search and frequent places are locked and cancel or back d
     await expect(card).toContainText("현재 위치현재 위치를 확인하고 있어요");
     await expect(card).toContainText("출발지는 아직 바뀌지 않았어요.");
     await expect(card.getByRole("progressbar")).toBeVisible();
-    await expect(card.getByRole("button", { name: "취소", exact: true })).toBeFocused();
+    const cancel = card.getByRole("button", { name: "취소", exact: true });
+    await expect(cancel).toBeFocused();
+    // PC: a 160-wide button at the start of the card; mobile A02: the full card width.
+    const [cancelBox, cardBox] = await Promise.all([cancel.boundingBox(), card.boundingBox()]);
+    if (width === 1440) {
+      expect(cancelBox!.width).toBeCloseTo(160, 0);
+      expect(cancelBox!.x - cardBox!.x).toBeCloseTo(19, 0);
+      expect(await pcGeometry(dialog)).toMatchObject({ height: 780, searchGap: 20, columnsGap: 20, columnsAboveClear: true, clearInside: true });
+    } else expect(cancelBox!.width).toBeCloseTo(cardBox!.width - 38, 0);
     await expect(dialog.getByLabel("출발지 검색어")).toBeDisabled();
     await expect(dialog.locator(".place-favorites .place-saved-all")).toBeDisabled();
     expect(await dialog.locator(".place-favorites").evaluate((element) => getComputedStyle(element).opacity)).toBe("0.4");
