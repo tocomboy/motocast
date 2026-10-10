@@ -46,6 +46,8 @@ Any `NEEDS_INTERVIEW` decision blocks completion of its affected slice. It does 
 
 ## 3. Writer verification
 
+**공통 정책 예외 — 실행 위치** (`dev-environment:docs/policy/agents/checkpoints.md`의 "Linux 깨끗한 checkout에서 검증"을 대체, 사용자 결정 Issue #139): 웹 baseline(lint, typecheck, Deno check, vitest, `next build`, `npm run test:e2e`)은 구현자 검증과 V3 실행 모두 Windows의 작업 worktree에서 돌리고, 기준 비교도 같은 Windows 환경에서 한다. WSL/Linux는 DB 검증(migration 하네스, pgTAP, 로컬 Supabase)에만 쓰며 공통 무거운 작업 잠금과 MemoryHigh 규칙을 그대로 따른다. Linux·LF 고유 차이는 PR CI(ubuntu)가 확인하므로 CI 결과 없이 병합하지 않는다. 이유: MOTOCAST 웹 테스트는 Windows와 CI에서 같은 결과를 내고, WSL 실행은 잠금 대기와 메모리 제한으로 오래 걸린다.
+
 After each logical implementation unit:
 
 1. Search the impact surface before editing and re-read changed files afterward.
