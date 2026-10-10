@@ -24,6 +24,8 @@ const paths = {
   person: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20a8 8 0 0 1 16 0",
   ban: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM5.6 5.6l12.8 12.8",
   copy: "M9 9h10v10H9zM5 15V5h10",
+  // v2/Icon/crosshair (367:10944)
+  crosshair: "M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0zM12 1v4M12 19v4M1 12h4M19 12h4",
 } as const;
 
 export function LineIcon({ name, className = "", ...props }: SVGProps<SVGSVGElement> & { name: keyof typeof paths }) {

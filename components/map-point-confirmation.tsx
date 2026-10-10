@@ -11,13 +11,18 @@ type Point = { latitude: number; longitude: number };
 
 /** Resolves one selected map point. `regionFallback` opts in to a region-only place
  * (`:region`, no detail address) when the point has no address; only saved-place
- * registration asks for it. Errors are thrown, never reported as an empty result. */
+ * registration and the current-location action ask for it. Errors are thrown, never
+ * reported as an empty result; the exhausted daily lookup budget (HTTP 429) is
+ * `DAILY_LIMIT`, every other failure `UNAVAILABLE`. */
 export async function resolveMapPoint(point: Point, regionFallback: boolean): Promise<PlaceSearchResult | null> {
   const supabase = getBrowserSupabase();
   if (!supabase) throw new Error("UNAVAILABLE");
   const body = { mode: "coordinate", ...point, ...(regionFallback ? { fallback: "region" } : {}) };
   const { data, error } = await supabase.functions.invoke("search-places", { body });
-  if (error) throw new Error("UNAVAILABLE");
+  if (error) {
+    const context = (error as { context?: unknown }).context;
+    throw new Error(context instanceof Response && context.status === 429 ? "DAILY_LIMIT" : "UNAVAILABLE");
+  }
   return selectedMapPointPlace(parsePlaceSearchResponse(data), point, regionFallback);
 }
 export type MapPlacePickerHandle = { open: (point: Point) => void };
