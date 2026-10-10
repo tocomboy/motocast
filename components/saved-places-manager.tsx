@@ -33,7 +33,7 @@ import {
   type SavedPlaceEntry,
   type SavedPlaceKind,
 } from "@/lib/places/saved";
-import type { PlaceSearchResult } from "@/lib/places/search";
+import { placeAddressLine, type PlaceSearchResult } from "@/lib/places/search";
 import { mergePlaces, sourceLabel } from "@/lib/places/place-merge";
 import type { SharedPlace } from "@/lib/places/shared-folders";
 import { takeOpenFolderRequest, type OpenFolderRequest } from "@/lib/places/folder-invite-token";
@@ -60,13 +60,13 @@ type WaypointCandidate = { name: string; placeName: string; kind: SavedPlaceKind
 
 
 const kindLabel = (kind: SavedPlaceKind) => (kind === "restaurant" ? "식당" : "라이딩 스팟");
-/** Address line; a region-only map point says it has no detail address. */
-const placeLine = (p: { alias: string | null; place: PlaceSearchResult }) =>
-  isRegionOnlyPlace(p.place)
-    ? `${p.place.name} · 상세 주소 없음`
-    : p.alias
-      ? `${p.place.name} · ${p.place.roadAddress ?? p.place.address}`
-      : p.place.roadAddress ?? p.place.address;
+/** Address line; a region-only map point says it has no detail address. An address that
+ * only repeats the place name is left out (`undefined` hides the line). */
+const placeLine = (p: { alias: string | null; place: PlaceSearchResult }) => {
+  if (isRegionOnlyPlace(p.place)) return `${p.place.name} · 상세 주소 없음`;
+  const address = placeAddressLine(p.place, p.place.name);
+  return p.alias ? (address ? `${p.place.name} · ${address}` : p.place.name) : address;
+};
 const itemName = (item: Item) => item.row.alias ?? item.row.place.name;
 const starLabel = (starred: boolean) => (starred ? "자주 찾는 장소에서 빼기" : "자주 찾는 장소에 추가");
 
@@ -453,7 +453,7 @@ function SavedPlacesManagerContent({
       ...((base.alias ?? "") !== alias ? [{ label: "별명", before: base.alias ?? `${place.name} (없음)`, after: alias || `${place.name} (없음)` }] : []),
       ...(base.kind !== kind ? [{ label: "분류", before: kindLabel(base.kind), after: kindLabel(kind) }] : []),
     ];
-    const card = { line: `원래 이름 · ${place.name}`, line2: region ? `상세 주소 없음 · ${place.address}` : place.roadAddress ?? place.address };
+    const card = { line: `원래 이름 · ${place.name}`, line2: region ? `상세 주소 없음 · ${place.address}` : placeAddressLine(place, place.name) };
     if (!changes.length) {
       // Another device already made the same change; nothing is left to send.
       open({
@@ -517,7 +517,7 @@ function SavedPlacesManagerContent({
     ];
     open({
       title: "이 장소를 저장할까요?",
-      card: { eyebrow: kindLabel(kind), region, name: name || place.name, line: name ? `원래 이름 · ${place.name}` : place.roadAddress ?? place.address },
+      card: { eyebrow: kindLabel(kind), region, name: name || place.name, line: name ? `원래 이름 · ${place.name}` : placeAddressLine(place, place.name) },
       rows,
       note: retryNote ?? (!starred && full ? "자주 찾는 장소가 가득 차 별표 없이 저장해요." : "원래 위치는 그대로 저장돼요."),
       confirm: {
@@ -532,7 +532,7 @@ function SavedPlacesManagerContent({
             // The server returns the place saved before without changing it.
             open({
               title: "이미 저장한 장소예요",
-              card: { eyebrow: kindLabel(kind), region, name: place.name, line: place.roadAddress ?? place.address },
+              card: { eyebrow: kindLabel(kind), region, name: place.name, line: placeAddressLine(place, place.name) },
               note: "같은 장소가 이미 내 장소에 있어요. 기존 정보는 바뀌지 않았어요.",
               buttons: [
                 { label: "기존 장소 열기", primary: true, onClick: () => { setPending(null); setForm(null); selectPlace(write.id ?? null); } },
@@ -775,7 +775,7 @@ function SavedPlacesManagerContent({
               <button type="button" aria-label={`${itemName(preview)} 상세 보기`} onClick={() => { setPreviewId(null); selectItem(preview); }}>
                 <span className={styles.placeKind}>{kindLabel(preview.row.kind)} · {preview.row.province ?? "지역 미확인"}{preview.starred ? " · 자주 찾는 장소" : ""}</span>
                 <strong>{itemName(preview)}</strong>
-                <span>{placeLine(preview.row)}</span>
+                {placeLine(preview.row) ? <span>{placeLine(preview.row)}</span> : null}
                 {showSource ? sourceLine(preview) : null}
               </button>
               <StarIconButton starred={preview.starred} disabled={preview.source === "saved" ? blocked : shared.busy} onClick={() => confirmItemStar(preview)} />
@@ -797,7 +797,7 @@ function SavedPlacesManagerContent({
               <div className={`${styles.placeSummary} ${styles.detailSummary}`}>
                 <span className={styles.placeKind}>{kindLabel(selected.kind)} · {selected.province ?? "지역 미확인"}{selected.starPosition !== null ? " · 자주 찾는 장소" : ""}</span>
                 <strong>{savedPlaceName(selected)}</strong>
-                <span>{placeLine(selected)}</span>
+                {placeLine(selected) ? <span>{placeLine(selected)}</span> : null}
                 <StarIconButton starred={selected.starPosition !== null} disabled={blocked} onClick={() => confirm(selected, "star")} />
               </div>
               {failure}
@@ -858,7 +858,7 @@ function SavedPlacesManagerContent({
                   >
                     <span className={styles.placeKind}>{kindLabel(p.row.kind)} · {p.row.province ?? "지역 미확인"}{avoidedOf(p.row.place) ? <span className={styles.chip}>기피</span> : null}</span>
                     <strong>{itemName(p)}</strong>
-                    <span>{placeLine(p.row)}</span>
+                    {placeLine(p.row) ? <span>{placeLine(p.row)}</span> : null}
                     {showSource ? sourceLine(p) : null}
                   </button>
                   <StarIconButton starred={p.starred} disabled={p.source === "saved" ? blocked : shared.busy} onClick={() => confirmItemStar(p)} />
@@ -895,7 +895,7 @@ function SavedPlacesManagerContent({
                 <button type="button" aria-label={`${itemName(p)} 상세 보기`} onClick={() => { setClusterIds(null); selectItem(p); }}>
                   <span className={styles.placeKind}>{kindLabel(p.row.kind)} · {p.row.province ?? "지역 미확인"}</span>
                   <strong>{itemName(p)}</strong>
-                  <span>{placeLine(p.row)}</span>
+                  {placeLine(p.row) ? <span>{placeLine(p.row)}</span> : null}
                   {showSource ? sourceLine(p) : null}
                 </button>
               </li>
@@ -910,7 +910,7 @@ function SavedPlacesManagerContent({
           <div className={`${styles.placeSummary} ${styles.detailSummary}`}>
             <span className={styles.placeKind}>{kindLabel(selected.kind)} · {selected.province ?? "지역 미확인"}{selected.starPosition !== null ? " · 자주 찾는 장소" : ""}</span>
             <strong>{savedPlaceName(selected)}</strong>
-            <span>{placeLine(selected)}</span>
+            {placeLine(selected) ? <span>{placeLine(selected)}</span> : null}
             <StarIconButton starred={selected.starPosition !== null} disabled={blocked} onClick={() => confirm(selected, "star")} />
           </div>
           <div className={styles.detailMap}><KakaoMapCanvas points={[]} allowEmptyMap savedPins={[{ id: selected.id, label: savedPlaceName(selected), kind: selected.kind, starred: selected.starPosition !== null, avoided: Boolean(avoidedOf(selected.place)), latitude: selected.place.latitude, longitude: selected.place.longitude }]} selectedSavedPinId={selected.id} showLegend={false} allowFullscreen={false} /></div>

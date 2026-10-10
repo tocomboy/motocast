@@ -11,7 +11,7 @@ import {
   type SavedPlace,
   type SavedPlaceKind,
 } from "@/lib/places/saved";
-import { parsePlaceSearchResponse, type PlaceSearchResult } from "@/lib/places/search";
+import { parsePlaceSearchResponse, placeAddressLine, type PlaceSearchResult } from "@/lib/places/search";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import styles from "./saved-places-manager.module.css";
 
@@ -39,7 +39,8 @@ export type RegistrationVariant =
 const ALIAS_LIMIT = 80;
 const PICKER_LEVEL = 4;
 const kindLabel = (kind: SavedPlaceKind) => (kind === "restaurant" ? "식당" : "라이딩 스팟");
-const address = (place: PlaceSearchResult) => place.roadAddress ?? place.address;
+/** Line under the place name; left out when it would only repeat the name. */
+const address = (place: PlaceSearchResult) => placeAddressLine(place, place.name);
 
 /**
  * Saved-place registration (Figma FP10–15 372:11029–11289, FP20–27 373:11122–11512,
@@ -257,7 +258,7 @@ function SearchStep({
                       <span className={styles.resultNumber} aria-hidden="true">{index + 1}</span>
                       <span className={styles.resultText}>
                         <strong><span className={styles.srOnly}>{index + 1}번 </span>{p.name}</strong>
-                        <span>{p.category ? <span className={styles.resultCategory}>{p.category} · </span> : null}{address(p)}</span>
+                        {p.category || address(p) ? <span>{p.category ? <span className={styles.resultCategory}>{p.category}{address(p) ? " · " : null}</span> : null}{address(p)}</span> : null}
                         {/* FP12 puts the chip under the address; FPW02 puts it at the row end. */}
                         {active ? <span className={`${styles.chip} ${styles.mobileOnly}`}>지도에 표시 중</span> : null}
                       </span>
@@ -383,7 +384,7 @@ function MapStep({ startView, onChoose, chooseLabel, nextLine }: {
                 <div className={styles.placeSummary}>
                   <span className={styles.placeKind}>{region ? <>선택한 위치<span className={styles.chip}>상세 주소 없음</span></> : "선택한 위치 · 주소 확인됨"}</span>
                   <strong>{lookup.place.name}</strong>
-                  <span>{region ? `${lookup.place.address} (지역만 확인)` : address(lookup.place)}</span>
+                  {region || address(lookup.place) ? <span>{region ? `${lookup.place.address} (지역만 확인)` : address(lookup.place)}</span> : null}
                   {region ? <span className={styles.coordinateLine}>좌표 <b className={styles.coordinate}>{lookup.place.latitude.toFixed(4)}, {lookup.place.longitude.toFixed(4)}</b></span> : null}
                 </div>
                 {nextLine ? <p className={styles.helper}>{nextLine}</p> : region
@@ -440,7 +441,7 @@ function FormStep({ place, existing, stars, blocked, variant, onSave }: {
             {region ? <span className={styles.chip}>상세 주소 없음</span> : null}
           </span>
           <strong>{place.name}</strong>
-          <span>{address(place)}</span>
+          {address(place) ? <span>{address(place)}</span> : null}
         </div>
         {variant.kind === "folder-add" ? <p className={styles.helper}>저장 위치 · {variant.folderName} (회원 {variant.members}명에게 보여요)</p> : null}
         <div role="group" aria-labelledby={`${aliasId}-kind`} className={styles.choiceGroup}>

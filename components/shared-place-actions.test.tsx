@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { parseAvoidedPlace, parseFolderMember, parseFolderPreference, parsePlaceFolder, parseSharedPlace, parseStarEntries } from "@/lib/places/shared-folders";
 import { ME, sampleTables, sharedRow, F1 } from "@/tests/fixtures/shared-folders";
 import type { SharedSnapshot, SharedWrite } from "./shared-folders-provider";
-import { avoidPopup, deleteSharedPopup, editSharedPopup } from "./shared-place-actions";
+import { avoidPopup, cardLine, deleteSharedPopup, editSharedPopup, placeAddress } from "./shared-place-actions";
 
 vi.mock("@/lib/supabase/browser", () => ({ getBrowserSupabase: () => null }));
 
@@ -82,5 +82,20 @@ describe("shared place confirmations", () => {
     const regionCard = avoidPopup(shared, region, { registration: true }).card!;
     expect(regionCard.eyebrow).toBe("지도 지점");
     expect(regionCard.region).toBe(true);
+  });
+});
+
+describe("map point address lines (Issue #137 A03)", () => {
+  const mapPoint = { kakaoPlaceId: "map:37.5000000:127.0000000", verificationToken: "a".repeat(43), name: "경기 남양주시 와부읍 덕소로 150", address: "경기 남양주시 와부읍 덕소리 123-4", roadAddress: "경기 남양주시 와부읍 덕소로 150", category: "", phone: null, placeUrl: null, latitude: 37.5, longitude: 127 };
+  const noParcel = { ...mapPoint, roadAddress: null, name: "경기 남양주시 와부읍 덕소리 123-4" };
+
+  it("never repeats the place name as its address line", () => {
+    expect(placeAddress(mapPoint)).toBe("경기 남양주시 와부읍 덕소리 123-4");
+    expect(placeAddress(noParcel)).toBeUndefined();
+    expect(placeAddress(mapPoint, "집")).toBe("경기 남양주시 와부읍 덕소로 150");
+    expect(cardLine({ alias: null, place: mapPoint })).toBe("경기 남양주시 와부읍 덕소리 123-4");
+    expect(cardLine({ alias: "집", place: mapPoint })).toBe("경기 남양주시 와부읍 덕소로 150 · 경기 남양주시 와부읍 덕소리 123-4");
+    expect(cardLine({ alias: "집", place: noParcel })).toBe("경기 남양주시 와부읍 덕소리 123-4");
+    expect(cardLine({ alias: null, place: noParcel })).toBeUndefined();
   });
 });

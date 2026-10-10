@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parsePlaceSearchResponse, selectedMapPointPlace } from "./search";
+import { parsePlaceSearchResponse, placeAddressLine, selectedMapPointPlace } from "./search";
 import contract from "../../contracts/android/place-search/fixtures.json";
 
 const place = {
@@ -76,5 +76,28 @@ describe("shared Android coordinate client checks", () => {
     const response = parsePlaceSearchResponse({ places: [place], isEnd: true });
     if (accepted) expect(selectedMapPointPlace(response, point, regionFallback)).toEqual(response.places[0]);
     else expect(() => selectedMapPointPlace(response, point, regionFallback)).toThrow("WRONG_SELECTED_POINT");
+  });
+});
+
+describe("placeAddressLine", () => {
+  it("shows the road address under a different title", () => {
+    expect(placeAddressLine({ roadAddress: "경기 남양주시 경강로 2227", address: "경기 남양주시 와부읍 팔당리" }, "팔당역")).toBe("경기 남양주시 경강로 2227");
+  });
+
+  it("falls back to the parcel address when the road address repeats the title (map point, A03)", () => {
+    expect(placeAddressLine({ roadAddress: "경기 남양주시 와부읍 덕소로 150", address: "경기 남양주시 와부읍 덕소리 123-4" }, "경기 남양주시 와부읍 덕소로 150"))
+      .toBe("경기 남양주시 와부읍 덕소리 123-4");
+  });
+
+  it.each([
+    ["both repeat the title", { roadAddress: "서울 중구 태평로1가 31", address: "서울 중구 태평로1가 31" }],
+    ["no road address and the parcel address repeats it", { roadAddress: null, address: "서울 중구 태평로1가 31" }],
+    ["an empty stored road address and the parcel address repeats it", { roadAddress: "", address: "서울 중구 태평로1가 31" }],
+  ])("hides the line when %s", (_, place) => {
+    expect(placeAddressLine(place, " 서울 중구 태평로1가 31 ")).toBeUndefined();
+  });
+
+  it("uses the parcel address when there is no road address", () => {
+    expect(placeAddressLine({ roadAddress: null, address: "경기 양평군 양서면 양수리" }, "두물머리")).toBe("경기 양평군 양서면 양수리");
   });
 });

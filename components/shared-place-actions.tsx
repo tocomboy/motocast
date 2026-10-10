@@ -5,7 +5,7 @@ import styles from "./saved-places-manager.module.css";
 import { ConfirmPopup, type Pending, type PopupButton } from "./confirm-popup";
 import { sharedPlacePayload, useSharedFolders, type Refusal, type SharedSnapshot, type SharedWrite } from "./shared-folders-provider";
 import { FREQUENT_PLACE_LIMIT, isRegionOnlyPlace, type SavedPlaceKind } from "@/lib/places/saved";
-import type { PlaceSearchResult } from "@/lib/places/search";
+import { placeAddressLine, type PlaceSearchResult } from "@/lib/places/search";
 import { matchesAvoided } from "@/lib/places/place-merge";
 import {
   AVOIDED_PLACE_LIMIT,
@@ -19,12 +19,16 @@ import { dateTimeLabel } from "@/lib/places/shared-folder-format";
 
 export type SharedPending = Omit<Pending<SharedSnapshot>, "key">;
 export const kindLabel = (kind: SavedPlaceKind) => (kind === "restaurant" ? "식당" : "라이딩 스팟");
-export const placeAddress = (place: PlaceSearchResult) =>
-  isRegionOnlyPlace(place) ? `${place.name} · 상세 주소 없음` : place.roadAddress ?? place.address;
+/** Line under a title; an address that only repeats `title` is left out (`undefined`). */
+export const placeAddress = (place: PlaceSearchResult, title = place.name) =>
+  isRegionOnlyPlace(place) ? `${place.name} · 상세 주소 없음` : placeAddressLine(place, title);
 export const sharedName = (row: { alias: string | null; place: PlaceSearchResult }) => row.alias ?? row.place.name;
 /** Address line of a list card; an alias shows the original name first (FP01). */
-export const cardLine = (row: { alias: string | null; place: PlaceSearchResult }) =>
-  isRegionOnlyPlace(row.place) ? `${row.place.name} · 상세 주소 없음` : row.alias ? `${row.place.name} · ${row.place.roadAddress ?? row.place.address}` : row.place.roadAddress ?? row.place.address;
+export const cardLine = (row: { alias: string | null; place: PlaceSearchResult }) => {
+  if (isRegionOnlyPlace(row.place)) return `${row.place.name} · 상세 주소 없음`;
+  const address = placeAddressLine(row.place, row.place.name);
+  return row.alias ? (address ? `${row.place.name} · ${address}` : row.place.name) : address;
+};
 export const folderNameOf = (snapshot: SharedSnapshot, folderId: string) => snapshot.folders.find((row) => row.id === folderId)?.name ?? "공유 폴더";
 const avoidedInputs = (avoided: readonly AvoidedPlace[]) =>
   avoided.map((row) => ({ id: row.id, kakaoPlaceId: row.place.kakaoPlaceId, latitude: row.place.latitude, longitude: row.place.longitude }));
@@ -41,7 +45,7 @@ const single = (data: unknown) => {
 const sharedCard = (row: SharedPlace, folder: string) => ({
   eyebrow: `${kindLabel(row.kind)} · ${row.province ?? "지역 미확인"}`,
   name: sharedName(row),
-  line: placeAddress(row.place),
+  line: placeAddress(row.place, sharedName(row)),
   source: { icon: "folder" as const, text: `공유 · ${folder}` },
 });
 
@@ -137,7 +141,7 @@ export function avoidPopup(
       eyebrow: context.registration ? (isRegionOnlyPlace(place) || place.kakaoPlaceId.startsWith("map:") ? "지도 지점" : "검색 결과") : `${kindLabel(context.kind ?? "riding_spot")} · ${context.province ?? "지역 미확인"}`,
       region: isRegionOnlyPlace(place),
       name: context.name ?? place.name,
-      line: placeAddress(place),
+      line: placeAddress(place, context.name ?? place.name),
       source: context.source,
     },
     count: { label: "기피 장소", value: full ? `${count} / ${AVOIDED_PLACE_LIMIT} 가득 참` : `${count} → ${count + 1} / ${AVOIDED_PLACE_LIMIT}` },
@@ -184,7 +188,7 @@ export function unavoidPopup(shared: Actions, row: AvoidedPlace, context: { eyeb
   const count = shared.current().snapshot.avoided.length;
   return {
     title: "기피를 해제할까요?",
-    card: { eyebrow: context.eyebrow, region: isRegionOnlyPlace(row.place), name: context.name ?? row.place.name, line: placeAddress(row.place), source: context.source },
+    card: { eyebrow: context.eyebrow, region: isRegionOnlyPlace(row.place), name: context.name ?? row.place.name, line: placeAddress(row.place, context.name ?? row.place.name), source: context.source },
     count: { label: "기피 장소", value: `${count} → ${Math.max(0, count - 1)} / ${AVOIDED_PLACE_LIMIT}` },
     note: context.note,
     confirm: {
@@ -281,7 +285,7 @@ export function editSharedPopup(
     ...((base.alias ?? "") !== alias ? [{ label: "별명", before: base.alias ?? `${place.name} (없음)`, after: alias || `${place.name} (없음)` }] : []),
     ...(base.kind !== kind ? [{ label: "분류", before: kindLabel(base.kind), after: kindLabel(kind) }] : []),
   ];
-  const card = { line: `원래 이름 · ${place.name}`, line2: isRegionOnlyPlace(place) ? `상세 주소 없음 · ${place.address}` : place.roadAddress ?? place.address };
+  const card = { line: `원래 이름 · ${place.name}`, line2: isRegionOnlyPlace(place) ? `상세 주소 없음 · ${place.address}` : placeAddressLine(place, place.name) };
   if (!changes.length)
     return { title: "이미 같은 값이에요", card, note: "다른 곳에서 같은 내용으로 바뀌었어요. 바뀐 것은 없어요.", buttons: [{ label: "닫기", primary: true, onClick: done.onSaved }] };
   const conflictName = conflict ? (conflict.updatedByLeft || !conflict.updatedByDisplayName ? "나간 회원" : conflict.updatedByDisplayName) : "";

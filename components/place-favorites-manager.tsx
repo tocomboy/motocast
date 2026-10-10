@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import type { PlaceFavoritesControls } from "@/components/place-search-field";
 import type { PlaceFavorite } from "@/lib/places/favorites";
-import { parsePlaceSearchResponse, type PlaceSearchResult } from "@/lib/places/search";
+import { parsePlaceSearchResponse, placeAddressLine, type PlaceSearchResult } from "@/lib/places/search";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 import styles from "./place-favorites-manager.module.css";
@@ -58,7 +58,7 @@ export function PlaceFavoritesManager({ favorites, onBack }: { favorites: PlaceF
         {favorites.status === "loading" ? <p role="status">즐겨찾기를 불러오는 중입니다.</p> : favorites.status === "error" ? (
           <div className={styles.notice}><strong>{favorites.message.includes("결과") ? "변경 결과를 확인하지 못했어요." : "즐겨찾기를 확인하지 못했어요."}</strong><p role="alert">{favorites.message}</p><button type="button" disabled={favorites.busy} onClick={favorites.retry}>목록 다시 확인</button></div>
         ) : favorites.favorites.length ? (
-          <ul className={styles.list}>{favorites.favorites.map((favorite) => <li key={favorite.slot}><strong>{favorite.place.name}</strong><span>{favorite.place.roadAddress ?? favorite.place.address}</span><button type="button" disabled={favorites.busy} aria-label={`${favorite.place.name} 즐겨찾기 삭제`} onClick={(event) => requestRemove(favorite, event?.currentTarget)}>삭제</button></li>)}</ul>
+          <ul className={styles.list}>{favorites.favorites.map((favorite) => <li key={favorite.slot}><strong>{favorite.place.name}</strong>{placeAddressLine(favorite.place, favorite.place.name) ? <span>{placeAddressLine(favorite.place, favorite.place.name)}</span> : null}<button type="button" disabled={favorites.busy} aria-label={`${favorite.place.name} 즐겨찾기 삭제`} onClick={(event) => requestRemove(favorite, event?.currentTarget)}>삭제</button></li>)}</ul>
         ) : <div className={styles.notice}><strong>저장한 즐겨찾기가 없어요.</strong><p>자주 가는 장소를 추가해 보세요.</p></div>}
         <button ref={addButtonRef} aria-label="+ 즐겨찾기 추가" className={`primary-button ${styles.add}`} type="button" disabled={favorites.status !== "ready" || favorites.busy || favorites.favorites.length >= 3} onClick={() => setRegistrationOpen(true)}><LineIcon name="plus" /> 즐겨찾기 추가</button>
         <p className={styles.helper}>내 장소 1,000개 · 자주 찾는 장소 10개<br />출발·경유·도착에서 함께 사용할 수 있어요.</p>
@@ -156,7 +156,7 @@ function FavoriteRegistrationDialog({ favorites, onRequestAdd, onClose }: { favo
           <p role="status" aria-live="polite">{status}</p>
           {results.length ? <ul>{results.map((place) => {
             const saved = favorites.favorites.some((favorite) => favorite.place.kakaoPlaceId === place.kakaoPlaceId);
-            return <li key={place.kakaoPlaceId}><strong>{place.name}</strong><span>{place.roadAddress ?? place.address}</span><button className="favorite-register-result" type="button" disabled={favorites.status !== "ready" || favorites.busy || saved || favorites.favorites.length >= 3} onClick={() => onRequestAdd(place, () => inputRef.current?.focus())} aria-label={`${place.name} 즐겨찾기 ${saved ? "저장됨" : "추가"}`}>{saved ? "저장됨" : "추가"}</button></li>;
+            return <li key={place.kakaoPlaceId}><strong>{place.name}</strong>{placeAddressLine(place, place.name) ? <span>{placeAddressLine(place, place.name)}</span> : null}<button className="favorite-register-result" type="button" disabled={favorites.status !== "ready" || favorites.busy || saved || favorites.favorites.length >= 3} onClick={() => onRequestAdd(place, () => inputRef.current?.focus())} aria-label={`${place.name} 즐겨찾기 ${saved ? "저장됨" : "추가"}`}>{saved ? "저장됨" : "추가"}</button></li>;
           })}</ul> : status.includes("못했습니다") ? <button type="button" onClick={() => void search()}>다시 검색</button> : null}
           <p className={styles.helper}>이미 저장된 장소·3개 등록 완료·처리 중에는 추가할 수 없어요.</p>
           <p className={styles.message} role={favorites.status === "error" ? "alert" : "status"} aria-live="polite">{favorites.message}</p>

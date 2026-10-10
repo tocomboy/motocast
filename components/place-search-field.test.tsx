@@ -120,3 +120,30 @@ describe("PlaceSearchField collection application", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("PlaceSearchField selected place lines (Issue #137 A03)", () => {
+  const mapPoint = (roadAddress: string | null, address: string): PlaceSearchResult => ({
+    ...place("map:37.5000000:127.0000000", roadAddress ?? address), address, roadAddress,
+  });
+  async function triggerSpans(selected: PlaceSearchResult) {
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(<PlaceSearchField label="출발지" placeholder="검색" selected={selected} onSelect={vi.fn()} />); });
+    const trigger = renderer.root.findAllByType("button").find((button) => button.props.className?.includes("place-picker-trigger"))!;
+    const lines = [textOf(trigger.findByType("strong")), ...trigger.findAllByType("span").map(textOf)];
+    await act(async () => renderer.unmount());
+    return lines;
+  }
+
+  it("shows the parcel address instead of repeating the map point's road-address name", async () => {
+    expect(await triggerSpans(mapPoint("경기 남양주시 와부읍 덕소로 150", "경기 남양주시 와부읍 덕소리 123-4")))
+      .toEqual(["경기 남양주시 와부읍 덕소로 150", "경기 남양주시 와부읍 덕소리 123-4"]);
+  });
+
+  it("hides the second line when it would only repeat the name", async () => {
+    expect(await triggerSpans(mapPoint(null, "서울 중구 태평로1가 31"))).toEqual(["서울 중구 태평로1가 31"]);
+  });
+
+  it("keeps the road address under a named place", async () => {
+    expect(await triggerSpans({ ...place("1", "팔당역"), roadAddress: "경기 남양주시 경강로 2227" })).toEqual(["팔당역", "경기 남양주시 경강로 2227"]);
+  });
+});

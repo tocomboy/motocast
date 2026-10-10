@@ -76,7 +76,7 @@ export function SharedPlaceDetail({
       <div className={`${styles.placeSummary} ${styles.detailSummary} ${styles.sharedSummary}`}>
         <span className={styles.placeKind}>{kindLabel(row.kind)} · {row.province ?? "지역 미확인"}</span>
         <strong>{sharedName(row)}</strong>
-        <span>{placeAddress(row.place)}</span>
+        {placeAddress(row.place, sharedName(row)) ? <span>{placeAddress(row.place, sharedName(row))}</span> : null}
         <span className={styles.sourceLine}><LineIcon name="folder" />{source.text}</span>
         <button type="button" className={styles.starIconButton} aria-label={row.starred ? "자주 찾는 장소에서 빼기" : "자주 찾는 장소에 추가"} aria-pressed={row.starred} disabled={blocked} onClick={starPopup}>
           <StarMark filled={row.starred} />

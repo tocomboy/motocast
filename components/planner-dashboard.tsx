@@ -25,7 +25,7 @@ import { prepareCollectionApplication } from "@/lib/collections/application";
 import type { CollectionCourse, CollectionPoint } from "@/lib/collections/contracts";
 import type { PlaceSearchResult } from "@/lib/places/search";
 import { favoriteAsSearchResult, type PlaceFavorite } from "@/lib/places/favorites";
-import { FREQUENT_PLACE_LIMIT } from "@/lib/places/saved";
+import { FREQUENT_PLACE_LIMIT, isRegionOnlyPlace } from "@/lib/places/saved";
 import {
   demoRoute,
   demoDepartureAt,
@@ -286,6 +286,11 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   const [homeStatus, setHomeStatus] = useState("");
   const [summarySaveBusy, setSummarySaveBusy] = useState(false);
   const [placeSelectionRevision, setPlaceSelectionRevision] = useState(0);
+  // Issue #137 A03/A04: shown while the endpoint still holds the place current location found.
+  const [locationApplied, setLocationApplied] = useState<{ key: keyof PlannerPlaces; kakaoPlaceId: string } | null>(null);
+  // The editor form stays mounted (hidden) behind the summary, so leaving the editor
+  // remounts the origin/destination pickers to cancel a pending current-location request.
+  const [editorVisit, setEditorVisit] = useState(0);
   const [favoriteTarget, setFavoriteTarget] = useState<"origin" | "destination" | string | null>("origin");
   const [recommendationOpen, setRecommendationOpen] = useState(false);
   // SRC04 "기피 장소 보기" opens 즐겨찾기 on its 기피 장소 tab; any other navigation starts at 장소.
@@ -350,6 +355,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
         discardRecommendation();
         setLiveResultStale(true);
         setMapFailure(null);
+        setLocationApplied(null);
         setPlaceSelectionRevision((current) => current + 1);
       }
       userId = next;
@@ -370,6 +376,8 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       const next: PlannerView = hash === "#favorites" ? "favorites" : hash === "#collections" ? "collections" : hash === "#editor" ? "editor" : hash === "#summary" ? "summary" : "home";
       navigationGenerationRef.current += 1;
       setRecommendationOpen(false);
+      setLocationApplied(null);
+      if (next !== "editor") setEditorVisit((current) => current + 1);
       setView(next);
       resetViewScroll();
       window.setTimeout(() => { if (mountedRef.current && typeof document !== "undefined") document.querySelector<HTMLElement>(`[data-view-title="${next}"]`)?.focus({ preventScroll: true }); }, 0);
@@ -484,6 +492,8 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
 
   function navigate(next: PlannerView, replace = false) {
     setMapFailure(null);
+    setLocationApplied(null);
+    if (next !== "editor") setEditorVisit((current) => current + 1);
     setFavoritesSection("places");
     if (next !== "summary") {
       setRecommendationOpen(false);
@@ -538,8 +548,17 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
   }
 
   function selectEndpoint(key: keyof PlannerPlaces, place: PlaceSearchResult | null) {
+    setLocationApplied(null);
     setPlaces((current) => ({ ...current, [key]: place }));
     markRouteInputChanged();
+  }
+
+  /** Issue #137 D1: the place found from the current location is applied at once. A
+   * result for an editor the rider already left is dropped. */
+  function applyCurrentLocation(key: keyof PlannerPlaces, place: PlaceSearchResult) {
+    if (viewRef.current !== "editor") return;
+    selectEndpoint(key, place);
+    setLocationApplied({ key, kakaoPlaceId: place.kakaoPlaceId });
   }
 
   function updateWaypoints(next: EditableWaypoint[]) {
@@ -606,6 +625,10 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
       : favoriteTarget
         ? `경유 ${waypoints.findIndex((waypoint) => waypoint.id === favoriteTarget) + 1}`
         : "장소를 다시 선택해 주세요";
+  const locationPlace = locationApplied ? places[locationApplied.key] : null;
+  const appliedLocation = view === "editor" && locationApplied && locationPlace?.kakaoPlaceId === locationApplied.kakaoPlaceId
+    ? { role: locationApplied.key === "origin" ? "출발지" : "도착지", region: isRegionOnlyPlace(locationPlace) }
+    : null;
 
   function applyCollection(course: CollectionCourse, title: string, sharing = false) {
     if (!actionGateRef.current.canApplyCollection()) {
@@ -1060,6 +1083,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
         >
           <div className="panel-handle" aria-hidden="true" />
           <form onSubmit={recalculate} className="planner-form">
+            {appliedLocation ? <div className="current-location-applied" role="status"><LineIcon name="check" /><p><strong>현재 위치를 {appliedLocation.role}로 넣었어요.</strong>{appliedLocation.region ? <span>상세 주소가 없어 지역 이름으로 표시해요.</span> : null}</p></div> : null}
             <section className="form-section schedule-section">
               <PlannerScheduleDialog
                 date={draft.rideDate}
@@ -1076,7 +1100,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
             </section>
             <fieldset className="planner-fields" disabled={calculating} aria-busy={calculating}>
             <section className="planner-stop is-origin">
-              {connected ? <PlaceSearchField key={`origin-${placeSelectionRevision}`} label="출발" accessibleLabel="출발지" placeholder="예: 팔당역" required selected={places.origin} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("origin")} onOpen={reloadPickerStars} onSelect={(place) => selectEndpoint("origin", place)} /> : <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>}
+              {connected ? <PlaceSearchField key={`origin-${placeSelectionRevision}-${editorVisit}`} label="출발" accessibleLabel="출발지" placeholder="예: 팔당역" required selected={places.origin} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("origin")} onOpen={reloadPickerStars} onSelect={(place) => selectEndpoint("origin", place)} onCurrentLocationSelect={(place) => applyCurrentLocation("origin", place)} /> : <label><span>출발지</span><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></label>}
             </section>
             <section className="planner-waypoint-stops">
               <OrderedWaypointEditor
@@ -1095,7 +1119,7 @@ function PlannerDashboardContent({ connected, initialCourse = null, initialTitle
               <p className="sr-only" role="status" aria-live="polite">{waypointStatus}</p>
             </section>
             <section className="planner-stop is-destination">
-              {connected ? <PlaceSearchField key={`destination-${placeSelectionRevision}`} label="도착" accessibleLabel="도착지" placeholder="예: 양평역" required selected={places.destination} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("destination")} onOpen={reloadPickerStars} onSelect={(place) => selectEndpoint("destination", place)} /> : <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>}
+              {connected ? <PlaceSearchField key={`destination-${placeSelectionRevision}-${editorVisit}`} label="도착" accessibleLabel="도착지" placeholder="예: 양평역" required selected={places.destination} favorites={favoriteControls} onOpenSavedPlaces={() => navigate("favorites")} onActivate={() => setFavoriteTarget("destination")} onOpen={reloadPickerStars} onSelect={(place) => selectEndpoint("destination", place)} onCurrentLocationSelect={(place) => applyCurrentLocation("destination", place)} /> : <label><span>복귀지</span><input value={draft.destination} onChange={(event) => update("destination", event.target.value)} /></label>}
             </section>
             <button className="route-reset-button" type="button" disabled={calculating} onClick={startNewRoute}>경로 초기화</button>
             </fieldset>

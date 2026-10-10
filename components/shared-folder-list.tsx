@@ -8,6 +8,7 @@ import { useSavedPlaces } from "./saved-places-provider";
 import { useSharedFolders, type CreateToken, type SharedSnapshot, type SharedWrite } from "./shared-folders-provider";
 import { kindLabel, useSharedPopup } from "./shared-place-actions";
 import { isRegionOnlyPlace, savedPlaceName, type SavedPlaceEntry, type SavedPlaceKind } from "@/lib/places/saved";
+import { placeAddressLine } from "@/lib/places/search";
 import {
   FOLDER_DISPLAY_NAME_LIMIT,
   FOLDER_NAME_LIMIT,
@@ -23,7 +24,7 @@ import {
 import { folderLastEdit, roleLabel } from "@/lib/places/shared-folder-format";
 import styles from "./saved-places-manager.module.css";
 
-const savedAddress = (row: SavedPlaceEntry) => (isRegionOnlyPlace(row.place) ? `${row.place.name} · 상세 주소 없음` : row.place.roadAddress ?? row.place.address);
+const savedAddress = (row: SavedPlaceEntry) => (isRegionOnlyPlace(row.place) ? `${row.place.name} · 상세 주소 없음` : placeAddressLine(row.place, savedPlaceName(row)));
 
 /** G01 / G02 / G03 / GW04: the folders I own or joined, at most 20. */
 export function SharedFolderList({ onOpen, onCreate, createBlocked = false }: { onOpen: (folderId: string) => void; onCreate: () => void; createBlocked?: boolean }) {
@@ -156,7 +157,7 @@ export function SavedPlacePicker({
                 <li key={row.id}>
                   <label className={`${styles.checkRow}${checked ? ` ${styles.checkRowOn}` : ""}${already ? ` ${styles.checkRowTaken}` : ""}`}>
                     <input type="checkbox" checked={checked} disabled={already || (!checked && atRoom)} onChange={(e) => { const next = new Set(selected); if (e.target.checked) next.add(row.id); else next.delete(row.id); onChange(next); }} />
-                    <span><strong>{savedPlaceName(row)}</strong><span>{savedAddress(row)}</span></span>
+                    <span><strong>{savedPlaceName(row)}</strong>{savedAddress(row) ? <span>{savedAddress(row)}</span> : null}</span>
                     {already ? <span className={styles.chip}>이미 폴더에 있음</span> : null}
                   </label>
                 </li>
