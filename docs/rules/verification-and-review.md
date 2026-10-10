@@ -1,6 +1,6 @@
 # MOTOCAST verification and review rules
 
-This document holds only MOTOCAST-specific verification: commands, required scenarios, review axes and deployment gates. Generic rules are owned by the personal global guidance and its [role policy](https://github.com/tocomboy/dev-environment/blob/main/docs/policy/agents/roles.md) and are not copied here: roles and delegation, Codex checkpoints (V3 required, V1/V2 optional), the pre-V3 implementer bar, re-verification scope, verifier execution modes and effort, and [finding triage](https://github.com/tocomboy/dev-environment/blob/main/docs/policy/agents/finding-triage.md#finding-triage). Every rule here is a project addition that keeps those rules intact. MOTOCAST has no registered [project exception](https://github.com/tocomboy/dev-environment/blob/main/docs/policy/project-boundary.md#registry); a rule here that contradicts the role policy is stale wording, and the role policy applies.
+This document holds only MOTOCAST-specific verification: commands, required scenarios, review axes and deployment gates. Generic rules are owned by the personal global guidance and its role policy (`dev-environment:docs/policy/agents/roles.md`) and are not copied here: roles and delegation, Codex checkpoints (V3 required, V1/V2 optional), the pre-V3 implementer bar, re-verification scope, verifier execution modes and effort, and finding triage (`dev-environment:docs/policy/agents/finding-triage.md#finding-triage`). Every rule here is a project addition that keeps those rules intact. MOTOCAST has no registered project exception (`dev-environment:docs/policy/project-boundary.md#registry`); a rule here that contradicts the role policy is stale wording, and the role policy applies.
 
 ## 1. Evidence and result taxonomy
 
@@ -131,7 +131,7 @@ The orchestrator performs these review axes on the exact changed set:
 
 ## 6. Findings
 
-Findings are triaged by the role policy's [finding triage](https://github.com/tocomboy/dev-environment/blob/main/docs/policy/agents/finding-triage.md#finding-triage); severity does not by itself block a merge. MOTOCAST additions:
+Findings are triaged by `dev-environment:docs/policy/agents/finding-triage.md#finding-triage`; severity does not by itself block a merge. MOTOCAST additions:
 
 - Each finding carries an impact Severity (`BLOCKER`, `HIGH`, `MEDIUM` or `LOW`) for ordering only, and names the violated Decision ID or invariant and its user, security, data or operations impact.
 - The threat model in a verification request cites the user's recorded risk acceptances in the Issue, PR or `docs/product/MOTOCAST_SOT.md`.
