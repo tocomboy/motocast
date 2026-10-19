@@ -26,6 +26,7 @@ A focused, mocked, docs-only, local, or shared-baseline result cannot be general
 2026-10-02 사용자 결정: 에이전트가 실행 가능한 E2E 검사를 직접 완료한다. 변경에 영향받는 사용자 동작을 기존 브라우저·에뮬레이터·연결 서비스 도구로 재현하고 정상·실패·취소·재진입과 필요한 화면 크기를 확인한다. 기존 유효한 고정 후보 근거는 재사용하며 필수 최종 후보·병합 후 검사는 유지한다.
 
 - 검증 계획에서 자동 실행 가능 항목과 사용자 직접 단계가 필요한 항목을 구분한다. 브라우저/ADB/기존 로그인 및 실행기의 실제 가용성을 확인하기 전에 사용자 실기기 대기로 분류하지 않는다. 승인된 개발 도구가 없으면 설치 가능한 경로를 확인한다.
+- 2026-10-19 사용자 결정: Claude Code 클라우드 세션(`CLAUDE_CODE_REMOTE=true`, KVM 없는 관리형 원격 컨테이너)은 Android 에뮬레이터를 설치·실행하지 않는다. 같은 날 실측에서 소프트웨어 가속 API 34 AVD는 부팅에 887초가 걸렸고, instrumentation `design` 모드는 system_server Watchdog 종료로 `INSTRUMENTATION_ABORTED: System has crashed`가 되어 결과를 신뢰할 수 없었다. 클라우드 세션은 빌드·단위·lint·CI까지 완료하고 에뮬레이터 E2E는 `NOT_RUN`으로 기록한다. 대상 브랜치·고정 SHA·실행 모드·재개 조건을 남겨 사용자 PC 세션(Claude Desktop 또는 저장소 폴더의 `claude remote-control`)에서 이어 실행한다. 웹 E2E는 이 결정의 대상이 아니다.
 - 화면은 렌더링·터치/클릭·스크롤·관찰 결과로 확인한다. 빌드, 단위 검사, Figma만으로 버튼 위치·클리핑·안전 영역·동작 완료를 주장하지 않는다. 실패 시 보호 조건이나 assertion을 낮추지 말고 원인 수정 후 영향받는 경로를 재검증한다.
 - `LOCAL_UI`(합성 API 포함), `CONNECTED_PREVIEW`, `CONNECTED_PRODUCTION`, `PLAY_READBACK`, `USER_DEVICE`를 결과에 함께 명시한다. 실제 SDK를 사용해도 API 응답이나 GPS가 합성이면 그 경계를 기록한다. UI 콜백 성공과 실제 서버 로그아웃도 구분한다.
 - 연결 브라우저 세션은 도구의 허용된 UI 조작으로 사용한다. 인증정보를 추출하거나 Preview 세션을 Production으로 복사하지 않는다. 기존 연결 Playwright의 origin·비밀파일 권한·mutation/cleanup 규칙을 유지한다.
